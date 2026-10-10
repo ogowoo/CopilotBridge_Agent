@@ -750,13 +750,12 @@ async def nonstream(req, prompt):
     }
 
 
-@asynccontextmanager
-async def lifespan(app):
-    global pw, ctx, page
-    PROFILE.mkdir(exist_ok=True)
-    pw = await async_playwright().start()
-    headless = bool(CFG.get("headless", False))
-    launch_kwargs = dict(
+# 当前实际运行的浏览器模式（无头启动失败回退后与配置值可能不同）。
+HEADLESS_CURRENT = bool(CFG.get("headless", False))
+
+
+def _launch_kwargs(headless: bool) -> dict:
+    kwargs = dict(
         user_data_dir=str(PROFILE),
         channel=CFG.get("browser_channel", "msedge"),
         headless=headless,
@@ -764,7 +763,26 @@ async def lifespan(app):
     )
     if headless:
         # 降低无头模式被页面自动化检测的概率。
-        launch_kwargs["args"] = ["--disable-blink-features=AutomationControlled"]
+        kwargs["args"] = ["--disable-blink-features=AutomationControlled"]
+    return kwargs
+
+
+async def _start_browser(headless: bool) -> bool:
+    """(Re)launch the persistent Edge context with the given headless mode.
+
+    headless is a launch-time parameter: toggling it always relaunches the
+    context. EdgeProfile persists, so the Copilot login survives the switch.
+    Caller must hold `lock`. Returns the mode actually in effect (headless
+    launch failure falls back to a visible window).
+    """
+    global ctx, page, HEADLESS_CURRENT
+    if ctx is not None:
+        try:
+            await ctx.close()
+        except Exception:
+            pass
+        ctx = page = None
+    launch_kwargs = _launch_kwargs(headless)
     try:
         ctx = await pw.chromium.launch_persistent_context(**launch_kwargs)
     except Exception:
@@ -774,9 +792,20 @@ async def lifespan(app):
         log("无头模式启动失败，已回退为有窗口模式；请升级 Edge 或将 headless 改回 false")
         launch_kwargs["headless"] = False
         ctx = await pw.chromium.launch_persistent_context(**launch_kwargs)
-    log("浏览器模式：" + ("无头（不显示窗口）" if launch_kwargs["headless"] else "有窗口"))
+    HEADLESS_CURRENT = launch_kwargs["headless"]
+    log("浏览器模式：" + ("无头（不显示窗口）" if HEADLESS_CURRENT else "有窗口"))
     page = ctx.pages[0] if ctx.pages else await ctx.new_page()
     await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+    _forget_selected_model()  # 页面重载，模型选择状态未知
+    return HEADLESS_CURRENT
+
+
+@asynccontextmanager
+async def lifespan(app):
+    global pw
+    PROFILE.mkdir(exist_ok=True)
+    pw = await async_playwright().start()
+    await _start_browser(bool(CFG.get("headless", False)))
     log("API 与浏览器已就绪")
     try:
         added = await discover_models()
@@ -827,7 +856,42 @@ async def health():
         "busy": lock.locked(),
         "page_url": page.url if page else None,
         "default_model": DEFAULT_MODEL,
+        "headless": HEADLESS_CURRENT,
     }
+
+
+@app.get("/v1/agent/browser")
+async def browser_state():
+    return {"headless": HEADLESS_CURRENT,
+            "config_headless": bool(CFG.get("headless", False))}
+
+
+@app.post("/v1/agent/browser")
+async def set_browser_mode(payload: dict):
+    """切换自动化浏览器窗口的显示/隐藏。
+
+    headless 是启动参数，切换必然重建浏览器上下文（EdgeProfile 保留，
+    登录态不受影响）。有请求/任务正在使用浏览器时返回 409 拒绝切换。
+    persist=true 可把新模式写回 config.json。
+    """
+    target = bool(payload.get("headless"))
+    if target == HEADLESS_CURRENT and page is not None:
+        return {"headless": HEADLESS_CURRENT, "changed": False, "fallback": False}
+    if lock.locked():
+        raise HTTPException(409, "有请求/任务正在使用浏览器，请稍后再切换")
+    async with lock:
+        actual = await _start_browser(target)
+    result = {"headless": actual, "changed": True, "fallback": actual != target}
+    if payload.get("persist"):
+        try:
+            CFG["headless"] = actual
+            (BASE / "config.json").write_text(
+                json.dumps(CFG, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            result["persisted"] = True
+        except Exception as exc:
+            result["persisted"] = False
+            result["persist_error"] = str(exc)
+    return result
 
 
 @app.get("/v1/models")
@@ -1176,6 +1240,16 @@ async def run_agent(req: AgentRequest):
         async def turn(prompt,model,force_new=False):
             st=AGENT_SESSIONS.get(sid)
             make_new = force_new or not st.get("current_url")
+            if not make_new:
+                # 页面可能因服务重启/窗口切换被重置到基础地址：续聊前若当前
+                # 页面不是该会话的 Copilot 对话，先导航回已保存的会话 URL，
+                # 避免回合误入一个全新的空对话。
+                expected = st.get("current_url") or ""
+                m = CONVERSATION_URL_RE.search(expected)
+                if m and m.group(0) not in (page.url or ""):
+                    await page.goto(expected, wait_until="domcontentloaded", timeout=120000)
+                    await asyncio.sleep(1)
+                    _forget_selected_model()
             marker = _agent_chat_marker(sid, int(st.get("conversation_index", 0)))
             # Copilot derives the sidebar title from the beginning of the first
             # message. This is more stable than automating the Rename editor.

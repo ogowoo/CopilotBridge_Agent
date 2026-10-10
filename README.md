@@ -152,6 +152,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | POST | `/v1/agent/sessions/{sid}/activate` | 把自动化浏览器切到该会话页面 |
 | DELETE | `/v1/agent/sessions/{sid}?delete_remote=true&force_local=true` | 删除会话（可选连带删除 Copilot 网页会话） |
 | GET/POST | `/v1/agent/workspace` | 查询/切换工具工作区 |
+| GET/POST | `/v1/agent/browser` | 查询/切换浏览器窗口显示（无头 ↔ 有窗口；带登录态重启浏览器上下文，`persist=true` 可写回 config.json） |
 | GET | `/ui` | Web 管理台 |
 
 ## 安全警告
