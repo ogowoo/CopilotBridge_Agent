@@ -253,12 +253,64 @@ def _model_id_from_label(label: str) -> str:
     return f"copilot-{slug}" if slug else ""
 
 
-async def discover_models() -> list:
-    """打开 Copilot 模型菜单，枚举可见选项并并入 MODELS。
+def _menu_target_locators(target):
+    """Locate a model entry by name across the menu roles Copilot uses."""
+    return [
+        page.get_by_role("option", name=target),
+        page.get_by_role("menuitem", name=target),
+        page.get_by_role("menuitemradio", name=target),
+        page.get_by_text(target, exact=True),
+        page.get_by_role("option", name=target, exact=False),
+        page.get_by_role("menuitem", name=target, exact=False),
+        page.get_by_role("menuitemradio", name=target, exact=False),
+        page.get_by_text(target, exact=False),
+    ]
 
-    已知名字（含各 ui_names 别名）直接跳过；新出现的选项按标签生成
-    copilot-<slug> 形式的 ID。返回本次新增的模型 ID 列表。
-    只读操作：点击仅用于展开菜单，结束后 Escape 关闭，不改变当前选中模型。
+
+async def _visible_menu_items():
+    """All currently visible model menu entries as (locator, label, is_submenu_parent)."""
+    entries = []
+    for role in ("option", "menuitemradio", "menuitem"):
+        items = page.get_by_role(role)
+        for i in range(await items.count()):
+            item = items.nth(i)
+            try:
+                if not await item.is_visible():
+                    continue
+                text = re.sub(r"\s+", " ", (await item.inner_text() or "")).strip()
+                # 菜单项可能带描述行或勾选图标，只取第一行作为模型名
+                label = text.splitlines()[0].strip() if text else ""
+                if not label or len(label) > 40:
+                    continue
+                has_popup = ((await item.get_attribute("aria-haspopup")) or "").lower() == "menu"
+                entries.append((item, label, has_popup))
+            except Exception:
+                pass
+    return entries
+
+
+async def _expand_submenu(parent) -> None:
+    """Open a submenu parent: hover first (Fluent UI opens on hover), click as fallback."""
+    try:
+        await parent.hover(timeout=3000)
+        await asyncio.sleep(.4)
+        return
+    except Exception:
+        pass
+    try:
+        await parent.click(timeout=3000)
+        await asyncio.sleep(.4)
+    except Exception:
+        pass
+
+
+async def discover_models() -> list:
+    """打开 Copilot 模型菜单，枚举可见选项（含二级子菜单）并并入 MODELS。
+
+    已知名字（含各 ui_names 别名）直接跳过；带 aria-haspopup 的父项会
+    逐个 hover/click 展开后继续枚举其子菜单，父项本身不作为模型收录。
+    新出现的叶子选项按标签生成 copilot-<slug> 形式的 ID。
+    只读操作：结束后 Escape 逐级关闭菜单，不改变当前选中模型。
     """
     button = await model_button()
     if not button:
@@ -269,26 +321,28 @@ async def discover_models() -> list:
         await button.click(timeout=3000, force=True)
     await asyncio.sleep(.6)
     labels = []
+    expanded = set()
     try:
-        for role in ("option", "menuitemradio", "menuitem"):
-            items = page.get_by_role(role)
-            for i in range(await items.count()):
-                item = items.nth(i)
-                try:
-                    if not await item.is_visible():
-                        continue
-                    text = re.sub(r"\s+", " ", (await item.inner_text() or "")).strip()
-                    # 菜单项可能带描述行或勾选图标，只取第一行作为模型名
-                    text = text.splitlines()[0].strip() if text else ""
-                    if text and len(text) <= 40 and text not in labels:
-                        labels.append(text)
-                except Exception:
-                    pass
+        # 主菜单 + 最多两级子菜单；每展开一个父项立即收集新出现的选项
+        for _depth in range(3):
+            entries = await _visible_menu_items()
+            for _item, label, has_popup in entries:
+                if not has_popup and label not in labels:
+                    labels.append(label)
+            pending = [(item, label) for item, label, has_popup in entries
+                       if has_popup and label not in expanded]
+            if not pending:
+                break
+            for item, label in pending:
+                expanded.add(label)
+                await _expand_submenu(item)
     finally:
-        try:
-            await page.keyboard.press("Escape")
-        except Exception:
-            pass
+        for _ in range(3):  # 子菜单可能多级展开，多按几次 Escape 确保全部关闭
+            try:
+                await page.keyboard.press("Escape")
+                await asyncio.sleep(.2)
+            except Exception:
+                pass
     added = []
     known_names = {name.casefold() for item in MODELS.values() for name in item["ui_names"]}
     for label in labels:
@@ -355,16 +409,18 @@ async def select_model(model_id):
     await asyncio.sleep(.6)
 
     target = re.compile(r"^(?:" + "|".join(re.escape(name) for name in target_names) + r")$", re.I)
-    option = await visible_locator([
-        page.get_by_role("option", name=target),
-        page.get_by_role("menuitem", name=target),
-        page.get_by_role("menuitemradio", name=target),
-        page.get_by_text(target, exact=True),
-        page.get_by_role("option", name=target, exact=False),
-        page.get_by_role("menuitem", name=target, exact=False),
-        page.get_by_role("menuitemradio", name=target, exact=False),
-        page.get_by_text(target, exact=False),
-    ])
+    option = await visible_locator(_menu_target_locators(target))
+    if not option:
+        # 目标可能藏在二级子菜单（如 GPT 父项飞出更多模型）：
+        # 逐个展开带 aria-haspopup 的父项后重新查找。
+        entries = await _visible_menu_items()
+        for parent, label, has_popup in entries:
+            if not has_popup:
+                continue
+            await _expand_submenu(parent)
+            option = await visible_locator(_menu_target_locators(target))
+            if option:
+                break
     if not option:
         try: await page.keyboard.press("Escape")
         except Exception: pass
