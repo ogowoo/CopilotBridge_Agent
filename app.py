@@ -236,7 +236,74 @@ async def model_button():
         page.locator('[role="button"][aria-haspopup="menu"]').filter(has_text=exact),
         page.locator('[role="button"][aria-haspopup="listbox"]').filter(has_text=exact),
     ])
+    if not button:
+        # 兜底：当前选中的模型可能是菜单里新出现、尚未收录的模型，
+        # 按钮文本不匹配任何已知名字，改按结构特征定位模型选择器。
+        button = await visible_locator([
+            page.locator('button[aria-label*="Model Selector" i]'),
+            page.locator('button[aria-label*="模型"][aria-haspopup]'),
+            page.locator('button[aria-label*="model" i][aria-haspopup="menu"]'),
+            page.locator('button[aria-label*="model" i][aria-haspopup="listbox"]'),
+        ])
     return button
+
+
+def _model_id_from_label(label: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", label.strip().lower()).strip("-")
+    return f"copilot-{slug}" if slug else ""
+
+
+async def discover_models() -> list:
+    """打开 Copilot 模型菜单，枚举可见选项并并入 MODELS。
+
+    已知名字（含各 ui_names 别名）直接跳过；新出现的选项按标签生成
+    copilot-<slug> 形式的 ID。返回本次新增的模型 ID 列表。
+    只读操作：点击仅用于展开菜单，结束后 Escape 关闭，不改变当前选中模型。
+    """
+    button = await model_button()
+    if not button:
+        return []
+    try:
+        await button.click(timeout=5000)
+    except Exception:
+        await button.click(timeout=3000, force=True)
+    await asyncio.sleep(.6)
+    labels = []
+    try:
+        for role in ("option", "menuitemradio", "menuitem"):
+            items = page.get_by_role(role)
+            for i in range(await items.count()):
+                item = items.nth(i)
+                try:
+                    if not await item.is_visible():
+                        continue
+                    text = re.sub(r"\s+", " ", (await item.inner_text() or "")).strip()
+                    # 菜单项可能带描述行或勾选图标，只取第一行作为模型名
+                    text = text.splitlines()[0].strip() if text else ""
+                    if text and len(text) <= 40 and text not in labels:
+                        labels.append(text)
+                except Exception:
+                    pass
+    finally:
+        try:
+            await page.keyboard.press("Escape")
+        except Exception:
+            pass
+    added = []
+    known_names = {name.casefold() for item in MODELS.values() for name in item["ui_names"]}
+    for label in labels:
+        if label.casefold() in known_names:
+            continue
+        model_id = _model_id_from_label(label)
+        if not model_id or model_id in MODELS:
+            continue
+        MODELS[model_id] = {
+            "ui_names": [label],
+            "description": f"从 Copilot 菜单自动发现的模型（{label}）",
+        }
+        known_names.add(label.casefold())
+        added.append(model_id)
+    return added
 
 
 async def select_model(model_id):
@@ -628,6 +695,14 @@ async def lifespan(app):
     page = ctx.pages[0] if ctx.pages else await ctx.new_page()
     await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     log("API 与浏览器已就绪")
+    try:
+        added = await discover_models()
+        if added:
+            log(f"从 Copilot 菜单自动发现新模型: {', '.join(added)}")
+        else:
+            log("模型菜单未发现新模型")
+    except Exception as exc:
+        log(f"模型菜单自动发现失败（不影响已有模型）: {exc}")
     cleanup_task = asyncio.create_task(periodic_session_cleanup())
     resume_task = (asyncio.create_task(auto_resume_interrupted())
                    if bool(AGENT_CFG.get("auto_resume", False)) else None)
@@ -688,6 +763,18 @@ async def models():
             for model_id, item in MODELS.items()
         ],
     }
+
+
+@app.post("/v1/models/refresh")
+async def refresh_models():
+    """重新打开 Copilot 模型菜单枚举选项，把新出现的模型并入列表。"""
+    async with lock:
+        try:
+            added = await discover_models()
+        except Exception as exc:
+            await diagnostics("models_refresh_failed")
+            raise HTTPException(500, f"模型菜单读取失败: {exc}")
+    return {"added": added, "available_models": list(MODELS)}
 
 
 @app.get("/v1/chat/completions")

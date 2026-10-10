@@ -215,7 +215,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
     <details class="newtask" open><summary>新任务</summary><div class="ntbody">
       <input id="sid" placeholder="Session ID（可留空）">
       <input id="workspace" placeholder="工作目录（可留空）">
-      <select id="model"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select>
+      <div style="display:flex;gap:6px"><select id="model"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select><button class="btn" style="flex:none;padding:5px 10px" title="重新读取 Copilot 模型菜单" onclick="refreshModels()">↻</button></div>
       <textarea id="task" rows="4" placeholder="任务内容，例如：分析 workspace 里的项目并生成 TODO"></textarea>
       <button class="btn accent block" onclick="runTask()">启动任务</button>
     </div></details>
@@ -362,9 +362,16 @@ async function loadModels(){
  if(DEMO)return;
  try{let d=await api('/v1/models'),sel=document.getElementById('model');
   if(!d.data||!d.data.length)return;
+  let prev=sel.value;
   sel.innerHTML='';
   d.data.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;if(m.description)o.title=m.description;sel.appendChild(o)});
-  sel.value='copilot-auto'}catch(e){}
+  sel.value=d.data.some(m=>m.id===prev)?prev:'copilot-auto'}catch(e){}
+}
+async function refreshModels(){
+ if(DEMO)return;
+ try{let d=await api('/v1/models/refresh',{method:'POST'});
+  await loadModels();
+  if(d.added&&d.added.length)alert('发现新模型: '+d.added.join(', '))}catch(e){alert('模型菜单读取失败: '+e)}
 }
 
 async function refreshSessions(){try{let d=await api('/v1/agent/sessions');sessCache=d.sessions||[];drawSessions()}catch(e){}}
