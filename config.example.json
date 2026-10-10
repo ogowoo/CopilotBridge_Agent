@@ -7,22 +7,40 @@
   "stable_seconds": 3,
   "poll_interval_seconds": 0.35,
   "diagnostics": true,
+  "diagnostic_html": false,
   "default_model": "copilot-auto",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8765
+  },
   "agent": {
     "enabled": true,
     "workspace": "workspace",
-    "max_steps": 500,
-    "token_budget": 60000,
-    "token_reserve": 8000,
-    "rollover_steps": 60,
+    "session_store": "data/agent.db",
+
+    "max_total_steps": 1000,
+    "max_steps_per_conversation": 160,
+    "max_conversation_rollovers": 25,
+
+    "context_token_budget": 128000,
+    "compact_at_tokens": 76000,
+    "rollover_at_tokens": 104000,
+    "keep_recent_steps": 8,
+    "max_summary_tokens": 5000,
+    "max_context_chars": 420000,
+    "auto_rollover": false,
+    "min_steps_before_rollover": 30,
+
+    "max_parse_failures": 5,
+    "max_service_unavailable": 30,
+    "service_retry_base_seconds": 30,
+    "service_retry_max_seconds": 600,
+
     "max_read_chars": 120000,
     "max_write_chars": 200000,
     "allow_delete": false,
     "allow_python": false,
-    "python_timeout_seconds": 20,
-    "session_timeout_seconds": 86400,
-    "max_sessions": 100,
-    "max_parse_failures": 5
+    "python_timeout_seconds": 20
   },
   "models": {}
 }
