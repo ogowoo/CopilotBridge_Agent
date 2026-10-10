@@ -98,8 +98,8 @@ textarea{resize:vertical}
 .chead{display:flex;align-items:center;gap:9px;padding:11px 15px;border-bottom:1px solid var(--line);font-weight:600;font-size:13.5px}
 .chead .hint{margin-left:auto;font-weight:400;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
 .livecol{display:flex;flex-direction:column;gap:12px}
-.term{margin:0;padding:12px 15px;background:#0a0e13;border-radius:0 0 11px 11px;color:#c9d4e0;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto}
-.term.short{max-height:170px}
+.term{margin:0;padding:12px 15px;background:#0a0e13;border-radius:0 0 11px 11px;color:#c9d4e0;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;min-height:64px;max-height:40vh;overflow:auto}
+.term.short{max-height:25vh}
 .pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);animation:pulse 1.3s infinite}
 .dot-off{display:inline-block;width:9px;height:9px;border-radius:50%;background:#3a4656}
 
@@ -128,7 +128,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 
 /* 对话区 */
 .chat{margin:0 0 12px}
-.chatlog{height:240px;overflow:auto;padding:14px 15px;display:flex;flex-direction:column}
+.chatlog{min-height:140px;max-height:45vh;overflow:auto;padding:14px 15px;display:flex;flex-direction:column}
 .chatlog .meta{color:var(--faint);font-size:12.5px}
 .msg{max-width:78%;margin:5px 0;padding:9px 13px;border-radius:13px;white-space:pre-wrap;word-break:break-word;font-size:13.5px;line-height:1.6}
 .msg.user{align-self:flex-end;background:#1d3a6e;border:1px solid #2b4f8f}
@@ -293,7 +293,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 </div>
 <div id="demoBadge" class="demo" style="display:none">演示模式 · API 未连接</div>
 <script>
-let current=null,currentUrl=null,lastStepCount=-1,lastDetail='',renderedSteps=0,sessCache=[];
+let current=null,currentUrl=null,currentModel=null,lastStepCount=-1,lastDetail='',renderedSteps=0,sessCache=[];
 let budget=0; // 由后端 token_budget 下发，避免与 config.json 脱节
 let DEMO=false;
 
@@ -419,7 +419,10 @@ function renderMessages(messages){
 async function load(id){
  current=id;let d=await api('/v1/agent/sessions/'+encodeURIComponent(id)),s=d.session;
  if(d.token_budget)setKpis({token_budget:d.token_budget,estimated_tokens:s.estimated_tokens??0});
- currentUrl=s.current_url;renderMessages(d.messages||[]);
+ currentModel=s.model||null;currentUrl=s.current_url;renderMessages(d.messages||[]);
+ // 跟进消息应跟随 Session 自己的模型，而不是左侧新任务表单的选择
+ let _ms=document.getElementById('model');
+ if(currentModel&&[..._ms.options].some(o=>o.value===currentModel))_ms.value=currentModel;
  document.getElementById('title').textContent=s.title;
  document.getElementById('status').textContent=(STATE_TEXT[s.state]||s.state)+' · '+s.workspace;
  setPill(s.state);setKpis(s);
@@ -502,7 +505,7 @@ async function sendFollowup(){
  let log=document.getElementById('chatlog'),mine=document.createElement('div');
  mine.className='msg user';mine.innerHTML=`<b>你</b>${esc(content)}`;
  log.appendChild(mine);log.scrollTop=log.scrollHeight;box.value='';
- try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,model:document.getElementById('model').value,agent_mode:document.getElementById('followupMode').value==='agent'})});
+ try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,model:currentModel||document.getElementById('model').value,agent_mode:document.getElementById('followupMode').value==='agent'})});
   let reply=document.createElement('div');reply.className='msg assistant';
   reply.innerHTML=`<b>Copilot</b>${esc(d.content)}`;
   log.appendChild(reply);log.scrollTop=log.scrollHeight;
