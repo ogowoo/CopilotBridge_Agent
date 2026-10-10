@@ -221,7 +221,9 @@ async def new_chat():
     else:
         await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
         await asyncio.sleep(2)
-    _forget_selected_model()  # 新聊天会把模型重置为默认，缓存必须失效
+    # 新聊天会把模型重置为租户默认：缓存直接记为默认模型，
+    # 请求默认模型时连按钮文本都不用读。
+    _forget_selected_model(reset_to=DEFAULT_MODEL)
 
 
 # 上次成功确认/切换的模型。新版 Copilot 的模型按钮经常没有可读文本，
@@ -229,9 +231,14 @@ async def new_chat():
 SELECTED_MODEL = None
 
 
-def _forget_selected_model():
+def _forget_selected_model(reset_to: str | None = None):
+    """Invalidate the model cache, optionally recording a known reset target.
+
+    new_chat() resets the selector to the tenant default, so callers can pass
+    DEFAULT_MODEL to keep cache hits for default-model requests.
+    """
     global SELECTED_MODEL
-    SELECTED_MODEL = None
+    SELECTED_MODEL = reset_to
 
 
 async def model_button():
@@ -408,9 +415,11 @@ async def select_model(model_id):
         SELECTED_MODEL = normalized
         log(f"模型已是 {normalized} ({current_label or current_text})")
         return normalized
-    if not segments and SELECTED_MODEL == normalized:
-        # 按钮没有可读文本（新版 Copilot 常见），无法廉价确认；
-        # 信任上次成功选择，跳过开菜单的耗时操作。
+    other_known = {_norm(name) for mid, item in MODELS.items() if mid != normalized
+                   for name in item["ui_names"]}
+    if SELECTED_MODEL == normalized and not (segments & other_known):
+        # 按钮文本为空或无法识别（未命中任何已知模型），且没有证据表明
+        # 当前选中的是其他模型：信任上次成功选择，跳过开菜单的耗时操作。
         return normalized
 
     try:
