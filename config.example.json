@@ -48,5 +48,9 @@
     "allow_python": false,
     "python_timeout_seconds": 20
   },
-  "models": {}
+  "models": {},
+  "markers": {
+    "assistant_turn": ["Copilot said:"],
+    "user_turn": ["You said:"]
+  }
 }

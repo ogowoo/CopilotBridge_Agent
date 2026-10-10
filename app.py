@@ -74,6 +74,33 @@ MODEL_ALIASES = {
 }
 DEFAULT_MODEL = CFG.get("default_model", "copilot-auto")
 
+# Copilot 页面可访问性文本锚点。桥接依赖这些文本定位回合与回答边界；
+# 租户界面语言不同（例如中文界面）时，在 config.json 的 "markers" 中
+# 追加对应文案即可——配置值会并入下方默认列表，任一命中即生效。
+MARKERS = {
+    "assistant_turn": ["Copilot said:"],
+    "user_turn": ["You said:"],
+    "answer_end": ["\nSources\n", "\nMessage Copilot\n", "AI-generated content may be incorrect"],
+    "sources": ["Sources"],
+    "ignored_lines": ["Copy", "Like", "Dislike", "More", "Share", "Regenerate",
+                      "复制", "来源", "赞", "踩", "更多", "分享", "重新生成"],
+}
+for key, extra in CFG.get("markers", {}).items():
+    if key in MARKERS and isinstance(extra, list):
+        for value in extra:
+            if isinstance(value, str) and value and value not in MARKERS[key]:
+                MARKERS[key].append(value)
+
+
+def _last_turn(text: str, markers: list) -> tuple:
+    """Return (position, length) of the last occurring marker, or (-1, 0)."""
+    best_pos, best_len = -1, 0
+    for marker in markers:
+        pos = text.rfind(marker)
+        if pos > best_pos:
+            best_pos, best_len = pos, len(marker)
+    return best_pos, best_len
+
 pw = ctx = page = None
 lock = asyncio.Lock()
 RUNTIME = {}
@@ -307,22 +334,14 @@ async def body_text():
 
 def extract_latest_answer(text):
     # Select only the final Copilot said block to avoid sidebar/history text.
-    marker = "Copilot said:"
-    if marker not in text:
+    pos, marker_len = _last_turn(text or "", MARKERS["assistant_turn"])
+    if pos < 0:
         return ""
-    answer = text.rsplit(marker, 1)[1]
-    end_markers = [
-        "\nSources\n",
-        "\nMessage Copilot\n",
-        "\nAI-generated content may be incorrect",
-    ]
-    positions = [answer.find(m) for m in end_markers if answer.find(m) >= 0]
+    answer = text[pos + marker_len:]
+    positions = [answer.find(m) for m in MARKERS["answer_end"] if answer.find(m) >= 0]
     if positions:
         answer = answer[:min(positions)]
-    ignored = {
-        "Copy", "Like", "Dislike", "More", "Share", "Regenerate",
-        "复制", "来源", "赞", "踩", "更多", "分享", "重新生成",
-    }
+    ignored = set(MARKERS["ignored_lines"])
     lines = []
     for line in answer.splitlines():
         line = line.rstrip()
@@ -344,20 +363,9 @@ async def generating():
     ]))
 
 
-def delta(old, new):
-    if not old:
-        return new
-    if new.startswith(old):
-        return new[len(old):]
-    stripped = old.rstrip()
-    if new.startswith(stripped):
-        return new[len(stripped):]
-    return ""
-
-
 async def count_user_markers():
     text = await body_text()
-    return text.count("You said:")
+    return sum(text.count(m) for m in MARKERS["user_turn"])
 
 
 async def box_value(box):
@@ -470,8 +478,11 @@ async def send(prompt, make_new, model_id):
 
 async def completion_signal():
     text = await body_text()
-    answer = text.rsplit("Copilot said:", 1)[1] if "Copilot said:" in text else ""
-    has_sources = "\nSources\n" in answer or answer.rstrip().endswith("Sources")
+    pos, marker_len = _last_turn(text, MARKERS["assistant_turn"])
+    answer = text[pos + marker_len:] if pos >= 0 else ""
+    stripped = answer.rstrip()
+    has_sources = any(("\n" + s + "\n") in answer or stripped.endswith(s)
+                      for s in MARKERS["sources"])
     stop_button = await visible([
         'button[aria-label*="Stop" i]',
         'button:has-text("Stop generating")',
@@ -1066,82 +1077,6 @@ def _agent_chat_marker(session_id: str, conversation_index: int) -> str:
     safe = re.sub(r"[^0-9A-Za-z._-]+", "-", str(session_id)).strip("-") or "session"
     return f"[CBP-AGENT][{safe[:36]}][C{int(conversation_index):03d}]"
 
-
-async def _rename_sidebar_chat(url: str, title: str) -> dict:
-    """Best-effort rename. Supports Copilot's inline editor and keyboard UI."""
-    result = {"url": url, "title": title, "renamed": False, "error": None}
-    try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=120000)
-        await asyncio.sleep(1.2)
-        await _open_chat_sidebar()
-        link = await _conversation_sidebar_link(url)
-        if not link:
-            raise RuntimeError("左侧 Chats 列表中找不到新建会话")
-        row = await _chat_row_from_link(link)
-        await row.scroll_into_view_if_needed(timeout=5000)
-        await row.hover(timeout=5000)
-        await asyncio.sleep(.3)
-        more = await visible_locator([
-            row.get_by_role("button", name=re.compile(r"More|更多|Options|选项|Pin and More", re.I)),
-            row.locator('button[aria-label*="More" i]'),
-            row.locator('button[aria-label*="更多"]'),
-            row.locator('button').last,
-        ])
-        if not more:
-            # Accessibility hint on this tenant says Tab exposes Pin and More.
-            await link.focus()
-            for _ in range(3):
-                await page.keyboard.press("Tab")
-                await asyncio.sleep(.15)
-                focused = page.locator(':focus')
-                label = ((await focused.get_attribute('aria-label')) or '') if await focused.count() else ''
-                if re.search(r"More|更多|options", label, re.I):
-                    more = focused; break
-        if not more:
-            raise RuntimeError("找不到该会话行的 More 按钮")
-        try: await more.click(timeout=6000)
-        except Exception: await more.click(timeout=3000, force=True)
-        await asyncio.sleep(.4)
-        rename_item = await visible_locator([
-            page.get_by_role("menuitem", name=re.compile(r"^Rename$|^重命名$", re.I)),
-            page.get_by_text(re.compile(r"^Rename$|^重命名$", re.I), exact=True),
-        ])
-        if not rename_item:
-            raise RuntimeError("More 菜单中找不到 Rename")
-        try: await rename_item.click(timeout=6000)
-        except Exception: await rename_item.click(timeout=3000, force=True)
-        await asyncio.sleep(.6)
-
-        # Copilot currently edits the title inline, often without a dialog.
-        editor = await visible_locator([
-            row.locator('input'), row.locator('textarea'),
-            row.locator('[contenteditable="true"]'),
-            page.locator('input[aria-label*="Rename" i]'),
-            page.locator('input[aria-label*="title" i]'),
-            page.locator('[contenteditable="true"][aria-label*="Rename" i]'),
-            page.get_by_role("textbox").last,
-        ])
-        if not editor:
-            raise RuntimeError("找不到会话重命名输入框")
-        try:
-            tag = (await editor.evaluate("el => el.tagName.toLowerCase()"))
-            if tag in {"input", "textarea"}:
-                await editor.fill(title)
-            else:
-                await editor.click(); await page.keyboard.press("Control+A"); await page.keyboard.insert_text(title)
-            await editor.press("Enter")
-        except Exception:
-            await editor.click(); await page.keyboard.press("Control+A"); await page.keyboard.insert_text(title); await page.keyboard.press("Enter")
-        await asyncio.sleep(.8)
-        marker = page.get_by_text(title, exact=True)
-        if await marker.count():
-            result["renamed"] = True
-        else:
-            result["error"] = "已提交重命名，但左侧列表未显示完整标题"
-    except Exception as exc:
-        result["error"] = str(exc)
-        await diagnostics("rename_agent_chat_failed")
-    return result
 
 async def _open_chat_sidebar():
     """Ensure the Chats list is visible before locating a conversation row."""

@@ -357,6 +357,16 @@ function setKpis(o){
  document.getElementById('tokenbar').style.width=(budget?Math.min(100,tk/budget*100):0)+'%'}
 
 /* ── Session 列表（支持筛选） ── */
+/* ── 模型列表：从 /v1/models 动态加载，与后端（含 config.models 扩展）保持一致 ── */
+async function loadModels(){
+ if(DEMO)return;
+ try{let d=await api('/v1/models'),sel=document.getElementById('model');
+  if(!d.data||!d.data.length)return;
+  sel.innerHTML='';
+  d.data.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;if(m.description)o.title=m.description;sel.appendChild(o)});
+  sel.value='copilot-auto'}catch(e){}
+}
+
 async function refreshSessions(){try{let d=await api('/v1/agent/sessions');sessCache=d.sessions||[];drawSessions()}catch(e){}}
 function drawSessions(){
  let q=(document.getElementById('sessFilter').value||'').toLowerCase();
@@ -500,6 +510,7 @@ function toggleTheme(){let t=document.documentElement.dataset.theme==="light"?""
 try{if(document.documentElement.dataset.theme==="light")document.getElementById("themeBtn").textContent="深色"}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
 (async()=>{try{let r=await fetch('/v1/agent/sessions');if(!r.ok)throw 0}catch(e){DEMO=true;document.getElementById('demoBadge').style.display='block'}
+ loadModels();
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime()},1000)})();
 </script></body></html>

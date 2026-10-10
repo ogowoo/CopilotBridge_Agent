@@ -85,6 +85,24 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `default_model` | `copilot-auto` | 默认模型 ID |
 | `server.host` / `server.port` | `127.0.0.1` / `8765` | 监听地址，**不要改成 0.0.0.0（见安全警告）** |
 | `models` | `{}` | 扩展模型：`{"copilot-custom": {"ui_names": ["Custom"], "description": "..."}}` |
+| `markers` | 见下 | Copilot 页面可访问性文本锚点，界面语言不同时在此追加文案 |
+
+`markers` 的配置值会**并入**内置默认列表（不是覆盖），任一命中即生效，共 5 组：
+
+```json
+"markers": {
+  "assistant_turn": ["Copilot said:"],
+  "user_turn": ["You said:"],
+  "answer_end": ["\nSources\n", "\nMessage Copilot\n"],
+  "sources": ["Sources"],
+  "ignored_lines": ["Copy", "复制", "更多"]
+}
+```
+
+- `assistant_turn` / `user_turn`：回合分隔文本，用于定位最新回答与统计用户回合数——**界面中文化导致读取超时时，优先在这里追加中文锚点**；
+- `answer_end`：回答正文的结束标记（来源区、输入提示等）；
+- `sources`：回答中出现即视为生成完成的区块标题；
+- `ignored_lines`：从回答中剔除的按钮残留文本。
 
 ### agent 段
 
