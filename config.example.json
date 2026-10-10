@@ -1,0 +1,28 @@
+{
+  "copilot_url": "https://m365.cloud.microsoft/chat/",
+  "browser_channel": "msedge",
+  "headless": false,
+  "reply_timeout_seconds": 180,
+  "reply_hard_timeout_seconds": 1200,
+  "stable_seconds": 3,
+  "poll_interval_seconds": 0.35,
+  "diagnostics": true,
+  "default_model": "copilot-auto",
+  "agent": {
+    "enabled": true,
+    "workspace": "workspace",
+    "max_steps": 500,
+    "token_budget": 60000,
+    "token_reserve": 8000,
+    "rollover_steps": 60,
+    "max_read_chars": 120000,
+    "max_write_chars": 200000,
+    "allow_delete": false,
+    "allow_python": false,
+    "python_timeout_seconds": 20,
+    "session_timeout_seconds": 86400,
+    "max_sessions": 100,
+    "max_parse_failures": 5
+  },
+  "models": {}
+}

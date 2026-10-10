@@ -1,0 +1,503 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CopilotBridge Agent</title><script>try{if(localStorage.getItem("cbp-theme")==="light")document.documentElement.dataset.theme="light"}catch(e){}</script><style>
+:root{
+  --bg:#0b0f14;--panel:#11161d;--panel2:#151c26;--line:#212b38;--line2:#2b3847;
+  --text:#e6edf3;--muted:#8b98a9;--faint:#5c6a7a;
+  --accent:#4f8ef7;--accent2:#79b0ff;
+  --green:#3fb950;--amber:#d29922;--red:#f85149;--blue:#58a6ff;--purple:#bc8cff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+button,input,textarea,select{font:inherit;color:inherit}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:#2b3847;border-radius:6px}::-webkit-scrollbar-track{background:transparent}
+
+.app{display:grid;grid-template-columns:318px 1fr;height:100vh;overflow:hidden}
+
+/* ── 左侧栏 ─────────────────────────────── */
+.rail{display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--line);min-height:0}
+.brand{display:flex;align-items:center;gap:11px;padding:16px 16px 14px;border-bottom:1px solid var(--line)}
+.mark{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#4f8ef7,#7c5cf0);color:#fff;font-weight:700;font-size:13px;letter-spacing:.5px}
+.bname b{display:block;font-size:15px;letter-spacing:.2px}
+.bname span{font-size:12px;color:var(--muted)}
+.newtask{margin:12px 12px 4px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.newtask>summary{list-style:none;cursor:pointer;padding:11px 14px;font-weight:600;color:var(--accent2);user-select:none}
+.newtask>summary::-webkit-details-marker{display:none}
+.newtask>summary::before{content:"＋ ";color:var(--accent)}
+.newtask[open]>summary{border-bottom:1px solid var(--line);color:var(--text)}
+.newtask[open]>summary::before{content:"－ ";color:var(--muted)}
+.ntbody{padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px}
+.listhead{display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-size:11px;letter-spacing:1.5px;color:var(--faint)}
+.listhead input{flex:1;padding:5px 9px;font-size:12px;letter-spacing:0}
+.sesslist{flex:1;overflow:auto;padding:0 8px 12px}
+.sess{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;cursor:pointer;border:1px solid transparent}
+.sess:hover{background:#182030}
+.sess.sel{background:#1a2433;border-color:var(--line2)}
+.sess .dot{flex:none;width:8px;height:8px;border-radius:50%;background:#5c6a7a}
+.dot.run{background:var(--green);box-shadow:0 0 0 3px #3fb95022;animation:pulse 1.4s infinite}
+.dot.warn{background:var(--amber);box-shadow:0 0 0 3px #d2992222}
+.dot.bad{background:var(--red);box-shadow:0 0 0 3px #f8514922}
+.dot.done{background:var(--blue)}
+@keyframes pulse{50%{opacity:.35}}
+.smeta{flex:1;min-width:0}
+.smeta b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smeta small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;font-variant-numeric:tabular-nums}
+.stag{flex:none;font-size:10.5px;color:var(--muted);border:1px solid var(--line2);border-radius:20px;padding:2px 8px}
+.sess-empty{color:var(--faint);text-align:center;padding:26px 10px;font-size:12.5px}
+
+input,textarea,select{background:#0d1319;border:1px solid var(--line2);border-radius:8px;padding:8px 10px;outline:none;width:100%}
+input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4f8ef722}
+textarea{resize:vertical}
+
+.btn{border:1px solid var(--line2);background:#1a2230;border-radius:8px;padding:7px 13px;cursor:pointer;font-size:13px;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;line-height:1.2}
+.btn:hover{border-color:var(--accent);color:#fff}
+.btn.accent{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.accent:hover{background:#3f7fe8}
+.btn.danger{border-color:#5a2b28;color:#ff8a80;background:#241516}
+.btn.danger:hover{border-color:var(--red);color:#ffb3ad}
+.btn.ghost{background:transparent}
+.btn.block{width:100%}
+.btn:disabled{opacity:.55;cursor:default}
+
+/* ── 主区域 ─────────────────────────────── */
+.main{overflow:auto;min-width:0;padding:18px 22px 26px}
+.empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--faint)}
+.empty .big{font-size:44px;font-weight:700;letter-spacing:2px;color:#2b3847}
+.empty kbd{border:1px solid var(--line2);border-radius:6px;padding:2px 7px;font-size:12px;background:var(--panel2)}
+
+.topbar{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+.trow{display:flex;align-items:center;gap:12px;min-width:0}
+.trow h1{margin:0;font-size:18px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{flex:none;font-size:12px;border-radius:20px;padding:3px 11px;border:1px solid var(--line2);color:var(--muted)}
+.pill.run{color:#7ee787;border-color:#2ea04366;background:#3fb95014}
+.pill.warn{color:#e8b339;border-color:#9e6a0366;background:#d2992214}
+.pill.bad{color:#ffa198;border-color:#f8514966;background:#f8514914}
+.pill.done{color:#79b0ff;border-color:#58a6ff66;background:#58a6ff14}
+.sub{color:var(--muted);font-size:12px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.actions{display:flex;gap:14px;margin-top:12px;flex-wrap:wrap}
+.grp{display:flex;gap:7px;padding-right:14px;border-right:1px solid var(--line);align-items:center}
+.grp:last-child{border-right:0;padding-right:0}
+.actions .btn{height:34px;padding-top:0;padding-bottom:0}
+.menu{position:relative;display:flex;align-items:center}
+.menuList{position:absolute;right:0;top:calc(100% + 6px);background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:6px;display:none;flex-direction:column;gap:4px;min-width:210px;box-shadow:0 14px 40px #0009;z-index:20}
+.menuList.open{display:flex}
+.menuList button{text-align:left;border:0;background:transparent;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px}
+.menuList button:hover{background:#232e3f}
+.menuList button.danger{color:#ff8a80}
+
+/* KPI 条 */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr)) minmax(220px,1.6fr);gap:10px;margin:14px 0}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 14px}
+.kpi span{display:block;font-size:11px;letter-spacing:1px;color:var(--faint);margin-bottom:5px}
+.kpi b{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+.meter{height:7px;background:#0d1319;border-radius:5px;overflow:hidden;margin-top:8px}
+.meter span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .5s}
+
+/* 内容双栏 */
+.content{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:12px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
+.chead{display:flex;align-items:center;gap:9px;padding:11px 15px;border-bottom:1px solid var(--line);font-weight:600;font-size:13.5px}
+.chead .hint{margin-left:auto;font-weight:400;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
+.livecol{display:flex;flex-direction:column;gap:12px}
+.term{margin:0;padding:12px 15px;background:#0a0e13;border-radius:0 0 11px 11px;color:#c9d4e0;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto}
+.term.short{max-height:170px}
+.pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);animation:pulse 1.3s infinite}
+.dot-off{display:inline-block;width:9px;height:9px;border-radius:50%;background:#3a4656}
+
+/* 时间线 */
+.steps{max-height:640px;overflow:auto}
+.step{padding:10px 15px;border-bottom:1px solid #1a2230;border-left:3px solid transparent}
+.step:last-child{border-bottom:0}
+.step.ok{border-left-color:var(--green)}
+.step.error{border-left-color:var(--red)}
+.step.info{border-left-color:var(--blue)}
+.step .head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.step .head b{font-size:13px}
+.schip{font-size:10.5px;border-radius:20px;padding:1px 8px;border:1px solid var(--line2);color:var(--muted)}
+.step.error .schip{color:#ffa198;border-color:#f8514955}
+.step.ok .schip{color:#7ee787;border-color:#2ea04355}
+.step .why{color:var(--muted);font-size:12.5px;margin-top:4px;white-space:pre-wrap;word-break:break-word}
+details{margin-top:7px}
+details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select:none}
+
+/* JSON 树 */
+.jsonview{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.65;background:#0a0e13;color:#dbe4f0;border:1px solid #1d2836;border-radius:9px;padding:10px 13px;overflow:auto;max-height:460px;white-space:normal}
+.jsonview .ind{padding-left:20px;border-left:1px dotted #2b3847}
+.jsonview .ky{color:#c4b5fd;font-weight:600}
+.jsonview .st{color:#86efac;white-space:pre-wrap;word-break:break-word}
+.jsonview .nm{color:#93c5fd}.jsonview .bl{color:#fbbf24}.jsonview .nl{color:#64748b}
+
+/* 对话区 */
+.chat{margin:0 0 12px}
+.chatlog{height:240px;overflow:auto;padding:14px 15px;display:flex;flex-direction:column}
+.chatlog .meta{color:var(--faint);font-size:12.5px}
+.msg{max-width:78%;margin:5px 0;padding:9px 13px;border-radius:13px;white-space:pre-wrap;word-break:break-word;font-size:13.5px;line-height:1.6}
+.msg.user{align-self:flex-end;background:#1d3a6e;border:1px solid #2b4f8f}
+.msg.assistant{align-self:flex-start;background:var(--panel2);border:1px solid var(--line2)}
+.msg b{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}
+.composer{display:flex;gap:9px;padding:12px 15px;border-top:1px solid var(--line);align-items:flex-end}
+.composer select{width:150px;flex:none}
+.composer textarea{flex:1;min-height:44px;max-height:160px}
+.composer .btn{flex:none;height:44px;padding:0 22px}
+
+.demo{position:fixed;right:16px;bottom:14px;z-index:99;background:#3d2b10;border:1px solid #9e6a03;color:#e8b339;font-size:12px;padding:6px 13px;border-radius:20px}
+
+/* ── 删除结果弹窗 ── */
+.mask{position:fixed;inset:0;background:rgba(3,7,12,.66);display:none;align-items:center;justify-content:center;z-index:60;padding:22px}
+.mask.open{display:flex}
+.dlg{width:min(640px,94vw);max-height:86vh;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line2);border-radius:14px;box-shadow:0 24px 70px #000c;overflow:hidden;animation:dlgIn .16s ease-out}
+@keyframes dlgIn{from{transform:translateY(8px);opacity:0}}
+.dhead{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);font-weight:650;font-size:15px}
+.dhead .hint{margin-left:auto;font-weight:400;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.dbody{padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.dmsg{font-size:13px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 12px;line-height:1.65}
+.dres{border:1px solid var(--line);border-radius:10px;padding:11px 13px;display:flex;flex-direction:column;gap:8px;background:var(--panel2)}
+.dres .rhead{display:flex;align-items:center;gap:9px;min-width:0}
+.ric{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700}
+.dres.ok .ric{background:#3fb95022;color:#7ee787;border:1px solid #2ea04366}
+.dres.fail .ric{background:#f8514922;color:#ffa198;border:1px solid #f8514966}
+.dres .ttl{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;border:1px solid var(--line2);border-radius:6px;padding:2px 8px;color:var(--accent2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dres .mth{margin-left:auto;flex:none;font-size:10.5px;color:var(--faint);border:1px solid var(--line2);border-radius:20px;padding:1px 8px;white-space:nowrap}
+.dres .url{font-family:Consolas,"Cascadia Mono",monospace;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:copy}
+.dres .url:hover{color:var(--accent2);text-decoration:underline}
+.dres .err{font-size:12.5px;color:#ffa198;background:#f8514912;border:1px solid #f8514933;border-radius:8px;padding:7px 10px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.dfoot{display:flex;gap:9px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
+
+/* ── 浅色模式 ── */
+:root[data-theme="light"]{
+  --bg:#eef1f6;--panel:#ffffff;--panel2:#f4f6fa;--line:#e2e8f0;--line2:#cbd5e1;
+  --text:#17202c;--muted:#5b6b7e;--faint:#8e9ca9;
+  --accent:#2563eb;--accent2:#1d4ed8;
+  --green:#16a34a;--amber:#b45309;--red:#dc2626;--blue:#2563eb;--purple:#7c3aed;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb{background:#c3ccd8}
+[data-theme="light"] input,[data-theme="light"] textarea,[data-theme="light"] select{background:#fff}
+[data-theme="light"] .btn{background:#fff}
+[data-theme="light"] .btn:hover{color:var(--text)}
+[data-theme="light"] .btn.accent{background:var(--accent);border-color:var(--accent);color:#fff}
+[data-theme="light"] .btn.accent:hover{background:#1d4ed8;color:#fff}
+[data-theme="light"] .btn.danger{background:#fef2f2;border-color:#f3c1bd;color:#b91c1c}
+[data-theme="light"] .btn.danger:hover{border-color:var(--red);color:#7f1d1d}
+[data-theme="light"] .sess:hover{background:#eef2f8}
+[data-theme="light"] .sess.sel{background:#e7eef9}
+[data-theme="light"] .dot-off{background:#b9c4d1}
+[data-theme="light"] .menuList{box-shadow:0 14px 40px rgba(15,23,42,.16)}
+[data-theme="light"] .menuList button:hover{background:#edf1f7}
+[data-theme="light"] .meter{background:#e2e8f0}
+[data-theme="light"] .term{background:#f7f9fc;color:#3b4859}
+[data-theme="light"] .step{border-bottom-color:#e8edf3}
+[data-theme="light"] .jsonview{background:#f7f9fc;color:#3b4859;border-color:#dfe6ee}
+[data-theme="light"] .jsonview .ind{border-left-color:#d5dde7}
+[data-theme="light"] .jsonview .ky{color:#7c3aed}
+[data-theme="light"] .jsonview .st{color:#15803d}
+[data-theme="light"] .jsonview .nm{color:#1d4ed8}
+[data-theme="light"] .jsonview .bl{color:#b45309}
+[data-theme="light"] .jsonview .nl{color:#8e9ca9}
+[data-theme="light"] .msg.user{background:#dbeafe;border-color:#bfdbfe}
+[data-theme="light"] .empty .big{color:#c3ccd8}
+[data-theme="light"] .pill.run{color:#15803d;border-color:#16a34a55;background:#16a34a12}
+[data-theme="light"] .pill.warn{color:#92400e;border-color:#d9770655;background:#d9770612}
+[data-theme="light"] .pill.bad{color:#b91c1c;border-color:#dc262655;background:#dc262612}
+[data-theme="light"] .pill.done{color:#1d4ed8;border-color:#2563eb55;background:#2563eb12}
+[data-theme="light"] .step.error .schip{color:#b91c1c}
+[data-theme="light"] .step.ok .schip{color:#15803d}
+[data-theme="light"] .demo{background:#fef3c7;border-color:#d97706;color:#92400e}
+[data-theme="light"] .mask{background:rgba(30,41,59,.32)}
+[data-theme="light"] .dlg{box-shadow:0 24px 70px rgba(15,23,42,.25)}
+[data-theme="light"] .dres .err{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
+[data-theme="light"] .dres.ok .ric{background:#16a34a1a;color:#15803d;border-color:#16a34a55}
+[data-theme="light"] .dres.fail .ric{background:#dc26261a;color:#b91c1c;border-color:#dc262655}
+@media(max-width:1100px){.content{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:860px){.app{grid-template-columns:1fr}.rail{max-height:46vh;border-right:0;border-bottom:1px solid var(--line)}}
+</style></head><body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><span class="mark">CB</span><div class="bname"><b>CopilotBridge</b><span>长期任务 Agent</span></div><button id="themeBtn" class="btn ghost" style="margin-left:auto;padding:5px 11px;font-size:12px" onclick="toggleTheme()">浅色</button></div>
+    <details class="newtask" open><summary>新任务</summary><div class="ntbody">
+      <input id="sid" placeholder="Session ID（可留空）">
+      <input id="workspace" placeholder="工作目录（可留空）">
+      <select id="model"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select>
+      <textarea id="task" rows="4" placeholder="任务内容，例如：分析 workspace 里的项目并生成 TODO"></textarea>
+      <button class="btn accent block" onclick="runTask()">启动任务</button>
+    </div></details>
+    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" placeholder="筛选…" oninput="drawSessions()"></div>
+    <div id="sessions" class="sesslist"></div>
+  </aside>
+  <main class="main">
+    <div id="emptyState" class="empty">
+      <div class="big">CB</div>
+      <div>从左侧选择一个 Session，或发起新任务</div>
+      <div style="font-size:12px">提示：时间线中的 <kbd>查看结果</kbd> 可展开结构化 JSON</div>
+    </div>
+    <div id="sessionView" style="display:none">
+      <header class="topbar">
+        <div class="trow"><h1 id="title">—</h1><span id="statepill" class="pill">—</span></div>
+        <div id="status" class="sub">—</div>
+        <div class="actions">
+          <div class="grp">
+            <button class="btn" onclick="control('pause')">暂停</button>
+            <button class="btn" onclick="control('resume')">恢复</button>
+            <button class="btn" onclick="control('compact')">压缩上下文</button>
+          </div>
+          <div class="grp">
+            <button class="btn" onclick="continueAgent()">继续执行</button>
+            <button class="btn" onclick="activate()">切换到页面</button>
+            <button class="btn" onclick="openCopilot()">打开会话 ↗</button>
+          </div>
+          <div class="grp">
+            <button class="btn danger" onclick="control('cancel')">取消任务</button>
+            <div class="menu"><button class="btn ghost" id="moreBtn" onclick="toggleMore(event)">更多 ▾</button><div class="menuList" id="moreMenu">
+              <button onclick="control('archive')">归档</button>
+              <button onclick="removeSession(false)">仅删除本地记录</button>
+              <button class="danger" onclick="removeSession(true)">同时删除 Copilot 会话</button>
+            </div></div>
+          </div>
+        </div>
+      </header>
+      <section class="kpis">
+        <div class="kpi"><span>状态</span><b id="kpiState">—</b></div>
+        <div class="kpi"><span>总步骤</span><b id="kpiSteps">0</b></div>
+        <div class="kpi"><span>当前会话步骤</span><b id="kpiConv">0</b></div>
+        <div class="kpi"><span>会话切换</span><b id="kpiRoll">0</b></div>
+        <div class="kpi"><span>TOKEN 估算</span><b id="kpiToken">0</b><small style="color:var(--faint);font-size:12px"> / 24,000</small><div class="meter"><span id="tokenbar"></span></div></div>
+      </section>
+      <section class="card chat">
+        <div class="chead">继续当前 Session 对话</div>
+        <div id="chatlog" class="chatlog"><div class="meta">选择 Session 后，可以在这里继续对话。</div></div>
+        <div class="composer">
+          <select id="followupMode"><option value="agent">Agent 继续执行</option><option value="chat">普通对话</option></select>
+          <textarea id="followup" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+          <button id="sendFollowup" class="btn accent" onclick="sendFollowup()">发送</button>
+        </div>
+      </section>
+      <div class="content">
+        <section class="card"><div class="chead">步骤时间线<span id="stepCount" class="hint"></span></div><div id="steps" class="steps"></div></section>
+        <div class="livecol">
+          <section class="card"><div class="chead"><span id="pulse" class="dot-off"></span>当前执行状态</div><pre id="activity" class="term">—</pre></section>
+          <section class="card"><div class="chead">Copilot 当前回答</div><pre id="answer" class="term">等待回答…</pre></section>
+          <section class="card"><div class="chead">最近发送给 Copilot 的内容</div><pre id="prompt" class="term short">—</pre></section>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="mask" id="dlgMask" onclick="if(event.target===this)closeDlg()">
+  <div class="dlg" role="dialog" aria-modal="true">
+    <div class="dhead"><span id="dlgTitle">删除结果</span><span class="hint" id="dlgHint"></span></div>
+    <div class="dbody"><div class="dmsg" id="dlgMsg"></div><div id="dlgList" style="display:flex;flex-direction:column;gap:10px"></div></div>
+    <div class="dfoot">
+      <button class="btn ghost" id="dlgCopy">复制结果 JSON</button>
+      <button class="btn danger" id="dlgForce">重试远程并强制清理本地记录</button>
+      <button class="btn accent" onclick="closeDlg()">关闭</button>
+    </div>
+  </div>
+</div>
+<div id="demoBadge" class="demo" style="display:none">演示模式 · API 未连接</div>
+<script>
+let current=null,currentUrl=null,lastStepCount=-1,lastDetail='',renderedSteps=0,sessCache=[];
+const budget=24000;
+let DEMO=false;
+
+/* ── 演示模式：API 不可达时展示界面（仅预览用，正式环境不会触发） ── */
+const DEMO_SESSIONS=[
+ {id:'task-demo01',title:'分析 cbp 项目并生成 TODO',state:'running',total_steps:47,conversation_steps:12,conversation_index:1,estimated_tokens:18320,workspace:'C:\\CopilotBridge\\workspace'},
+ {id:'task-demo02',title:'整理 Outlook 未读邮件',state:'paused',total_steps:23,conversation_steps:23,conversation_index:0,estimated_tokens:9640,workspace:'C:\\CopilotBridge\\workspace'},
+ {id:'task-demo03',title:'对比两个目录差异',state:'failed',total_steps:101,conversation_steps:4,conversation_index:3,estimated_tokens:23110,workspace:'C:\\CopilotBridge\\workspace'},
+ {id:'task-demo04',title:'深圳英文旅游手册',state:'completed',total_steps:15,conversation_steps:15,conversation_index:0,estimated_tokens:7420,workspace:'C:\\CopilotBridge\\workspace'}];
+const DEMO_STEPS=[
+ {step:44,tool:'read_text',status:'ok',reason:'读取 agent.py 确认当前实现',result:{path:'agent.py',content:'import asyncio\nimport json\n\nclass AgentRunner:\n    async def run(self, task, model):\n        # 主循环：构造提示 → 等待回答 → 解析动作\n        while not done:\n            action = parse(await chat(prompt))\n',truncated:false}},
+ {step:45,tool:'write_text_b64',status:'ok',reason:'写入修复后的 agent.py',result:{path:'agent.py',written_chars:7342,file_event:{tool:'write_text_b64',path:'agent.py',before_hash:'9f2c…',after_hash:'41ab…',result:'ok'}}},
+ {step:46,status:'service_unavailable',error:'Copilot 服务暂时不可用（第 2 次）：We\'re temporarily unable to respond to this volume of requests. Please try again later.'},
+ {step:47,status:'session_rollover',reason:'Token/步数/手动触发自动创建新 Copilot 会话'},
+ {step:47,tool:'list_directory',status:'error',error:'目录不存在: CBP/pycache',reason:'检查字节码缓存时间状态'},
+ {step:48,tool:'validate_python',status:'ok',reason:'修改后语法检查',result:{passed:true,checked:6,failures:[]}}];
+const DEMO_MSG=[
+ {role:'user',content:'现在做 todo 里的 P0 阻断项，每完成一个请在 todo 里打上勾'},
+ {role:'assistant',content:'已完成 3 个 P0 项：会话切换风暴、暂停状态覆盖、限流识别。剩余 1 项进行中。'}];
+function demoApi(u,o={}){
+ if(u==='/v1/agent/sessions')return{sessions:DEMO_SESSIONS};
+ if(u.endsWith('/runtime'))return{phase:'waiting',detail:'Agent 回合 a1b2c3d4e5f6 已确认，等待 Copilot 回答',session_state:'running',total_steps:47,conversation_steps:12,estimated_tokens:18320,conversation_index:1,current_url:'https://m365.cloud.microsoft/chat/demo',busy:true,updated:Date.now()/1000,answer_preview:'{"type":"tool","tool":"run_unittest","arguments":{"path":"tests"},"reason":"验证修复闭环"}',prompt_preview:'[CBP-AGENT][task-demo01][C001]\n你是本地任务 Agent，可以通过工具处理当前工作目录中的文件。\n…\n当前总步骤 48/1000。只返回下一个 JSON 动作。'};
+ let m=u.match(/\/sessions\/([^/?]+)$/);
+ if(m)return{session:DEMO_SESSIONS[0],steps:DEMO_STEPS,files:[],messages:DEMO_MSG};
+ if(u.includes('/messages'))return{content:'（演示模式）此处为 Copilot 回复',url:null};
+ if(o.method==='DELETE'&&u.includes('delete_remote=true'))return{deleted:false,local_deleted:false,message:'部分 Copilot 会话删除失败，本地 Session 已保留。可检查后使用下方按钮重试，或仅清理本地记录。',remote_results:[
+  {url:'https://m365.cloud.microsoft/chat?es=SSR',expected_title:'[CBP-AGENT][task-demo01][C000]',deleted:false,error:'URL 对应会话不属于当前 Session，拒绝删除；需要前缀: [CBP-AGENT][task-demo01]',method:'url-plus-session-marker'},
+  {url:'https://m365.cloud.microsoft/chat/conversation/8ae00748-77f1-4e5b-979e-8ff7d26d9791?es=SSR',expected_title:'[CBP-AGENT][task-demo01][C001]',deleted:true,error:null,method:'url-plus-session-marker'},
+  {url:'https://m365.cloud.microsoft/chat/conversation/f3b21c90-5a4d-4c2e-8b71-1d2e3f4a5b6c?es=SSR',expected_title:'[CBP-AGENT][task-demo01][C002]',deleted:false,error:'点击删除后，目标 URL 仍存在于 Chats 列表',method:'url-plus-session-marker'}]};
+ return{deleted:true,local_deleted:true,remote_results:[],session_id:'task-demo01'};
+}
+
+async function api(u,o={}){if(DEMO)return demoApi(u,o);let r=await fetch(u,o),t=await r.text();if(!r.ok)throw Error(t);return t?JSON.parse(t):{}}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function jv(v,key){
+ if(v===null||v===undefined)return '<span class="nl">null</span>';
+ if(typeof v==='boolean')return '<span class="bl">'+v+'</span>';
+ if(typeof v==='number')return '<span class="nm">'+v+'</span>';
+ if(typeof v==='string'){
+  if(key==='content_b64')return '<span class="nl">[Base64 内容，共 '+v.length+' 字符]</span>';
+  let t=v.length>4000?v.slice(0,4000)+'\n…[共 '+v.length+' 字符，已截断]':v;
+  return '<span class="st">"'+esc(t)+'"</span>'}
+ if(Array.isArray(v)){if(!v.length)return '[]';
+  return '[<div class="ind">'+v.map(x=>'<div>'+jv(x)+'</div>').join('')+'</div><span class="nl">]</span>'}
+ if(typeof v==='object'){let ks=Object.keys(v);if(!ks.length)return '{}';
+  return '{<div class="ind">'+ks.map(k=>'<div><span class="ky">'+esc(k)+'</span>: '+jv(v[k],k)+'</div>').join('')+'</div><span class="nl">}</span>'}
+ return esc(String(v))}
+
+/* ── 状态呈现 ── */
+const STATE_TEXT={running:'运行中',paused:'已暂停',waiting:'等待服务',ready:'就绪',completed:'已完成',failed:'失败',cancelled:'已取消',expired:'已过期',archived:'已归档'};
+function stateClass(s){return s==='running'?'run':(s==='paused'||s==='waiting')?'warn':(s==='failed')?'bad':(s==='completed')?'done':''}
+function setPill(s){let e=document.getElementById('statepill');e.textContent=STATE_TEXT[s]||s||'—';e.className='pill '+stateClass(s)}
+function setKpis(o){
+ document.getElementById('kpiState').textContent=STATE_TEXT[o.state||o.session_state]||o.state||o.session_state||'—';
+ document.getElementById('kpiSteps').textContent=o.total_steps??0;
+ document.getElementById('kpiConv').textContent=o.conversation_steps??0;
+ document.getElementById('kpiRoll').textContent=o.conversation_index??0;
+ let tk=o.estimated_tokens??0;
+ document.getElementById('kpiToken').textContent=Number(tk).toLocaleString();
+ document.getElementById('tokenbar').style.width=Math.min(100,tk/budget*100)+'%'}
+
+/* ── Session 列表（支持筛选） ── */
+async function refreshSessions(){try{let d=await api('/v1/agent/sessions');sessCache=d.sessions||[];drawSessions()}catch(e){}}
+function drawSessions(){
+ let q=(document.getElementById('sessFilter').value||'').toLowerCase();
+ let box=document.getElementById('sessions');box.innerHTML='';
+ let list=sessCache.filter(s=>!q||(s.title||'').toLowerCase().includes(q)||(s.id||'').toLowerCase().includes(q)||(s.state||'').includes(q));
+ if(!list.length){box.innerHTML='<div class="sess-empty">没有匹配的 Session</div>';return}
+ list.forEach(s=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');
+  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small>步骤 ${s.total_steps} · 会话 ${s.conversation_index+1} · Token ${s.estimated_tokens}</small></div><span class="stag">${esc(STATE_TEXT[s.state]||s.state)}</span>`;
+  e.onclick=()=>load(s.id);box.appendChild(e)})}
+
+/* ── 时间线：增量渲染，不重建已有 DOM，展开状态不丢失 ── */
+function renderSteps(steps){
+ let box=document.getElementById('steps');
+ document.getElementById('stepCount').textContent=steps.length?steps.length+' 条':'';
+ if(steps.length<renderedSteps){box.innerHTML='';renderedSteps=0}
+ steps.slice(renderedSteps).forEach(s=>{
+  let cls=s.status==='ok'?'ok':(s.status==='error'||s.status==='invalid_action'?'error':'info');
+  let e=document.createElement('div');e.className='step '+cls;
+  e.innerHTML=`<div class="head"><b>步骤 ${s.step??'-'} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span></div><div class="why">${esc(s.reason||s.error||'')}</div>${s.result?`<details><summary>查看结果</summary><div class="jsonview">${jv(s.result)}</div></details>`:''}`;
+  box.prepend(e)});
+ renderedSteps=steps.length}
+
+function renderMessages(messages){
+ let box=document.getElementById('chatlog');box.innerHTML='';
+ if(!messages.length){box.innerHTML='<div class="meta">当前没有人工续聊记录。下面发送的消息会进入该 Session 对应的 Copilot 会话。</div>';return}
+ messages.forEach(m=>{let e=document.createElement('div');e.className='msg '+m.role;
+  e.innerHTML=`<b>${m.role==='user'?'你':'Copilot'}</b>${esc(m.content)}`;box.appendChild(e)});
+ box.scrollTop=box.scrollHeight}
+
+async function load(id){
+ current=id;let d=await api('/v1/agent/sessions/'+encodeURIComponent(id)),s=d.session;
+ currentUrl=s.current_url;renderMessages(d.messages||[]);
+ document.getElementById('title').textContent=s.title;
+ document.getElementById('status').textContent=(STATE_TEXT[s.state]||s.state)+' · '+s.workspace;
+ setPill(s.state);setKpis(s);
+ document.getElementById('steps').innerHTML='';renderedSteps=0;lastDetail='';
+ renderSteps(d.steps);lastStepCount=d.steps.length;
+ document.getElementById('emptyState').style.display='none';
+ document.getElementById('sessionView').style.display='';
+ await runtime();await refreshSessions()}
+
+async function runtime(){
+ if(!current)return;
+ try{let r=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/runtime`);
+  currentUrl=r.current_url||currentUrl;
+  document.getElementById('pulse').className=r.busy?'pulse':'dot-off';
+  document.getElementById('activity').textContent=`阶段: ${r.phase||r.session_state}\n${r.detail||''}\n总步骤: ${r.total_steps}\n当前会话步骤: ${r.conversation_steps}\nToken估算: ${r.estimated_tokens}\n会话序号: ${r.conversation_index+1}\n最后更新: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():''}`;
+  let _ans=r.answer_preview||'等待 Copilot 回答…',_ae=document.getElementById('answer'),_pj=null;
+  try{_pj=JSON.parse(_ans)}catch(e){}
+  if(_pj&&typeof _pj==='object'){_ae.innerHTML='<div class="jsonview">'+jv(_pj)+'</div>'}else{_ae.textContent=_ans}
+  document.getElementById('prompt').textContent=r.prompt_preview||'';
+  setPill(r.session_state);setKpis(r);
+  if(r.total_steps!==lastStepCount||(r.detail||'')!==lastDetail){
+   lastDetail=r.detail||'';
+   let d=await api('/v1/agent/sessions/'+encodeURIComponent(current));
+   renderSteps(d.steps);lastStepCount=d.steps.length}
+ }catch(e){}}
+
+/* ── 操作 ── */
+async function control(a){if(!current)return;try{await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/${a}`,{method:'POST'});await load(current)}catch(e){alert('操作失败: '+e)}}
+async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;alert('已将自动化 Edge 切换到该会话')}catch(e){alert('操作失败: '+e)}}
+function openCopilot(){if(currentUrl)window.open(currentUrl,'_blank');else alert('该 Session 暂无 Copilot URL')}
+async function removeSession(remote){
+ if(!current)return;
+ let msg=remote?'将删除本地 Session，以及该任务关联的所有 Copilot 网页会话。此操作不可撤销，确定继续？':'仅删除本地 Session，Copilot 网页历史会保留。确定继续？';
+ if(!confirm(msg))return;
+ try{let url='/v1/agent/sessions/'+encodeURIComponent(current)+(remote?'?delete_remote=true':'');
+  let d=await api(url,{method:'DELETE'});
+  if(!d.deleted){showDeleteResult(d);return}
+  current=null;
+  document.getElementById('sessionView').style.display='none';
+  document.getElementById('emptyState').style.display='flex';
+  await refreshSessions()}catch(e){alert('删除失败: '+e)}}
+/* ── 删除结果可视化弹窗 ── */
+let lastDeleteResult=null;
+function showDeleteResult(d){
+ lastDeleteResult=d;
+ let list=d.remote_results||[],ok=list.filter(x=>x.deleted).length,fail=list.length-ok;
+ document.getElementById('dlgHint').textContent=list.length?`共 ${list.length} 个 Copilot 会话 · 成功 ${ok} · 失败 ${fail}`:'';
+ let msg=document.getElementById('dlgMsg');msg.style.display=d.message?'':'none';msg.textContent=d.message||'';
+ let box=document.getElementById('dlgList');box.innerHTML='';
+ if(!list.length)box.innerHTML='<div class="dmsg">没有远程删除明细。</div>';
+ list.forEach(r=>{let e=document.createElement('div');e.className='dres '+(r.deleted?'ok':'fail');
+  e.innerHTML=`<div class="rhead"><span class="ric">${r.deleted?'✓':'✗'}</span><span class="ttl" title="${esc(r.expected_title||'')}">${esc(r.expected_title||'(无标记)')}</span><span class="mth">${esc(r.method||'')}</span></div>`+
+   (r.url?`<div class="url" title="点击复制完整 URL">${esc(r.url)}</div>`:'')+
+   (r.error?`<div class="err">${esc(r.error)}</div>`:'');
+  if(r.url)e.querySelector('.url').onclick=ev=>{try{navigator.clipboard.writeText(r.url);ev.target.textContent='已复制 ✓  '+r.url}catch(_){alert(r.url)}};
+  box.appendChild(e)});
+ document.getElementById('dlgForce').style.display=fail?'':'none';
+ document.getElementById('dlgMask').classList.add('open')}
+function closeDlg(){document.getElementById('dlgMask').classList.remove('open')}
+document.getElementById('dlgCopy').onclick=()=>{if(!lastDeleteResult)return;try{navigator.clipboard.writeText(JSON.stringify(lastDeleteResult,null,2))}catch(e){}};
+async function forceDeleteLocal(){
+ if(!current)return;let b=document.getElementById('dlgForce');b.disabled=true;b.textContent='处理中…';
+ try{let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'?delete_remote=true&force_local=true',{method:'DELETE'});
+  if(d.deleted){closeDlg();current=null;document.getElementById('sessionView').style.display='none';document.getElementById('emptyState').style.display='flex';await refreshSessions()}
+  else showDeleteResult(d)}catch(e){alert('强制清理失败: '+e)}
+ finally{b.disabled=false;b.textContent='重试远程并强制清理本地记录'}}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDlg()});
+async function continueAgent(){
+ if(!current){alert('请先选择 Session');return}
+ let instruction=prompt('请输入要继续执行的任务','继续执行当前任务，从未完成事项开始');
+ if(!instruction)return;
+ document.getElementById('followup').value=instruction;
+ document.getElementById('followupMode').value='agent';
+ await sendFollowup()}
+async function sendFollowup(){
+ if(!current){alert('请先选择 Session');return}
+ let box=document.getElementById('followup'),content=box.value.trim();
+ if(!content)return;
+ let btn=document.getElementById('sendFollowup');btn.disabled=true;btn.textContent='发送中';
+ let log=document.getElementById('chatlog'),mine=document.createElement('div');
+ mine.className='msg user';mine.innerHTML=`<b>你</b>${esc(content)}`;
+ log.appendChild(mine);log.scrollTop=log.scrollHeight;box.value='';
+ try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,model:document.getElementById('model').value,agent_mode:document.getElementById('followupMode').value==='agent'})});
+  let reply=document.createElement('div');reply.className='msg assistant';
+  reply.innerHTML=`<b>Copilot</b>${esc(d.content)}`;
+  log.appendChild(reply);log.scrollTop=log.scrollHeight;
+  currentUrl=d.url||currentUrl;await load(current)}
+ catch(e){let er=document.createElement('div');er.className='msg assistant';er.textContent='发送失败: '+e;log.appendChild(er)}
+ finally{btn.disabled=false;btn.textContent='发送'}}
+document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendFollowup()}});
+async function runTask(){
+ let task=document.getElementById('task').value.trim();if(!task)return;
+ let b={model:document.getElementById('model').value,messages:[{role:'user',content:task}],stream:false,session_id:document.getElementById('sid').value.trim()||('task-'+Date.now().toString(36)),workspace:document.getElementById('workspace').value.trim()||null,reuse_session:true};
+ current=b.session_id;
+ document.getElementById('emptyState').style.display='none';
+ document.getElementById('sessionView').style.display='';
+ document.getElementById('activity').textContent='正在建立任务 '+current+'...';
+ if(DEMO){await refreshSessions();return}
+ fetch('/v1/agent/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})
+  .then(async r=>{let d=await r.json();if(!r.ok)throw Error(JSON.stringify(d));current=d.session_id;await load(current)})
+  .catch(e=>document.getElementById('activity').textContent=String(e));
+ setTimeout(refreshSessions,700)}
+
+function toggleMore(e){e.stopPropagation();document.getElementById('moreMenu').classList.toggle('open')}
+document.addEventListener('click',e=>{let m=document.getElementById('moreMenu');if(m&&m.classList.contains('open')&&!e.target.closest('#moreBtn'))m.classList.remove('open')});
+
+function toggleTheme(){let t=document.documentElement.dataset.theme==="light"?"":"light";if(t){document.documentElement.dataset.theme=t}else{document.documentElement.removeAttribute("data-theme")}try{localStorage.setItem("cbp-theme",t||"dark")}catch(e){}document.getElementById("themeBtn").textContent=t?"深色":"浅色"}
+try{if(document.documentElement.dataset.theme==="light")document.getElementById("themeBtn").textContent="深色"}catch(e){}
+/* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
+(async()=>{try{let r=await fetch('/v1/agent/sessions');if(!r.ok)throw 0}catch(e){DEMO=true;document.getElementById('demoBadge').style.display='block'}
+ refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
+ setInterval(()=>{refreshSessions();runtime()},1000)})();
+</script></body></html>
