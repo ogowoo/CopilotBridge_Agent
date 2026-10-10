@@ -221,6 +221,17 @@ async def new_chat():
     else:
         await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
         await asyncio.sleep(2)
+    _forget_selected_model()  # 新聊天会把模型重置为默认，缓存必须失效
+
+
+# 上次成功确认/切换的模型。新版 Copilot 的模型按钮经常没有可读文本，
+# 无法廉价确认当前模型；有缓存即可跳过"开菜单→点选项"的整段耗时操作。
+SELECTED_MODEL = None
+
+
+def _forget_selected_model():
+    global SELECTED_MODEL
+    SELECTED_MODEL = None
 
 
 async def model_button():
@@ -361,6 +372,7 @@ async def discover_models() -> list:
 
 
 async def select_model(model_id):
+    global SELECTED_MODEL
     normalized = normalize_model(model_id)
     target_names = MODELS[normalized]["ui_names"]
     button = await model_button()
@@ -393,7 +405,12 @@ async def select_model(model_id):
                 segments.add(_norm(part))
     targets = {_norm(name) for name in target_names}
     if segments & targets:
+        SELECTED_MODEL = normalized
         log(f"模型已是 {normalized} ({current_label or current_text})")
+        return normalized
+    if not segments and SELECTED_MODEL == normalized:
+        # 按钮没有可读文本（新版 Copilot 常见），无法廉价确认；
+        # 信任上次成功选择，跳过开菜单的耗时操作。
         return normalized
 
     try:
@@ -431,6 +448,7 @@ async def select_model(model_id):
     except Exception:
         await option.click(timeout=5000, force=True)
     await asyncio.sleep(.8)
+    SELECTED_MODEL = normalized
     log(f"模型已切换为 {normalized}")
     return normalized
 
@@ -1535,6 +1553,7 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
             for index, url in enumerate(urls):
                 marker = _agent_chat_marker(sid, index)
                 remote_results.append(await delete_copilot_conversation(url, marker))
+            _forget_selected_model()  # 删除过程中页面在多个会话间跳转
         failed = [x for x in remote_results if not x["deleted"]]
         if failed and not force_local:
             return {
@@ -1592,6 +1611,7 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=120000)
                 await asyncio.sleep(1)
+                _forget_selected_model()  # 会话切换后页面上选中的模型可能不同
             except Exception:
                 make_new = True
         previous = "" if make_new else (await current_answer()).strip()
@@ -1644,6 +1664,7 @@ async def activate_session(sid: str):
     await page.bring_to_front()
     if page.url != url:
         await page.goto(url, wait_until="domcontentloaded", timeout=120000)
+        _forget_selected_model()
     runtime_update(sid, phase="activated", detail="已切换到该 Session 的 Copilot 页面")
     return {"activated": True, "url": page.url, "headless": bool(CFG.get("headless", False))}
 
