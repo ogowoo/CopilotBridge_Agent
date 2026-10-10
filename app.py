@@ -581,12 +581,26 @@ async def lifespan(app):
     global pw, ctx, page
     PROFILE.mkdir(exist_ok=True)
     pw = await async_playwright().start()
-    ctx = await pw.chromium.launch_persistent_context(
+    headless = bool(CFG.get("headless", False))
+    launch_kwargs = dict(
         user_data_dir=str(PROFILE),
         channel=CFG.get("browser_channel", "msedge"),
-        headless=bool(CFG.get("headless", False)),
+        headless=headless,
         viewport={"width": 1440, "height": 1000},
     )
+    if headless:
+        # 降低无头模式被页面自动化检测的概率。
+        launch_kwargs["args"] = ["--disable-blink-features=AutomationControlled"]
+    try:
+        ctx = await pw.chromium.launch_persistent_context(**launch_kwargs)
+    except Exception:
+        if not headless:
+            raise
+        # 部分环境（旧版 Edge/安全策略）不支持无头持久化上下文，回退有窗口模式。
+        log("无头模式启动失败，已回退为有窗口模式；请升级 Edge 或将 headless 改回 false")
+        launch_kwargs["headless"] = False
+        ctx = await pw.chromium.launch_persistent_context(**launch_kwargs)
+    log("浏览器模式：" + ("无头（不显示窗口）" if launch_kwargs["headless"] else "有窗口"))
     page = ctx.pages[0] if ctx.pages else await ctx.new_page()
     await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     log("API 与浏览器已就绪")
@@ -609,12 +623,12 @@ async def lifespan(app):
             pass
 
 
-app = FastAPI(title="Copilot Local Bridge Agent", version="10.2.0", lifespan=lifespan)
+app = FastAPI(title="Copilot Local Bridge Agent", version="10.2.1", lifespan=lifespan)
 
 
 @app.get("/")
 async def root():
-    return {"name": "Copilot Local Bridge Agent", "version": "10.2.0", "docs": "/docs", "models": "/v1/models", "agent": "/v1/agent/completions"}
+    return {"name": "Copilot Local Bridge Agent", "version": "10.2.1", "docs": "/docs", "models": "/v1/models", "agent": "/v1/agent/completions"}
 
 
 @app.get("/health")
@@ -1491,7 +1505,7 @@ async def activate_session(sid: str):
     if page.url != url:
         await page.goto(url, wait_until="domcontentloaded", timeout=120000)
     runtime_update(sid, phase="activated", detail="已切换到该 Session 的 Copilot 页面")
-    return {"activated": True, "url": page.url}
+    return {"activated": True, "url": page.url, "headless": bool(CFG.get("headless", False))}
 
 @app.get("/v1/agent/workspace")
 async def workspace(): return {"workspace":str(AGENT_TOOLS.root)}
