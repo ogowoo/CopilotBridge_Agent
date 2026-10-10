@@ -295,9 +295,12 @@ async def _visible_menu_items():
             try:
                 if not await item.is_visible():
                     continue
-                text = re.sub(r"\s+", " ", (await item.inner_text() or "")).strip()
-                # 菜单项可能带描述行或勾选图标，只取第一行作为模型名
-                label = text.splitlines()[0].strip() if text else ""
+                raw_text = (await item.inner_text() or "")
+                # 先取第一行再规整空白：inner_text 会把 标题/描述/已展开子项
+                # 拼成多行；若先折叠空白，多行会拼成一个不存在的假模型名
+                # （例如 "GPT-5.6 Sol Think deeper"），之后选择必失败。
+                first_line = raw_text.splitlines()[0] if raw_text else ""
+                label = re.sub(r"\s+", " ", first_line).strip()
                 if not label or len(label) > 40:
                     continue
                 has_popup = ((await item.get_attribute("aria-haspopup")) or "").lower() == "menu"
@@ -451,7 +454,10 @@ async def select_model(model_id):
         try: await page.keyboard.press("Escape")
         except Exception: pass
         await diagnostics("model_option_missing")
-        raise RuntimeError(f"模型菜单中找不到 {target_names[0]}")
+        # 菜单结构变化或标签未收录不应打死整个回合：按当前已选模型继续，
+        # 日志给出明确警告，由用户决定是否修正模型表。
+        log(f"警告：模型菜单中找不到 {target_names[0]}，已按当前选中模型继续")
+        return SELECTED_MODEL or normalized
     try:
         await option.click(timeout=8000)
     except Exception:
