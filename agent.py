@@ -293,6 +293,8 @@ class AgentRunner:
         # 阈值偏保守会过早切碎会话，改为只在 Copilot 提示对话已满时才换。
         # config.json 里 auto_rollover=true 可恢复旧的主动换会话行为。
         self.auto_rollover = bool(config.get("auto_rollover", False))
+        # auto_compact=false 可关闭按阈值的自动压缩（手动"压缩上下文"仍然可用）。
+        self.auto_compact = bool(config.get("auto_compact", True))
         self.max_service_unavailable = max(3, int(config.get("max_service_unavailable", 30)))
         self.service_retry_base_seconds = max(5.0, float(config.get("service_retry_base_seconds", 30)))
         self.service_retry_max_seconds = max(60.0, float(config.get("service_retry_max_seconds", 600)))
@@ -376,7 +378,8 @@ class AgentRunner:
             rollovers = int(state.get("conversation_index", 0))
             manual_compact = bool(state.get("compact_requested"))
             manual_rollover = bool(state.get("rollover_requested"))
-            need_compact = manual_compact or tokens >= self.compact_at or chars >= self.max_context_chars
+            need_compact = manual_compact or (self.auto_compact and
+                                              (tokens >= self.compact_at or chars >= self.max_context_chars))
             summary = dict(state.get("summary") or {})
             if need_compact:
                 summary = self._deterministic_summary(task, history, state)

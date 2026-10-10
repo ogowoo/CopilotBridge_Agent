@@ -104,6 +104,11 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `max_context_chars` | `420000` | 字符数兜底阈值 |
 | `auto_rollover` | `false` | 是否按本地阈值**主动**换会话；默认只在 Copilot 提示对话已满时才换 |
 | `min_steps_before_rollover` | `30` | 主动换会话的最小步数门槛 |
+| `auto_compact` | `true` | 达到阈值时自动压缩上下文；`false` 时仅保留手动压缩 |
+| `auto_resume` | `true` | 服务重启后自动恢复上次被中断（非用户暂停）的会话 |
+| `session_timeout_seconds` | `86400` | `ready`/`waiting` 会话超过该时长未活动则标记为 `expired` |
+| `completed_session_retention_days` | `30` | 已结束（完成/取消/失败/过期）会话超过该天数后自动归档 |
+| `max_sessions` | `100` | 未归档会话数量上限，超出时从最久未更新的开始归档 |
 | `max_parse_failures` | `5` | 连续解析失败多少次后强制压缩上下文 |
 | `max_service_unavailable` | `30` | 限流退避重试上限，超过后转入安全暂停 |
 | `service_retry_base_seconds` / `service_retry_max_seconds` | `30` / `600` | 限流指数退避的起始/上限 |

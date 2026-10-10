@@ -230,8 +230,21 @@ async def select_model(model_id):
         current_label = (await button.get_attribute("aria-label") or "").strip()
     except Exception:
         current_label = ""
-    current_values = [current_text.casefold(), current_label.casefold()]
-    if any(name.casefold() in value for name in target_names for value in current_values if value):
+    current_values = (current_text, current_label)
+    # 按逗号/斜杠分段后精确比较，防止 "GPT" 子串命中 "GPT-5.6, Model Selector"
+    # 之类的 aria-label 导致误判"已是目标模型"而跳过切换。
+    def _norm(value: str) -> str:
+        return re.sub(r"\s+", " ", value.strip().casefold())
+    segments = set()
+    for value in current_values:
+        if not value:
+            continue
+        segments.add(_norm(value))
+        for part in re.split(r"[,，/|]", value):
+            if part.strip():
+                segments.add(_norm(part))
+    targets = {_norm(name) for name in target_names}
+    if segments & targets:
         log(f"模型已是 {normalized} ({current_label or current_text})")
         return normalized
 
@@ -605,14 +618,21 @@ async def lifespan(app):
     await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     log("API 与浏览器已就绪")
     cleanup_task = asyncio.create_task(periodic_session_cleanup())
+    resume_task = (asyncio.create_task(auto_resume_interrupted())
+                   if bool(AGENT_CFG.get("auto_resume", False)) else None)
     try:
         yield
     finally:
         cleanup_task.cancel()
-        try:
-            await cleanup_task
-        except asyncio.CancelledError:
-            pass
+        if resume_task:
+            resume_task.cancel()
+        for task in (cleanup_task, resume_task):
+            if task is None:
+                continue
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         try:
             await ctx.close()
         except Exception:
@@ -692,12 +712,53 @@ async def chat(req: Request):
 AGENT_CFG = CFG.get("agent", {})
 AGENT_WORKSPACE = (BASE / AGENT_CFG.get("workspace", "workspace")).resolve()
 AGENT_TOOLS = ToolRegistry(AGENT_WORKSPACE, AGENT_CFG)
+# 与 AgentRunner.__init__ 的默认值保持一致，供 WebUI 显示真实 Token 预算。
+TOKEN_BUDGET = int(AGENT_CFG.get("context_token_budget", 24000))
 SESSION_DB = Path(AGENT_CFG.get("session_store", "data/agent.db"))
 if not SESSION_DB.is_absolute(): SESSION_DB = BASE / SESSION_DB
 AGENT_SESSIONS = SessionStore(SESSION_DB)
 AGENT_SESSIONS.recover_interrupted()
 async def periodic_session_cleanup():
-    while True: await asyncio.sleep(3600)
+    """每小时执行一次会话维护，使 session_timeout_seconds /
+    completed_session_retention_days / max_sessions 三项配置生效。"""
+    await asyncio.sleep(60)  # 启动后先稳定一分钟
+    while True:
+        try:
+            result = AGENT_SESSIONS.run_maintenance(
+                AGENT_CFG.get("session_timeout_seconds"),
+                AGENT_CFG.get("completed_session_retention_days"),
+                AGENT_CFG.get("max_sessions"))
+            if any(result.values()):
+                log(f"会话维护完成: {result}")
+        except Exception as exc:
+            log(f"会话维护失败: {exc}")
+        await asyncio.sleep(3600)
+
+
+async def auto_resume_interrupted():
+    """auto_resume=true 时，自动恢复上次服务中断（而非用户主动暂停）的会话。
+
+    串行恢复：run_agent 内部持有全局锁，多个会话会自然排队执行。
+    """
+    await asyncio.sleep(3)  # 等待浏览器页面稳定
+    sessions = AGENT_SESSIONS.interrupted_sessions()
+    if not sessions:
+        return
+    log(f"自动恢复 {len(sessions)} 个被中断的会话")
+    for s in sessions:
+        sid = s["id"]
+        try:
+            # 置 ready 让 AgentRunner 进入 running；恢复消息与原任务一致，
+            # 避免被当作"用户追加任务"重复进入 pending。
+            AGENT_SESSIONS.patch(sid, state="ready", last_error=None)
+            req = AgentRequest(
+                model=s.get("model") or DEFAULT_MODEL,
+                messages=[Message(role="user", content=s.get("original_task") or "继续")],
+                stream=False, session_id=sid, workspace=s.get("workspace"))
+            log(f"会话 {sid} 已自动恢复")
+            await run_agent(req)
+        except Exception as exc:
+            log(f"会话 {sid} 自动恢复失败: {exc}")
 
 def _has_complete_agent_action(text: str) -> bool:
     try:
@@ -994,7 +1055,7 @@ async def sessions(include_archived:bool=False): return {"sessions":AGENT_SESSIO
 async def session(sid:str):
     x=AGENT_SESSIONS.get(sid)
     if not x: raise HTTPException(404,"Session 不存在")
-    return {"session":x,"steps":AGENT_SESSIONS.steps(sid),"files":AGENT_SESSIONS.file_events(sid),"messages":AGENT_SESSIONS.messages(sid)}
+    return {"session":x,"steps":AGENT_SESSIONS.steps(sid),"files":AGENT_SESSIONS.file_events(sid),"messages":AGENT_SESSIONS.messages(sid),"token_budget":TOKEN_BUDGET}
 @app.post("/v1/agent/sessions/{sid}/actions/{action}")
 async def control(sid:str,action:str):
     if not AGENT_SESSIONS.get(sid): raise HTTPException(404,"Session 不存在")
@@ -1491,6 +1552,7 @@ async def session_runtime(sid: str):
         "estimated_tokens": state.get("estimated_tokens", 0),
         "conversation_index": state.get("conversation_index", 0),
         "current_url": state.get("current_url"),
+        "token_budget": TOKEN_BUDGET,
         "busy": lock.locked() and ACTIVE_SESSION_ID == sid,
     })
     return runtime

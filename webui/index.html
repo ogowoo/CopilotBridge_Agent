@@ -258,7 +258,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
         <div class="kpi"><span>总步骤</span><b id="kpiSteps">0</b></div>
         <div class="kpi"><span>当前会话步骤</span><b id="kpiConv">0</b></div>
         <div class="kpi"><span>会话切换</span><b id="kpiRoll">0</b></div>
-        <div class="kpi"><span>TOKEN 估算</span><b id="kpiToken">0</b><small style="color:var(--faint);font-size:12px"> / 24,000</small><div class="meter"><span id="tokenbar"></span></div></div>
+        <div class="kpi"><span>TOKEN 估算</span><b id="kpiToken">0</b><small id="kpiBudget" style="color:var(--faint);font-size:12px"> / —</small><div class="meter"><span id="tokenbar"></span></div></div>
       </section>
       <section class="card chat">
         <div class="chead">继续当前 Session 对话</div>
@@ -294,7 +294,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 <div id="demoBadge" class="demo" style="display:none">演示模式 · API 未连接</div>
 <script>
 let current=null,currentUrl=null,lastStepCount=-1,lastDetail='',renderedSteps=0,sessCache=[];
-const budget=24000;
+let budget=0; // 由后端 token_budget 下发，避免与 config.json 脱节
 let DEMO=false;
 
 /* ── 演示模式：API 不可达时展示界面（仅预览用，正式环境不会触发） ── */
@@ -347,13 +347,14 @@ const STATE_TEXT={running:'运行中',paused:'已暂停',waiting:'等待服务',
 function stateClass(s){return s==='running'?'run':(s==='paused'||s==='waiting')?'warn':(s==='failed')?'bad':(s==='completed')?'done':''}
 function setPill(s){let e=document.getElementById('statepill');e.textContent=STATE_TEXT[s]||s||'—';e.className='pill '+stateClass(s)}
 function setKpis(o){
+ if(o.token_budget){budget=o.token_budget;document.getElementById('kpiBudget').textContent=' / '+Number(budget).toLocaleString()}
  document.getElementById('kpiState').textContent=STATE_TEXT[o.state||o.session_state]||o.state||o.session_state||'—';
  document.getElementById('kpiSteps').textContent=o.total_steps??0;
  document.getElementById('kpiConv').textContent=o.conversation_steps??0;
  document.getElementById('kpiRoll').textContent=o.conversation_index??0;
  let tk=o.estimated_tokens??0;
  document.getElementById('kpiToken').textContent=Number(tk).toLocaleString();
- document.getElementById('tokenbar').style.width=Math.min(100,tk/budget*100)+'%'}
+ document.getElementById('tokenbar').style.width=(budget?Math.min(100,tk/budget*100):0)+'%'}
 
 /* ── Session 列表（支持筛选） ── */
 async function refreshSessions(){try{let d=await api('/v1/agent/sessions');sessCache=d.sessions||[];drawSessions()}catch(e){}}
@@ -387,6 +388,7 @@ function renderMessages(messages){
 
 async function load(id){
  current=id;let d=await api('/v1/agent/sessions/'+encodeURIComponent(id)),s=d.session;
+ if(d.token_budget)setKpis({token_budget:d.token_budget,estimated_tokens:s.estimated_tokens??0});
  currentUrl=s.current_url;renderMessages(d.messages||[]);
  document.getElementById('title').textContent=s.title;
  document.getElementById('status').textContent=(STATE_TEXT[s.state]||s.state)+' · '+s.workspace;

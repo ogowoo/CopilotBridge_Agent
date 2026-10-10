@@ -30,6 +30,12 @@
     "max_context_chars": 420000,
     "auto_rollover": false,
     "min_steps_before_rollover": 30,
+    "auto_compact": true,
+
+    "auto_resume": true,
+    "session_timeout_seconds": 86400,
+    "completed_session_retention_days": 30,
+    "max_sessions": 100,
 
     "max_parse_failures": 5,
     "max_service_unavailable": 30,
