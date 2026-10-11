@@ -1306,11 +1306,29 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
             await more.click(timeout=5000, force=True)
         await asyncio.sleep(.5)
 
-        delete_item = await visible_locator([
-            page.get_by_role("menuitem", name=re.compile(r"^Delete$|^删除$", re.I)),
-            page.get_by_role("button", name=re.compile(r"^Delete$|^删除$", re.I)),
-            page.get_by_text(re.compile(r"^Delete$|^删除$", re.I), exact=True),
-        ])
+        # 菜单有入场动画/渲染延迟，只查一次会误判"找不到 Delete"：
+        # 轮询等待 Delete 出现；若菜单根本没打开（点击落空），重试点 More。
+        delete_item = None
+        delete_deadline = time.monotonic() + 8
+        while time.monotonic() < delete_deadline and delete_item is None:
+            delete_item = await visible_locator([
+                page.get_by_role("menuitem", name=re.compile(r"Delete|删除", re.I)),
+                page.get_by_role("menuitemradio", name=re.compile(r"Delete|删除", re.I)),
+                page.get_by_role("button", name=re.compile(r"^Delete$|^删除$", re.I)),
+                page.get_by_text(re.compile(r"^Delete$|^删除$", re.I), exact=True),
+            ])
+            if delete_item:
+                break
+            any_menu = await visible_locator([
+                page.get_by_role("menuitem"),
+                page.get_by_role("menuitemradio"),
+            ])
+            if not any_menu:
+                try:
+                    await more.click(timeout=2000)
+                except Exception:
+                    pass
+            await asyncio.sleep(0.4)
         if not delete_item:
             raise RuntimeError("会话菜单中找不到 Delete/删除")
         try:
