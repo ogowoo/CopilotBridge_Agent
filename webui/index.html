@@ -135,9 +135,10 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .msg.assistant{align-self:flex-start;background:var(--panel2);border:1px solid var(--line2)}
 .msg b{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}
 .composer{display:flex;gap:9px;padding:12px 15px;border-top:1px solid var(--line);align-items:flex-end}
-.composer select{width:150px;flex:none}
 .composer textarea{flex:1;min-height:44px;max-height:160px}
 .composer .btn{flex:none;height:44px;padding:0 22px}
+.btn.seg{padding:3px 12px;font-size:12px;height:28px;border-radius:20px}
+.btn.seg.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 
 .demo{position:fixed;right:16px;bottom:14px;z-index:99;background:#3d2b10;border:1px solid #9e6a03;color:#e8b339;font-size:12px;padding:6px 13px;border-radius:20px}
 
@@ -261,10 +262,9 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
         <div class="kpi"><span>TOKEN 估算</span><b id="kpiToken">0</b><small id="kpiBudget" style="color:var(--faint);font-size:12px"> / —</small><div class="meter"><span id="tokenbar"></span></div></div>
       </section>
       <section class="card chat">
-        <div class="chead">继续当前 Session 对话</div>
+        <div class="chead">继续当前 Session 对话<span class="hint" style="display:flex;gap:6px;align-items:center"><button id="modeAgent" class="btn seg on" onclick="setFollowupMode('agent')">Agent 继续执行</button><button id="modeChat" class="btn seg" onclick="setFollowupMode('chat')">普通对话</button></span></div>
         <div id="chatlog" class="chatlog"><div class="meta">选择 Session 后，可以在这里继续对话。</div></div>
         <div class="composer">
-          <select id="followupMode"><option value="agent">Agent 继续执行</option><option value="chat">普通对话</option></select>
           <textarea id="followup" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
           <button id="sendFollowup" class="btn accent" onclick="sendFollowup()">发送</button>
         </div>
@@ -416,6 +416,23 @@ function renderMessages(messages){
   e.innerHTML=`<b>${m.role==='user'?'你':'Copilot'}</b>${esc(m.content)}`;box.appendChild(e)});
  box.scrollTop=box.scrollHeight}
 
+/* ── 跟进消息模式切换（卡片头部按钮，不再占用输入区） ── */
+let followupMode='agent';
+function setFollowupMode(m){followupMode=m;
+ document.getElementById('modeAgent').className='btn seg'+(m==='agent'?' on':'');
+ document.getElementById('modeChat').className='btn seg'+(m==='chat'?' on':'')}
+
+/* ── 视图重置：发起新任务时清空右侧残留的旧 Session 内容 ── */
+function resetView(){
+ document.getElementById('title').textContent='—';
+ document.getElementById('status').textContent='—';
+ setPill('');
+ setKpis({total_steps:0,conversation_steps:0,conversation_index:0,estimated_tokens:0});
+ document.getElementById('steps').innerHTML='';renderedSteps=0;lastStepCount=-1;lastDetail='';
+ document.getElementById('answer').textContent='等待回答…';
+ document.getElementById('prompt').textContent='—';
+ renderMessages([])}
+
 async function load(id){
  current=id;let d=await api('/v1/agent/sessions/'+encodeURIComponent(id)),s=d.session;
  if(d.token_budget)setKpis({token_budget:d.token_budget,estimated_tokens:s.estimated_tokens??0});
@@ -495,7 +512,7 @@ async function continueAgent(){
  let instruction=prompt('请输入要继续执行的任务','继续执行当前任务，从未完成事项开始');
  if(!instruction)return;
  document.getElementById('followup').value=instruction;
- document.getElementById('followupMode').value='agent';
+ setFollowupMode('agent');
  await sendFollowup()}
 async function sendFollowup(){
  if(!current){alert('请先选择 Session');return}
@@ -505,7 +522,7 @@ async function sendFollowup(){
  let log=document.getElementById('chatlog'),mine=document.createElement('div');
  mine.className='msg user';mine.innerHTML=`<b>你</b>${esc(content)}`;
  log.appendChild(mine);log.scrollTop=log.scrollHeight;box.value='';
- try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,model:currentModel||document.getElementById('model').value,agent_mode:document.getElementById('followupMode').value==='agent'})});
+ try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,model:currentModel||document.getElementById('model').value,agent_mode:followupMode==='agent'})});
   let reply=document.createElement('div');reply.className='msg assistant';
   reply.innerHTML=`<b>Copilot</b>${esc(d.content)}`;
   log.appendChild(reply);log.scrollTop=log.scrollHeight;
@@ -519,6 +536,7 @@ async function runTask(){
  current=b.session_id;
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
+ resetView();
  document.getElementById('activity').textContent='正在建立任务 '+current+'...';
  if(DEMO){await refreshSessions();return}
  fetch('/v1/agent/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})
