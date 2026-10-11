@@ -68,12 +68,39 @@ def split_provider_model(model_id: str) -> tuple[str, str] | None:
     return (provider, model) if provider and model else None
 
 
+def _read_env(name: str) -> str:
+    """读环境变量；Windows 下进程环境过期时回退读注册表的 User/Machine 级值。
+
+    场景：服务由某个早先启动的宿主进程拉起时，子进程继承的是旧环境块，
+    用户刚在系统设置里添加的 KEY 不可见；注册表回退让这类情况也能读到。
+    """
+    value = os.environ.get(name)
+    if value:
+        return value
+    if os.name == "nt":
+        try:
+            import winreg
+            for hive, sub in ((winreg.HKEY_CURRENT_USER, r"Environment"),
+                              (winreg.HKEY_LOCAL_MACHINE,
+                               r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")):
+                try:
+                    with winreg.OpenKey(hive, sub) as key:
+                        value, _ = winreg.QueryValueEx(key, name)
+                        if value:
+                            return str(value)
+                except OSError:
+                    continue
+        except ImportError:
+            pass
+    return ""
+
+
 class ApiProvider:
     def __init__(self, name: str, cfg: dict[str, Any]):
         self.name = name
         self.base_url = str(cfg.get("base_url", "")).rstrip("/")
         env_name = str(cfg.get("api_key_env", ""))
-        self.api_key = str(cfg.get("api_key") or (os.environ.get(env_name) if env_name else "") or "")
+        self.api_key = str(cfg.get("api_key") or (_read_env(env_name) if env_name else "") or "")
         self.api_key_env = env_name
         self.models = [str(m) for m in (cfg.get("models") or [])]
         self.description = str(cfg.get("description") or name)

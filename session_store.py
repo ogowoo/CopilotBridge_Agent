@@ -126,8 +126,13 @@ class SessionStore:
 
     def steps(self, sid: str, limit: int = 5000):
         with self.lock, self._connect() as con:
-            rows=con.execute("SELECT payload FROM steps WHERE session_id=? ORDER BY step_no LIMIT ?",(sid,limit))
-            return [json.loads(x[0]) for x in rows]
+            rows=con.execute("SELECT payload, created FROM steps WHERE session_id=? ORDER BY step_no LIMIT ?",(sid,limit))
+            result = []
+            for payload, created in rows:
+                item = json.loads(payload)
+                item.setdefault("_time", created)  # epoch 秒，前端格式化显示
+                result.append(item)
+            return result
 
     def add_message(self, sid: str, role: str, content: str, conversation_index: int = 0):
         if role not in {"user", "assistant", "system"}:

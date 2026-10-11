@@ -550,7 +550,8 @@ function renderSteps(steps){
  steps.slice(renderedSteps).forEach(s=>{
   let cls=s.status==='ok'?'ok':(s.status==='error'||s.status==='invalid_action'?'error':'info');
   let e=document.createElement('div');e.className='step '+cls;
-  e.innerHTML=`<div class="head"><b>步骤 ${s.step??'-'} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span></div><div class="why">${esc(s.reason||s.error||'')}</div>${s.result?`<details><summary>查看结果</summary><div class="jsonview">${jv(s.result)}</div></details>`:''}`;
+  let tm=s._time?new Date(s._time*1000).toLocaleTimeString('zh-CN',{hour12:false}):'';
+  e.innerHTML=`<div class="head"><b>步骤 ${s.step??'-'} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(s.reason||s.error||'')}</div>${s.result?`<details><summary>查看结果</summary><div class="jsonview">${jv(s.result)}</div></details>`:''}`;
   box.prepend(e)});
  renderedSteps=steps.length}
 
