@@ -181,12 +181,14 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 ## 项目结构
 
 ```
-app.py            FastAPI 服务 + Playwright 浏览器自动化
+app.py            组装入口（from api import app，uvicorn 加载点）
+api.py            HTTP 路由层：FastAPI 应用与全部端点，只做请求/响应适配
+bridge.py         配置、运行状态、Playwright 浏览器自动化与 Agent 会话编排
 agent.py          Agent 主循环、JSON 动作协议、容错解析、压缩/换会话
 tools.py          工作区工具集（路径沙箱）
-session_store.py  SQLite 会话持久化与中断恢复
+session_store.py  SQLite 会话持久化、中断恢复、会话实测统计
 webui/index.html  零依赖单文件 Web 管理台
-login.py          首次登录向导
+login.py          首次登录向导（--reset 重置登录态）
 install.py        依赖安装
 start.py          服务入口
 ```
