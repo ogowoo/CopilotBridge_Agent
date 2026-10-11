@@ -15,16 +15,11 @@ button,input,textarea,select{font:inherit;color:inherit}
 
 /* ── 左侧栏 ─────────────────────────────── */
 .rail{display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--line);min-height:0;position:relative}
-/* 折叠按钮：品牌行内的小图标（❮），折叠后由图标轨道接管 */
-#railBtn{width:28px;height:28px;padding:0;border-radius:8px;font-size:14px;line-height:1}
-/* 折叠态图标轨道（Kimi 风格竖排图标条），默认隐藏 */
-.iconstrip{display:none}
-.iconbtn{width:36px;height:36px;border-radius:9px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:16px;cursor:pointer;display:grid;place-items:center}
+/* 折叠拉手：贴在侧栏右缘的细长竖条；折叠后侧栏归零只剩它 */
+#railBtn{position:absolute;right:-16px;top:50%;transform:translateY(-50%);z-index:30;width:16px;height:64px;padding:0;border:1px solid var(--line2);border-left:0;border-radius:0 8px 8px 0;background:var(--panel);color:var(--faint);font-size:13px;line-height:1;cursor:pointer}
+#railBtn:hover{color:var(--accent2);border-color:var(--accent)}
+.iconbtn{width:26px;height:26px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;display:grid;place-items:center;flex:none}
 .iconbtn:hover{background:var(--panel2);color:var(--text);border-color:var(--line2)}
-.brand{display:flex;align-items:center;gap:11px;padding:16px 16px 14px;border-bottom:1px solid var(--line)}
-.mark{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#4f8ef7,#7c5cf0);color:#fff;font-weight:700;font-size:13px;letter-spacing:.5px}
-.bname b{display:block;font-size:15px;letter-spacing:.2px}
-.bname span{font-size:12px;color:var(--muted)}
 .newtask{margin:12px 12px 4px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
 .newtask>summary{list-style:none;cursor:pointer;padding:11px 14px;font-weight:600;color:var(--accent2);user-select:none}
 .newtask>summary::-webkit-details-marker{display:none}
@@ -226,18 +221,11 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 [data-theme="light"] .dres.ok .ric{background:#16a34a1a;color:#15803d;border-color:#16a34a55}
 [data-theme="light"] .dres.fail .ric{background:#dc26261a;color:#b91c1c;border-color:#dc262655}
 @media(max-width:1100px){.content{grid-template-columns:1fr;min-height:0;flex:none}.steps,.livepane{flex:none;max-height:60vh}.kpis{grid-template-columns:repeat(2,1fr)}}
-/* 左侧栏折叠（仅宽屏生效）：收成 Kimi 风格图标轨道 */
+/* 左侧栏折叠（仅宽屏生效）：侧栏宽度归零，只剩边缘拉手 */
 @media(min-width:861px){
-  :root[data-rail="closed"] .app{grid-template-columns:56px 1fr}
-  :root[data-rail="closed"] .rail>*:not(.brand):not(.iconstrip){display:none}
-  :root[data-rail="closed"] .rail{align-items:center}
-  :root[data-rail="closed"] .brand{padding:14px 0 8px;border-bottom:0}
-  :root[data-rail="closed"] .bname,
-  :root[data-rail="closed"] #themeBtn,
-  :root[data-rail="closed"] #browserBtn,
-  :root[data-rail="closed"] #railBtn{display:none}
-  :root[data-rail="closed"] .iconstrip{display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;width:100%;padding:4px 0 12px}
-  :root[data-rail="closed"] .iconstrip .sp{flex:1}
+  :root[data-rail="closed"] .app{grid-template-columns:0 1fr}
+  :root[data-rail="closed"] .rail>*:not(#railBtn){display:none}
+  :root[data-rail="closed"] .rail{border-right:0}
 }
 @media(max-width:860px){#railBtn{display:none}}
 /* 手机：彻底回退为自然文档流，页面整体滚动，禁用填满窗口的 flex 布局 */
@@ -255,14 +243,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 </style></head><body>
 <div class="app">
   <aside class="rail">
-    <div class="brand"><span class="mark">CB</span><div class="bname"><b>CopilotBridge</b><span>长期任务 Agent</span></div><button id="browserBtn" class="btn ghost" style="margin-left:auto;padding:5px 11px;font-size:12px" onclick="toggleBrowser()" title="切换自动化浏览器窗口的显示/隐藏">窗口…</button><button id="themeBtn" class="btn ghost" style="padding:5px 11px;font-size:12px" onclick="toggleTheme()">浅色</button><button id="railBtn" class="btn ghost" title="收起侧栏" onclick="toggleRail()">❮</button></div>
-    <div class="iconstrip">
-      <button class="iconbtn" title="展开侧栏" onclick="toggleRail()">❯</button>
-      <button class="iconbtn" title="新任务" onclick="railNewTask()">＋</button>
-      <div class="sp"></div>
-      <button class="iconbtn" title="显示/隐藏自动化窗口" onclick="toggleBrowser()">▣</button>
-      <button class="iconbtn" title="切换主题" onclick="toggleTheme()">◐</button>
-    </div>
+    <button id="railBtn" title="收起/展开侧栏" onclick="toggleRail()">‹</button>
     <details class="newtask" open><summary>新任务</summary><div class="ntbody">
       <input id="sid" placeholder="Session ID（可留空）">
       <input id="workspace" placeholder="工作目录（可留空）">
@@ -271,7 +252,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
       <div style="display:flex;gap:6px"><button id="ntAgent" class="btn seg on" style="flex:1" onclick="setTaskMode('agent')">Agent 执行</button><button id="ntChat" class="btn seg" style="flex:1" onclick="setTaskMode('chat')">普通对话</button></div>
       <button class="btn accent block" onclick="runTask()">启动任务</button>
     </div></details>
-    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" placeholder="筛选…" oninput="drawSessions()"></div>
+    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" placeholder="筛选…" oninput="drawSessions()"><button id="browserBtn" class="iconbtn" title="切换自动化浏览器窗口的显示/隐藏" onclick="toggleBrowser()">▣</button><button id="themeBtn" class="iconbtn" title="切换深色/浅色主题" onclick="toggleTheme()">◐</button></div>
     <div id="sessions" class="sesslist"></div>
   </aside>
   <main class="main">
@@ -447,8 +428,8 @@ async function refreshModels(){
 }
 
 /* ── 浏览器窗口显示/隐藏（headless 是启动参数，切换会带登录态重启浏览器上下文） ── */
-function drawBrowserBtn(h){let b=document.getElementById('browserBtn');b.textContent=h?'显示窗口':'隐藏窗口';b.title=h?'当前为无头模式（窗口隐藏），点击显示自动化窗口':'当前显示自动化窗口，点击切换为无头模式（隐藏窗口）'}
-async function browserState(){if(DEMO)return;try{let d=await api('/v1/agent/browser');drawBrowserBtn(d.headless)}catch(e){document.getElementById('browserBtn').textContent='窗口'}}
+function drawBrowserBtn(h){let b=document.getElementById('browserBtn');b.textContent='▣';b.title=h?'当前为无头模式（窗口隐藏），点击显示自动化窗口':'当前显示自动化窗口，点击切换为无头模式（隐藏窗口）'}
+async function browserState(){if(DEMO)return;try{let d=await api('/v1/agent/browser');drawBrowserBtn(d.headless)}catch(e){}}
 async function toggleBrowser(){
  if(DEMO)return;
  let b=document.getElementById('browserBtn');b.disabled=true;b.textContent='切换中…';
@@ -641,15 +622,16 @@ async function runTask(){
 function toggleMore(e){e.stopPropagation();document.getElementById('moreMenu').classList.toggle('open')}
 document.addEventListener('click',e=>{let m=document.getElementById('moreMenu');if(m&&m.classList.contains('open')&&!e.target.closest('#moreBtn'))m.classList.remove('open')});
 
-function toggleTheme(){let t=document.documentElement.dataset.theme==="light"?"":"light";if(t){document.documentElement.dataset.theme=t}else{document.documentElement.removeAttribute("data-theme")}try{localStorage.setItem("cbp-theme",t||"dark")}catch(e){}document.getElementById("themeBtn").textContent=t?"深色":"浅色"}
-/* ── 左侧栏折叠（Kimi 风格图标轨道） ── */
+function toggleTheme(){let t=document.documentElement.dataset.theme==="light"?"":"light";if(t){document.documentElement.dataset.theme=t}else{document.documentElement.removeAttribute("data-theme")}try{localStorage.setItem("cbp-theme",t||"dark")}catch(e){}document.getElementById("themeBtn").title=t?"当前浅色，点击切换深色":"当前深色，点击切换浅色"}
+/* ── 左侧栏折叠（归零只剩边缘拉手） ── */
 function toggleRail(){let r=document.documentElement,c=r.dataset.rail==='closed';
  if(c){delete r.dataset.rail}else{r.dataset.rail='closed'}
+ document.getElementById('railBtn').textContent=c?'‹':'›';
  try{localStorage.setItem('cbp-rail',c?'':'closed')}catch(e){}}
 function railNewTask(){if(document.documentElement.dataset.rail==='closed')toggleRail();
  let d=document.querySelector('.newtask');if(d)d.open=true;
  let t=document.getElementById('task');if(t)t.focus()}
-try{if(document.documentElement.dataset.theme==="light")document.getElementById("themeBtn").textContent="深色"}catch(e){}
+try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="›"}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
 (async()=>{try{let r=await fetch('/v1/agent/sessions');if(!r.ok)throw 0}catch(e){DEMO=true;document.getElementById('demoBadge').style.display='block'}
  loadModels();browserState();
