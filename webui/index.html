@@ -186,6 +186,13 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .dres .err{font-size:12.5px;color:#ffa198;background:#f8514912;border:1px solid #f8514933;border-radius:8px;padding:7px 10px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
 .dfoot{display:flex;gap:9px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
 
+/* ── 页面内通知与通用弹层（替代浏览器原生 alert/confirm/prompt） ── */
+.toasts{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:120;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:10px 18px;font-size:13px;box-shadow:0 10px 32px var(--dlg-shadow);animation:dlgIn .16s ease-out;max-width:min(560px,90vw);white-space:pre-wrap;word-break:break-word;pointer-events:auto}
+.toast.err{border-color:var(--red);color:var(--danger-text)}
+.toast.ok{border-color:var(--green);color:var(--green)}
+#gmInput{margin-top:4px}
+
 /* ── 主题：浅色 ── */
 :root[data-theme="light"]{
   --bg:#eef1f6;--panel:#ffffff;--panel2:#f4f6fa;--line:#e2e8f0;--line2:#cbd5e1;
@@ -407,6 +414,18 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
   </div>
 </div>
 <div id="demoBadge" class="demo" style="display:none">演示模式 · API 未连接</div>
+<div class="toasts" id="toasts"></div>
+<!-- 通用模态层：通知确认 / 危险确认 / 文本输入 -->
+<div class="mask" id="gmMask" onclick="if(event.target===this)gmClose(null)">
+  <div class="dlg" style="width:min(480px,94vw)">
+    <div class="dhead"><span id="gmTitle">提示</span></div>
+    <div class="dbody"><div class="dmsg" id="gmMsg"></div><input id="gmInput" style="display:none"></div>
+    <div class="dfoot">
+      <button class="btn ghost" id="gmCancel">取消</button>
+      <button class="btn accent" id="gmOk">确定</button>
+    </div>
+  </div>
+</div>
 <!-- 实时面板放大查看弹窗 -->
 <div class="mask" id="liveMask" onclick="if(event.target===this)closeLive()">
   <div class="dlg" style="width:min(1100px,94vw)">
@@ -497,7 +516,7 @@ async function refreshModels(){
  if(DEMO)return;
  try{let d=await api('/v1/models/refresh',{method:'POST'});
   await loadModels();
-  if(d.added&&d.added.length)alert('发现新模型: '+d.added.join(', '))}catch(e){alert('模型菜单读取失败: '+e)}
+  if(d.added&&d.added.length)toast('发现新模型: '+d.added.join(', '),'ok')}catch(e){toast('模型菜单读取失败: '+e,'err')}
 }
 
 /* ── 浏览器窗口显示/隐藏（headless 是启动参数，切换会带登录态重启浏览器上下文） ── */
@@ -509,7 +528,7 @@ async function toggleBrowser(){
  try{let cur=await api('/v1/agent/browser');
   let d=await api('/v1/agent/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({headless:!cur.headless})});
   drawBrowserBtn(d.headless);
-  if(d.fallback)alert('无头模式启动失败，已回退为有窗口模式（旧版 Edge 或安全策略不支持无头持久化）')}catch(e){alert('切换失败: '+e);browserState()}
+  if(d.fallback)toast('无头模式启动失败，已回退为有窗口模式（旧版 Edge 或安全策略不支持无头持久化）','err')}catch(e){toast('切换失败: '+e,'err');browserState()}
  finally{b.disabled=false}
 }
 
@@ -541,6 +560,29 @@ function renderMessages(messages){
  messages.forEach(m=>{let e=document.createElement('div');e.className='msg '+m.role;
   e.innerHTML=`<b>${m.role==='user'?'你':'Copilot'}</b>${esc(m.content)}`;box.appendChild(e)});
  box.scrollTop=box.scrollHeight}
+
+/* ── 页面内通知（toast）与通用模态层（替代原生 alert/confirm/prompt） ── */
+function toast(msg,type=''){let box=document.getElementById('toasts'),e=document.createElement('div');
+ e.className='toast '+type;e.textContent=msg;box.appendChild(e);
+ setTimeout(()=>{e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(()=>e.remove(),320)},type==='err'?5000:2600)}
+let _gmResolve=null;
+function gmShow(o){return new Promise(res=>{
+ _gmResolve=res;
+ document.getElementById('gmTitle').textContent=o.title||'提示';
+ let m=document.getElementById('gmMsg');m.textContent=o.msg||'';m.style.display=o.msg?'':'none';
+ let inp=document.getElementById('gmInput');
+ if(o.input!==undefined&&o.input!==null){inp.style.display='';inp.value=o.input}else{inp.style.display='none'}
+ let c=document.getElementById('gmCancel');c.style.display=o.cancelText===null?'none':'';c.textContent=o.cancelText||'取消';
+ let ok=document.getElementById('gmOk');ok.textContent=o.okText||'确定';ok.className='btn '+(o.danger?'danger':'accent');
+ document.getElementById('gmMask').classList.add('open');
+ if(inp.style.display!=='none')setTimeout(()=>{inp.focus();inp.select()},60)})}
+function gmClose(v){document.getElementById('gmMask').classList.remove('open');if(_gmResolve){_gmResolve(v);_gmResolve=null}}
+document.getElementById('gmOk').onclick=()=>{let inp=document.getElementById('gmInput');gmClose(inp.style.display==='none'?true:inp.value)};
+document.getElementById('gmCancel').onclick=()=>gmClose(null);
+document.getElementById('gmInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('gmOk').click()}});
+const dlgAlert=(msg,title='提示')=>gmShow({title,msg,cancelText:null});
+const dlgConfirm=(msg,title='确认',danger=false)=>gmShow({title,msg,danger}).then(v=>v===true);
+const dlgPrompt=(msg,def='',title='输入')=>gmShow({title,msg,input:def});
 
 /* ── 跟进消息模式切换（卡片头部按钮，不再占用输入区） ── */
 let followupMode='agent';
@@ -594,20 +636,20 @@ async function runtime(){
  }catch(e){}}
 
 /* ── 操作 ── */
-async function control(a){if(!current)return;try{await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/${a}`,{method:'POST'});await load(current)}catch(e){alert('操作失败: '+e)}}
-async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;alert('已将自动化 Edge 切换到该会话')}catch(e){alert('操作失败: '+e)}}
-function openCopilot(){if(currentUrl)window.open(currentUrl,'_blank');else alert('该 Session 暂无 Copilot URL')}
+async function control(a){if(!current)return;try{await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/${a}`,{method:'POST'});await load(current)}catch(e){toast('操作失败: '+e,'err')}}
+async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;toast('已将自动化 Edge 切换到该会话','ok')}catch(e){toast('操作失败: '+e,'err')}}
+function openCopilot(){if(currentUrl)window.open(currentUrl,'_blank');else toast('该 Session 暂无 Copilot URL','err')}
 async function removeSession(remote){
  if(!current)return;
  let msg=remote?'将删除本地 Session，以及该任务关联的所有 Copilot 网页会话。此操作不可撤销，确定继续？':'仅删除本地 Session，Copilot 网页历史会保留。确定继续？';
- if(!confirm(msg))return;
+ if(!await dlgConfirm(msg,'删除确认',true))return;
  try{let url='/v1/agent/sessions/'+encodeURIComponent(current)+(remote?'?delete_remote=true':'');
   let d=await api(url,{method:'DELETE'});
   if(!d.deleted){showDeleteResult(d);return}
   current=null;
   document.getElementById('sessionView').style.display='none';
   document.getElementById('emptyState').style.display='flex';
-  await refreshSessions()}catch(e){alert('删除失败: '+e)}}
+  await refreshSessions()}catch(e){toast('删除失败: '+e,'err')}}
 /* ── 删除结果可视化弹窗 ── */
 let lastDeleteResult=null;
 function showDeleteResult(d){
@@ -621,7 +663,7 @@ function showDeleteResult(d){
   e.innerHTML=`<div class="rhead"><span class="ric">${r.deleted?'✓':'✗'}</span><span class="ttl" title="${esc(r.expected_title||'')}">${esc(r.expected_title||'(无标记)')}</span><span class="mth">${esc(r.method||'')}</span></div>`+
    (r.url?`<div class="url" title="点击复制完整 URL">${esc(r.url)}</div>`:'')+
    (r.error?`<div class="err">${esc(r.error)}</div>`:'');
-  if(r.url)e.querySelector('.url').onclick=ev=>{try{navigator.clipboard.writeText(r.url);ev.target.textContent='已复制 ✓  '+r.url}catch(_){alert(r.url)}};
+  if(r.url)e.querySelector('.url').onclick=ev=>{try{navigator.clipboard.writeText(r.url);ev.target.textContent='已复制 ✓  '+r.url}catch(_){dlgAlert(r.url,'链接')}};
   box.appendChild(e)});
  document.getElementById('dlgForce').style.display=fail?'':'none';
  document.getElementById('dlgMask').classList.add('open')}
@@ -631,9 +673,9 @@ async function forceDeleteLocal(){
  if(!current)return;let b=document.getElementById('dlgForce');b.disabled=true;b.textContent='处理中…';
  try{let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'?delete_remote=true&force_local=true',{method:'DELETE'});
   if(d.deleted){closeDlg();current=null;document.getElementById('sessionView').style.display='none';document.getElementById('emptyState').style.display='flex';await refreshSessions()}
-  else showDeleteResult(d)}catch(e){alert('强制清理失败: '+e)}
+  else showDeleteResult(d)}catch(e){toast('强制清理失败: '+e,'err')}
  finally{b.disabled=false;b.textContent='重试远程并强制清理本地记录'}}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null)}});
 
 /* ── 实时面板选项卡 + 放大查看 ── */
 const LIVE_NAMES={activity:'当前执行状态',answer:'Copilot 当前回答',prompt:'最近发送给 Copilot 的内容'};
@@ -650,14 +692,14 @@ function expandLive(){
 function closeLive(){document.getElementById('liveMask').classList.remove('open')}
 document.getElementById('liveCopy').onclick=()=>{try{navigator.clipboard.writeText(document.getElementById('liveBody').textContent||'')}catch(e){}};
 async function continueAgent(){
- if(!current){alert('请先选择 Session');return}
- let instruction=prompt('请输入要继续执行的任务','继续执行当前任务，从未完成事项开始');
+ if(!current){toast('请先选择 Session','err');return}
+ let instruction=await dlgPrompt('请输入要继续执行的任务','继续执行当前任务，从未完成事项开始','继续执行');
  if(!instruction)return;
  document.getElementById('followup').value=instruction;
  setFollowupMode('agent');
  await sendFollowup()}
 async function sendFollowup(){
- if(!current){alert('请先选择 Session');return}
+ if(!current){toast('请先选择 Session','err');return}
  let box=document.getElementById('followup'),content=box.value.trim();
  if(!content)return;
  let btn=document.getElementById('sendFollowup');btn.disabled=true;btn.textContent='发送中';
