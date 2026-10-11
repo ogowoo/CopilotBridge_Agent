@@ -321,7 +321,16 @@ async def control(sid: str, action: str):
             "rollover": {"rollover_requested": True}, "archive": {"state": "archived", "archived": True}}
     if action not in maps:
         raise HTTPException(400, "未知操作")
-    return b.AGENT_SESSIONS.patch(sid, **maps[action])
+    prev_state = (b.AGENT_SESSIONS.get(sid) or {}).get("state")
+    result = b.AGENT_SESSIONS.patch(sid, **maps[action])
+    if action == "resume":
+        # 恢复即续跑：直接从检查点拉起 runner，不再需要手动"继续执行"
+        started = False
+        if prev_state in {"paused", "waiting", "ready", "failed"}:
+            started = await b.resume_session_task(sid)
+        result = dict(result or {})
+        result["runner_started"] = started
+    return result
 
 
 @app.delete("/v1/agent/sessions/{sid}")

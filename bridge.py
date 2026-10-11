@@ -908,6 +908,26 @@ async def periodic_session_cleanup():
         await asyncio.sleep(3600)
 
 
+async def resume_session_task(sid: str) -> bool:
+    """拉起后台 runner 续跑会话。已在运行（本进程持有该会话）则返回 False。
+
+    供 actions/resume 与 auto_resume 使用：恢复消息与原任务一致，
+    避免被当作"用户追加任务"重复进入 pending。
+    """
+    if lock.locked() and ACTIVE_SESSION_ID == sid:
+        return False
+    state = AGENT_SESSIONS.get(sid)
+    if not state:
+        return False
+    AGENT_SESSIONS.patch(sid, state="ready", last_error=None)
+    req = AgentRequest(
+        model=normalize_model_soft(state.get("model") or DEFAULT_MODEL),
+        messages=[Message(role="user", content=state.get("original_task") or "继续")],
+        stream=False, session_id=sid, workspace=state.get("workspace"))
+    asyncio.create_task(run_agent(req))
+    return True
+
+
 async def auto_resume_interrupted():
     """auto_resume=true 时，自动恢复上次服务中断（而非用户主动暂停）的会话。
 
