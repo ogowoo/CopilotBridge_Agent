@@ -14,7 +14,10 @@ button,input,textarea,select{font:inherit;color:inherit}
 .app{display:grid;grid-template-columns:318px 1fr;height:100vh;overflow:hidden}
 
 /* ── 左侧栏 ─────────────────────────────── */
-.rail{display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--line);min-height:0}
+.rail{display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--line);min-height:0;position:relative}
+/* 折叠把手：骑在侧栏右缘的小圆钮，不占品牌行 */
+#railBtn{position:absolute;right:-14px;top:14px;z-index:30;width:26px;height:26px;border-radius:50%;padding:0;font-size:13px;line-height:1;background:var(--panel);border:1px solid var(--line2);color:var(--muted);cursor:pointer}
+#railBtn:hover{border-color:var(--accent);color:var(--text)}
 .brand{display:flex;align-items:center;gap:11px;padding:16px 16px 14px;border-bottom:1px solid var(--line)}
 .mark{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#4f8ef7,#7c5cf0);color:#fff;font-weight:700;font-size:13px;letter-spacing:.5px}
 .bname b{display:block;font-size:15px;letter-spacing:.2px}
@@ -223,12 +226,13 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 /* 左侧栏折叠（仅宽屏生效）：收起为 46px 窄条，只留 Logo 和展开按钮 */
 @media(min-width:861px){
   :root[data-rail="closed"] .app{grid-template-columns:46px 1fr}
-  :root[data-rail="closed"] .rail>*:not(.brand){display:none}
+  :root[data-rail="closed"] .rail>*:not(.brand):not(#railBtn){display:none}
   :root[data-rail="closed"] .rail{align-items:center}
   :root[data-rail="closed"] .brand{flex-direction:column;padding:10px 0;gap:8px;border-bottom:0}
   :root[data-rail="closed"] .bname,
   :root[data-rail="closed"] #themeBtn,
   :root[data-rail="closed"] #browserBtn{display:none}
+  :root[data-rail="closed"] #railBtn{position:static;margin-top:2px}
 }
 @media(max-width:860px){#railBtn{display:none}}
 /* 手机：彻底回退为自然文档流，页面整体滚动，禁用填满窗口的 flex 布局 */
@@ -246,7 +250,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 </style></head><body>
 <div class="app">
   <aside class="rail">
-    <div class="brand"><span class="mark">CB</span><div class="bname"><b>CopilotBridge</b><span>长期任务 Agent</span></div><button id="browserBtn" class="btn ghost" style="margin-left:auto;padding:5px 11px;font-size:12px" onclick="toggleBrowser()" title="切换自动化浏览器窗口的显示/隐藏">窗口…</button><button id="themeBtn" class="btn ghost" style="padding:5px 11px;font-size:12px" onclick="toggleTheme()">浅色</button><button id="railBtn" class="btn ghost" style="padding:5px 9px;font-size:13px" title="收起/展开侧栏" onclick="toggleRail()">«</button></div>
+    <div class="brand"><span class="mark">CB</span><div class="bname"><b>CopilotBridge</b><span>长期任务 Agent</span></div><button id="browserBtn" class="btn ghost" style="margin-left:auto;padding:5px 11px;font-size:12px" onclick="toggleBrowser()" title="切换自动化浏览器窗口的显示/隐藏">窗口…</button><button id="themeBtn" class="btn ghost" style="padding:5px 11px;font-size:12px" onclick="toggleTheme()">浅色</button></div><button id="railBtn" title="收起/展开侧栏" onclick="toggleRail()">«</button>
     <details class="newtask" open><summary>新任务</summary><div class="ntbody">
       <input id="sid" placeholder="Session ID（可留空）">
       <input id="workspace" placeholder="工作目录（可留空）">
