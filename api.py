@@ -23,14 +23,16 @@ async def lifespan(app):
     b.pw = await async_playwright().start()
     await b._start_browser(bool(b.CFG.get("headless", False)))
     b.log("API 与浏览器已就绪")
-    try:
-        added = await b.discover_models()
-        if added:
-            b.log(f"从 Copilot 菜单自动发现新模型: {', '.join(added)}")
-        else:
-            b.log("模型菜单未发现新模型")
-    except Exception as exc:
-        b.log(f"模型菜单自动发现失败（不影响已有模型）: {exc}")
+    # 企业租户重启后 SSO/ADFS 回跳可能耗时几十秒，就绪后再做模型发现
+    if await b.wait_copilot_ready():
+        try:
+            added = await b.discover_models()
+            if added:
+                b.log(f"从 Copilot 菜单自动发现新模型: {', '.join(added)}")
+            else:
+                b.log("模型菜单未发现新模型")
+        except Exception as exc:
+            b.log(f"模型菜单自动发现失败（不影响已有模型）: {exc}")
     cleanup_task = asyncio.create_task(b.periodic_session_cleanup())
     resume_task = (asyncio.create_task(b.auto_resume_interrupted())
                    if bool(b.AGENT_CFG.get("auto_resume", False)) else None)

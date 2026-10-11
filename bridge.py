@@ -485,6 +485,35 @@ async def input_box():
     return x
 
 
+async def wait_copilot_ready(timeout: float = 120) -> bool:
+    """等待 SSO/ADFS 重定向链走完、Copilot 输入框可用。
+
+    企业租户（E3/ADFS 联合身份）重启后会自动经过
+    login.microsoftonline.com → 公司 ADFS（如 sts.dsv.com）→ 回跳，
+    全程无需手动登录但可能耗时几十秒。发现模型/自动恢复等启动动作
+    必须等它就绪，否则会在登录页上误操作。
+    """
+    from urllib.parse import urlparse
+    host = urlparse(URL).netloc
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            url = page.url or ""
+            if host and host in url:
+                box = await visible([
+                    'textarea[placeholder]', 'textarea',
+                    '[contenteditable="true"][role="textbox"]',
+                    '[contenteditable="true"]', '[role="textbox"]',
+                ])
+                if box:
+                    return True
+        except Exception:
+            pass
+        await asyncio.sleep(2)
+    log("等待 Copilot 就绪超时（仍在登录/跳转中），跳过启动期自动化")
+    return False
+
+
 async def body_text():
     try:
         return (await page.locator("body").inner_text()).replace("\r\n", "\n")
@@ -594,6 +623,7 @@ async def click_send_button():
 
 
 async def send(prompt, make_new, model_id):
+    await wait_copilot_ready(90)  # 若恰逢重启后的 SSO/ADFS 回跳，先等它就绪
     await dismiss()
     if make_new:
         await new_chat()
@@ -802,7 +832,7 @@ async def auto_resume_interrupted():
 
     串行恢复：run_agent 内部持有全局锁，多个会话会自然排队执行。
     """
-    await asyncio.sleep(3)  # 等待浏览器页面稳定
+    await wait_copilot_ready()  # 等企业 SSO/ADFS 重定向链走完
     sessions = AGENT_SESSIONS.interrupted_sessions()
     if not sessions:
         return
