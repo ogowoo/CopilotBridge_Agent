@@ -370,7 +370,9 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
     content = req.content.strip()
     if not content:
         raise HTTPException(400, "消息不能为空")
-    model_id = b.normalize_model(req.model or state.get("model") or b.DEFAULT_MODEL)
+    model_id = b.normalize_model_soft(req.model or state.get("model") or b.DEFAULT_MODEL)
+    if model_id != (req.model or state.get("model")):
+        b.AGENT_SESSIONS.patch(sid, model=model_id)  # 清理会话里遗留的失效模型
     b.AGENT_SESSIONS.add_message(sid, "user", content, int(state.get("conversation_index", 0)))
 
     if req.agent_mode:

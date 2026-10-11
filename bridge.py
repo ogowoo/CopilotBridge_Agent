@@ -172,6 +172,17 @@ def normalize_model(model_id):
     return normalized
 
 
+def normalize_model_soft(model_id) -> str:
+    """宽松归一：失效模型 ID（如历史会话遗留的已删除模型）回退默认模型。
+
+    用于会话恢复/跟进场景：严格 400 会让老会话永远无法继续。
+    """
+    try:
+        return normalize_model(model_id)
+    except HTTPException:
+        return DEFAULT_MODEL
+
+
 def all_model_ids() -> list:
     """Copilot 网页模型 + 已配置提供商的模型。"""
     ids = list(MODELS)
@@ -1168,7 +1179,8 @@ async def provider_session_chat(sid: str, content: str, model_id: str) -> dict:
 async def run_agent(req: AgentRequest):
     global ACTIVE_SESSION_ID
     if not AGENT_CFG.get("enabled", True): raise HTTPException(503, "Agent 功能已禁用")
-    req.model=normalize_model(req.model)
+    # 软归一：历史会话可能保存了已失效的模型 ID，回退默认模型而非 400
+    req.model=normalize_model_soft(req.model)
     task="\n".join(f"[{m.role}] {m.content.strip()}" for m in req.messages if m.content.strip())
     if not task: raise HTTPException(400,"至少需要一条消息")
     sid=req.session_id or ("task-"+uuid.uuid4().hex[:12])

@@ -513,7 +513,11 @@ class AgentRunner:
                 step = {"step": total + 1, "status": "service_unavailable",
                         "error": f"Copilot 服务暂时不可用（第 {service_failures} 次）：{reason}"}
                 all_steps.append(step); self.step_saver(step)
-                self.state_saver(recent_steps=history[-self.keep_recent:], last_error=step["error"])
+                # 退避期间状态置 waiting（前端显示"等待服务"）；用户已暂停时不抢状态。
+                _updates = {"recent_steps": history[-self.keep_recent:], "last_error": step["error"]}
+                if (self.state_getter() or {}).get("state") == "running":
+                    _updates["state"] = "waiting"
+                self.state_saver(**_updates)
                 if service_failures >= self.max_service_unavailable:
                     self.state_saver(state="waiting",
                                      last_error="Copilot 服务持续不可用，已停止自动重试；服务恢复后请点击继续")
@@ -539,6 +543,9 @@ class AgentRunner:
                 action = self._parse(raw)
                 parse_failures = 0
                 service_failures = 0
+                # 服务恢复：waiting 状态回到 running（paused 状态不受影响）。
+                if (self.state_getter() or {}).get("state") == "waiting":
+                    self.state_saver(state="running")
             except Exception as exc:
                 parse_failures += 1
                 step = {"step": total + 1, "status": "invalid_action", "error": str(exc), "raw_tail": (raw or "")[-2000:]}
