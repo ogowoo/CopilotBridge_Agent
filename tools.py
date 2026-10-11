@@ -22,7 +22,11 @@ class ToolRegistry:
         self.max_write = int(config.get("max_write_chars", 200000))
         self.allow_delete = bool(config.get("allow_delete", False))
         self.allow_python = bool(config.get("allow_python", False))
+        self.allow_office = bool(config.get("allow_office", True))
+        self.allow_outlook = bool(config.get("allow_outlook", False))
+        self.allow_outlook_send = bool(config.get("allow_outlook_send", False))
         self.python_timeout = float(config.get("python_timeout_seconds", 20))
+        self._extra_descriptions: list[dict[str, Any]] = []
         self._tools: dict[str, Callable[..., Awaitable[Any]]] = {
             "list_directory": self.list_directory,
             "find_files": self.find_files,
@@ -39,7 +43,24 @@ class ToolRegistry:
             "run_python": self.run_python,
             "validate_python": self.validate_python,
             "run_unittest": self.run_unittest,
+            "read_excel": self.read_excel,
+            "write_excel": self.write_excel,
+            "read_docx": self.read_docx,
+            "write_docx": self.write_docx,
+            "read_pptx": self.read_pptx,
+            "read_pdf": self.read_pdf,
+            "outlook_unread": self.outlook_unread,
+            "outlook_read": self.outlook_read,
+            "outlook_search": self.outlook_search,
+            "outlook_send": self.outlook_send,
         }
+
+    def register(self, name: str, fn: Callable[..., Awaitable[Any]],
+                 description: str, arguments: dict[str, Any]) -> None:
+        """注册外部工具（如桥接层的 Copilot 文件上传 copilot_attach）。"""
+        self._tools[name] = fn
+        self._extra_descriptions.append(
+            {"name": name, "description": description, "arguments": arguments})
 
     def set_root(self, value: str | Path, create: bool = False) -> str:
         target = Path(value).expanduser()
@@ -73,6 +94,24 @@ class ToolRegistry:
             items.append({"name": "delete_path", "description": "删除路径", "arguments": {"path": "相对路径"}})
         if self.allow_python:
             items.append({"name": "run_python", "description": "运行短 Python 计算；禁止用于修改项目文件", "arguments": {"code": "短 Python 代码"}})
+        if self.allow_office:
+            items += [
+                {"name": "read_excel", "description": "读取 Excel 工作表内容", "arguments": {"path": "相对路径", "sheet": "工作表名，默认全部", "max_rows": "每表最多行数，默认 200"}},
+                {"name": "write_excel", "description": "向 Excel 写入二维行数据（不存在则创建）", "arguments": {"path": "相对路径", "sheet": "工作表名，默认当前表", "rows": "二维数组", "start_cell": "起始单元格，默认 A1"}},
+                {"name": "read_docx", "description": "提取 Word 文档段落与表格文本", "arguments": {"path": "相对路径"}},
+                {"name": "write_docx", "description": "创建或追加 Word 文档段落", "arguments": {"path": "相对路径", "paragraphs": "字符串数组", "mode": "append 或 overwrite，默认 append"}},
+                {"name": "read_pptx", "description": "提取 PPT 每页文字与备注", "arguments": {"path": "相对路径"}},
+                {"name": "read_pdf", "description": "提取 PDF 每页文字", "arguments": {"path": "相对路径"}},
+            ]
+        if self.allow_outlook:
+            items += [
+                {"name": "outlook_unread", "description": "列出 Outlook 收件箱未读邮件", "arguments": {"max_count": "最多条数，默认 20"}},
+                {"name": "outlook_read", "description": "按 entry_id 读取邮件正文", "arguments": {"entry_id": "来自 outlook_unread/outlook_search"}},
+                {"name": "outlook_search", "description": "按主题关键词搜索收件箱邮件", "arguments": {"keyword": "关键词", "max_count": "默认 20"}},
+            ]
+            if self.allow_outlook_send:
+                items.append({"name": "outlook_send", "description": "发送邮件（会真实发出，谨慎）", "arguments": {"to": "收件人", "subject": "主题", "body": "正文", "cc": "抄送，可选"}})
+        items += self._extra_descriptions
         return items
 
     def _path(self, value: str = ".") -> Path:
@@ -267,3 +306,260 @@ class ToolRegistry:
             await proc.wait()
             raise ToolError("Python 执行超时")
         return {"exit_code": proc.returncode, "stdout": stdout.decode("utf-8", "replace")[-20000:], "stderr": stderr.decode("utf-8", "replace")[-20000:]}
+
+    # ── Office 文档工具（openpyxl / python-docx / python-pptx / pypdf）────
+
+    def _office_allowed(self):
+        if not self.allow_office:
+            raise ToolError("Office 工具已在 config.json 中禁用（allow_office=false）")
+
+    async def read_excel(self, path: str, sheet: str = "", max_rows: int = 200) -> dict[str, Any]:
+        self._office_allowed()
+        target = self._path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        try:
+            import openpyxl
+        except ImportError:
+            raise ToolError("缺少依赖 openpyxl，请运行 pip install openpyxl")
+        wb = openpyxl.load_workbook(target, data_only=True, read_only=True)
+        try:
+            if sheet and sheet not in wb.sheetnames:
+                raise ToolError(f"工作表不存在: {sheet}，可用: {wb.sheetnames}")
+            limit = max(1, min(int(max_rows), 2000))
+            out = {}
+            for name in ([sheet] if sheet else wb.sheetnames):
+                ws = wb[name]
+                rows, total = [], 0
+                for r in ws.iter_rows(values_only=True):
+                    total += 1
+                    if len(rows) < limit:
+                        rows.append(["" if c is None else str(c) for c in r])
+                out[name] = {"rows": rows, "total_rows": total, "truncated": total > limit}
+            return {"path": path, "sheets": out}
+        finally:
+            wb.close()
+
+    async def write_excel(self, path: str, rows: list, sheet: str = "", start_cell: str = "A1") -> dict[str, Any]:
+        self._office_allowed()
+        if not isinstance(rows, list) or not rows:
+            raise ToolError("rows 必须是非空二维数组")
+        try:
+            import openpyxl
+            from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
+        except ImportError:
+            raise ToolError("缺少依赖 openpyxl，请运行 pip install openpyxl")
+        target = self._path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = self._hash(target)
+        wb = openpyxl.load_workbook(target) if target.is_file() else openpyxl.Workbook()
+        try:
+            ws = wb[sheet] if sheet else wb.active
+            col_s, row_s = coordinate_from_string(start_cell)
+            col0 = column_index_from_string(col_s)
+            written = 0
+            for ri, row in enumerate(rows):
+                if not isinstance(row, list):
+                    row = [row]
+                for ci, value in enumerate(row):
+                    ws.cell(row=row_s + ri, column=col0 + ci, value=value)
+                    written += 1
+            wb.save(target)
+            title = ws.title
+        finally:
+            wb.close()
+        return {"path": path, "sheet": title, "cells_written": written,
+                "file_event": {"tool": "write_excel", "path": path,
+                               "before_hash": before, "after_hash": self._hash(target), "result": "ok"}}
+
+    async def read_docx(self, path: str) -> dict[str, Any]:
+        self._office_allowed()
+        target = self._path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        try:
+            import docx
+        except ImportError:
+            raise ToolError("缺少依赖 python-docx，请运行 pip install python-docx")
+        doc = docx.Document(target)
+        parts = []
+        for p in doc.paragraphs:
+            if p.text.strip():
+                parts.append(p.text)
+        for ti, table in enumerate(doc.tables, 1):
+            parts.append(f"[表格 {ti}]")
+            for row in table.rows:
+                parts.append(" | ".join(cell.text.strip() for cell in row.cells))
+        text = "\n".join(parts)
+        return {"path": path, "paragraphs": len(doc.paragraphs), "tables": len(doc.tables),
+                "content": text[:self.max_read], "truncated": len(text) > self.max_read}
+
+    async def write_docx(self, path: str, paragraphs: list, mode: str = "append") -> dict[str, Any]:
+        self._office_allowed()
+        if not isinstance(paragraphs, list) or not paragraphs:
+            raise ToolError("paragraphs 必须是非空字符串数组")
+        try:
+            import docx
+        except ImportError:
+            raise ToolError("缺少依赖 python-docx，请运行 pip install python-docx")
+        target = self._path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = self._hash(target)
+        if mode == "overwrite" or not target.is_file():
+            doc = docx.Document()
+        elif mode == "append":
+            doc = docx.Document(target)
+        else:
+            raise ToolError("mode 只能是 append 或 overwrite")
+        for text in paragraphs:
+            doc.add_paragraph(str(text))
+        doc.save(target)
+        return {"path": path, "mode": mode, "paragraphs_added": len(paragraphs),
+                "file_event": {"tool": "write_docx", "path": path,
+                               "before_hash": before, "after_hash": self._hash(target), "result": "ok"}}
+
+    async def read_pptx(self, path: str) -> dict[str, Any]:
+        self._office_allowed()
+        target = self._path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        try:
+            from pptx import Presentation
+        except ImportError:
+            raise ToolError("缺少依赖 python-pptx，请运行 pip install python-pptx")
+        prs = Presentation(target)
+        slides = []
+        for i, slide in enumerate(prs.slides, 1):
+            texts = [shape.text for shape in slide.shapes if shape.has_text_frame and shape.text.strip()]
+            notes = ""
+            if slide.has_notes_slide and slide.notes_slide.notes_text_frame.text.strip():
+                notes = slide.notes_slide.notes_text_frame.text.strip()
+            slides.append({"slide": i, "text": "\n".join(texts), "notes": notes})
+        total_chars = sum(len(s["text"]) + len(s["notes"]) for s in slides)
+        return {"path": path, "slides": slides, "slide_count": len(slides),
+                "truncated": total_chars > self.max_read}
+
+    async def read_pdf(self, path: str) -> dict[str, Any]:
+        self._office_allowed()
+        target = self._path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            raise ToolError("缺少依赖 pypdf，请运行 pip install pypdf")
+        reader = PdfReader(str(target))
+        pages = []
+        used = 0
+        truncated = False
+        for i, page in enumerate(reader.pages, 1):
+            if used >= self.max_read:
+                truncated = True
+                break
+            text = (page.extract_text() or "").strip()
+            used += len(text)
+            pages.append({"page": i, "text": text})
+        return {"path": path, "page_count": len(reader.pages), "pages_read": len(pages),
+                "pages": pages, "truncated": truncated or len(pages) < len(reader.pages)}
+
+    # ── Outlook COM 工具（pywin32，需本机 Outlook 已登录）────────────────
+
+    async def _outlook_run(self, fn):
+        if not self.allow_outlook:
+            raise ToolError("Outlook 工具已在 config.json 中禁用（allow_outlook=false）")
+
+        def runner():
+            try:
+                import pythoncom
+                import win32com.client
+            except ImportError:
+                raise ToolError("缺少依赖 pywin32，请运行 pip install pywin32")
+            pythoncom.CoInitialize()
+            try:
+                app = win32com.client.Dispatch("Outlook.Application")
+                ns = app.GetNamespace("MAPI")
+                return fn(ns)
+            except ToolError:
+                raise
+            except Exception as exc:
+                raise ToolError(f"Outlook 不可用（未安装或未登录账号）: {exc}")
+            finally:
+                pythoncom.CoUninitialize()
+
+        return await asyncio.to_thread(runner)
+
+    @staticmethod
+    def _mail_brief(item) -> dict[str, Any]:
+        return {"entry_id": item.EntryID, "subject": str(item.Subject or ""),
+                "sender": str(item.SenderName or ""), "received": str(item.ReceivedTime),
+                "unread": bool(item.UnRead)}
+
+    async def outlook_unread(self, max_count: int = 20) -> dict[str, Any]:
+        limit = max(1, min(int(max_count), 100))
+
+        def work(ns):
+            items = ns.GetDefaultFolder(6).Items.Restrict("[Unread] = true")  # 6=olFolderInbox
+            items.Sort("[ReceivedTime]", True)
+            out = []
+            for item in items:
+                if len(out) >= limit:
+                    break
+                out.append(self._mail_brief(item))
+            return out
+
+        mails = await self._outlook_run(work)
+        return {"unread_returned": len(mails), "items": mails}
+
+    async def outlook_read(self, entry_id: str) -> dict[str, Any]:
+        if not entry_id:
+            raise ToolError("entry_id 不能为空")
+
+        def work(ns):
+            item = ns.GetItemFromID(entry_id)
+            body = str(item.Body or "")
+            brief = self._mail_brief(item)
+            brief["body"] = body[:20000]
+            brief["truncated"] = len(body) > 20000
+            return brief
+
+        return await self._outlook_run(work)
+
+    async def outlook_search(self, keyword: str, max_count: int = 20) -> dict[str, Any]:
+        if not keyword:
+            raise ToolError("keyword 不能为空")
+        limit = max(1, min(int(max_count), 100))
+        safe = str(keyword).replace("'", "''")
+
+        def work(ns):
+            items = ns.GetDefaultFolder(6).Items.Restrict(
+                f"@SQL=\"urn:schemas:httpmail:subject\" LIKE '%{safe}%'")
+            items.Sort("[ReceivedTime]", True)
+            out = []
+            for item in items:
+                if len(out) >= limit:
+                    break
+                out.append(self._mail_brief(item))
+            return out
+
+        mails = await self._outlook_run(work)
+        return {"keyword": keyword, "returned": len(mails), "items": mails}
+
+    async def outlook_send(self, to: str, subject: str, body: str, cc: str = "") -> dict[str, Any]:
+        if not self.allow_outlook_send:
+            raise ToolError("发送邮件已在 config.json 中禁用（allow_outlook_send=false）")
+        if not to or not subject:
+            raise ToolError("to 和 subject 不能为空")
+
+        def work(ns):
+            app = ns.Application
+            mail = app.CreateItem(0)  # 0=olMailItem
+            mail.To = to
+            if cc:
+                mail.CC = cc
+            mail.Subject = subject
+            mail.Body = body
+            mail.Send()
+            return True
+
+        await self._outlook_run(work)
+        return {"sent": True, "to": to, "subject": subject}

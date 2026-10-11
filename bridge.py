@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 from agent import AgentRunner, AgentPaused, CopilotServiceUnavailable, CopilotConversationFull, validate_token_budget
-from tools import ToolRegistry
+from tools import ToolRegistry, ToolError
 from session_store import SessionStore
 import providers as providers_mod
 
@@ -488,6 +488,35 @@ async def select_model(model_id):
     log(f"模型已切换为 {normalized}")
     return normalized
 
+async def attach_file_to_copilot(file_path: Path) -> None:
+    """把本地文件附加到 Copilot 输入框（不发送）。
+
+    Copilot 的 input[type=file] 通常是隐藏的：先尝试点开附件按钮使其出现，
+    再用 set_input_files 直接注入（对隐藏控件同样有效）。
+    """
+    file_input = page.locator('input[type="file"]')
+    if not await file_input.count():
+        btn = await visible([
+            'button[aria-label*="Attach" i]',
+            'button[aria-label*="Add attachment" i]',
+            'button[aria-label*="Upload" i]',
+            'button[aria-label*="附件"]',
+            'button[aria-label*="上传"]',
+            'button[aria-label*="Add" i]',
+        ])
+        if btn:
+            try:
+                await btn.click(timeout=3000)
+            except Exception:
+                await btn.click(timeout=2000, force=True)
+            await asyncio.sleep(.6)
+    if not await file_input.count():
+        await diagnostics("no_file_input")
+        raise RuntimeError("找不到 Copilot 文件上传控件")
+    await file_input.first.set_input_files(str(file_path))
+    await asyncio.sleep(2)  # 等待上传与解析（附件卡片渲染）
+
+
 async def input_box():
     x = await visible([
         'textarea[placeholder]',
@@ -827,6 +856,30 @@ SESSION_DB = Path(AGENT_CFG.get("session_store", "data/agent.db"))
 if not SESSION_DB.is_absolute(): SESSION_DB = BASE / SESSION_DB
 AGENT_SESSIONS = SessionStore(SESSION_DB)
 AGENT_SESSIONS.recover_interrupted()
+
+
+async def _copilot_attach(path: str, question: str = "请分析这个文件的内容并总结要点") -> dict:
+    """Agent 工具 copilot_attach：上传工作区文件给 Copilot 网页版分析。
+
+    适合图片/扫描件/复杂版式文档等本地工具无法解析的文件。回答作为
+    工具结果返回，进入下一步的工具结果上下文。
+    """
+    target = AGENT_TOOLS._path(path)  # 复用工作区路径沙箱
+    if not target.is_file():
+        raise ToolError(f"文件不存在: {path}")
+    if target.stat().st_size > 50 * 1024 * 1024:
+        raise ToolError("文件超过 50MB，Copilot 网页上传可能失败")
+    await attach_file_to_copilot(target)
+    answer = await agent_chat_once(question, DEFAULT_MODEL, False)
+    return {"path": path, "question": question, "answer": answer}
+
+
+AGENT_TOOLS.register(
+    "copilot_attach",
+    _copilot_attach,
+    "把文件上传到 Copilot 网页版分析并返回回答（用于图片/复杂文档等本地工具无法解析的文件）",
+    {"path": "相对路径", "question": "给 Copilot 的分析指令，可选"},
+)
 async def periodic_session_cleanup():
     """每小时执行一次会话维护，使 session_timeout_seconds /
     completed_session_retention_days / max_sessions 三项配置生效。"""
