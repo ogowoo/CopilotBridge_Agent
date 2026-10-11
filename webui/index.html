@@ -111,8 +111,8 @@ textarea{resize:vertical}
 .pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);animation:pulse 1.3s infinite}
 .dot-off{display:inline-block;width:9px;height:9px;border-radius:50%;background:#3a4656}
 
-/* 时间线 */
-.steps{max-height:640px;overflow:auto}
+/* 时间线（与右侧实时面板同一高度规则，两栏底部对齐） */
+.steps{min-height:320px;max-height:calc(100vh - 330px);overflow:auto}
 .step{padding:10px 15px;border-bottom:1px solid #1a2230;border-left:3px solid transparent}
 .step:last-child{border-bottom:0}
 .step.ok{border-left-color:var(--green)}
