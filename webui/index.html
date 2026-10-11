@@ -93,13 +93,21 @@ textarea{resize:vertical}
 .meter span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .5s}
 
 /* 内容双栏 */
-.content{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:12px;align-items:start}
+.content{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:12px;align-items:start}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
 .chead{display:flex;align-items:center;gap:9px;padding:11px 15px;border-bottom:1px solid var(--line);font-weight:600;font-size:13.5px}
 .chead .hint{margin-left:auto;font-weight:400;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
 .livecol{display:flex;flex-direction:column;gap:12px}
 .term{margin:0;padding:12px 15px;background:#0a0e13;border-radius:0 0 11px 11px;color:#c9d4e0;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;min-height:64px;max-height:40vh;overflow:auto}
 .term.short{max-height:25vh}
+
+/* 实时面板选项卡（执行状态/当前回答/发送内容共用整列空间） */
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{border:1px solid var(--line2);background:transparent;border-radius:20px;padding:4px 13px;font-size:12.5px;cursor:pointer;color:var(--muted)}
+.tab:hover{border-color:var(--accent);color:var(--text)}
+.tab.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.tab.new::after{content:'●';color:var(--green);font-size:9px;margin-left:5px;vertical-align:2px}
+.livepane{min-height:320px;max-height:calc(100vh - 330px);font-size:13px;line-height:1.75}
 .pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);animation:pulse 1.3s infinite}
 .dot-off{display:inline-block;width:9px;height:9px;border-radius:50%;background:#3a4656}
 
@@ -272,9 +280,19 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
       <div class="content">
         <section class="card"><div class="chead">步骤时间线<span id="stepCount" class="hint"></span></div><div id="steps" class="steps"></div></section>
         <div class="livecol">
-          <section class="card"><div class="chead"><span id="pulse" class="dot-off"></span>当前执行状态</div><pre id="activity" class="term">—</pre></section>
-          <section class="card"><div class="chead">Copilot 当前回答</div><pre id="answer" class="term">等待回答…</pre></section>
-          <section class="card"><div class="chead">最近发送给 Copilot 的内容</div><pre id="prompt" class="term short">—</pre></section>
+          <section class="card">
+            <div class="chead"><span id="pulse" class="dot-off"></span>
+              <div class="tabs">
+                <button class="tab on" id="tabActivity" onclick="liveTab('activity')">当前执行状态</button>
+                <button class="tab" id="tabAnswer" onclick="liveTab('answer')">Copilot 当前回答</button>
+                <button class="tab" id="tabPrompt" onclick="liveTab('prompt')">最近发送内容</button>
+              </div>
+              <span class="hint"><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="放大查看当前面板" onclick="expandLive()">⤢ 放大</button></span>
+            </div>
+            <pre id="activity" class="term livepane">—</pre>
+            <pre id="answer" class="term livepane" style="display:none">等待回答…</pre>
+            <pre id="prompt" class="term livepane" style="display:none">—</pre>
+          </section>
         </div>
       </div>
     </div>
@@ -292,6 +310,17 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
   </div>
 </div>
 <div id="demoBadge" class="demo" style="display:none">演示模式 · API 未连接</div>
+<!-- 实时面板放大查看弹窗 -->
+<div class="mask" id="liveMask" onclick="if(event.target===this)closeLive()">
+  <div class="dlg" style="width:min(1100px,94vw)">
+    <div class="dhead"><span id="liveTitle">查看</span><span class="hint">Esc 关闭</span></div>
+    <div class="dbody"><pre id="liveBody" class="term" style="max-height:72vh;border-radius:9px;font-size:13px;line-height:1.75"></pre></div>
+    <div class="dfoot">
+      <button class="btn ghost" id="liveCopy">复制内容</button>
+      <button class="btn accent" onclick="closeLive()">关闭</button>
+    </div>
+  </div>
+</div>
 <script>
 let current=null,currentUrl=null,currentModel=null,lastStepCount=-1,lastDetail='',renderedSteps=0,sessCache=[];
 let budget=0; // 由后端 token_budget 下发，避免与 config.json 脱节
@@ -458,6 +487,7 @@ async function runtime(){
   let _ans=r.answer_preview||'等待 Copilot 回答…',_ae=document.getElementById('answer'),_pj=null;
   try{_pj=JSON.parse(_ans)}catch(e){}
   if(_pj&&typeof _pj==='object'){_ae.innerHTML='<div class="jsonview">'+jv(_pj)+'</div>'}else{_ae.textContent=_ans}
+  if(_ans!==lastAns){lastAns=_ans;if(liveTabName!=='answer')document.getElementById('tabAnswer').classList.add('new')}
   document.getElementById('prompt').textContent=r.prompt_preview||'';
   setPill(r.session_state);setKpis(r);
   if(r.total_steps!==lastStepCount||(r.detail||'')!==lastDetail){
@@ -506,7 +536,22 @@ async function forceDeleteLocal(){
   if(d.deleted){closeDlg();current=null;document.getElementById('sessionView').style.display='none';document.getElementById('emptyState').style.display='flex';await refreshSessions()}
   else showDeleteResult(d)}catch(e){alert('强制清理失败: '+e)}
  finally{b.disabled=false;b.textContent='重试远程并强制清理本地记录'}}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDlg()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive()}});
+
+/* ── 实时面板选项卡 + 放大查看 ── */
+const LIVE_NAMES={activity:'当前执行状态',answer:'Copilot 当前回答',prompt:'最近发送给 Copilot 的内容'};
+const LIVE_TAB={activity:'tabActivity',answer:'tabAnswer',prompt:'tabPrompt'};
+let liveTabName='activity';
+let lastAns='';
+function liveTab(n){liveTabName=n;
+ for(const k in LIVE_NAMES){document.getElementById(k).style.display=k===n?'':'none';
+  document.getElementById(LIVE_TAB[k]).className='tab'+(k===n?' on':'')}}  // className 覆盖即清除新内容圆点
+function expandLive(){
+ document.getElementById('liveTitle').textContent=LIVE_NAMES[liveTabName];
+ document.getElementById('liveBody').innerHTML=document.getElementById(liveTabName).innerHTML;
+ document.getElementById('liveMask').classList.add('open')}
+function closeLive(){document.getElementById('liveMask').classList.remove('open')}
+document.getElementById('liveCopy').onclick=()=>{try{navigator.clipboard.writeText(document.getElementById('liveBody').textContent||'')}catch(e){}};
 async function continueAgent(){
  if(!current){alert('请先选择 Session');return}
  let instruction=prompt('请输入要继续执行的任务','继续执行当前任务，从未完成事项开始');
