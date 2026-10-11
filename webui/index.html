@@ -15,9 +15,9 @@ button,input,textarea,select{font:inherit;color:inherit}
 
 /* ── 左侧栏 ─────────────────────────────── */
 .rail{display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--line);min-height:0;position:relative}
-/* 折叠把手：骑在侧栏右缘的小圆钮，不占品牌行 */
-#railBtn{position:absolute;right:-14px;top:14px;z-index:30;width:26px;height:26px;border-radius:50%;padding:0;font-size:13px;line-height:1;background:var(--panel);border:1px solid var(--line2);color:var(--muted);cursor:pointer}
-#railBtn:hover{border-color:var(--accent);color:var(--text)}
+/* 折叠把手：贴在侧栏右缘的细长竖条，垂直居中 */
+#railBtn{position:absolute;right:-18px;top:50%;transform:translateY(-50%);z-index:30;width:18px;height:64px;padding:0;border:1px solid var(--line2);border-left:0;border-radius:0 9px 9px 0;background:var(--panel);color:var(--faint);font-size:14px;line-height:1;cursor:pointer;transition:color .15s,border-color .15s}
+#railBtn:hover{color:var(--accent2);border-color:var(--accent)}
 .brand{display:flex;align-items:center;gap:11px;padding:16px 16px 14px;border-bottom:1px solid var(--line)}
 .mark{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#4f8ef7,#7c5cf0);color:#fff;font-weight:700;font-size:13px;letter-spacing:.5px}
 .bname b{display:block;font-size:15px;letter-spacing:.2px}
@@ -232,7 +232,6 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
   :root[data-rail="closed"] .bname,
   :root[data-rail="closed"] #themeBtn,
   :root[data-rail="closed"] #browserBtn{display:none}
-  :root[data-rail="closed"] #railBtn{position:static;margin-top:2px}
 }
 @media(max-width:860px){#railBtn{display:none}}
 /* 手机：彻底回退为自然文档流，页面整体滚动，禁用填满窗口的 flex 布局 */
@@ -250,7 +249,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 </style></head><body>
 <div class="app">
   <aside class="rail">
-    <div class="brand"><span class="mark">CB</span><div class="bname"><b>CopilotBridge</b><span>长期任务 Agent</span></div><button id="browserBtn" class="btn ghost" style="margin-left:auto;padding:5px 11px;font-size:12px" onclick="toggleBrowser()" title="切换自动化浏览器窗口的显示/隐藏">窗口…</button><button id="themeBtn" class="btn ghost" style="padding:5px 11px;font-size:12px" onclick="toggleTheme()">浅色</button></div><button id="railBtn" title="收起/展开侧栏" onclick="toggleRail()">«</button>
+    <div class="brand"><span class="mark">CB</span><div class="bname"><b>CopilotBridge</b><span>长期任务 Agent</span></div><button id="browserBtn" class="btn ghost" style="margin-left:auto;padding:5px 11px;font-size:12px" onclick="toggleBrowser()" title="切换自动化浏览器窗口的显示/隐藏">窗口…</button><button id="themeBtn" class="btn ghost" style="padding:5px 11px;font-size:12px" onclick="toggleTheme()">浅色</button></div><button id="railBtn" title="收起/展开侧栏" onclick="toggleRail()">‹</button>
     <details class="newtask" open><summary>新任务</summary><div class="ntbody">
       <input id="sid" placeholder="Session ID（可留空）">
       <input id="workspace" placeholder="工作目录（可留空）">
@@ -633,10 +632,10 @@ function toggleTheme(){let t=document.documentElement.dataset.theme==="light"?""
 /* ── 左侧栏折叠 ── */
 function toggleRail(){let r=document.documentElement,c=r.dataset.rail==='closed';
  if(c){delete r.dataset.rail}else{r.dataset.rail='closed'}
- document.getElementById('railBtn').textContent=c?'«':'»';
+ document.getElementById('railBtn').textContent=c?'‹':'›';
  try{localStorage.setItem('cbp-rail',c?'':'closed')}catch(e){}}
 try{if(document.documentElement.dataset.theme==="light")document.getElementById("themeBtn").textContent="深色"}catch(e){}
-try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="»"}catch(e){}
+try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="›"}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
 (async()=>{try{let r=await fetch('/v1/agent/sessions');if(!r.ok)throw 0}catch(e){DEMO=true;document.getElementById('demoBadge').style.display='block'}
  loadModels();browserState();
