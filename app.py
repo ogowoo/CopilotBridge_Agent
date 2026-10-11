@@ -1290,7 +1290,8 @@ async def run_agent(req: AgentRequest):
         def add_step(x):
             st=get(); AGENT_SESSIONS.add_step(sid,int(x.get("step",st["total_steps"]+1)),int(st["conversation_index"]),x)
         def add_file(x): AGENT_SESSIONS.add_file_event(sid,x)
-        runner=AgentRunner(AGENT_TOOLS,turn,AGENT_CFG,get,save,add_step,add_file)
+        def add_conv_stat(x): AGENT_SESSIONS.add_conv_stat(sid,x)
+        runner=AgentRunner(AGENT_TOOLS,turn,AGENT_CFG,get,save,add_step,add_file,add_conv_stat)
         try:
             result = await runner.run(effective_task,req.model)
             runtime_update(sid, phase="completed", detail=result.content, answer_preview=result.content)
@@ -1316,7 +1317,7 @@ async def sessions(include_archived:bool=False): return {"sessions":AGENT_SESSIO
 async def session(sid:str):
     x=AGENT_SESSIONS.get(sid)
     if not x: raise HTTPException(404,"Session 不存在")
-    return {"session":x,"steps":AGENT_SESSIONS.steps(sid),"files":AGENT_SESSIONS.file_events(sid),"messages":AGENT_SESSIONS.messages(sid),"token_budget":TOKEN_BUDGET}
+    return {"session":x,"steps":AGENT_SESSIONS.steps(sid),"files":AGENT_SESSIONS.file_events(sid),"messages":AGENT_SESSIONS.messages(sid),"token_budget":TOKEN_BUDGET,"conv_stats":AGENT_SESSIONS.conv_stats(sid)}
 @app.post("/v1/agent/sessions/{sid}/actions/{action}")
 async def control(sid:str,action:str):
     if not AGENT_SESSIONS.get(sid): raise HTTPException(404,"Session 不存在")

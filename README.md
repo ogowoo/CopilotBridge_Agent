@@ -19,7 +19,9 @@
 - **长任务韧性**：
   - 每个回合注入唯一标记 `[CBP-TURN:...]`，确认送达后才读取回答，杜绝读到上一回合的旧答案；
   - 严格区分三类失败——**限流**（原地指数退避重试）、**对话达到长度上限**（总结进度后切换新会话重发）、**回答格式错误**（容错解析 + 压缩上下文后原会话继续）；
-  - 上下文压缩与多会话接力（rollover），单任务最长可跨 25 个 Copilot 会话；
+  - **会话治理模型**：M365 Copilot 的对话长度上限不公开且动态变化，本地压缩只缩短后续提示、**不会缩短远端对话**，因此治理依赖组合拳——本地持续压缩 + 保守阈值主动换会话 + 页面上限检测被动兜底 + 检查点接力（摘要/修改文件/验证结果带入新会话）；
+  - **幂等保护**：换会话接力或回合重发时，与上一成功动作完全相同的非幂等操作（append/move/copy）会被跳过，避免重复修改文件；
+  - **实测校准**：每个 Copilot 会话结束时记录实测数据（回合数/估算 Token/字符数/结束原因/模型/URL）存入 `conv_stats` 表，会话详情接口可查，用于持续校准本地阈值；
   - 修改代码后强制验证闭环：`validate_python` 与 `run_unittest` 都通过才允许宣称完成。
 - **会话持久化**：SQLite（WAL）保存步骤时间线、文件变更哈希、对话消息；服务重启后可从检查点继续。
 - **Web 管理台**：`/ui` 提供任务发起、实时进度、步骤时间线、暂停/恢复/取消、会话归档与远程 Copilot 会话删除（带同 Session 标记防误删）。
@@ -120,16 +122,16 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `workspace` | `workspace` | 工具根目录（相对项目目录） |
 | `session_store` | `data/agent.db` | SQLite 会话库路径 |
 | `max_total_steps` | `1000` | 单任务总步数上限（硬顶 10000） |
-| `max_steps_per_conversation` | `160` | 单个 Copilot 会话内步数上限（触发换会话） |
+| `max_steps_per_conversation` | `80` | 单个 Copilot 会话内步数上限（触发换会话） |
 | `max_conversation_rollovers` | `25` | 最多切换多少个 Copilot 会话 |
-| `context_token_budget` | `128000` | 估算上下文预算 |
-| `compact_at_tokens` | `76000` | 达到即压缩历史为摘要 |
-| `rollover_at_tokens` | `104000` | 达到即换新会话（需 `auto_rollover`）；须满足 `0 < compact < rollover ≤ budget` |
+| `context_token_budget` | `80000` | 估算上下文预算（本地估算值，**不代表 M365 真实上限**） |
+| `compact_at_tokens` | `35000` | 达到即压缩历史为摘要 |
+| `rollover_at_tokens` | `55000` | 达到即换新会话（需 `auto_rollover`）；须满足 `0 < compact < rollover ≤ budget` |
 | `keep_recent_steps` | `8` | 压缩/换会话时保留的最近步数 |
 | `max_summary_tokens` | `5000` | 长期摘要估算上限 |
-| `max_context_chars` | `420000` | 字符数兜底阈值 |
-| `auto_rollover` | `false` | 是否按本地阈值**主动**换会话；默认只在 Copilot 提示对话已满时才换 |
-| `min_steps_before_rollover` | `30` | 主动换会话的最小步数门槛 |
+| `max_context_chars` | `240000` | 字符数兜底阈值 |
+| `auto_rollover` | `true` | 建议开启：本地压缩不会缩短远端对话，保守阈值主动换会话是主要防线；页面上限检测做被动兜底 |
+| `min_steps_before_rollover` | `20` | 主动换会话的最小步数门槛 |
 | `auto_compact` | `true` | 达到阈值时自动压缩上下文；`false` 时仅保留手动压缩 |
 | `auto_resume` | `true` | 服务重启后自动恢复上次被中断（非用户暂停）的会话 |
 | `session_timeout_seconds` | `86400` | `ready`/`waiting` 会话超过该时长未活动则标记为 `expired` |

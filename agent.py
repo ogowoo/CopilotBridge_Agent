@@ -53,6 +53,10 @@ class AgentResult:
     content: str
     steps: list[dict[str, Any]]
 
+# 连续重复执行会出错的工具：append 会重复追加，move/copy 会重复搬运。
+# 换会话重发或模型重复回答时，同一动作可能连续到达，需要幂等保护。
+NON_IDEMPOTENT_TOOLS = {"append_text", "append_text_b64", "move_path", "copy_path"}
+
 class AgentRunner:
  # removed compatibility method: def __new__(cls, tools, chat, config, *args, **kwargs):
   # removed compatibility allocation: super().__new__(cls)
@@ -274,10 +278,11 @@ class AgentRunner:
         return value
 
     def __init__(self, tools: ToolRegistry, chat: ChatFunction, config: dict[str, Any],
-                 state_getter, state_saver, step_saver, file_event_saver):
+                 state_getter, state_saver, step_saver, file_event_saver, conv_stat_saver=None):
         self.tools, self.chat, self.config = tools, chat, config
         self.state_getter, self.state_saver = state_getter, state_saver
         self.step_saver, self.file_event_saver = step_saver, file_event_saver
+        self.conv_stat_saver = conv_stat_saver
         self.max_total_steps = min(int(config.get("max_total_steps", 1000)), 10000)
         self.per_conversation = max(5, int(config.get("max_steps_per_conversation", 40)))
         self.max_rollovers = max(1, int(config.get("max_conversation_rollovers", 25)))
@@ -289,9 +294,10 @@ class AgentRunner:
         self.max_context_chars = int(config.get("max_context_chars", 90000))
         self.max_parse_failures = max(3, int(config.get("max_parse_failures", 5)))
         self.min_steps_before_rollover = max(10, int(config.get("min_steps_before_rollover", 30)))
-        # 主动换会话（按本地 Token/字符/步数阈值）默认关闭：
-        # 阈值偏保守会过早切碎会话，改为只在 Copilot 提示对话已满时才换。
-        # config.json 里 auto_rollover=true 可恢复旧的主动换会话行为。
+        # 主动换会话（按本地 Token/字符/步数阈值）。M365 Copilot 的对话上限
+        # 不公开且动态变化，本地压缩只是缩短后续提示、不会缩短远端对话本身，
+        # 因此建议在 config.json 保持 auto_rollover=true 并配合保守阈值；
+        # 每个会话结束时的实测数据会写入 conv_stats，用于持续校准阈值。
         self.auto_rollover = bool(config.get("auto_rollover", False))
         # auto_compact=false 可关闭按阈值的自动压缩（手动"压缩上下文"仍然可用）。
         self.auto_compact = bool(config.get("auto_compact", True))
@@ -338,6 +344,29 @@ class AgentRunner:
         return (self._system_prompt() + "\n\n这是长期任务的继续执行，不要重新开始。\n"
                 + json.dumps(payload, ensure_ascii=False)
                 + "\n从待完成事项继续，不要重复已完成的读取。只返回一个 Agent JSON 动作。")
+
+    def _record_conv_stat(self, state: dict, conv_steps: int, tokens: int, chars: int,
+                          ended_by: str, model: str) -> None:
+        """每个 Copilot 会话结束时记录实测数据，用于校准本地阈值。
+
+        M365 Copilot 的对话长度上限不公开且动态变化；本地 compact/rollover
+        阈值只是估算起点，需要用这些真实样本（多少回合/Token/字符时触顶、
+        是主动切换还是被页面上限截断）持续修正。
+        """
+        if not self.conv_stat_saver:
+            return
+        try:
+            self.conv_stat_saver({
+                "conversation_index": int(state.get("conversation_index", 0)),
+                "model": model,
+                "steps": conv_steps,
+                "tokens": tokens,
+                "chars": chars,
+                "ended_by": ended_by,
+                "url": state.get("current_url") or "",
+            })
+        except Exception:
+            pass
 
     async def run(self, task: str, model: str) -> AgentResult:
         state = self.state_getter()
@@ -401,6 +430,8 @@ class AgentRunner:
             carrying_pending = False
 
             if need_rollover:
+                # 记录上一个 Copilot 会话的实测数据（主动切换或触顶被动切换）
+                self._record_conv_stat(state, conv_steps, tokens, chars, rollover_reason, model)
                 if rollovers >= self.max_rollovers:
                     self.state_saver(state="failed", last_error="超过最大 Copilot 会话切换次数")
                     return AgentResult("超过最大 Copilot 会话切换次数，任务已停止。", all_steps)
@@ -532,6 +563,8 @@ class AgentRunner:
                     self.state_saver(total_steps=total + 1, conversation_steps=conv_steps + 1,
                                      recent_steps=history[-self.keep_recent:], last_error=step["error"])
                     continue
+                self._record_conv_stat(state, conv_steps + 1, tokens + used_tokens,
+                                       chars + used_chars, "completed", model)
                 self.state_saver(state="completed", total_steps=total + 1, conversation_steps=conv_steps + 1,
                                  estimated_tokens=tokens + used_tokens, estimated_chars=chars + used_chars)
                 return AgentResult(action.get("content") or "任务已完成。", all_steps)
@@ -539,13 +572,26 @@ class AgentRunner:
             tool, arguments = action.get("tool", ""), action.get("arguments") or {}
             step = {"step": total + 1, "tool": tool, "arguments": arguments, "reason": action.get("reason", "")}
             event = None
-            try:
-                result = await self.tools.execute(tool, arguments)
-                step.update({"status": "ok", "result": result})
-                event = result.get("file_event") if isinstance(result, dict) else None
-            except Exception as exc:
-                step.update({"status": "error", "error": str(exc)})
-            if step.get("status") == "ok":
+            # 幂等保护：换会话接力时摘要若没让模型明确感知"上一动作已完成"，
+            # 或回合重发，同一动作可能连续到达。对非幂等工具（append 会重复
+            # 追加、move/copy 会重复搬运），与上一成功动作完全相同时跳过执行。
+            duplicate = False
+            if tool in NON_IDEMPOTENT_TOOLS and history:
+                last = history[-1]
+                duplicate = (last.get("status") == "ok" and last.get("tool") == tool and
+                             json.dumps(last.get("arguments") or {}, sort_keys=True, ensure_ascii=False)
+                             == json.dumps(arguments, sort_keys=True, ensure_ascii=False))
+            if duplicate:
+                step.update({"status": "ok", "result": {"skipped_duplicate": True,
+                             "detail": "与上一成功动作完全相同，幂等保护已跳过重复执行"}})
+            else:
+                try:
+                    result = await self.tools.execute(tool, arguments)
+                    step.update({"status": "ok", "result": result})
+                    event = result.get("file_event") if isinstance(result, dict) else None
+                except Exception as exc:
+                    step.update({"status": "error", "error": str(exc)})
+            if step.get("status") == "ok" and not duplicate:
                 changed_path = str(arguments.get("path") or arguments.get("destination") or "")
                 if tool in {"write_text", "append_text", "replace_text", "copy_path", "move_path"} and changed_path.lower().endswith((".py", ".json", ".html")):
                     validation_required = True
@@ -561,5 +607,8 @@ class AgentRunner:
                              estimated_tokens=tokens + used_tokens, estimated_chars=chars + used_chars,
                              recent_steps=history[-self.keep_recent:])
 
+        self._record_conv_stat(state, int(state.get("conversation_steps", 0)),
+                               int(state.get("estimated_tokens", 0)), int(state.get("estimated_chars", 0)),
+                               "failed: 达到最大总步骤数", model)
         self.state_saver(state="failed", last_error="达到最大总步骤数")
         return AgentResult("达到最大总步骤数，任务已停止。", all_steps)

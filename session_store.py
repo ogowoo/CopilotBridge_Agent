@@ -60,6 +60,16 @@ class SessionStore:
               before_hash TEXT, after_hash TEXT, result TEXT NOT NULL,
               FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
+            -- 每个 Copilot 会话结束时的实测数据：回合数/估算Token/字符/结束原因/模型。
+            -- M365 Copilot 的实际上限不公开且动态变化，这些样本用于校准本地阈值。
+            CREATE TABLE IF NOT EXISTS conv_stats (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
+              conversation_index INTEGER NOT NULL, model TEXT,
+              steps INTEGER NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0,
+              chars INTEGER NOT NULL DEFAULT 0, ended_by TEXT, url TEXT,
+              created REAL NOT NULL,
+              FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
             CREATE INDEX IF NOT EXISTS idx_steps_session ON steps(session_id, step_no);
             CREATE INDEX IF NOT EXISTS idx_files_session ON file_events(session_id, created);
             """)
@@ -141,6 +151,17 @@ class SessionStore:
     def file_events(self, sid: str):
         with self.lock, self._connect() as con:
             return [dict(x) for x in con.execute("SELECT * FROM file_events WHERE session_id=? ORDER BY created",(sid,))]
+
+    def add_conv_stat(self, sid: str, stat: dict[str, Any]):
+        with self.lock, self._connect() as con:
+            con.execute("INSERT INTO conv_stats(session_id,conversation_index,model,steps,tokens,chars,ended_by,url,created) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (sid, int(stat.get("conversation_index", 0)), stat.get("model"),
+                         int(stat.get("steps", 0)), int(stat.get("tokens", 0)), int(stat.get("chars", 0)),
+                         stat.get("ended_by"), stat.get("url"), time.time()))
+
+    def conv_stats(self, sid: str):
+        with self.lock, self._connect() as con:
+            return [dict(x) for x in con.execute("SELECT * FROM conv_stats WHERE session_id=? ORDER BY id", (sid,))]
 
     def delete(self, sid: str):
         with self.lock, self._connect() as con:
