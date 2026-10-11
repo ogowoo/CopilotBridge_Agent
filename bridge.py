@@ -1,0 +1,1494 @@
+"""Bridge 层：配置、运行状态、Playwright 浏览器自动化与 Agent 会话编排。
+
+HTTP 路由在 api.py；本模块不定义任何 FastAPI 端点。
+"""
+
+import asyncio, json, re, time, uuid
+from os.path import commonprefix
+from datetime import datetime
+from pathlib import Path
+from typing import Literal
+from fastapi import HTTPException
+from playwright.async_api import async_playwright
+from pydantic import BaseModel, Field
+from agent import AgentRunner, AgentPaused, CopilotServiceUnavailable, CopilotConversationFull, validate_token_budget
+from tools import ToolRegistry
+from session_store import SessionStore
+
+BASE = Path(__file__).resolve().parent
+CFG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
+validate_token_budget(CFG.get("agent", {}))
+PROFILE = BASE / "EdgeProfile"
+URL = CFG["copilot_url"]
+TIMEOUT = float(CFG.get("reply_timeout_seconds", 180))
+STABLE = float(CFG.get("stable_seconds", 3))
+POLL = float(CFG.get("poll_interval_seconds", .35))
+DIAG = bool(CFG.get("diagnostics", True))
+
+# API model ID -> possible labels shown by the Copilot web interface.
+# Keep the first label as the preferred name. Add labels here if your tenant
+# displays different wording.
+MODELS = {
+    "copilot-auto": {
+        "ui_names": ["Auto", "自动"],
+        "description": "由 Microsoft 365 Copilot 自动选择回答模式",
+    },
+    "copilot-quick-response": {
+        "ui_names": ["Quick response", "Quick", "快速响应", "快速"],
+        "description": "优先快速响应",
+    },
+    "copilot-think-deeper": {
+        "ui_names": ["Think deeper", "Think Deeper", "深入思考"],
+        "description": "使用更深入的推理模式",
+    },
+    "copilot-gpt": {
+        "ui_names": ["GPT"],
+        "description": "使用 Copilot 菜单中的 GPT 模型",
+    },
+    "copilot-gpt-5-6": {
+        "ui_names": ["GPT-5.6", "GPT 5.6", "GPT5.6"],
+        "description": "使用 Copilot 菜单中的 GPT-5.6 模型",
+    },
+    "copilot-sol": {
+        "ui_names": ["Sol", "SOL"],
+        "description": "使用 Copilot 菜单中的 Sol 模型",
+    },
+    "copilot-think": {
+        "ui_names": ["Think", "思考"],
+        "description": "使用 Copilot 菜单中的 Think 模型",
+    },
+}
+
+# Optional config.json extension. This lets you add or override models without
+# editing app.py. Example:
+# "models": {"copilot-custom": {"ui_names": ["Custom"], "description": "Custom model"}}
+for custom_id, custom_item in CFG.get("models", {}).items():
+    if isinstance(custom_item, dict) and custom_item.get("ui_names"):
+        MODELS[custom_id] = {
+            "ui_names": list(custom_item["ui_names"]),
+            "description": custom_item.get("description", custom_id),
+        }
+
+# Backward compatibility with the model name used by v7.0.0.
+MODEL_ALIASES = {
+    "copilot-chat-basic-web": "copilot-auto",
+}
+DEFAULT_MODEL = CFG.get("default_model", "copilot-auto")
+
+# Copilot 页面可访问性文本锚点。桥接依赖这些文本定位回合与回答边界；
+# 租户界面语言不同（例如中文界面）时，在 config.json 的 "markers" 中
+# 追加对应文案即可——配置值会并入下方默认列表，任一命中即生效。
+MARKERS = {
+    "assistant_turn": ["Copilot said:"],
+    "user_turn": ["You said:"],
+    "answer_end": ["\nSources\n", "\nMessage Copilot\n", "AI-generated content may be incorrect"],
+    "sources": ["Sources"],
+    "ignored_lines": ["Copy", "Like", "Dislike", "More", "Share", "Regenerate",
+                      "复制", "来源", "赞", "踩", "更多", "分享", "重新生成"],
+}
+for key, extra in CFG.get("markers", {}).items():
+    if key in MARKERS and isinstance(extra, list):
+        for value in extra:
+            if isinstance(value, str) and value and value not in MARKERS[key]:
+                MARKERS[key].append(value)
+
+
+def _last_turn(text: str, markers: list) -> tuple:
+    """Return (position, length) of the last occurring marker, or (-1, 0)."""
+    best_pos, best_len = -1, 0
+    for marker in markers:
+        pos = text.rfind(marker)
+        if pos > best_pos:
+            best_pos, best_len = pos, len(marker)
+    return best_pos, best_len
+
+pw = ctx = page = None
+lock = asyncio.Lock()
+RUNTIME = {}
+ACTIVE_SESSION_ID = None
+
+def runtime_update(session_id=None, **values):
+    sid = session_id or ACTIVE_SESSION_ID
+    if not sid:
+        return
+    item = RUNTIME.setdefault(sid, {"phase": "idle", "updated": time.time(), "answer_preview": "", "prompt_preview": "", "detail": ""})
+    item.update(values)
+    item["updated"] = time.time()
+
+
+class Message(BaseModel):
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class Request(BaseModel):
+    model: str = DEFAULT_MODEL
+    messages: list[Message] = Field(min_length=1)
+    stream: bool = True
+    new_conversation: bool = True
+
+class SessionMessageRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=120000)
+    model: str | None = None
+    agent_mode: bool = True
+
+class AgentRequest(BaseModel):
+    model: str = DEFAULT_MODEL
+    messages: list[Message] = Field(min_length=1)
+    stream: bool = False
+    max_steps: int | None = Field(default=None, ge=1, le=10000)
+    session_id: str | None = Field(default=None, min_length=1, max_length=100)
+    reuse_session: bool = True
+    workspace: str | None = None
+    # False 时为普通对话模式：只在该 Session 绑定的 Copilot 会话里问答，
+    # 不启动 Agent 工具循环。
+    agent_mode: bool = True
+
+
+def log(s):
+    print(f"[{datetime.now():%H:%M:%S}] {s}", flush=True)
+
+
+def normalize_model(model_id):
+    normalized = MODEL_ALIASES.get(model_id, model_id)
+    if normalized not in MODELS:
+        raise HTTPException(
+            400,
+            detail={
+                "message": f"不支持的模型: {model_id}",
+                "type": "invalid_request_error",
+                "available_models": list(MODELS),
+            },
+        )
+    return normalized
+
+
+async def diagnostics(tag):
+    if not DIAG or page is None: return
+    try:
+        (BASE / "last_page.txt").write_text(await page.locator("body").inner_text(), encoding="utf-8")
+        if bool(CFG.get("diagnostic_html", False)):
+            (BASE / "last_page.html").write_text(await page.content(), encoding="utf-8")
+    except Exception: pass
+
+async def visible(selectors):
+    for selector in selectors:
+        loc = page.locator(selector)
+        for i in range(await loc.count() - 1, -1, -1):
+            try:
+                if await loc.nth(i).is_visible():
+                    return loc.nth(i)
+            except Exception:
+                pass
+    return None
+
+
+async def visible_locator(locators):
+    for loc in locators:
+        try:
+            count = await loc.count()
+            for i in range(count - 1, -1, -1):
+                item = loc.nth(i)
+                if await item.is_visible():
+                    return item
+        except Exception:
+            pass
+    return None
+
+
+async def dismiss():
+    b = await visible([
+        'button:has-text("Accept")',
+        'button:has-text("接受")',
+        'button:has-text("Got it")',
+        'button:has-text("知道了")',
+        'button:has-text("Not now")',
+        'button:has-text("暂不")',
+    ])
+    if b:
+        try:
+            await b.click(timeout=1000)
+        except Exception:
+            pass
+
+
+async def new_chat():
+    b = await visible([
+        'button[aria-label*="New chat" i]',
+        'a[aria-label*="New chat" i]',
+        'button:has-text("New chat")',
+        'button:has-text("新建聊天")',
+    ])
+    if b:
+        await b.click()
+        await asyncio.sleep(1)
+    else:
+        await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+        await asyncio.sleep(2)
+    # 新聊天会把模型重置为租户默认：缓存直接记为默认模型，
+    # 请求默认模型时连按钮文本都不用读。
+    _forget_selected_model(reset_to=DEFAULT_MODEL)
+
+
+# 上次成功确认/切换的模型。新版 Copilot 的模型按钮经常没有可读文本，
+# 无法廉价确认当前模型；有缓存即可跳过"开菜单→点选项"的整段耗时操作。
+SELECTED_MODEL = None
+
+
+def _forget_selected_model(reset_to: str | None = None):
+    """Invalidate the model cache, optionally recording a known reset target.
+
+    new_chat() resets the selector to the tenant default, so callers can pass
+    DEFAULT_MODEL to keep cache hits for default-model requests.
+    """
+    global SELECTED_MODEL
+    SELECTED_MODEL = reset_to
+
+
+async def model_button():
+    all_names = [name for item in MODELS.values() for name in item["ui_names"]]
+    exact = re.compile(
+        r"^(?:" + "|".join(re.escape(name) for name in all_names) + r")$",
+        re.I,
+    )
+    button = await visible_locator([
+        page.get_by_role("button", name=exact),
+        page.locator('button[aria-haspopup="menu"]').filter(has_text=exact),
+        page.locator('button[aria-haspopup="listbox"]').filter(has_text=exact),
+        page.locator('[role="button"][aria-haspopup="menu"]').filter(has_text=exact),
+        page.locator('[role="button"][aria-haspopup="listbox"]').filter(has_text=exact),
+    ])
+    if not button:
+        # 兜底：当前选中的模型可能是菜单里新出现、尚未收录的模型，
+        # 按钮文本不匹配任何已知名字，改按结构特征定位模型选择器。
+        button = await visible_locator([
+            page.locator('button[aria-label*="Model Selector" i]'),
+            page.locator('button[aria-label*="模型"][aria-haspopup]'),
+            page.locator('button[aria-label*="model" i][aria-haspopup="menu"]'),
+            page.locator('button[aria-label*="model" i][aria-haspopup="listbox"]'),
+        ])
+    return button
+
+
+def _model_id_from_label(label: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", label.strip().lower()).strip("-")
+    return f"copilot-{slug}" if slug else ""
+
+
+def _menu_target_locators(target):
+    """Locate a model entry by name across the menu roles Copilot uses."""
+    return [
+        page.get_by_role("option", name=target),
+        page.get_by_role("menuitem", name=target),
+        page.get_by_role("menuitemradio", name=target),
+        page.get_by_text(target, exact=True),
+        page.get_by_role("option", name=target, exact=False),
+        page.get_by_role("menuitem", name=target, exact=False),
+        page.get_by_role("menuitemradio", name=target, exact=False),
+        page.get_by_text(target, exact=False),
+    ]
+
+
+async def _visible_menu_items():
+    """All currently visible model menu entries as (locator, label, is_submenu_parent)."""
+    entries = []
+    for role in ("option", "menuitemradio", "menuitem"):
+        items = page.get_by_role(role)
+        for i in range(await items.count()):
+            item = items.nth(i)
+            try:
+                if not await item.is_visible():
+                    continue
+                raw_text = (await item.inner_text() or "")
+                # 先取第一行再规整空白：inner_text 会把 标题/描述/已展开子项
+                # 拼成多行；若先折叠空白，多行会拼成一个不存在的假模型名
+                # （例如 "GPT-5.6 Sol Think deeper"），之后选择必失败。
+                first_line = raw_text.splitlines()[0] if raw_text else ""
+                label = re.sub(r"\s+", " ", first_line).strip()
+                if not label or len(label) > 40:
+                    continue
+                has_popup = ((await item.get_attribute("aria-haspopup")) or "").lower() == "menu"
+                entries.append((item, label, has_popup))
+            except Exception:
+                pass
+    return entries
+
+
+async def _expand_submenu(parent) -> None:
+    """Open a submenu parent: hover first (Fluent UI opens on hover), click as fallback."""
+    try:
+        await parent.hover(timeout=3000)
+        await asyncio.sleep(.4)
+        return
+    except Exception:
+        pass
+    try:
+        await parent.click(timeout=3000)
+        await asyncio.sleep(.4)
+    except Exception:
+        pass
+
+
+async def discover_models() -> list:
+    """打开 Copilot 模型菜单，枚举可见选项（含二级子菜单）并并入 MODELS。
+
+    已知名字（含各 ui_names 别名）直接跳过；带 aria-haspopup 的父项会
+    逐个 hover/click 展开后继续枚举其子菜单，父项本身不作为模型收录。
+    新出现的叶子选项按标签生成 copilot-<slug> 形式的 ID。
+    只读操作：结束后 Escape 逐级关闭菜单，不改变当前选中模型。
+    """
+    button = await model_button()
+    if not button:
+        return []
+    try:
+        await button.click(timeout=5000)
+    except Exception:
+        await button.click(timeout=3000, force=True)
+    await asyncio.sleep(.6)
+    labels = []
+    expanded = set()
+    try:
+        # 主菜单 + 最多两级子菜单；每展开一个父项立即收集新出现的选项
+        for _depth in range(3):
+            entries = await _visible_menu_items()
+            for _item, label, has_popup in entries:
+                if not has_popup and label not in labels:
+                    labels.append(label)
+            pending = [(item, label) for item, label, has_popup in entries
+                       if has_popup and label not in expanded]
+            if not pending:
+                break
+            for item, label in pending:
+                expanded.add(label)
+                await _expand_submenu(item)
+    finally:
+        for _ in range(3):  # 子菜单可能多级展开，多按几次 Escape 确保全部关闭
+            try:
+                await page.keyboard.press("Escape")
+                await asyncio.sleep(.2)
+            except Exception:
+                pass
+    added = []
+    known_names = {name.casefold() for item in MODELS.values() for name in item["ui_names"]}
+    for label in labels:
+        if label.casefold() in known_names:
+            continue
+        model_id = _model_id_from_label(label)
+        if not model_id or model_id in MODELS:
+            continue
+        MODELS[model_id] = {
+            "ui_names": [label],
+            "description": f"从 Copilot 菜单自动发现的模型（{label}）",
+        }
+        known_names.add(label.casefold())
+        added.append(model_id)
+    return added
+
+
+async def select_model(model_id):
+    global SELECTED_MODEL
+    normalized = normalize_model(model_id)
+    target_names = MODELS[normalized]["ui_names"]
+    button = await model_button()
+    if not button:
+        await diagnostics("no_model_button")
+        raise RuntimeError("找不到 Copilot 模型选择按钮")
+
+    # The modern Copilot button can have no useful inner_text. Its aria-label
+    # contains values such as "Think deeper, Model Selector".
+    try:
+        current_text = (await button.inner_text()).strip()
+    except Exception:
+        current_text = ""
+    try:
+        current_label = (await button.get_attribute("aria-label") or "").strip()
+    except Exception:
+        current_label = ""
+    current_values = (current_text, current_label)
+    # 按逗号/斜杠分段后精确比较，防止 "GPT" 子串命中 "GPT-5.6, Model Selector"
+    # 之类的 aria-label 导致误判"已是目标模型"而跳过切换。
+    def _norm(value: str) -> str:
+        return re.sub(r"\s+", " ", value.strip().casefold())
+    segments = set()
+    for value in current_values:
+        if not value:
+            continue
+        segments.add(_norm(value))
+        for part in re.split(r"[,，/|]", value):
+            if part.strip():
+                segments.add(_norm(part))
+    targets = {_norm(name) for name in target_names}
+    if segments & targets:
+        SELECTED_MODEL = normalized
+        log(f"模型已是 {normalized} ({current_label or current_text})")
+        return normalized
+    other_known = {_norm(name) for mid, item in MODELS.items() if mid != normalized
+                   for name in item["ui_names"]}
+    if SELECTED_MODEL == normalized and not (segments & other_known):
+        # 按钮文本为空或无法识别（未命中任何已知模型），且没有证据表明
+        # 当前选中的是其他模型：信任上次成功选择，跳过开菜单的耗时操作。
+        return normalized
+
+    try:
+        await button.scroll_into_view_if_needed(timeout=3000)
+    except Exception:
+        pass
+    try:
+        await button.click(timeout=8000)
+    except Exception:
+        # A Fluent UI animation can keep the element unstable. Force click is
+        # safe here because the locator resolved to the explicit model button.
+        await button.click(timeout=5000, force=True)
+    await asyncio.sleep(.6)
+
+    target = re.compile(r"^(?:" + "|".join(re.escape(name) for name in target_names) + r")$", re.I)
+    option = await visible_locator(_menu_target_locators(target))
+    if not option:
+        # 目标可能藏在二级子菜单（如 GPT 父项飞出更多模型）：
+        # 逐个展开带 aria-haspopup 的父项后重新查找。
+        entries = await _visible_menu_items()
+        for parent, label, has_popup in entries:
+            if not has_popup:
+                continue
+            await _expand_submenu(parent)
+            option = await visible_locator(_menu_target_locators(target))
+            if option:
+                break
+    if not option:
+        try: await page.keyboard.press("Escape")
+        except Exception: pass
+        await diagnostics("model_option_missing")
+        # 菜单结构变化或标签未收录不应打死整个回合：按当前已选模型继续，
+        # 日志给出明确警告，由用户决定是否修正模型表。
+        log(f"警告：模型菜单中找不到 {target_names[0]}，已按当前选中模型继续")
+        return SELECTED_MODEL or normalized
+    try:
+        await option.click(timeout=8000)
+    except Exception:
+        await option.click(timeout=5000, force=True)
+    await asyncio.sleep(.8)
+    SELECTED_MODEL = normalized
+    log(f"模型已切换为 {normalized}")
+    return normalized
+
+async def input_box():
+    x = await visible([
+        'textarea[placeholder]',
+        'textarea',
+        '[contenteditable="true"][role="textbox"]',
+        '[contenteditable="true"]',
+        '[role="textbox"]',
+    ])
+    if not x:
+        await diagnostics("no_input")
+        raise RuntimeError("找不到输入框，请重新运行 login.py")
+    return x
+
+
+async def body_text():
+    try:
+        return (await page.locator("body").inner_text()).replace("\r\n", "\n")
+    except Exception:
+        return ""
+
+
+def extract_latest_answer(text):
+    # Select only the final Copilot said block to avoid sidebar/history text.
+    pos, marker_len = _last_turn(text or "", MARKERS["assistant_turn"])
+    if pos < 0:
+        return ""
+    answer = text[pos + marker_len:]
+    positions = [answer.find(m) for m in MARKERS["answer_end"] if answer.find(m) >= 0]
+    if positions:
+        answer = answer[:min(positions)]
+    ignored = set(MARKERS["ignored_lines"])
+    lines = []
+    for line in answer.splitlines():
+        line = line.rstrip()
+        if line.strip() in ignored:
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+async def current_answer():
+    return extract_latest_answer(await body_text())
+
+
+async def generating():
+    return bool(await visible([
+        'button[aria-label*="Stop" i]',
+        'button:has-text("Stop generating")',
+        'button:has-text("停止生成")',
+    ]))
+
+
+async def count_user_markers():
+    text = await body_text()
+    return sum(text.count(m) for m in MARKERS["user_turn"])
+
+
+async def box_value(box):
+    try:
+        tag = await box.evaluate("el => el.tagName.toLowerCase()")
+        if tag in {"textarea", "input"}:
+            return (await box.input_value()).strip()
+        return (await box.inner_text()).strip()
+    except Exception:
+        return ""
+
+
+async def _body_contains_turn_marker(marker: str) -> bool:
+    if not marker:
+        return False
+    try:
+        return marker in await body_text()
+    except Exception:
+        return False
+
+
+async def _wait_turn_marker(marker: str, timeout: float = 30) -> bool:
+    """Confirm the exact submitted turn, independent of virtualized message counts."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if await _body_contains_turn_marker(marker):
+            return True
+        await asyncio.sleep(POLL)
+    return False
+
+
+async def sent_successfully(box, before_count, prompt):
+    marker_match = re.search(r"\[CBP-TURN:[0-9a-f]{12}\]", prompt)
+    marker = marker_match.group(0) if marker_match else ""
+    for _ in range(20):
+        await asyncio.sleep(.25)
+        value = await box_value(box)
+        if marker:
+            if not value and await _body_contains_turn_marker(marker):
+                return True
+            continue
+        now_count = await count_user_markers()
+        if now_count > before_count:
+            return True
+        if not value and prompt in await body_text():
+            return True
+    return False
+
+
+async def click_send_button():
+    button = await visible([
+        'button[aria-label="Send"]',
+        'button[aria-label*="Send" i]',
+        'button[title*="Send" i]',
+        'button[aria-label*="发送"]',
+        'button[title*="发送"]',
+        'button[data-testid*="send" i]',
+    ])
+    if button:
+        try:
+            await button.click(timeout=2000)
+            return True
+        except Exception:
+            pass
+    return False
+
+
+async def send(prompt, make_new, model_id):
+    await dismiss()
+    if make_new:
+        await new_chat()
+    # Select after New chat because opening a new conversation can reset Auto.
+    selected_model = await select_model(model_id)
+
+    box = await input_box()
+    await box.click()
+    try:
+        await box.fill(prompt)
+    except Exception:
+        await box.press("Control+A")
+        await box.press_sequentially(prompt)
+    before_count = await count_user_markers()
+
+    await box.press("Enter")
+    if await sent_successfully(box, before_count, prompt):
+        await diagnostics("sent")
+        log("问题已发送")
+        return selected_model
+
+    await box.click()
+    if await click_send_button() and await sent_successfully(box, before_count, prompt):
+        await diagnostics("sent_button")
+        log("问题已通过发送按钮提交")
+        return selected_model
+
+    await box.click()
+    await box.press("Control+Enter")
+    if await sent_successfully(box, before_count, prompt):
+        await diagnostics("sent_ctrl_enter")
+        log("问题已通过 Ctrl+Enter 提交")
+        return selected_model
+
+    full = await conversation_full_check()
+    if full:
+        await diagnostics("send_failed_conversation_full")
+        raise CopilotConversationFull(full)
+    await diagnostics("send_failed")
+    raise RuntimeError("问题停留在输入框，Enter、发送按钮和 Ctrl+Enter 均未触发发送")
+
+
+async def completion_signal():
+    text = await body_text()
+    pos, marker_len = _last_turn(text, MARKERS["assistant_turn"])
+    answer = text[pos + marker_len:] if pos >= 0 else ""
+    stripped = answer.rstrip()
+    has_sources = any(("\n" + s + "\n") in answer or stripped.endswith(s)
+                      for s in MARKERS["sources"])
+    stop_button = await visible([
+        'button[aria-label*="Stop" i]',
+        'button:has-text("Stop generating")',
+        'button:has-text("停止生成")',
+    ])
+    return has_sources or stop_button is None
+
+
+async def updates():
+    deadline = time.monotonic() + TIMEOUT
+    previous = ""
+    emitted = 0
+    unchanged_since = None
+    started = False
+    while time.monotonic() < deadline:
+        await asyncio.sleep(POLL)
+        current = await current_answer()
+        if not current:
+            continue
+        if current == previous:
+            unchanged_since = unchanged_since or time.monotonic()
+        else:
+            unchanged_since = None
+        stable_prefix = commonprefix([previous, current]) if previous else ""
+        if len(stable_prefix) > emitted:
+            part = stable_prefix[emitted:]
+            emitted = len(stable_prefix)
+            if part:
+                if not started:
+                    started = True
+                    log("已识别 Copilot said 区域，开始流式返回")
+                yield part
+        previous = current
+        settled = unchanged_since is not None and time.monotonic() - unchanged_since >= STABLE
+        if current and settled and await completion_signal():
+            if len(current) > emitted:
+                yield current[emitted:]
+                emitted = len(current)
+            await diagnostics("success")
+            log(f"回答完成，共 {len(current)} 字符")
+            return
+    final = await current_answer()
+    if final and await completion_signal():
+        if len(final) > emitted:
+            yield final[emitted:]
+        await diagnostics("success_late")
+        log(f"回答延迟完成，共 {len(final)} 字符")
+        return
+    await diagnostics("timeout")
+    raise TimeoutError("等待回答超时，请查看 last_page.txt")
+
+
+
+
+
+
+
+
+# 当前实际运行的浏览器模式（无头启动失败回退后与配置值可能不同）。
+HEADLESS_CURRENT = bool(CFG.get("headless", False))
+
+
+def _launch_kwargs(headless: bool) -> dict:
+    kwargs = dict(
+        user_data_dir=str(PROFILE),
+        channel=CFG.get("browser_channel", "msedge"),
+        headless=headless,
+        viewport={"width": 1440, "height": 1000},
+    )
+    if headless:
+        # 降低无头模式被页面自动化检测的概率。
+        kwargs["args"] = ["--disable-blink-features=AutomationControlled"]
+    return kwargs
+
+
+async def _start_browser(headless: bool) -> bool:
+    """(Re)launch the persistent Edge context with the given headless mode.
+
+    headless is a launch-time parameter: toggling it always relaunches the
+    context. EdgeProfile persists, so the Copilot login survives the switch.
+    Caller must hold `lock`. Returns the mode actually in effect (headless
+    launch failure falls back to a visible window).
+    """
+    global ctx, page, HEADLESS_CURRENT
+    if ctx is not None:
+        try:
+            await ctx.close()
+        except Exception:
+            pass
+        ctx = page = None
+    launch_kwargs = _launch_kwargs(headless)
+    try:
+        ctx = await pw.chromium.launch_persistent_context(**launch_kwargs)
+    except Exception:
+        if not headless:
+            raise
+        # 部分环境（旧版 Edge/安全策略）不支持无头持久化上下文，回退有窗口模式。
+        log("无头模式启动失败，已回退为有窗口模式；请升级 Edge 或将 headless 改回 false")
+        launch_kwargs["headless"] = False
+        ctx = await pw.chromium.launch_persistent_context(**launch_kwargs)
+    HEADLESS_CURRENT = launch_kwargs["headless"]
+    log("浏览器模式：" + ("无头（不显示窗口）" if HEADLESS_CURRENT else "有窗口"))
+    page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+    await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+    _forget_selected_model()  # 页面重载，模型选择状态未知
+    return HEADLESS_CURRENT
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+AGENT_CFG = CFG.get("agent", {})
+AGENT_WORKSPACE = (BASE / AGENT_CFG.get("workspace", "workspace")).resolve()
+AGENT_TOOLS = ToolRegistry(AGENT_WORKSPACE, AGENT_CFG)
+# 与 AgentRunner.__init__ 的默认值保持一致，供 WebUI 显示真实 Token 预算。
+TOKEN_BUDGET = int(AGENT_CFG.get("context_token_budget", 24000))
+SESSION_DB = Path(AGENT_CFG.get("session_store", "data/agent.db"))
+if not SESSION_DB.is_absolute(): SESSION_DB = BASE / SESSION_DB
+AGENT_SESSIONS = SessionStore(SESSION_DB)
+AGENT_SESSIONS.recover_interrupted()
+async def periodic_session_cleanup():
+    """每小时执行一次会话维护，使 session_timeout_seconds /
+    completed_session_retention_days / max_sessions 三项配置生效。"""
+    await asyncio.sleep(60)  # 启动后先稳定一分钟
+    while True:
+        try:
+            result = AGENT_SESSIONS.run_maintenance(
+                AGENT_CFG.get("session_timeout_seconds"),
+                AGENT_CFG.get("completed_session_retention_days"),
+                AGENT_CFG.get("max_sessions"))
+            if any(result.values()):
+                log(f"会话维护完成: {result}")
+        except Exception as exc:
+            log(f"会话维护失败: {exc}")
+        await asyncio.sleep(3600)
+
+
+async def auto_resume_interrupted():
+    """auto_resume=true 时，自动恢复上次服务中断（而非用户主动暂停）的会话。
+
+    串行恢复：run_agent 内部持有全局锁，多个会话会自然排队执行。
+    """
+    await asyncio.sleep(3)  # 等待浏览器页面稳定
+    sessions = AGENT_SESSIONS.interrupted_sessions()
+    if not sessions:
+        return
+    log(f"自动恢复 {len(sessions)} 个被中断的会话")
+    for s in sessions:
+        sid = s["id"]
+        try:
+            # 置 ready 让 AgentRunner 进入 running；恢复消息与原任务一致，
+            # 避免被当作"用户追加任务"重复进入 pending。
+            AGENT_SESSIONS.patch(sid, state="ready", last_error=None)
+            req = AgentRequest(
+                model=s.get("model") or DEFAULT_MODEL,
+                messages=[Message(role="user", content=s.get("original_task") or "继续")],
+                stream=False, session_id=sid, workspace=s.get("workspace"))
+            log(f"会话 {sid} 已自动恢复")
+            await run_agent(req)
+        except Exception as exc:
+            log(f"会话 {sid} 自动恢复失败: {exc}")
+
+def _has_complete_agent_action(text: str) -> bool:
+    try:
+        from agent import AgentRunner
+        return AgentRunner._parse(text).get("type") in {"tool", "final"}
+    except Exception:
+        return False
+
+# Copilot 限流/服务不可用的典型整段提示。仅在回答很短（<=600 字符）且命中
+# 特征时判定为服务问题；可解析的 Agent JSON 动作优先于本判定，不会误判。
+COPILOT_UNAVAILABLE_PATTERNS = [
+    r"temporarily unable to respond",
+    r"try again later",
+    r"too many requests",
+    r"rate\s*limit(?:ed)?",
+    r"something went wrong",
+    r"currently (?:busy|unavailable)",
+    r"service (?:is )?currently unavailable",
+    r"having trouble (?:responding|processing)",
+    r"请稍后(?:再试|重试)",
+    r"稍后(?:再试|重试)",
+    r"暂时无法(?:响应|处理|为你服务|回答)",
+    r"请求(?:过多|过于频繁|频率过高)",
+    r"服务(?:暂时)?不可用",
+    r"出了点问题",
+]
+
+
+def copilot_unavailable_reason(text: str) -> str:
+    value = re.sub(r"\s+", " ", (text or "").strip())
+    if not value or len(value) > 600:
+        return ""
+    # 含有 Agent 动作结构的文本一律视为正常回答，不参与服务判定。
+    if re.search(r"['\"]type['\"]\s*:", value):
+        return ""
+    for pattern in COPILOT_UNAVAILABLE_PATTERNS:
+        if re.search(pattern, value, re.I):
+            return value[:200]
+    return ""
+
+
+# Copilot 对话长度达到上限的典型提示（英文/中文）。命中后的正确处理是
+# 切换新会话，而不是原地重试，因此与服务限流分开识别。
+CONVERSATION_FULL_PATTERNS = [
+    r"reached (?:its|the) (?:maximum |max )?(?:length|limit)",
+    r"conversation (?:is|has become) too long",
+    r"start a new (?:conversation|chat) to continue",
+    r"longer than (?:the )?(?:maximum|allowed)",
+    r"对话(?:已)?达到(?:长度)?上限",
+    r"对话(?:内容)?(?:过长|太多|超出)",
+    r"(?:请)?开始新(?:的)?(?:对话|会话|聊天)(?:以继续|再继续)",
+    r"新(?:建)?(?:对话|会话|聊天)以继续",
+]
+
+
+def conversation_full_reason(text: str) -> str:
+    value = re.sub(r"\s+", " ", (text or "").strip())
+    if not value:
+        return ""
+    for pattern in CONVERSATION_FULL_PATTERNS:
+        m = re.search(pattern, value, re.I)
+        if m:
+            return value[max(0, m.start() - 60):m.end() + 60]
+    return ""
+
+
+async def conversation_full_check() -> str:
+    """在整页文本中探测对话上限横幅；剔除最近一条回答正文，
+    避免把 Copilot 正常回答里的相关措辞误判为上限提示。"""
+    body = await body_text()
+    answer = extract_latest_answer(body)
+    if answer:
+        body = body.replace(answer, " ")
+    return conversation_full_reason(body)
+
+
+async def wait_agent_answer(previous: str = "", pause_check=None) -> str:
+    """Wait using inactivity timeout, not a fixed per-turn wall-clock timeout.
+
+    TIMEOUT now means: fail only when no answer progress is observed for this
+    many seconds. Every text change and every visible generation cycle refreshes
+    the idle deadline. A separate hard deadline prevents an infinite wait.
+    Malformed but finished output is returned to AgentRunner for repair.
+    """
+    started_at = time.monotonic()
+    hard_timeout = float(CFG.get("reply_hard_timeout_seconds", max(TIMEOUT * 5, 900)))
+    hard_deadline = started_at + hard_timeout
+    idle_deadline = started_at + TIMEOUT
+    current = ""
+    last_change = started_at
+    generation_seen = False
+    candidate_seen = False
+    last_full_check = started_at
+
+    while time.monotonic() < hard_deadline:
+        await asyncio.sleep(POLL)
+        if pause_check and pause_check():
+            raise AgentPaused("用户请求暂停，回合等待已中断")
+        now = time.monotonic()
+        still_generating = await generating()
+        value = (await current_answer()).strip()
+
+        # 对话已满时 Copilot 不会开始生成：快速失败，交给上层换会话重发。
+        if not still_generating and not candidate_seen and not generation_seen:
+            if now - last_full_check >= 5:
+                last_full_check = now
+                full = await conversation_full_check()
+                if full:
+                    await diagnostics("agent_conversation_full_early")
+                    raise CopilotConversationFull(full)
+
+        if still_generating:
+            generation_seen = True
+            idle_deadline = now + TIMEOUT
+
+        is_candidate = bool(value) and (value != previous or generation_seen)
+        if is_candidate:
+            candidate_seen = True
+            if value != current:
+                current = value
+                last_change = now
+                idle_deadline = now + TIMEOUT
+
+        if current and not still_generating:
+            quiet_for = now - last_change
+            if _has_complete_agent_action(current) and quiet_for >= max(1.0, POLL * 3):
+                await diagnostics("agent_answer_ready")
+                return current
+            # 服务限流/不可用提示不是 Agent 回答：立即识别并交给上层退避重试，
+            # 不进入解析失败计数，更不会触发新建会话。
+            unavailable = copilot_unavailable_reason(current)
+            if unavailable and quiet_for >= max(1.0, POLL * 3):
+                await diagnostics("copilot_service_unavailable")
+                raise CopilotServiceUnavailable(unavailable)
+            # Do not wait until TIMEOUT for a finished malformed response. Let
+            # AgentRunner parse/recover it and issue a repair turn if necessary.
+            if generation_seen and quiet_for >= max(STABLE, 3.0):
+                await diagnostics("agent_answer_needs_repair")
+                return current
+
+        if now >= idle_deadline:
+            final = (await current_answer()).strip()
+            if not candidate_seen and not generation_seen:
+                full = await conversation_full_check()
+                if full:
+                    await diagnostics("agent_conversation_full_idle")
+                    raise CopilotConversationFull(full)
+            unavailable = copilot_unavailable_reason(final)
+            if unavailable and not _has_complete_agent_action(final):
+                await diagnostics("copilot_service_unavailable_idle")
+                raise CopilotServiceUnavailable(unavailable)
+            if final and (final != previous or generation_seen or candidate_seen):
+                await diagnostics("agent_answer_idle_return")
+                return final
+            await diagnostics("agent_answer_idle_timeout")
+            raise TimeoutError(
+                f"Copilot 连续 {int(TIMEOUT)} 秒没有产生新的回答进度，请查看 last_page.txt"
+            )
+
+    final = (await current_answer()).strip()
+    if not candidate_seen and not generation_seen:
+        full = await conversation_full_check()
+        if full:
+            await diagnostics("agent_conversation_full_hard")
+            raise CopilotConversationFull(full)
+    unavailable = copilot_unavailable_reason(final)
+    if unavailable and not _has_complete_agent_action(final):
+        await diagnostics("copilot_service_unavailable_hard")
+        raise CopilotServiceUnavailable(unavailable)
+    if final and (final != previous or generation_seen or candidate_seen):
+        await diagnostics("agent_answer_hard_return")
+        return final
+    await diagnostics("agent_answer_hard_timeout")
+    raise TimeoutError(
+        f"Copilot 单步等待超过硬上限 {int(hard_timeout)} 秒，请查看 last_page.txt"
+    )
+
+async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pause_check=None) -> str:
+    """Send one Agent turn and bind the response to a unique visible turn marker.
+
+    Copilot virtualizes long chat DOM nodes, so the number of visible "You said"
+    blocks can stay unchanged. The marker is unique for every request and cannot
+    be confused with a prior turn or text left in the composer.
+    """
+    previous = "" if make_new else (await current_answer()).strip()
+    turn_id = uuid.uuid4().hex[:12]
+    marker = f"[CBP-TURN:{turn_id}]"
+    tagged_prompt = prompt.rstrip() + "\n\n" + marker
+    runtime_update(phase="sending", prompt_preview=tagged_prompt[-12000:], answer_preview="",
+                   detail=f"正在提交 Agent 回合 {turn_id}", make_new=make_new)
+    await send(tagged_prompt, make_new, model_id)
+
+    # Require the exact unique marker to appear in the rendered conversation.
+    # This replaces the unreliable visible-message-count check.
+    if not await _wait_turn_marker(marker, min(TIMEOUT, 45)):
+        full = await conversation_full_check()
+        if full:
+            await diagnostics("agent_conversation_full_at_send")
+            raise CopilotConversationFull(full)
+        await diagnostics("agent_turn_marker_missing")
+        raise TimeoutError(f"未确认 Agent 回合 {turn_id} 进入 Copilot 会话，已停止以避免读取旧回答")
+
+    runtime_update(phase="waiting", detail=f"Agent 回合 {turn_id} 已确认，等待 Copilot 回答")
+    return await wait_agent_answer(previous, pause_check=pause_check)
+
+async def run_agent(req: AgentRequest):
+    global ACTIVE_SESSION_ID
+    if not AGENT_CFG.get("enabled", True): raise HTTPException(503, "Agent 功能已禁用")
+    req.model=normalize_model(req.model)
+    task="\n".join(f"[{m.role}] {m.content.strip()}" for m in req.messages if m.content.strip())
+    if not task: raise HTTPException(400,"至少需要一条消息")
+    sid=req.session_id or ("task-"+uuid.uuid4().hex[:12])
+    ACTIVE_SESSION_ID = sid
+    runtime_update(sid, phase="queued", detail="任务已进入执行队列", answer_preview="", prompt_preview="")
+    async with lock:
+        existing=AGENT_SESSIONS.get(sid)
+        workspace=(req.workspace.strip() if req.workspace else None) or (existing or {}).get("workspace") or str(AGENT_WORKSPACE)
+        AGENT_TOOLS.set_root(workspace,False)
+        if not existing:
+            existing=AGENT_SESSIONS.create(sid,task,str(AGENT_TOOLS.root),req.model)
+            effective_task = task
+        else:
+            effective_task = existing.get("original_task") or task
+            if task.strip() and task.strip() != effective_task.strip():
+                effective_task += "\n\n用户追加任务：\n" + task
+                pending = list(existing.get("pending") or [])
+                pending.append(task)
+                # 追加指令不再强制新建会话：Agent 会在当前会话直接下达，保留完整上下文。
+                AGENT_SESSIONS.patch(sid, pending=pending, state="ready")
+        AGENT_SESSIONS.patch(sid,workspace=str(AGENT_TOOLS.root),model=req.model)
+        def pause_check():
+            st = AGENT_SESSIONS.get(sid) or {}
+            return st.get("state") == "paused"
+        async def turn(prompt,model,force_new=False):
+            st=AGENT_SESSIONS.get(sid)
+            make_new = force_new or not st.get("current_url")
+            if not make_new:
+                # 页面可能因服务重启/窗口切换被重置到基础地址：续聊前若当前
+                # 页面不是该会话的 Copilot 对话，先导航回已保存的会话 URL，
+                # 避免回合误入一个全新的空对话。
+                expected = st.get("current_url") or ""
+                m = CONVERSATION_URL_RE.search(expected)
+                if m and m.group(0) not in (page.url or ""):
+                    await page.goto(expected, wait_until="domcontentloaded", timeout=120000)
+                    await asyncio.sleep(1)
+                    _forget_selected_model()
+            marker = _agent_chat_marker(sid, int(st.get("conversation_index", 0)))
+            # Copilot derives the sidebar title from the beginning of the first
+            # message. This is more stable than automating the Rename editor.
+            send_prompt = (marker + "\n" + prompt) if make_new else prompt
+            try:
+                ans=await agent_chat_once(send_prompt,model,make_new,pause_check=pause_check)
+            except AgentPaused:
+                # 回合已发送到 Copilot：保存会话 URL，恢复后继续同一聊天，
+                # 避免暂停-恢复后重复创建新会话。
+                if make_new and page.url:
+                    paused_url = await stable_conversation_url(timeout=6) or (page.url or "")
+                    stp=AGENT_SESSIONS.get(sid); urls=list(stp.get("conversation_urls") or [])
+                    if paused_url and paused_url not in urls: urls.append(paused_url)
+                    if paused_url:
+                        AGENT_SESSIONS.patch(sid,current_url=paused_url,conversation_urls=urls)
+                raise
+            # 等 Copilot 把会话 ID 路由进 URL 再保存；超时兜底原地址保证连续。
+            final_url = await stable_conversation_url(timeout=15) or (page.url or "")
+            st=AGENT_SESSIONS.get(sid); urls=list(st.get("conversation_urls") or [])
+            is_new_url = bool(final_url and final_url not in urls)
+            if is_new_url: urls.append(final_url)
+            if final_url:
+                AGENT_SESSIONS.patch(sid,current_url=final_url,conversation_urls=urls)
+            # The marker is already embedded in the first prompt. Do not navigate
+            # away after receiving an answer merely to rename the sidebar row;
+            # that navigation can invalidate the next-turn DOM baseline.
+            if is_new_url:
+                runtime_update(sid, detail="新 Copilot 会话已绑定唯一标识")
+            return ans
+        def get(): return AGENT_SESSIONS.get(sid)
+        def save(**kw): return AGENT_SESSIONS.patch(sid,**kw)
+        def add_step(x):
+            st=get(); AGENT_SESSIONS.add_step(sid,int(x.get("step",st["total_steps"]+1)),int(st["conversation_index"]),x)
+        def add_file(x): AGENT_SESSIONS.add_file_event(sid,x)
+        def add_conv_stat(x): AGENT_SESSIONS.add_conv_stat(sid,x)
+        runner=AgentRunner(AGENT_TOOLS,turn,AGENT_CFG,get,save,add_step,add_file,add_conv_stat)
+        try:
+            result = await runner.run(effective_task,req.model)
+            runtime_update(sid, phase="completed", detail=result.content, answer_preview=result.content)
+            return result, sid
+        except Exception as exc:
+            runtime_update(sid, phase="failed", detail=str(exc))
+            AGENT_SESSIONS.patch(sid,state="failed",last_error=str(exc))
+            raise
+        finally:
+            ACTIVE_SESSION_ID = None
+
+def _agent_chat_marker(session_id: str, conversation_index: int) -> str:
+    safe = re.sub(r"[^0-9A-Za-z._-]+", "-", str(session_id)).strip("-") or "session"
+    return f"[CBP-AGENT][{safe[:36]}][C{int(conversation_index):03d}]"
+
+
+async def _open_chat_sidebar():
+    """Ensure the Chats list is visible before locating a conversation row."""
+    chats = page.get_by_text(re.compile(r"^Chats$|^聊天$", re.I), exact=True)
+    try:
+        if await chats.count() and await chats.first.is_visible():
+            return
+    except Exception:
+        pass
+    toggle = await visible_locator([
+        page.get_by_role("button", name=re.compile(r"Chats|Chat history|聊天|聊天记录|Open navigation|导航", re.I)),
+        page.locator('button[aria-label*="chat" i]'),
+        page.locator('button[aria-label*="聊天"]'),
+        page.locator('button[aria-label*="navigation" i]'),
+    ])
+    if toggle:
+        try:
+            await toggle.click(timeout=5000)
+        except Exception:
+            await toggle.click(timeout=3000, force=True)
+        await asyncio.sleep(.8)
+
+
+CONVERSATION_URL_RE = re.compile(r"/chat/conversation/[0-9A-Za-z-]{8,}")
+
+
+async def stable_conversation_url(timeout: float = 12.0) -> str:
+    """Wait until the Copilot URL carries a conversation id and return it.
+
+    New chats open at the base /chat address; Copilot routes the conversation
+    id into the URL asynchronously. Persisting the base address breaks delete
+    targeting later, so poll briefly. Returns "" when no id shows up in time.
+    """
+    deadline = time.monotonic() + max(0.5, timeout)
+    url = ""
+    while time.monotonic() < deadline:
+        try:
+            url = page.url or ""
+        except Exception:
+            url = ""
+        if CONVERSATION_URL_RE.search(url):
+            return url
+        await asyncio.sleep(0.5)
+    return ""
+
+
+async def _conversation_link_by_title(marker: str):
+    """Sidebar fallback: locate a conversation link by its full CBP marker text.
+
+    Used for legacy records whose saved URL has no conversation id, where
+    URL-based matching cannot identify the row.
+    """
+    try:
+        nodes = page.get_by_text(marker, exact=False)
+        for index in range(await nodes.count() - 1, -1, -1):
+            node = nodes.nth(index)
+            try:
+                if not await node.is_visible():
+                    continue
+                link = node.locator("xpath=ancestor-or-self::a[1]")
+                if await link.count():
+                    return link.first
+                row = node.locator("xpath=ancestor::*[.//a][1]")
+                if await row.count():
+                    link = row.first.locator("a").first
+                    if await link.count():
+                        return link
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return None
+
+
+async def _conversation_sidebar_link(url: str):
+    """Find the conversation link in the left history list using its URL id/path."""
+    if not CONVERSATION_URL_RE.search(url or ""):
+        # 无会话 ID 的基础地址会匹配到所有聊天链接，禁止用于定位。
+        return None
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+    chat_id = path.rsplit("/", 1)[-1] if path else ""
+    selectors = []
+    if chat_id:
+        selectors.extend([
+            f'a[href*="{chat_id}"]',
+            f'[role="link"][href*="{chat_id}"]',
+        ])
+    if path:
+        selectors.extend([
+            f'a[href*="{path}"]',
+            f'[role="link"][href*="{path}"]',
+        ])
+    for selector in selectors:
+        loc = page.locator(selector)
+        for index in range(await loc.count() - 1, -1, -1):
+            item = loc.nth(index)
+            try:
+                await item.scroll_into_view_if_needed(timeout=3000)
+                if await item.is_visible():
+                    return item
+            except Exception:
+                pass
+    return None
+
+
+async def _chat_row_from_link(link):
+    """Return the smallest sidebar row that owns the link and its hidden More button."""
+    candidates = [
+        link.locator('xpath=ancestor::*[@role="listitem"][1]'),
+        link.locator('xpath=ancestor::*[@role="treeitem"][1]'),
+        link.locator('xpath=ancestor::li[1]'),
+        link.locator('xpath=ancestor::div[count(.//a) = 1 and .//button][1]'),
+        link.locator('xpath=..'),
+    ]
+    for row in candidates:
+        try:
+            if await row.count() and await row.first.is_visible():
+                return row.first
+        except Exception:
+            pass
+    return link.locator('xpath=..')
+
+
+async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
+    """Delete a saved Copilot conversation by URL, with a same-session marker guard.
+
+    URL is the durable identity. Sidebar title suffix Cnnn is only a safety guard,
+    because conversation_urls order can differ from conversation_index after retries.
+    """
+    result = {"url": url, "expected_title": expected_title, "deleted": False,
+              "error": None, "method": "url-plus-session-marker"}
+    try:
+        marker_match = re.match(r"^(\[CBP-AGENT\]\[[^\]]+\])\[C\d+\]$", expected_title)
+        if not marker_match:
+            raise RuntimeError("拒绝删除：目标没有合法 CBP-AGENT 标识")
+        session_prefix = marker_match.group(1)
+
+        has_conv_id = bool(CONVERSATION_URL_RE.search(url or ""))
+        if has_conv_id:
+            await page.goto(url, wait_until="domcontentloaded", timeout=120000)
+            await asyncio.sleep(1.5)
+        await _open_chat_sidebar()
+
+        # Locate the exact saved conversation URL. Do not infer Cnnn from list order.
+        link = await _conversation_sidebar_link(url) if has_conv_id else None
+        if not link:
+            # 兜底：历史数据保存的是无会话 ID 的基础地址，按完整标记文本定位。
+            link = await _conversation_link_by_title(expected_title)
+        if not link:
+            raise RuntimeError("左侧 Chats 中找不到与保存 URL 对应的会话")
+        row = await _chat_row_from_link(link)
+        await row.scroll_into_view_if_needed(timeout=5000)
+        row_text = (await row.inner_text()).strip()
+        if session_prefix not in row_text:
+            raise RuntimeError(
+                f"URL 对应会话不属于当前 Session，拒绝删除；需要前缀: {session_prefix}"
+            )
+
+        await row.hover(timeout=5000)
+        await asyncio.sleep(.35)
+        more = await visible_locator([
+            row.get_by_role("button", name=re.compile(r"More|更多|Options|选项|Pin and More", re.I)),
+            row.locator('button[aria-label*="More" i]'),
+            row.locator('button[title*="More" i]'),
+            row.locator('button[aria-label*="更多"]'),
+            row.locator('button').last,
+        ])
+        if not more:
+            await link.focus()
+            for _ in range(4):
+                await page.keyboard.press("Tab")
+                await asyncio.sleep(.15)
+                focused = page.locator(":focus")
+                label = ((await focused.get_attribute("aria-label")) or "") if await focused.count() else ""
+                if re.search(r"More|更多|Options|选项", label, re.I):
+                    more = focused
+                    break
+        if not more:
+            raise RuntimeError("找到目标会话，但找不到 More 按钮")
+
+        try:
+            await more.click(timeout=8000)
+        except Exception:
+            await more.click(timeout=5000, force=True)
+        await asyncio.sleep(.5)
+
+        delete_item = await visible_locator([
+            page.get_by_role("menuitem", name=re.compile(r"^Delete$|^删除$", re.I)),
+            page.get_by_role("button", name=re.compile(r"^Delete$|^删除$", re.I)),
+            page.get_by_text(re.compile(r"^Delete$|^删除$", re.I), exact=True),
+        ])
+        if not delete_item:
+            raise RuntimeError("会话菜单中找不到 Delete/删除")
+        try:
+            await delete_item.click(timeout=8000)
+        except Exception:
+            await delete_item.click(timeout=5000, force=True)
+        await asyncio.sleep(.6)
+
+        # Copilot 确认弹窗在各租户实现不同（role=dialog / alertdialog /
+        # Fluent DialogSurface），且带入场动画。轮询等待弹窗出现后再定位
+        # Delete/删除 确认按钮，配两级兜底，防止漏点导致删除失败。
+        confirm = None
+        confirm_deadline = time.monotonic() + 10
+        while time.monotonic() < confirm_deadline and confirm is None:
+            dialog = await visible_locator([
+                page.get_by_role("alertdialog"),
+                page.get_by_role("dialog"),
+                page.locator('[role="alertdialog"]'),
+                page.locator('[role="dialog"][aria-modal="true"]'),
+                page.locator(".fui-DialogSurface"),
+            ])
+            if dialog:
+                confirm = await visible_locator([
+                    dialog.get_by_role("button", name=re.compile(r"^Delete$|^删除$|Delete conversation|Delete chat|确认删除|删除对话", re.I)),
+                    dialog.locator('button').filter(has_text=re.compile(r"^Delete$|^删除$", re.I)),
+                    dialog.locator('button[type="submit"]'),
+                ])
+                if not confirm:
+                    # 兜底一：对话框内排除 Cancel/取消 后剩下的可点击按钮即确认键。
+                    try:
+                        cancel_re = re.compile(r"Cancel|取消|No, thanks|否", re.I)
+                        buttons = dialog.locator("button")
+                        for bi in range(await buttons.count() - 1, -1, -1):
+                            btn = buttons.nth(bi)
+                            if not await btn.is_visible():
+                                continue
+                            label = ((await btn.inner_text()) or "") + " " + ((await btn.get_attribute("aria-label")) or "")
+                            if not cancel_re.search(label):
+                                confirm = btn
+                                break
+                    except Exception:
+                        pass
+            if not confirm:
+                # 兜底二：全局精确匹配 Delete/删除 按钮（删除菜单已关闭，页面唯一）。
+                confirm = await visible_locator([
+                    page.get_by_role("button", name=re.compile(r"^Delete$|^删除$", re.I)),
+                ])
+            if not confirm:
+                await asyncio.sleep(0.4)
+        if not confirm:
+            raise RuntimeError("确认窗口中找不到 Delete/删除按钮")
+        # 点击确认后校验弹窗确实关闭；未关闭说明点击落在遮罩/动画上，重试。
+        for _attempt in range(3):
+            try:
+                await confirm.click(timeout=8000)
+            except Exception:
+                try:
+                    await confirm.click(timeout=5000, force=True)
+                except Exception:
+                    pass
+            await asyncio.sleep(1.0)
+            still_open = await visible_locator([
+                page.get_by_role("alertdialog"),
+                page.get_by_role("dialog"),
+                page.locator('[role="alertdialog"]'),
+                page.locator('[role="dialog"][aria-modal="true"]'),
+                page.locator(".fui-DialogSurface"),
+            ])
+            if not still_open:
+                break
+        await asyncio.sleep(0.5)
+
+        async def _still_listed() -> bool:
+            if has_conv_id:
+                probe = await _conversation_sidebar_link(url)
+            else:
+                probe = await _conversation_link_by_title(expected_title)
+            if not probe:
+                return False
+            try:
+                return bool(await probe.is_visible())
+            except Exception:
+                return False
+
+        # 侧栏是虚拟滚动列表，删除后可能短暂残留：轮询等待，必要时刷新再判定。
+        gone_deadline = time.monotonic() + 8
+        while time.monotonic() < gone_deadline:
+            if not await _still_listed():
+                break
+            await asyncio.sleep(0.8)
+        if await _still_listed():
+            try:
+                await page.reload(wait_until="domcontentloaded", timeout=60000)
+                await asyncio.sleep(2)
+                await _open_chat_sidebar()
+            except Exception:
+                pass
+        if await _still_listed():
+            raise RuntimeError("点击删除后，目标 URL 仍存在于 Chats 列表")
+        result["deleted"] = True
+    except Exception as exc:
+        result["error"] = str(exc)
+        await diagnostics("delete_agent_url_marker_failed")
+    return result
+
+
+
+async def plain_chat_turn(sid: str, content: str, model_id: str) -> dict:
+    """普通对话回合：在 Session 绑定的 Copilot 会话里问答，不跑工具循环。
+
+    由 continue_session_message（跟进）和 plain_completions（新任务）共用。
+    调用方负责写入 user 消息；本函数写入 assistant 回复并维护会话 URL。
+    """
+    global ACTIVE_SESSION_ID
+    state = AGENT_SESSIONS.get(sid)
+    async with lock:
+        ACTIVE_SESSION_ID = sid
+        runtime_update(sid, phase="manual_sending", detail="正在发送普通对话", prompt_preview=content, answer_preview="")
+        url = state.get("current_url")
+        make_new = not bool(url)
+        if url and page.url != url:
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=120000)
+                await asyncio.sleep(1)
+                _forget_selected_model()  # 会话切换后页面上选中的模型可能不同
+            except Exception:
+                make_new = True
+        previous = "" if make_new else (await current_answer()).strip()
+        try:
+            await send(content, make_new, model_id)
+            answer = (await wait_agent_answer(previous)).strip()
+            current = AGENT_SESSIONS.get(sid)
+            chat_url = await stable_conversation_url(timeout=10) or (page.url or "")
+            urls = list(current.get("conversation_urls") or [])
+            if chat_url and chat_url not in urls: urls.append(chat_url)
+            AGENT_SESSIONS.add_message(sid, "assistant", answer, int(current.get("conversation_index", 0)))
+            if chat_url:
+                AGENT_SESSIONS.patch(sid, current_url=chat_url, conversation_urls=urls, model=model_id)
+            else:
+                AGENT_SESSIONS.patch(sid, conversation_urls=urls, model=model_id)
+            runtime_update(sid, phase="manual_completed", answer_preview=answer[-12000:], detail="普通对话完成")
+            return {"session_id":sid,"role":"assistant","content":answer,"url":page.url,"mode":"chat"}
+        finally:
+            ACTIVE_SESSION_ID = None
+
+
+async def plain_completions(req: AgentRequest):
+    """普通对话模式发起新任务：创建 Session 但不启动 Agent 工具循环。"""
+    if not AGENT_CFG.get("enabled", True): raise HTTPException(503, "Agent 功能已禁用")
+    model_id = normalize_model(req.model)
+    contents = [m.content.strip() for m in req.messages if m.role == "user" and m.content.strip()]
+    if not contents: raise HTTPException(400, "至少需要一条 user 消息")
+    content = contents[-1]
+    sid = req.session_id or ("task-" + uuid.uuid4().hex[:12])
+    if not AGENT_SESSIONS.get(sid):
+        workspace = (req.workspace.strip() if req.workspace else None) or str(AGENT_WORKSPACE)
+        AGENT_SESSIONS.create(sid, content, workspace, model_id)
+    AGENT_SESSIONS.add_message(sid, "user", content, 0)
+    result = await plain_chat_turn(sid, content, model_id)
+    return {"id": "chat-" + uuid.uuid4().hex, "object": "chat.completion",
+            "created": int(time.time()), "model": model_id,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": result["content"]},
+                         "finish_reason": "stop"}],
+            "session_id": sid, "mode": "chat"}
+
+
+async def shutdown_browser():
+    """关闭浏览器上下文与 Playwright（服务退出时调用）。"""
+    global ctx, page, pw
+    try:
+        if ctx is not None:
+            await ctx.close()
+    except Exception:
+        pass
+    ctx = page = None
+    try:
+        if pw is not None:
+            await pw.stop()
+    except Exception:
+        pass
+    pw = None
