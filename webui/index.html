@@ -219,8 +219,19 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 [data-theme="light"] .dres .err{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
 [data-theme="light"] .dres.ok .ric{background:#16a34a1a;color:#15803d;border-color:#16a34a55}
 [data-theme="light"] .dres.fail .ric{background:#dc26261a;color:#b91c1c;border-color:#dc262655}
-@media(max-width:1100px){.content{grid-template-columns:1fr;min-height:0}.steps,.livepane{flex:none;max-height:60vh}.kpis{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:860px){.app{grid-template-columns:1fr}.rail{max-height:46vh;border-right:0;border-bottom:1px solid var(--line)}}
+@media(max-width:1100px){.content{grid-template-columns:1fr;min-height:0;flex:none}.steps,.livepane{flex:none;max-height:60vh}.kpis{grid-template-columns:repeat(2,1fr)}}
+/* 手机：彻底回退为自然文档流，页面整体滚动，禁用填满窗口的 flex 布局 */
+@media(max-width:860px){
+  .app{grid-template-columns:1fr}
+  .rail{max-height:46vh;border-right:0;border-bottom:1px solid var(--line)}
+  .main{display:block}
+  #sessionView{display:block;flex:none}
+  .content{display:block;min-height:0}
+  .content>.card,.livecol,.livecol .card{display:block}
+  .livecol .card{margin-top:12px}
+  .steps,.livepane{max-height:55vh}
+  .tabs .tab{padding:3px 9px;font-size:11.5px}
+}
 </style></head><body>
 <div class="app">
   <aside class="rail">
