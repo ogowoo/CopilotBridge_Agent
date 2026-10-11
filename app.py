@@ -139,6 +139,9 @@ class AgentRequest(BaseModel):
     session_id: str | None = Field(default=None, min_length=1, max_length=100)
     reuse_session: bool = True
     workspace: str | None = None
+    # False 时为普通对话模式：只在该 Session 绑定的 Copilot 会话里问答，
+    # 不启动 Agent 工具循环。
+    agent_mode: bool = True
 
 
 def log(s):
@@ -1691,7 +1694,17 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
                 "mode": "agent"}
 
     # Plain chat mode keeps the same Copilot web conversation and does not run tools.
+    return await plain_chat_turn(sid, content, model_id)
+
+
+async def plain_chat_turn(sid: str, content: str, model_id: str) -> dict:
+    """普通对话回合：在 Session 绑定的 Copilot 会话里问答，不跑工具循环。
+
+    由 continue_session_message（跟进）和 plain_completions（新任务）共用。
+    调用方负责写入 user 消息；本函数写入 assistant 回复并维护会话 URL。
+    """
     global ACTIVE_SESSION_ID
+    state = AGENT_SESSIONS.get(sid)
     async with lock:
         ACTIVE_SESSION_ID = sid
         runtime_update(sid, phase="manual_sending", detail="正在发送普通对话", prompt_preview=content, answer_preview="")
@@ -1721,6 +1734,26 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
             return {"session_id":sid,"role":"assistant","content":answer,"url":page.url,"mode":"chat"}
         finally:
             ACTIVE_SESSION_ID = None
+
+
+async def plain_completions(req: AgentRequest):
+    """普通对话模式发起新任务：创建 Session 但不启动 Agent 工具循环。"""
+    if not AGENT_CFG.get("enabled", True): raise HTTPException(503, "Agent 功能已禁用")
+    model_id = normalize_model(req.model)
+    contents = [m.content.strip() for m in req.messages if m.role == "user" and m.content.strip()]
+    if not contents: raise HTTPException(400, "至少需要一条 user 消息")
+    content = contents[-1]
+    sid = req.session_id or ("task-" + uuid.uuid4().hex[:12])
+    if not AGENT_SESSIONS.get(sid):
+        workspace = (req.workspace.strip() if req.workspace else None) or str(AGENT_WORKSPACE)
+        AGENT_SESSIONS.create(sid, content, workspace, model_id)
+    AGENT_SESSIONS.add_message(sid, "user", content, 0)
+    result = await plain_chat_turn(sid, content, model_id)
+    return {"id": "chat-" + uuid.uuid4().hex, "object": "chat.completion",
+            "created": int(time.time()), "model": model_id,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": result["content"]},
+                         "finish_reason": "stop"}],
+            "session_id": sid, "mode": "chat"}
 
 @app.post("/v1/agent/sessions/{sid}/continue")
 async def continue_agent_session(sid: str, req: SessionMessageRequest):
@@ -1766,6 +1799,9 @@ async def set_workspace(payload:dict): return {"workspace":AGENT_TOOLS.set_root(
 async def agent_tools(): return {"workspace":str(AGENT_TOOLS.root),"tools":AGENT_TOOLS.descriptions()}
 @app.post("/v1/agent/completions")
 async def agent_completions(req:AgentRequest):
+    if not req.agent_mode:
+        # 普通对话模式：创建 Session 绑定 Copilot 会话，但不跑工具循环
+        return await plain_completions(req)
     if req.stream: return StreamingResponse(stream_agent(req),media_type="text/event-stream")
     result,sid=await run_agent(req)
     return {"id":"agent-"+uuid.uuid4().hex,"object":"chat.completion","created":int(time.time()),"model":req.model,"choices":[{"index":0,"message":{"role":"assistant","content":result.content},"finish_reason":"stop"}],"agent_steps":result.steps,"session_id":sid,"workspace":str(AGENT_TOOLS.root)}
