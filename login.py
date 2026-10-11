@@ -47,6 +47,11 @@ def reset_profile():
 async def main():
     if "--reset" in sys.argv:
         reset_profile()
+    elif service_running():
+        # 服务运行中开第二个持久化上下文会抢 EdgeProfile 锁，可能损坏登录态
+        print(f"检测到服务正在运行（端口 {PORT}）。直接登录会导致 EdgeProfile 锁冲突。")
+        print("请先停止服务再运行 login.py；或服务有窗口模式下直接在自动化窗口里登录。")
+        sys.exit(1)
     async with async_playwright() as pw:
         ctx = await pw.chromium.launch_persistent_context(
             user_data_dir=str(PROFILE),

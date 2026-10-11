@@ -16,6 +16,21 @@ from tools import ToolRegistry
 ChatFunction = Callable[[str, str, bool], Awaitable[str]]
 
 
+def _decode_fragment(value: str) -> str:
+    """JSON 字符串片段的容错反转义。
+
+    必须先处理 '\\\\'（字面量反斜杠）再处理 \\n/\\t 等转义，否则源码中的
+    \\\\n（字面量反斜杠+n）会被错解成 反斜杠+换行。
+    """
+    return (value
+            .replace('\\\\', '\x00')      # 字面量反斜杠先占位
+            .replace('\\r\\n', '\n')
+            .replace('\\n', '\n')
+            .replace('\\t', '\t')
+            .replace('\\"', '"')
+            .replace('\x00', '\\'))       # 还原
+
+
 def validate_token_budget(config: dict[str, Any]) -> None:
  context = int(config.get("context_token_budget", 128000))
  compact = int(config.get("compact_at_tokens", 76000))
@@ -82,29 +97,71 @@ class AgentRunner:
 
     @staticmethod
     def _objects(text: str):
-        text = html.unescape((text or '').strip()).replace('\ufeff', '')
-        text = re.sub(r'^```(?:json)?\s*|\s*```$', '', text, flags=re.I | re.S).strip()
-        variants = [text]
-        # Copilot may return a JSON string that contains an escaped JSON object.
-        try:
-            decoded = json.loads(text)
-            if isinstance(decoded, str):
-                variants.append(decoded)
-            elif isinstance(decoded, dict):
-                yield decoded
-        except Exception:
-            pass
+        raw = (text or '').strip().replace('\ufeff', '')
+        raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw, flags=re.I | re.S).strip()
+        # 先按原文解析：合法 JSON 字符串值里的 &amp;/&quot; 不应被篡改。
+        # 原文一个候选都解析不出时，才尝试 HTML 反转义变体（兼容 Copilot
+        # 偶尔输出的转义文本）。整体解析成功时不再扫描字符串碎片，避免把
+        # content 里的 JSON 文本误认为嵌套动作。
         decoder = json.JSONDecoder()
-        for value in variants:
+
+        def scan(value: str):
+            found = False
+            try:
+                decoded = json.loads(value)
+                if isinstance(decoded, dict):
+                    yield decoded, True
+                    return
+                if isinstance(decoded, str) and decoded != value:
+                    # Copilot may return a JSON string that contains an escaped JSON object.
+                    for obj, _ in scan(decoded):
+                        yield obj, True
+                    return
+            except Exception:
+                pass
             for start, ch in enumerate(value):
                 if ch != '{':
                     continue
                 try:
                     obj, _ = decoder.raw_decode(value[start:])
                     if isinstance(obj, dict):
-                        yield obj
+                        found = True
+                        yield obj, False
                 except Exception:
                     continue
+            if found:
+                return
+
+        for obj, _whole in scan(raw):
+            yield obj
+        else:
+            # for-else 不便判断生成器是否产出，改用显式收集重来
+            pass
+
+    @staticmethod
+    def _objects_fallback(text: str):
+        """原文解析失败后的 HTML 反转义变体扫描。"""
+        unescaped = html.unescape((text or '').strip().replace('\ufeff', ''))
+        unescaped = re.sub(r'^```(?:json)?\s*|\s*```$', '', unescaped, flags=re.I | re.S).strip()
+        decoder = json.JSONDecoder()
+        try:
+            decoded = json.loads(unescaped)
+            if isinstance(decoded, dict):
+                yield decoded
+                return
+            if isinstance(decoded, str):
+                unescaped = decoded
+        except Exception:
+            pass
+        for start, ch in enumerate(unescaped):
+            if ch != '{':
+                continue
+            try:
+                obj, _ = decoder.raw_decode(unescaped[start:])
+                if isinstance(obj, dict):
+                    yield obj
+            except Exception:
+                continue
 
     @classmethod
     def _parse(cls, text: str) -> dict[str, Any]:
@@ -161,7 +218,7 @@ class AgentRunner:
             if m:
                 m2 = re.search(r'["\']content["\']\s*:\s*["\'](.*)["\']\s*\}?\s*$', html.unescape(text or ''), re.I | re.S)
                 if m2:
-                    content = m2.group(1).replace('\\n', '\n').replace('\\"', '"')
+                    content = _decode_fragment(m2.group(1))
                     return {'type': 'final', 'content': content}
         # Copilot frequently emits write_text content containing raw, unescaped
         # double quotes. The outer action is then invalid JSON even though the
@@ -190,12 +247,7 @@ class AgentRunner:
                 boundary = _bounds[-1] if _bounds else None
                 if boundary:
                     content = raw[content_start:content_start + boundary.start()]
-                    content = (content
-                        .replace('\\r\\n', '\n')
-                        .replace('\\n', '\n')
-                        .replace('\\t', '\t')
-                        .replace('\\"', '"')
-                        .replace('\\\\', '\\'))
+                    content = _decode_fragment(content)
                     return {
                         'type': 'tool',
                         'tool': tool_match.group(1).lower(),
@@ -221,17 +273,13 @@ class AgentRunner:
                 path_end = raw.find('",', path_key.end())
                 if path_end < 0:
                     path_end = raw.find("',", path_key.end())
-                old_boundary = re.search(r'["\']\s*,\s*["\']new["\']\s*:\s*["\']', raw[old_key.end():], re.I)
+                _ob = list(re.finditer(r'["\']\s*,\s*["\']new["\']\s*:\s*["\']', raw[old_key.end():], re.I))
+                old_boundary = _ob[-1] if _ob else None
                 _nb = list(re.finditer(r'["\'](?:\s*,\s*["\'][A-Za-z_][A-Za-z0-9_]*["\']\s*:\s*(?:["\'][^"\'\\]*["\']|-?\d+(?:\.\d+)?|true|false|null))*\s*}\s*,\s*["\']reason["\']\s*:', raw[new_key.end():], re.I | re.S))
                 new_boundary = _nb[-1] if _nb else None
                 if path_end >= 0 and old_boundary and new_boundary:
                     def decode_fragment(value: str) -> str:
-                        return (value
-                            .replace('\\r\\n', '\n')
-                            .replace('\\n', '\n')
-                            .replace('\\t', '\t')
-                            .replace('\\"', '"')
-                            .replace('\\\\', '\\'))
+                        return _decode_fragment(value)
 
                     old_value = raw[old_key.end():old_key.end() + old_boundary.start()]
                     new_value = raw[new_key.end():new_key.end() + new_boundary.start()]
@@ -313,7 +361,8 @@ class AgentRunner:
             if status == "ok" and tool:
                 completed.append(f"{tool}: {args.get('path') or args.get('source') or ''}".strip())
             if status == "error": errors.append(str(item.get("error", ""))[:500])
-            if tool in {"write_text", "append_text", "replace_text", "copy_path", "move_path", "delete_path"}:
+            if tool in {"write_text", "append_text", "write_text_b64", "append_text_b64",
+                        "replace_text", "copy_path", "move_path", "delete_path"}:
                 path = args.get("path") or args.get("destination") or args.get("source")
                 if path: modified[path] = {"operation": tool, "verified": tool == "read_text", "status": status}
             result = item.get("result")
@@ -328,8 +377,15 @@ class AgentRunner:
             "last_successful_step": max([x.get("step", 0) for x in history if x.get("status") == "ok"] or [0]),
             "workspace": str(self.tools.root),
         }
-        while self.estimate_tokens(json.dumps(summary, ensure_ascii=False)) > self.max_summary_tokens and len(summary["completed"]) > 10:
-            summary["completed"] = summary["completed"][len(summary["completed"]) // 3:]
+        while self.estimate_tokens(json.dumps(summary, ensure_ascii=False)) > self.max_summary_tokens and (
+                len(summary["completed"]) > 10 or summary["errors"] or summary["important_findings"]):
+            # completed 砍 2/3，不够再砍 errors/findings，防止单侧截不下来的死循环
+            if len(summary["completed"]) > 10:
+                summary["completed"] = summary["completed"][len(summary["completed"]) // 3:]
+            elif summary["errors"]:
+                summary["errors"] = summary["errors"][len(summary["errors"]) // 2:]
+            else:
+                summary["important_findings"] = summary["important_findings"][len(summary["important_findings"]) // 2:]
         return summary
 
     def _continuation_prompt(self, task: str, summary: dict, recent: list[dict], state: dict) -> str:
@@ -404,6 +460,10 @@ class AgentRunner:
             conv_steps = int(state.get("conversation_steps", 0))
             tokens = int(state.get("estimated_tokens", 0))
             chars = int(state.get("estimated_chars", 0))
+            # 会话级计数：只在换会话时清零，压缩不重置——本地压缩缩短的是后续
+            # 提示，M365 远端对话长度不变，rollover 压力必须按会话全程累计。
+            conv_t = int(state.get("conv_tokens", 0))
+            conv_c = int(state.get("conv_chars", 0))
             rollovers = int(state.get("conversation_index", 0))
             manual_compact = bool(state.get("compact_requested"))
             manual_rollover = bool(state.get("rollover_requested"))
@@ -420,9 +480,9 @@ class AgentRunner:
                 tokens = int(state.get("estimated_tokens", 0))
                 chars = int(state.get("estimated_chars", 0))
 
-            # 压缩后使用最新计数重新判断，防止旧阈值连续创建新会话。
-            automatic_pressure = (tokens >= self.rollover_at or
-                                  chars >= self.max_context_chars or
+            # 压缩后使用最新计数重新判断；rollover 压力看会话级 conv_* 计数。
+            automatic_pressure = (conv_t >= self.rollover_at or
+                                  conv_c >= self.max_context_chars or
                                   conv_steps >= self.per_conversation)
             automatic_rollover = (self.auto_rollover and automatic_pressure and
                                   conv_steps >= self.min_steps_before_rollover)
@@ -431,11 +491,14 @@ class AgentRunner:
 
             if need_rollover:
                 # 记录上一个 Copilot 会话的实测数据（主动切换或触顶被动切换）
-                self._record_conv_stat(state, conv_steps, tokens, chars, rollover_reason, model)
+                self._record_conv_stat(state, conv_steps, conv_t, conv_c, rollover_reason, model)
                 if rollovers >= self.max_rollovers:
                     self.state_saver(state="failed", last_error="超过最大 Copilot 会话切换次数")
                     return AgentResult("超过最大 Copilot 会话切换次数，任务已停止。", all_steps)
-                if not summary:
+                pending_carry = [x for x in (state.get("pending") or []) if str(x).strip()]
+                if not summary or pending_carry:
+                    # pending 非空时必须重算摘要：用户追加的指令要随检查点
+                    # 带进新会话，不能被无条件 pending=[] 静默丢弃。
                     summary = self._deterministic_summary(task, history, state)
                 prompt = self._continuation_prompt(task, summary, history, state)
                 force_new = True
@@ -443,11 +506,14 @@ class AgentRunner:
                 park_state = "paused" if (self.state_getter() or {}).get("state") == "paused" else "running"
                 self.state_saver(conversation_index=rollovers + 1, conversation_steps=0,
                                  estimated_tokens=0, estimated_chars=0,
+                                 conv_tokens=0, conv_chars=0,
                                  rollover_requested=False, compact_requested=False,
                                  summary=summary, state=park_state, last_error=None,
                                  pending=[])  # pending 已随 continuation 摘要带入新会话
                 tokens = 0
                 chars = 0
+                conv_t = 0
+                conv_c = 0
                 conv_steps = 0
                 force_rollover = False
                 event = {"step": total + 1, "status": "session_rollover", "reason": rollover_reason}
@@ -519,8 +585,12 @@ class AgentRunner:
                     _updates["state"] = "waiting"
                 self.state_saver(**_updates)
                 if service_failures >= self.max_service_unavailable:
-                    self.state_saver(state="waiting",
-                                     last_error="Copilot 服务持续不可用，已停止自动重试；服务恢复后请点击继续")
+                    # 用户已请求暂停时不覆盖 paused，只记录原因。
+                    if (self.state_getter() or {}).get("state") == "paused":
+                        self.state_saver(last_error="Copilot 服务持续不可用，已停止自动重试；恢复后可点击继续")
+                    else:
+                        self.state_saver(state="waiting",
+                                         last_error="Copilot 服务持续不可用，已停止自动重试；服务恢复后请点击继续")
                     return AgentResult("Copilot 服务持续不可用，任务已安全暂停，可稍后继续。", all_steps)
                 delay = min(self.service_retry_base_seconds * (2 ** min(service_failures - 1, 4)),
                             self.service_retry_max_seconds)
@@ -552,6 +622,7 @@ class AgentRunner:
                 history.append(step); all_steps.append(step); self.step_saver(step)
                 self.state_saver(total_steps=total + 1, conversation_steps=conv_steps + 1,
                                  estimated_tokens=tokens + used_tokens, estimated_chars=chars + used_chars,
+                                 conv_tokens=conv_t + used_tokens, conv_chars=conv_c + used_chars,
                                  recent_steps=history[-self.keep_recent:], last_error=str(exc))
                 if parse_failures >= self.max_parse_failures:
                     # 连续解析失败是回答格式问题，不是上下文耗尽：压缩后继续用当前会话。
@@ -570,8 +641,8 @@ class AgentRunner:
                     self.state_saver(total_steps=total + 1, conversation_steps=conv_steps + 1,
                                      recent_steps=history[-self.keep_recent:], last_error=step["error"])
                     continue
-                self._record_conv_stat(state, conv_steps + 1, tokens + used_tokens,
-                                       chars + used_chars, "completed", model)
+                self._record_conv_stat(state, conv_steps + 1, conv_t + used_tokens,
+                                       conv_c + used_chars, "completed", model)
                 self.state_saver(state="completed", total_steps=total + 1, conversation_steps=conv_steps + 1,
                                  estimated_tokens=tokens + used_tokens, estimated_chars=chars + used_chars)
                 return AgentResult(action.get("content") or "任务已完成。", all_steps)
@@ -612,10 +683,11 @@ class AgentRunner:
             if event: self.file_event_saver(event)
             self.state_saver(total_steps=total + 1, conversation_steps=conv_steps + 1,
                              estimated_tokens=tokens + used_tokens, estimated_chars=chars + used_chars,
+                             conv_tokens=conv_t + used_tokens, conv_chars=conv_c + used_chars,
                              recent_steps=history[-self.keep_recent:])
 
         self._record_conv_stat(state, int(state.get("conversation_steps", 0)),
-                               int(state.get("estimated_tokens", 0)), int(state.get("estimated_chars", 0)),
+                               int(state.get("conv_tokens", 0)), int(state.get("conv_chars", 0)),
                                "failed: 达到最大总步骤数", model)
         self.state_saver(state="failed", last_error="达到最大总步骤数")
         return AgentResult("达到最大总步骤数，任务已停止。", all_steps)

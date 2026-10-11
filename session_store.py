@@ -73,6 +73,13 @@ class SessionStore:
             CREATE INDEX IF NOT EXISTS idx_steps_session ON steps(session_id, step_no);
             CREATE INDEX IF NOT EXISTS idx_files_session ON file_events(session_id, created);
             """)
+            # 迁移：rollover 独立计数器——estimated_* 在压缩时重置（本地上下文），
+            # conv_* 只在换会话时清零（反映远端对话真实压力）。
+            for col in ("conv_tokens", "conv_chars"):
+                try:
+                    con.execute(f"ALTER TABLE sessions ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+                except Exception:
+                    pass  # 列已存在
 
     @staticmethod
     def _decode(row):
@@ -107,7 +114,8 @@ class SessionStore:
     def patch(self, sid: str, **values):
         allowed = {"title","state","workspace","model","current_url","conversation_index","conversation_urls",
                    "total_steps","conversation_steps","estimated_tokens","estimated_chars","summary","recent_steps",
-                   "modified_files","pending","last_error","cancel_requested","archived","compact_requested","rollover_requested"}
+                   "modified_files","pending","last_error","cancel_requested","archived","compact_requested",
+                   "rollover_requested","conv_tokens","conv_chars"}
         values = {k:v for k,v in values.items() if k in allowed}
         if "state" in values and values["state"] not in self.STATES: raise ValueError("invalid state")
         for key in ("conversation_urls","summary","recent_steps","modified_files","pending"):
@@ -126,7 +134,8 @@ class SessionStore:
 
     def steps(self, sid: str, limit: int = 5000):
         with self.lock, self._connect() as con:
-            rows=con.execute("SELECT payload, created FROM steps WHERE session_id=? ORDER BY step_no LIMIT ?",(sid,limit))
+            # 按自增 id 排序：换会话/服务不可用等事件复用 step_no，按 id 才稳定
+            rows=con.execute("SELECT payload, created FROM steps WHERE session_id=? ORDER BY id LIMIT ?",(sid,limit))
             result = []
             for payload, created in rows:
                 item = json.loads(payload)
@@ -201,7 +210,10 @@ class SessionStore:
                     " WHERE archived=0 AND state IN ('completed','cancelled','failed','expired') AND updated < ?",
                     (now, cutoff)).rowcount
             if max_sessions:
-                rows = con.execute("SELECT id FROM sessions WHERE archived=0 ORDER BY updated DESC").fetchall()
+                # 数量上限只归档终态会话；paused/ready/waiting 是可恢复状态，归档会丢失
+                rows = con.execute(
+                    "SELECT id FROM sessions WHERE archived=0 AND state IN ('completed','cancelled','failed','expired')"
+                    " ORDER BY updated DESC").fetchall()
                 excess = len(rows) - int(max_sessions)
                 if excess > 0:
                     ids = [r[0] for r in rows[-excess:]]

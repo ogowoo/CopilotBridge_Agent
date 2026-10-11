@@ -87,7 +87,8 @@ def _read_env(name: str) -> str:
                     with winreg.OpenKey(hive, sub) as key:
                         value, _ = winreg.QueryValueEx(key, name)
                         if value:
-                            return str(value)
+                            # REG_EXPAND_SZ 可能含 %VAR%，strip 去首尾空白
+                            return os.path.expandvars(str(value)).strip()
                 except OSError:
                     continue
         except ImportError:

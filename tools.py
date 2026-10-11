@@ -26,6 +26,12 @@ class ToolRegistry:
         self.allow_outlook = bool(config.get("allow_outlook", False))
         self.allow_outlook_send = bool(config.get("allow_outlook_send", False))
         self.python_timeout = float(config.get("python_timeout_seconds", 20))
+        # 工作区根目录白名单：配置后 set_root 只能切到这些根目录之下，
+        # 防止 API 把工具根目录移到 C:\ 之类的地方使路径沙箱形同虚设。
+        self.workspace_roots = [
+            Path(p).expanduser().resolve()
+            for p in (config.get("workspace_roots") or [])
+        ]
         self._extra_descriptions: list[dict[str, Any]] = []
         self._tools: dict[str, Callable[..., Awaitable[Any]]] = {
             "list_directory": self.list_directory,
@@ -65,6 +71,9 @@ class ToolRegistry:
     def set_root(self, value: str | Path, create: bool = False) -> str:
         target = Path(value).expanduser()
         target = target.resolve() if target.is_absolute() else (self.root / target).resolve()
+        if self.workspace_roots and not any(target == r or r in target.parents
+                                            for r in self.workspace_roots):
+            raise ToolError("目标目录不在 workspace_roots 白名单内")
         if create:
             target.mkdir(parents=True, exist_ok=True)
         if not target.exists():
@@ -137,8 +146,11 @@ class ToolRegistry:
             raise ToolError(f"目录不存在: {path}")
         items = []
         for item in sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
-            stat = item.stat()
-            items.append({"name": item.name, "type": "directory" if item.is_dir() else "file", "size": stat.st_size})
+            try:
+                stat = item.stat()  # 悬空符号链接会抛错，跳过而不是拖垮整列
+                items.append({"name": item.name, "type": "directory" if item.is_dir() else "file", "size": stat.st_size})
+            except OSError:
+                items.append({"name": item.name, "type": "unknown", "size": 0})
         return {"path": path, "items": items[:1000], "truncated": len(items) > 1000}
 
     async def find_files(self, pattern: str) -> dict[str, Any]:
@@ -159,8 +171,14 @@ class ToolRegistry:
         target = self._path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}")
-        text = target.read_text(encoding="utf-8", errors="replace")
-        return {"path": path, "content": text[:self.max_read], "truncated": len(text) > self.max_read}
+        # 流式读 max_read+1 个字符即停：GB 级文件不会全量进内存。
+        # newline="" 不做换行转换，读到什么是什么。
+        with target.open("r", encoding="utf-8", errors="replace", newline="") as f:
+            text = f.read(self.max_read + 1)
+        truncated = len(text) > self.max_read
+        if truncated:
+            text = text[:self.max_read]
+        return {"path": path, "content": text, "truncated": truncated}
 
     @staticmethod
     def _hash(path: Path) -> str | None:
@@ -175,7 +193,10 @@ class ToolRegistry:
             raise ToolError("写入内容超过限制")
         target = self._path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        before=self._hash(target); target.write_text(content, encoding="utf-8"); after=self._hash(target)
+        before=self._hash(target)
+        # newline=""：原样写入，Windows 下不把 \n 静默转成 \r\n
+        with target.open("w", encoding="utf-8", newline="") as f: f.write(content)
+        after=self._hash(target)
         return {"path":path,"written_chars":len(content),"file_event":{"tool":"write_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
 
     async def append_text(self, path: str, content: str) -> dict[str, Any]:
@@ -184,7 +205,7 @@ class ToolRegistry:
         target = self._path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         before=self._hash(target)
-        with target.open("a", encoding="utf-8") as f: f.write(content)
+        with target.open("a", encoding="utf-8", newline="") as f: f.write(content)
         after=self._hash(target)
         return {"path":path,"appended_chars":len(content),"file_event":{"tool":"append_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
 
@@ -213,16 +234,27 @@ class ToolRegistry:
             raise ToolError("old 不能为空")
         if len(new) > self.max_write:
             raise ToolError("替换内容超过限制")
-        count = max(1, min(int(count), 100))
+        try:
+            count = max(1, min(int(count), 100))
+        except (TypeError, ValueError):
+            raise ToolError("count 必须是整数")
         target = self._path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}")
-        text = target.read_text(encoding="utf-8", errors="replace")
+        # 严格解码 + newline=""：非 UTF-8 文件拒绝替换（避免乱码写回），
+        # CRLF 文件保持 CRLF，不做换行符静默转换。
+        try:
+            with target.open("r", encoding="utf-8", errors="strict", newline="") as f:
+                text = f.read()
+        except UnicodeDecodeError as exc:
+            raise ToolError(f"文件不是有效的 UTF-8 文本，拒绝替换（防止乱码写回）: {exc}")
         found = text.count(old)
         if found == 0:
             raise ToolError("未找到要替换的原文本，请先 read_text 后使用精确短片段")
         replaced = min(found, count)
-        before=self._hash(target); target.write_text(text.replace(old,new,count),encoding="utf-8"); after=self._hash(target)
+        before=self._hash(target)
+        with target.open("w", encoding="utf-8", newline="") as f: f.write(text.replace(old,new,count))
+        after=self._hash(target)
         return {"path":path,"replaced":replaced,"remaining_matches":max(0,found-replaced),"file_event":{"tool":"replace_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
 
     async def make_directory(self, path: str) -> dict[str, Any]:
@@ -234,6 +266,8 @@ class ToolRegistry:
         src, dst = self._path(source), self._path(destination)
         if not src.exists():
             raise ToolError(f"源路径不存在: {source}")
+        if dst == src or src in dst.parents:
+            raise ToolError("禁止把目录复制/移动到它自己的子目录里")
         dst.parent.mkdir(parents=True, exist_ok=True)
         if src.is_dir():
             shutil.copytree(src, dst, dirs_exist_ok=True)
@@ -245,6 +279,8 @@ class ToolRegistry:
         src, dst = self._path(source), self._path(destination)
         if not src.exists():
             raise ToolError(f"源路径不存在: {source}")
+        if dst == src or src in dst.parents:
+            raise ToolError("禁止把目录复制/移动到它自己的子目录里")
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))
         return {"source": source, "destination": destination, "moved": True}
@@ -313,6 +349,13 @@ class ToolRegistry:
         if not self.allow_office:
             raise ToolError("Office 工具已在 config.json 中禁用（allow_office=false）")
 
+    @staticmethod
+    def _int_arg(value, default: int, name: str) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise ToolError(f"{name} 必须是整数")
+
     async def read_excel(self, path: str, sheet: str = "", max_rows: int = 200) -> dict[str, Any]:
         self._office_allowed()
         target = self._path(path)
@@ -322,11 +365,11 @@ class ToolRegistry:
             import openpyxl
         except ImportError:
             raise ToolError("缺少依赖 openpyxl，请运行 pip install openpyxl")
+        limit = max(1, min(self._int_arg(max_rows, 200, "max_rows"), 2000))
         wb = openpyxl.load_workbook(target, data_only=True, read_only=True)
         try:
             if sheet and sheet not in wb.sheetnames:
                 raise ToolError(f"工作表不存在: {sheet}，可用: {wb.sheetnames}")
-            limit = max(1, min(int(max_rows), 2000))
             out = {}
             for name in ([sheet] if sheet else wb.sheetnames):
                 ws = wb[name]
@@ -352,11 +395,20 @@ class ToolRegistry:
         target = self._path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         before = self._hash(target)
-        wb = openpyxl.load_workbook(target) if target.is_file() else openpyxl.Workbook()
         try:
-            ws = wb[sheet] if sheet else wb.active
-            col_s, row_s = coordinate_from_string(start_cell)
-            col0 = column_index_from_string(col_s)
+            wb = openpyxl.load_workbook(target) if target.is_file() else openpyxl.Workbook()
+        except Exception as exc:
+            raise ToolError(f"无法读取 Excel 文件（可能不是有效的 xlsx）: {exc}")
+        try:
+            if sheet:
+                ws = wb[sheet] if sheet in wb.sheetnames else wb.create_sheet(sheet)
+            else:
+                ws = wb.active
+            try:
+                col_s, row_s = coordinate_from_string(start_cell)
+                col0 = column_index_from_string(col_s)
+            except Exception:
+                raise ToolError(f"无效的起始单元格: {start_cell}")
             written = 0
             for ri, row in enumerate(rows):
                 if not isinstance(row, list):
@@ -398,6 +450,8 @@ class ToolRegistry:
         self._office_allowed()
         if not isinstance(paragraphs, list) or not paragraphs:
             raise ToolError("paragraphs 必须是非空字符串数组")
+        if mode not in ("append", "overwrite"):
+            raise ToolError("mode 只能是 append 或 overwrite")
         try:
             import docx
         except ImportError:
@@ -407,10 +461,8 @@ class ToolRegistry:
         before = self._hash(target)
         if mode == "overwrite" or not target.is_file():
             doc = docx.Document()
-        elif mode == "append":
-            doc = docx.Document(target)
         else:
-            raise ToolError("mode 只能是 append 或 overwrite")
+            doc = docx.Document(target)
         for text in paragraphs:
             doc.add_paragraph(str(text))
         doc.save(target)
@@ -486,7 +538,9 @@ class ToolRegistry:
             finally:
                 pythoncom.CoUninitialize()
 
-        return await asyncio.to_thread(runner)
+        # COM 弹安全确认框或 Outlook 脱机时会永久阻塞，加超时保护
+        return await asyncio.wait_for(asyncio.to_thread(runner),
+                                      timeout=max(self.python_timeout, 30) * 2)
 
     @staticmethod
     def _mail_brief(item) -> dict[str, Any]:
@@ -495,7 +549,7 @@ class ToolRegistry:
                 "unread": bool(item.UnRead)}
 
     async def outlook_unread(self, max_count: int = 20) -> dict[str, Any]:
-        limit = max(1, min(int(max_count), 100))
+        limit = max(1, min(self._int_arg(max_count, 20, "max_count"), 100))
 
         def work(ns):
             items = ns.GetDefaultFolder(6).Items.Restrict("[Unread] = true")  # 6=olFolderInbox
@@ -527,7 +581,7 @@ class ToolRegistry:
     async def outlook_search(self, keyword: str, max_count: int = 20) -> dict[str, Any]:
         if not keyword:
             raise ToolError("keyword 不能为空")
-        limit = max(1, min(int(max_count), 100))
+        limit = max(1, min(self._int_arg(max_count, 20, "max_count"), 100))
         safe = str(keyword).replace("'", "''")
 
         def work(ns):

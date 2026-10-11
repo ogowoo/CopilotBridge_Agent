@@ -16,12 +16,33 @@ from playwright.async_api import async_playwright
 import bridge as b
 from bridge import Message, Request, SessionMessageRequest, AgentRequest
 
+# ── 访问控制 ──
+# api_token：配置后所有 /v1/* 端点要求 "Authorization: Bearer <token>"。
+# 非回环地址监听（0.0.0.0/局域网）且未配置 token 时拒绝启动——该服务能读写
+# 文件、操作浏览器，裸奔到公网/内网是不可接受的风险。
+API_TOKEN = str(b.CFG.get("api_token") or "")
+_SERVER_HOST = str(b.CFG.get("server", {}).get("host", "127.0.0.1"))
+if _SERVER_HOST not in ("127.0.0.1", "localhost", "::1") and not API_TOKEN:
+    raise SystemExit(
+        f"拒绝启动：server.host={_SERVER_HOST} 是非回环地址，但未配置 api_token。"
+        "请在 config.json 设置 api_token，或把 host 改回 127.0.0.1。"
+    )
+
 
 @asynccontextmanager
 async def lifespan(app):
     b.PROFILE.mkdir(exist_ok=True)
     b.pw = await async_playwright().start()
-    await b._start_browser(bool(b.CFG.get("headless", False)))
+    try:
+        await b._start_browser(bool(b.CFG.get("headless", False)))
+    except Exception:
+        # 浏览器启动失败时回收 Playwright 进程，不留孤儿
+        try:
+            await b.pw.stop()
+            b.pw = None
+        except Exception:
+            pass
+        raise
     b.log("API 与浏览器已就绪")
     # 企业租户重启后 SSO/ADFS 回跳可能耗时几十秒，就绪后再做模型发现
     if await b.wait_copilot_ready():
@@ -53,6 +74,17 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Copilot Local Bridge Agent", version="10.2.1", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def token_auth(request, call_next):
+    if API_TOKEN and request.url.path.startswith("/v1/"):
+        from fastapi.responses import JSONResponse
+        auth = request.headers.get("authorization", "")
+        token = request.query_params.get("token", "")
+        if auth != f"Bearer {API_TOKEN}" and token != API_TOKEN:
+            return JSONResponse({"detail": "未授权：缺少或错误的 api_token"}, status_code=401)
+    return await call_next(request)
 
 
 def sse(data):
@@ -159,10 +191,14 @@ async def root():
 
 @app.get("/health")
 async def health():
+    try:
+        page_url = b.page.url if b.page else None
+    except Exception:
+        page_url = None  # 浏览器异常时健康检查不应自己 500
     return {
-        "status": "ok",
+        "status": "ok" if page_url else "degraded",
         "busy": b.lock.locked(),
-        "page_url": b.page.url if b.page else None,
+        "page_url": page_url,
         "default_model": b.DEFAULT_MODEL,
         "headless": b.HEADLESS_CURRENT,
     }
@@ -182,7 +218,10 @@ async def set_browser_mode(payload: dict):
     登录态不受影响）。有请求/任务正在使用浏览器时返回 409 拒绝切换。
     persist=true 可把新模式写回 config.json。
     """
-    target = bool(payload.get("headless"))
+    target_raw = payload.get("headless")
+    if not isinstance(target_raw, bool):
+        raise HTTPException(422, "headless 必须是布尔值")
+    target = target_raw
     if target == b.HEADLESS_CURRENT and b.page is not None:
         return {"headless": b.HEADLESS_CURRENT, "changed": False, "fallback": False}
     if b.lock.locked():
@@ -322,15 +361,19 @@ async def control(sid: str, action: str):
     if action not in maps:
         raise HTTPException(400, "未知操作")
     prev_state = (b.AGENT_SESSIONS.get(sid) or {}).get("state")
-    result = b.AGENT_SESSIONS.patch(sid, **maps[action])
     if action == "resume":
-        # 恢复即续跑：直接从检查点拉起 runner，不再需要手动"继续执行"
-        started = False
         if prev_state in {"paused", "waiting", "ready", "failed"}:
+            # 恢复即续跑：直接从检查点拉起 runner，不再需要手动"继续执行"
             started = await b.resume_session_task(sid)
-        result = dict(result or {})
+        else:
+            # 终态会话（completed/cancelled/archived）不改成 ready 也不拉起
+            started = False
+            return {**b.AGENT_SESSIONS.get(sid), "runner_started": False,
+                    "note": f"会话状态为 {prev_state}，不支持恢复"}
+        result = dict(b.AGENT_SESSIONS.get(sid) or {})
         result["runner_started"] = started
-    return result
+        return result
+    return b.AGENT_SESSIONS.patch(sid, **maps[action])
 
 
 @app.delete("/v1/agent/sessions/{sid}")
@@ -395,7 +438,10 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
             reuse_session=True,
             workspace=state.get("workspace"),
         )
-        result, _ = await b.run_agent(agent_req)
+        try:
+            result, _ = await b.run_agent(agent_req)
+        except Exception as exc:
+            raise _map_agent_error(exc)
         answer = result.content
         current = b.AGENT_SESSIONS.get(sid)
         b.AGENT_SESSIONS.add_message(sid, "assistant", answer, int(current.get("conversation_index", 0)))
@@ -444,12 +490,18 @@ async def activate_session(sid: str):
     url = state.get("current_url")
     if not url:
         raise HTTPException(409, "该 Session 暂无 Copilot 会话 URL")
-    await b.page.bring_to_front()
-    if b.page.url != url:
-        await b.page.goto(url, wait_until="domcontentloaded", timeout=120000)
-        b._forget_selected_model()
+    if b.page is None:
+        raise HTTPException(503, "浏览器未就绪")
+    if b.lock.locked():
+        raise HTTPException(409, "有请求/任务正在使用浏览器，请稍后再切换页面")
+    async with b.lock:
+        # 回合等待中导航全局 page 会把回答错绑到别的会话，必须持锁
+        await b.page.bring_to_front()
+        if b.page.url != url:
+            await b.page.goto(url, wait_until="domcontentloaded", timeout=120000)
+            b._forget_selected_model()
     b.runtime_update(sid, phase="activated", detail="已切换到该 Session 的 Copilot 页面")
-    return {"activated": True, "url": b.page.url, "headless": bool(b.CFG.get("headless", False))}
+    return {"activated": True, "url": b.page.url, "headless": b.HEADLESS_CURRENT}
 
 
 @app.get("/v1/agent/workspace")
@@ -459,12 +511,29 @@ async def workspace():
 
 @app.post("/v1/agent/workspace")
 async def set_workspace(payload: dict):
-    return {"workspace": b.AGENT_TOOLS.set_root(str(payload.get("path", "")), bool(payload.get("create", False)))}
+    if b.lock.locked():
+        raise HTTPException(409, "有任务正在运行，不能切换工作区")
+    new_root = b.AGENT_TOOLS.set_root(str(payload.get("path", "")), bool(payload.get("create", False)))
+    b.DEFAULT_WORKSPACE = new_root  # 作为之后新任务的默认工作区
+    return {"workspace": new_root}
 
 
 @app.get("/v1/agent/tools")
 async def agent_tools():
     return {"workspace": str(b.AGENT_TOOLS.root), "tools": b.AGENT_TOOLS.descriptions()}
+
+
+def _map_agent_error(exc: Exception) -> Exception:
+    """把桥接层异常映射为合适的 HTTP 状态码，而不是一律 500。"""
+    if isinstance(exc, HTTPException):
+        return exc
+    if isinstance(exc, b.CopilotServiceUnavailable):
+        return HTTPException(503, f"Copilot 服务暂时不可用: {exc}")
+    if isinstance(exc, b.CopilotConversationFull):
+        return HTTPException(409, f"Copilot 对话达到长度上限: {exc}")
+    if isinstance(exc, TimeoutError):
+        return HTTPException(504, f"等待 Copilot 回答超时: {exc}")
+    return HTTPException(500, str(exc))
 
 
 @app.post("/v1/agent/completions")
@@ -474,7 +543,10 @@ async def agent_completions(req: AgentRequest):
         return await b.plain_completions(req)
     if req.stream:
         return StreamingResponse(stream_agent(req), media_type="text/event-stream")
-    result, sid = await b.run_agent(req)
+    try:
+        result, sid = await b.run_agent(req)
+    except Exception as exc:
+        raise _map_agent_error(exc)
     return {"id": "agent-" + uuid.uuid4().hex, "object": "chat.completion",
             "created": int(time.time()), "model": req.model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": result.content}, "finish_reason": "stop"}],

@@ -121,7 +121,8 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `poll_interval_seconds` | `0.35` | 页面轮询间隔 |
 | `diagnostics` / `diagnostic_html` | `true` / `false` | 出错时保存 `last_page.txt`（/ `.html`）快照 |
 | `default_model` | `copilot-auto` | 默认模型 ID |
-| `server.host` / `server.port` | `127.0.0.1` / `8765` | 监听地址，**不要改成 0.0.0.0（见安全警告）** |
+| `server.host` / `server.port` | `127.0.0.1` / `8765` | 监听地址。**绑非回环地址且未设 api_token 时服务拒绝启动** |
+| `api_token` | 空 | 设置后所有 `/v1/*` 端点要求 `Authorization: Bearer <token>`（或 `?token=`） |
 | `models` | `{}` | 扩展模型：`{"copilot-custom": {"ui_names": ["Custom"], "description": "..."}}` |
 | `markers` | 见下 | Copilot 页面可访问性文本锚点，界面语言不同时在此追加文案 |
 
@@ -148,6 +149,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 |---|---|---|
 | `enabled` | `true` | 关闭后 Agent 接口返回 503 |
 | `workspace` | `workspace` | 工具根目录（相对项目目录） |
+| `workspace_roots` | `[]` | 工作区允许根目录白名单（绝对路径数组）；非空时切换工作区只能切到白名单内，防止沙箱被整体搬移 |
 | `session_store` | `data/agent.db` | SQLite 会话库路径 |
 | `max_total_steps` | `1000` | 单任务总步数上限（硬顶 10000） |
 | `max_steps_per_conversation` | `80` | 单个 Copilot 会话内步数上限（触发换会话） |
@@ -198,7 +200,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 
 ## 安全警告
 
-1. **API 无鉴权**：所有接口对本机任何进程开放。请保持 `server.host` 为 `127.0.0.1`；如必须暴露到局域网，请自行在前面加反向代理鉴权。
+1. **API 鉴权**：默认绑 `127.0.0.1` 仅本机可达；配置 `api_token` 后所有 `/v1/*` 端点要求 Bearer 令牌。绑非回环地址且未配置 token 时**服务拒绝启动**。`agent.workspace_roots` 可进一步把工具工作区限制在白名单根目录内。
 2. **间接 Prompt Injection**：Agent 读取的工作区文件内容会进入 Copilot 上下文，而返回的动作会被直接执行。**不要让 Agent 处理来源不可信的文件**；开启 `allow_python` / `allow_delete` 后风险升级为任意代码执行与文件删除。
 3. **登录态敏感**：`EdgeProfile/` 目录包含你的 Copilot 登录 Cookie，已被 `.gitignore` 排除，请勿外泄。
 4. **容错写文件**：对 Copilot 返回的未转义写文件动作有正则容错恢复，恢复结果可能不完美；重要文件请先备份，`.py/.json/.html` 有语法+单测验证闭环兜底，其他类型没有。

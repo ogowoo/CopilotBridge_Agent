@@ -9,6 +9,7 @@
   "diagnostics": true,
   "diagnostic_html": false,
   "default_model": "copilot-auto",
+  "api_token": "",
   "server": {
     "host": "127.0.0.1",
     "port": 8765
@@ -16,6 +17,7 @@
   "agent": {
     "enabled": true,
     "workspace": "workspace",
+    "workspace_roots": [],
     "session_store": "data/agent.db",
 
     "max_total_steps": 1000,

@@ -123,7 +123,7 @@ def runtime_update(session_id=None, **values):
 
 class Message(BaseModel):
     role: Literal["system", "user", "assistant"]
-    content: str
+    content: str = Field(min_length=1, max_length=200000)
 
 
 class Request(BaseModel):
@@ -253,9 +253,9 @@ async def new_chat():
     else:
         await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
         await asyncio.sleep(2)
-    # 新聊天会把模型重置为租户默认：缓存直接记为默认模型，
-    # 请求默认模型时连按钮文本都不用读。
-    _forget_selected_model(reset_to=DEFAULT_MODEL)
+    # 新聊天会把模型重置为 Copilot 默认（Auto）：缓存记为 copilot-auto，
+    # 注意这是页面行为而非我们的 default_model 配置。
+    _forget_selected_model(reset_to="copilot-auto")
 
 
 # 上次成功确认/切换的模型。新版 Copilot 的模型按钮经常没有可读文本，
@@ -861,6 +861,8 @@ async def _start_browser(headless: bool) -> bool:
 AGENT_CFG = CFG.get("agent", {})
 AGENT_WORKSPACE = (BASE / AGENT_CFG.get("workspace", "workspace")).resolve()
 AGENT_TOOLS = ToolRegistry(AGENT_WORKSPACE, AGENT_CFG)
+# 新任务缺省工作区：POST /v1/agent/workspace 会更新它
+DEFAULT_WORKSPACE = str(AGENT_WORKSPACE)
 # 与 AgentRunner.__init__ 的默认值保持一致，供 WebUI 显示真实 Token 预算。
 TOKEN_BUDGET = int(AGENT_CFG.get("context_token_budget", 24000))
 SESSION_DB = Path(AGENT_CFG.get("session_store", "data/agent.db"))
@@ -908,23 +910,42 @@ async def periodic_session_cleanup():
         await asyncio.sleep(3600)
 
 
+_RESUMING: set = set()
+
+
+def _bg_task_done(sid: str):
+    def cb(t):
+        _RESUMING.discard(sid)
+        if not t.cancelled() and t.exception():
+            log(f"后台任务 {sid} 异常结束: {t.exception()}")
+    return cb
+
+
 async def resume_session_task(sid: str) -> bool:
-    """拉起后台 runner 续跑会话。已在运行（本进程持有该会话）则返回 False。
+    """拉起后台 runner 续跑会话。已在运行或已被并发认领则返回 False。
 
     供 actions/resume 与 auto_resume 使用：恢复消息与原任务一致，
     避免被当作"用户追加任务"重复进入 pending。
     """
     if lock.locked() and ACTIVE_SESSION_ID == sid:
         return False
+    if sid in _RESUMING:  # 原子认领：并发 resume 只允许一个通过
+        return False
     state = AGENT_SESSIONS.get(sid)
     if not state:
         return False
-    AGENT_SESSIONS.patch(sid, state="ready", last_error=None)
-    req = AgentRequest(
-        model=normalize_model_soft(state.get("model") or DEFAULT_MODEL),
-        messages=[Message(role="user", content=state.get("original_task") or "继续")],
-        stream=False, session_id=sid, workspace=state.get("workspace"))
-    asyncio.create_task(run_agent(req))
+    _RESUMING.add(sid)
+    try:
+        AGENT_SESSIONS.patch(sid, state="ready", last_error=None)
+        req = AgentRequest(
+            model=normalize_model_soft(state.get("model") or DEFAULT_MODEL),
+            messages=[Message(role="user", content=state.get("original_task") or "继续")],
+            stream=False, session_id=sid, workspace=state.get("workspace"))
+        task = asyncio.create_task(run_agent(req))
+        task.add_done_callback(_bg_task_done(sid))
+    except Exception:
+        _RESUMING.discard(sid)
+        raise
     return True
 
 
@@ -1171,29 +1192,36 @@ async def provider_turn(model_id: str, prompt: str) -> str:
         raise CopilotServiceUnavailable(str(exc)) from exc
 
 
+# provider 普通对话的按会话锁：同 sid 并发请求基于相同历史交错写回的防护
+_PROVIDER_LOCKS: dict[str, asyncio.Lock] = {}
+
+
 async def provider_session_chat(sid: str, content: str, model_id: str) -> dict:
     """API 提供商的普通对话：用 Session 的消息记录作上下文，写回双方消息。
 
     调用方（continue_session_message）已写入本次 user 消息；新任务由
     plain_completions 先建 Session 再调本函数。
     """
-    pm = providers_mod.split_provider_model(model_id)
-    provider = PROVIDERS[pm[0]]
-    history = [{"role": m["role"], "content": m["content"]}
-               for m in AGENT_SESSIONS.messages(sid)]
-    runtime_update(sid, phase="api_sending", detail=f"正在调用 {pm[0]} API",
-                   prompt_preview=content, answer_preview="")
-    try:
-        answer = await provider.complete(pm[1], history)
-    except providers_mod.ProviderUnavailable as exc:
-        raise CopilotServiceUnavailable(str(exc)) from exc
-    current = AGENT_SESSIONS.get(sid)
-    AGENT_SESSIONS.add_message(sid, "assistant", answer, int(current.get("conversation_index", 0)))
-    AGENT_SESSIONS.patch(sid, model=model_id)
-    runtime_update(sid, phase="api_completed", answer_preview=answer[-12000:],
-                   detail=f"{pm[0]} API 调用完成")
-    return {"session_id": sid, "role": "assistant", "content": answer,
-            "url": None, "mode": "chat", "provider": pm[0]}
+    async with _PROVIDER_LOCKS.setdefault(sid, asyncio.Lock()):
+        pm = providers_mod.split_provider_model(model_id)
+        provider = PROVIDERS[pm[0]]
+        history = [{"role": m["role"], "content": m["content"]}
+                   for m in AGENT_SESSIONS.messages(sid)]
+        runtime_update(sid, phase="api_sending", detail=f"正在调用 {pm[0]} API",
+                       prompt_preview=content, answer_preview="")
+        try:
+            answer = await provider.complete(pm[1], history)
+        except providers_mod.ProviderUnavailable as exc:
+            raise CopilotServiceUnavailable(str(exc)) from exc
+        current = AGENT_SESSIONS.get(sid)
+        if not current:
+            raise RuntimeError("会话在执行期间被删除")
+        AGENT_SESSIONS.add_message(sid, "assistant", answer, int(current.get("conversation_index", 0)))
+        AGENT_SESSIONS.patch(sid, model=model_id)
+        runtime_update(sid, phase="api_completed", answer_preview=answer[-12000:],
+                       detail=f"{pm[0]} API 调用完成")
+        return {"session_id": sid, "role": "assistant", "content": answer,
+                "url": None, "mode": "chat", "provider": pm[0]}
 
 
 async def run_agent(req: AgentRequest):
@@ -1204,11 +1232,14 @@ async def run_agent(req: AgentRequest):
     task="\n".join(f"[{m.role}] {m.content.strip()}" for m in req.messages if m.content.strip())
     if not task: raise HTTPException(400,"至少需要一条消息")
     sid=req.session_id or ("task-"+uuid.uuid4().hex[:12])
-    ACTIVE_SESSION_ID = sid
     runtime_update(sid, phase="queued", detail="任务已进入执行队列", answer_preview="", prompt_preview="")
     async with lock:
+        # ACTIVE_SESSION_ID 必须在锁内声明：等锁的请求若提前覆盖，
+        # 正在运行会话的删除保护/busy 判定/resume 守卫会整体失效。
+        prev_active = ACTIVE_SESSION_ID
+        ACTIVE_SESSION_ID = sid
         existing=AGENT_SESSIONS.get(sid)
-        workspace=(req.workspace.strip() if req.workspace else None) or (existing or {}).get("workspace") or str(AGENT_WORKSPACE)
+        workspace=(req.workspace.strip() if req.workspace else None) or (existing or {}).get("workspace") or DEFAULT_WORKSPACE
         AGENT_TOOLS.set_root(workspace,False)
         if not existing:
             existing=AGENT_SESSIONS.create(sid,task,str(AGENT_TOOLS.root),req.model)
@@ -1255,14 +1286,21 @@ async def run_agent(req: AgentRequest):
                     # 回合已发送到 Copilot：保存会话 URL，恢复后继续同一聊天，
                     # 避免暂停-恢复后重复创建新会话。
                     if make_new and page.url:
-                        paused_url = await stable_conversation_url(timeout=6) or (page.url or "")
+                        paused_url = await stable_conversation_url(timeout=6)
+                        if not paused_url:
+                            _cand = page.url or ""
+                            paused_url = _cand if CONVERSATION_URL_RE.search(_cand) else ""
                         stp=AGENT_SESSIONS.get(sid); urls=list(stp.get("conversation_urls") or [])
                         if paused_url and paused_url not in urls: urls.append(paused_url)
                         if paused_url:
                             AGENT_SESSIONS.patch(sid,current_url=paused_url,conversation_urls=urls)
                     raise
-                # 等 Copilot 把会话 ID 路由进 URL 再保存；超时兜底原地址保证连续。
-                final_url = await stable_conversation_url(timeout=15) or (page.url or "")
+                # 等 Copilot 把会话 ID 路由进 URL 再保存；无会话 ID 的基础地址
+                # 不能当会话身份保存（下回合会误入当前打开的任意会话）。
+                final_url = await stable_conversation_url(timeout=15)
+                if not final_url:
+                    _cand = page.url or ""
+                    final_url = _cand if CONVERSATION_URL_RE.search(_cand) else ""
                 st=AGENT_SESSIONS.get(sid); urls=list(st.get("conversation_urls") or [])
                 is_new_url = bool(final_url and final_url not in urls)
                 if is_new_url: urls.append(final_url)
@@ -1290,7 +1328,8 @@ async def run_agent(req: AgentRequest):
             AGENT_SESSIONS.patch(sid,state="failed",last_error=str(exc))
             raise
         finally:
-            ACTIVE_SESSION_ID = None
+            # 恢复进入前的值而非置 None：排队任务接管时不会被误清
+            ACTIVE_SESSION_ID = prev_active
 
 def _agent_chat_marker(session_id: str, conversation_index: int) -> str:
     safe = re.sub(r"[^0-9A-Za-z._-]+", "-", str(session_id)).strip("-") or "session"
@@ -1669,7 +1708,10 @@ async def plain_chat_turn(sid: str, content: str, model_id: str) -> dict:
     """
     global ACTIVE_SESSION_ID
     state = AGENT_SESSIONS.get(sid)
+    if not state:
+        raise HTTPException(404, "Session 不存在")
     async with lock:
+        prev_active = ACTIVE_SESSION_ID
         ACTIVE_SESSION_ID = sid
         runtime_update(sid, phase="manual_sending", detail="正在发送普通对话", prompt_preview=content, answer_preview="")
         url = state.get("current_url")
@@ -1687,10 +1729,18 @@ async def plain_chat_turn(sid: str, content: str, model_id: str) -> dict:
             # 也是日后远程删除时的同属校验依据（与 Agent 模式一致）。
             marker = _agent_chat_marker(sid, int(state.get("conversation_index", 0)))
             send_content = (marker + "\n" + content) if make_new else content
+            # 追加唯一回合标记：虚拟化列表里"You said"计数不可靠，
+            # sent_successfully 用标记确认送达，避免误判重发。
+            send_content = send_content.rstrip() + f"\n\n[CBP-TURN:{uuid.uuid4().hex[:12]}]"
             await send(send_content, make_new, model_id)
             answer = (await wait_agent_answer(previous)).strip()
             current = AGENT_SESSIONS.get(sid)
-            chat_url = await stable_conversation_url(timeout=10) or (page.url or "")
+            if not current:
+                raise RuntimeError("会话在执行期间被删除")
+            chat_url = await stable_conversation_url(timeout=10)
+            if not chat_url:
+                _cand = page.url or ""
+                chat_url = _cand if CONVERSATION_URL_RE.search(_cand) else ""
             urls = list(current.get("conversation_urls") or [])
             if chat_url and chat_url not in urls: urls.append(chat_url)
             AGENT_SESSIONS.add_message(sid, "assistant", answer, int(current.get("conversation_index", 0)))
@@ -1701,7 +1751,7 @@ async def plain_chat_turn(sid: str, content: str, model_id: str) -> dict:
             runtime_update(sid, phase="manual_completed", answer_preview=answer[-12000:], detail="普通对话完成")
             return {"session_id":sid,"role":"assistant","content":answer,"url":page.url,"mode":"chat"}
         finally:
-            ACTIVE_SESSION_ID = None
+            ACTIVE_SESSION_ID = prev_active
 
 
 async def plain_completions(req: AgentRequest):
