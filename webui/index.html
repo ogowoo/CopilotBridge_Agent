@@ -30,7 +30,6 @@ button,input,textarea,select{font:inherit;color:inherit}
 #railBtn:hover{color:var(--accent2);border-color:var(--accent)}
 .iconbtn{width:26px;height:26px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;display:grid;place-items:center;flex:none}
 .iconbtn:hover{background:var(--panel2);color:var(--text);border-color:var(--line2)}
-.railtools{display:flex;align-items:center;gap:4px;padding:10px 12px 2px}
 .newtask{margin:12px 12px 4px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
 .newtask>summary{list-style:none;cursor:pointer;padding:11px 14px;font-weight:600;color:var(--accent2);user-select:none}
 .newtask>summary::-webkit-details-marker{display:none}
@@ -286,7 +285,6 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 <div class="app">
   <aside class="rail">
     <button id="railBtn" title="收起/展开侧栏" onclick="toggleRail()">‹</button>
-    <div class="railtools"><button class="iconbtn" title="收起侧栏" onclick="toggleRail()">‹</button><span style="flex:1"></span><button id="browserBtn" class="iconbtn" title="切换自动化浏览器窗口的显示/隐藏" onclick="toggleBrowser()">▣</button><button id="themeBtn" class="iconbtn" title="主题：深色（点击切换）" onclick="toggleTheme()">◐</button></div>
     <details class="newtask" open><summary>新任务</summary><div class="ntbody">
       <input id="sid" placeholder="Session ID（可留空）">
       <input id="workspace" placeholder="工作目录（可留空）">
@@ -295,7 +293,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
       <div style="display:flex;gap:6px"><button id="ntAgent" class="btn seg on" style="flex:1" onclick="setTaskMode('agent')">Agent 执行</button><button id="ntChat" class="btn seg" style="flex:1" onclick="setTaskMode('chat')">普通对话</button></div>
       <button class="btn accent block" onclick="runTask()">启动任务</button>
     </div></details>
-    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" placeholder="筛选…" oninput="drawSessions()"></div>
+    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" placeholder="筛选…" oninput="drawSessions()"><button id="browserBtn" class="iconbtn" title="切换自动化浏览器窗口的显示/隐藏" onclick="toggleBrowser()">▣</button><button id="themeBtn" class="iconbtn" title="主题：深色（点击切换）" onclick="toggleTheme()">◐</button></div>
     <div id="sessions" class="sesslist"></div>
   </aside>
   <main class="main">
