@@ -14,6 +14,7 @@
 ## 功能特性
 
 - **OpenAI 兼容**：`/v1/chat/completions` 支持 stream / non-stream，可接入任何 OpenAI SDK 客户端；`/v1/models` 列出可用模型。模型列表以内置表为基础（Auto / Quick response / Think deeper / GPT / GPT-5.6 / Sol / Think，可在配置中扩展），并**在启动时自动打开 Copilot 模型菜单枚举选项（含 GPT 等父项下的二级子菜单）**——菜单里新出现的模型会自动并入（ID 形如 `copilot-gpt-5-7`），选择模型时也会自动展开子菜单定位；也可用 `POST /v1/models/refresh` 随时重扫。
+- **API 提供商接入**：除 Copilot 网页自动化外，可直接接入任何 OpenAI 兼容 HTTP API（内置 OpenAI / DeepSeek / Kimi / Grok 预设，可自定义）。模型 ID 形如 `deepseek/deepseek-chat`，API Key 走环境变量；普通对话和 **Agent 模式（含工具循环）都可用**——JSON 动作协议是纯 prompt 驱动，与提供商无关。
 - **Agent 模式**：Copilot 每回合返回一个 JSON 动作（调用工具或最终答复），本地执行工具后把结果送回，循环直到任务完成。
 - **15 个工作区工具**：目录/文件读写（Base64 写入防 JSON 转义损坏）、精确替换、复制/移动/删除、`validate_python`、`run_unittest`、`run_python`，全部限制在工作区根目录内。
 - **长任务韧性**：
@@ -65,6 +66,29 @@ resp = client.chat.completions.create(
 )
 print(resp.choices[0].message.content)
 ```
+
+### API 提供商（DeepSeek / Kimi / OpenAI / Grok …）
+
+模型 ID 用 `提供商/模型` 格式，例如 `deepseek/deepseek-chat`、`kimi/kimi-k2-0905-preview`、`openai/gpt-4o`、`grok/grok-4`。**API Key 通过环境变量配置**（不写进配置文件、不进 git）：
+
+```powershell
+$env:DEEPSEEK_API_KEY="sk-..."   # 或 MOONSHOT_API_KEY / OPENAI_API_KEY / XAI_API_KEY
+```
+
+未配置 Key 的模型在 `/v1/models` 里会标注"（未配置 API Key）"。自定义任意 OpenAI 兼容提供商（含自建网关）：
+
+```json
+"providers": {
+  "myapi": {
+    "base_url": "https://example.com/v1",
+    "api_key_env": "MYAPI_KEY",
+    "models": ["my-model"],
+    "description": "自建网关"
+  }
+}
+```
+
+提供商模型在所有入口都可用：OpenAI 兼容对话（流式透传）、WebUI 新任务（普通对话/Agent 执行）、Session 跟进。普通对话用 Session 的消息记录作上下文；Agent 模式复用同一套 JSON 动作协议与工具循环。提供商限流/5xx 会自动走与 Copilot 相同的指数退避重试。
 
 ### Agent 任务
 

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from agent import AgentRunner, AgentPaused, CopilotServiceUnavailable, CopilotConversationFull, validate_token_budget
 from tools import ToolRegistry
 from session_store import SessionStore
+import providers as providers_mod
 
 BASE = Path(__file__).resolve().parent
 CFG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
@@ -74,6 +75,10 @@ MODEL_ALIASES = {
     "copilot-chat-basic-web": "copilot-auto",
 }
 DEFAULT_MODEL = CFG.get("default_model", "copilot-auto")
+
+# API 提供商（OpenAI 兼容 HTTP API），与 Copilot 网页自动化并列的模型来源。
+# 模型 ID 形如 "deepseek/deepseek-chat"，API Key 走环境变量。
+PROVIDERS = providers_mod.build_providers(CFG)
 
 # Copilot 页面可访问性文本锚点。桥接依赖这些文本定位回合与回答边界；
 # 租户界面语言不同（例如中文界面）时，在 config.json 的 "markers" 中
@@ -150,6 +155,10 @@ def log(s):
 
 
 def normalize_model(model_id):
+    # API 提供商模型（provider/model 格式）直接放行，有效性在调用时校验
+    pm = providers_mod.split_provider_model(model_id)
+    if pm and pm[0] in PROVIDERS:
+        return model_id
     normalized = MODEL_ALIASES.get(model_id, model_id)
     if normalized not in MODELS:
         raise HTTPException(
@@ -157,10 +166,18 @@ def normalize_model(model_id):
             detail={
                 "message": f"不支持的模型: {model_id}",
                 "type": "invalid_request_error",
-                "available_models": list(MODELS),
+                "available_models": all_model_ids(),
             },
         )
     return normalized
+
+
+def all_model_ids() -> list:
+    """Copilot 网页模型 + 已配置提供商的模型。"""
+    ids = list(MODELS)
+    for pname, p in PROVIDERS.items():
+        ids.extend(f"{pname}/{m}" for m in p.models)
+    return ids
 
 
 async def diagnostics(tag):
@@ -1056,6 +1073,45 @@ async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pa
     runtime_update(phase="waiting", detail=f"Agent 回合 {turn_id} 已确认，等待 Copilot 回答")
     return await wait_agent_answer(previous, pause_check=pause_check)
 
+async def provider_turn(model_id: str, prompt: str) -> str:
+    """API 提供商的 Agent 回合：单条 user 消息发整段提示，返回回答文本。
+
+    限流/5xx/超时映射为 CopilotServiceUnavailable，复用 AgentRunner 的
+    指数退避重试；其他错误原样抛出计入解析失败/失败处理。
+    """
+    pm = providers_mod.split_provider_model(model_id)
+    provider = PROVIDERS[pm[0]]
+    try:
+        return await provider.complete(pm[1], [{"role": "user", "content": prompt}])
+    except providers_mod.ProviderUnavailable as exc:
+        raise CopilotServiceUnavailable(str(exc)) from exc
+
+
+async def provider_session_chat(sid: str, content: str, model_id: str) -> dict:
+    """API 提供商的普通对话：用 Session 的消息记录作上下文，写回双方消息。
+
+    调用方（continue_session_message）已写入本次 user 消息；新任务由
+    plain_completions 先建 Session 再调本函数。
+    """
+    pm = providers_mod.split_provider_model(model_id)
+    provider = PROVIDERS[pm[0]]
+    history = [{"role": m["role"], "content": m["content"]}
+               for m in AGENT_SESSIONS.messages(sid)]
+    runtime_update(sid, phase="api_sending", detail=f"正在调用 {pm[0]} API",
+                   prompt_preview=content, answer_preview="")
+    try:
+        answer = await provider.complete(pm[1], history)
+    except providers_mod.ProviderUnavailable as exc:
+        raise CopilotServiceUnavailable(str(exc)) from exc
+    current = AGENT_SESSIONS.get(sid)
+    AGENT_SESSIONS.add_message(sid, "assistant", answer, int(current.get("conversation_index", 0)))
+    AGENT_SESSIONS.patch(sid, model=model_id)
+    runtime_update(sid, phase="api_completed", answer_preview=answer[-12000:],
+                   detail=f"{pm[0]} API 调用完成")
+    return {"session_id": sid, "role": "assistant", "content": answer,
+            "url": None, "mode": "chat", "provider": pm[0]}
+
+
 async def run_agent(req: AgentRequest):
     global ACTIVE_SESSION_ID
     if not AGENT_CFG.get("enabled", True): raise HTTPException(503, "Agent 功能已禁用")
@@ -1084,48 +1140,55 @@ async def run_agent(req: AgentRequest):
         def pause_check():
             st = AGENT_SESSIONS.get(sid) or {}
             return st.get("state") == "paused"
-        async def turn(prompt,model,force_new=False):
-            st=AGENT_SESSIONS.get(sid)
-            make_new = force_new or not st.get("current_url")
-            if not make_new:
-                # 页面可能因服务重启/窗口切换被重置到基础地址：续聊前若当前
-                # 页面不是该会话的 Copilot 对话，先导航回已保存的会话 URL，
-                # 避免回合误入一个全新的空对话。
-                expected = st.get("current_url") or ""
-                m = CONVERSATION_URL_RE.search(expected)
-                if m and m.group(0) not in (page.url or ""):
-                    await page.goto(expected, wait_until="domcontentloaded", timeout=120000)
-                    await asyncio.sleep(1)
-                    _forget_selected_model()
-            marker = _agent_chat_marker(sid, int(st.get("conversation_index", 0)))
-            # Copilot derives the sidebar title from the beginning of the first
-            # message. This is more stable than automating the Rename editor.
-            send_prompt = (marker + "\n" + prompt) if make_new else prompt
-            try:
-                ans=await agent_chat_once(send_prompt,model,make_new,pause_check=pause_check)
-            except AgentPaused:
-                # 回合已发送到 Copilot：保存会话 URL，恢复后继续同一聊天，
-                # 避免暂停-恢复后重复创建新会话。
-                if make_new and page.url:
-                    paused_url = await stable_conversation_url(timeout=6) or (page.url or "")
-                    stp=AGENT_SESSIONS.get(sid); urls=list(stp.get("conversation_urls") or [])
-                    if paused_url and paused_url not in urls: urls.append(paused_url)
-                    if paused_url:
-                        AGENT_SESSIONS.patch(sid,current_url=paused_url,conversation_urls=urls)
-                raise
-            # 等 Copilot 把会话 ID 路由进 URL 再保存；超时兜底原地址保证连续。
-            final_url = await stable_conversation_url(timeout=15) or (page.url or "")
-            st=AGENT_SESSIONS.get(sid); urls=list(st.get("conversation_urls") or [])
-            is_new_url = bool(final_url and final_url not in urls)
-            if is_new_url: urls.append(final_url)
-            if final_url:
-                AGENT_SESSIONS.patch(sid,current_url=final_url,conversation_urls=urls)
-            # The marker is already embedded in the first prompt. Do not navigate
-            # away after receiving an answer merely to rename the sidebar row;
-            # that navigation can invalidate the next-turn DOM baseline.
-            if is_new_url:
-                runtime_update(sid, detail="新 Copilot 会话已绑定唯一标识")
-            return ans
+        _pm = providers_mod.split_provider_model(req.model)
+        if _pm and _pm[0] in PROVIDERS:
+            # API 提供商：不经过浏览器，无页面导航/会话 URL/标记确认簿记；
+            # 换会话只影响本地上下文压缩。
+            async def turn(prompt, model, force_new=False):
+                return await provider_turn(model, prompt)
+        else:
+            async def turn(prompt,model,force_new=False):
+                st=AGENT_SESSIONS.get(sid)
+                make_new = force_new or not st.get("current_url")
+                if not make_new:
+                    # 页面可能因服务重启/窗口切换被重置到基础地址：续聊前若当前
+                    # 页面不是该会话的 Copilot 对话，先导航回已保存的会话 URL，
+                    # 避免回合误入一个全新的空对话。
+                    expected = st.get("current_url") or ""
+                    m = CONVERSATION_URL_RE.search(expected)
+                    if m and m.group(0) not in (page.url or ""):
+                        await page.goto(expected, wait_until="domcontentloaded", timeout=120000)
+                        await asyncio.sleep(1)
+                        _forget_selected_model()
+                marker = _agent_chat_marker(sid, int(st.get("conversation_index", 0)))
+                # Copilot derives the sidebar title from the beginning of the first
+                # message. This is more stable than automating the Rename editor.
+                send_prompt = (marker + "\n" + prompt) if make_new else prompt
+                try:
+                    ans=await agent_chat_once(send_prompt,model,make_new,pause_check=pause_check)
+                except AgentPaused:
+                    # 回合已发送到 Copilot：保存会话 URL，恢复后继续同一聊天，
+                    # 避免暂停-恢复后重复创建新会话。
+                    if make_new and page.url:
+                        paused_url = await stable_conversation_url(timeout=6) or (page.url or "")
+                        stp=AGENT_SESSIONS.get(sid); urls=list(stp.get("conversation_urls") or [])
+                        if paused_url and paused_url not in urls: urls.append(paused_url)
+                        if paused_url:
+                            AGENT_SESSIONS.patch(sid,current_url=paused_url,conversation_urls=urls)
+                    raise
+                # 等 Copilot 把会话 ID 路由进 URL 再保存；超时兜底原地址保证连续。
+                final_url = await stable_conversation_url(timeout=15) or (page.url or "")
+                st=AGENT_SESSIONS.get(sid); urls=list(st.get("conversation_urls") or [])
+                is_new_url = bool(final_url and final_url not in urls)
+                if is_new_url: urls.append(final_url)
+                if final_url:
+                    AGENT_SESSIONS.patch(sid,current_url=final_url,conversation_urls=urls)
+                # The marker is already embedded in the first prompt. Do not navigate
+                # away after receiving an answer merely to rename the sidebar row;
+                # that navigation can invalidate the next-turn DOM baseline.
+                if is_new_url:
+                    runtime_update(sid, detail="新 Copilot 会话已绑定唯一标识")
+                return ans
         def get(): return AGENT_SESSIONS.get(sid)
         def save(**kw): return AGENT_SESSIONS.patch(sid,**kw)
         def add_step(x):
@@ -1517,7 +1580,11 @@ async def plain_completions(req: AgentRequest):
         workspace = (req.workspace.strip() if req.workspace else None) or str(AGENT_WORKSPACE)
         AGENT_SESSIONS.create(sid, content, workspace, model_id)
     AGENT_SESSIONS.add_message(sid, "user", content, 0)
-    result = await plain_chat_turn(sid, content, model_id)
+    pm = providers_mod.split_provider_model(model_id)
+    if pm and pm[0] in PROVIDERS:
+        result = await provider_session_chat(sid, content, model_id)
+    else:
+        result = await plain_chat_turn(sid, content, model_id)
     return {"id": "chat-" + uuid.uuid4().hex, "object": "chat.completion",
             "created": int(time.time()), "model": model_id,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": result["content"]},

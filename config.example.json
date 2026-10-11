@@ -49,6 +49,16 @@
     "python_timeout_seconds": 20
   },
   "models": {},
+  "providers": {
+    "deepseek": {},
+    "kimi": {},
+    "myapi": {
+      "base_url": "https://example.com/v1",
+      "api_key_env": "MYAPI_KEY",
+      "models": ["my-model"],
+      "description": "自建 OpenAI 兼容网关"
+    }
+  },
   "markers": {
     "assistant_turn": ["Copilot said:"],
     "user_turn": ["You said:"]

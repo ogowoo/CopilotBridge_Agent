@@ -130,6 +130,27 @@ async def stream_agent(req: AgentRequest):
     yield sse("[DONE]")
 
 
+async def stream_provider(p, model: str, messages: list):
+    """API 提供商的流式响应，转发为 OpenAI chunk 格式。"""
+    rid = "chatcmpl-" + uuid.uuid4().hex
+    created = int(time.time())
+    model_id = f"{p.name}/{model}"
+    yield sse({"id": rid, "object": "chat.completion.chunk", "created": created,
+               "model": model_id,
+               "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]})
+    try:
+        async for part in p.stream(model, messages):
+            yield sse({"id": rid, "object": "chat.completion.chunk", "created": created,
+                       "model": model_id,
+                       "choices": [{"index": 0, "delta": {"content": part}, "finish_reason": None}]})
+        yield sse({"id": rid, "object": "chat.completion.chunk", "created": created,
+                   "model": model_id,
+                   "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})
+    except Exception as exc:
+        yield sse({"error": {"message": str(exc), "type": "provider_error"}})
+    yield sse("[DONE]")
+
+
 @app.get("/")
 async def root():
     return {"name": "Copilot Local Bridge Agent", "version": "10.2.1", "docs": "/docs",
@@ -184,19 +205,27 @@ async def set_browser_mode(payload: dict):
 @app.get("/v1/models")
 async def models():
     created = int(time.time())
-    return {
-        "object": "list",
-        "data": [
-            {
-                "id": model_id,
+    data = [
+        {
+            "id": model_id,
+            "object": "model",
+            "created": created,
+            "owned_by": "microsoft-copilot",
+            "description": item["description"],
+        }
+        for model_id, item in b.MODELS.items()
+    ]
+    # API 提供商模型（provider/model），未配置 Key 的在描述里标注
+    for pname, p in b.PROVIDERS.items():
+        for m in p.models:
+            data.append({
+                "id": f"{pname}/{m}",
                 "object": "model",
                 "created": created,
-                "owned_by": "microsoft-copilot",
-                "description": item["description"],
-            }
-            for model_id, item in b.MODELS.items()
-        ],
-    }
+                "owned_by": pname,
+                "description": p.description + ("" if p.configured else "（未配置 API Key）"),
+            })
+    return {"object": "list", "data": data}
 
 
 @app.post("/v1/models/refresh")
@@ -215,7 +244,7 @@ async def refresh_models():
 async def help_get():
     return {
         "message": "请使用 POST",
-        "available_models": list(b.MODELS),
+        "available_models": b.all_model_ids(),
     }
 
 
@@ -223,6 +252,27 @@ async def help_get():
 async def chat(req: Request):
     # Validate before creating StreamingResponse, so an invalid model returns HTTP 400.
     req.model = b.normalize_model(req.model)
+    pm = b.providers_mod.split_provider_model(req.model)
+    if pm and pm[0] in b.PROVIDERS:
+        # API 提供商（OpenAI 兼容 HTTP API）：直接透传 messages
+        p = b.PROVIDERS[pm[0]]
+        messages = [{"role": m.role, "content": m.content} for m in req.messages]
+        if req.stream:
+            return StreamingResponse(
+                stream_provider(p, pm[1], messages),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+        try:
+            answer = await p.complete(pm[1], messages)
+        except b.providers_mod.ProviderUnavailable as exc:
+            raise HTTPException(503, str(exc))
+        except b.providers_mod.ProviderError as exc:
+            raise HTTPException(400, str(exc))
+        return {"id": "chatcmpl-" + uuid.uuid4().hex, "object": "chat.completion",
+                "created": int(time.time()), "model": req.model,
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": answer},
+                             "finish_reason": "stop"}]}
     prompts = [m.content.strip() for m in req.messages if m.role == "user" and m.content.strip()]
     if not prompts:
         raise HTTPException(400, "至少需要一条 user 消息")
@@ -343,6 +393,9 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
                 "mode": "agent"}
 
     # Plain chat mode keeps the same Copilot web conversation and does not run tools.
+    pm = b.providers_mod.split_provider_model(model_id)
+    if pm and pm[0] in b.PROVIDERS:
+        return await b.provider_session_chat(sid, content, model_id)
     return await b.plain_chat_turn(sid, content, model_id)
 
 
