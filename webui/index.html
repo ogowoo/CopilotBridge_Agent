@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CopilotBridge Agent</title><script>try{if(localStorage.getItem("cbp-theme")==="light")document.documentElement.dataset.theme="light"}catch(e){}</script><style>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CopilotBridge Agent</title><script>try{if(localStorage.getItem("cbp-theme")==="light")document.documentElement.dataset.theme="light";if(localStorage.getItem("cbp-rail")==="closed")document.documentElement.dataset.rail="closed"}catch(e){}</script><style>
 :root{
   --bg:#0b0f14;--panel:#11161d;--panel2:#151c26;--line:#212b38;--line2:#2b3847;
   --text:#e6edf3;--muted:#8b98a9;--faint:#5c6a7a;
@@ -220,6 +220,17 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 [data-theme="light"] .dres.ok .ric{background:#16a34a1a;color:#15803d;border-color:#16a34a55}
 [data-theme="light"] .dres.fail .ric{background:#dc26261a;color:#b91c1c;border-color:#dc262655}
 @media(max-width:1100px){.content{grid-template-columns:1fr;min-height:0;flex:none}.steps,.livepane{flex:none;max-height:60vh}.kpis{grid-template-columns:repeat(2,1fr)}}
+/* 左侧栏折叠（仅宽屏生效）：收起为 46px 窄条，只留 Logo 和展开按钮 */
+@media(min-width:861px){
+  :root[data-rail="closed"] .app{grid-template-columns:46px 1fr}
+  :root[data-rail="closed"] .rail>*:not(.brand){display:none}
+  :root[data-rail="closed"] .rail{align-items:center}
+  :root[data-rail="closed"] .brand{flex-direction:column;padding:10px 0;gap:8px;border-bottom:0}
+  :root[data-rail="closed"] .bname,
+  :root[data-rail="closed"] #themeBtn,
+  :root[data-rail="closed"] #browserBtn{display:none}
+}
+@media(max-width:860px){#railBtn{display:none}}
 /* 手机：彻底回退为自然文档流，页面整体滚动，禁用填满窗口的 flex 布局 */
 @media(max-width:860px){
   .app{grid-template-columns:1fr}
@@ -235,7 +246,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 </style></head><body>
 <div class="app">
   <aside class="rail">
-    <div class="brand"><span class="mark">CB</span><div class="bname"><b>CopilotBridge</b><span>长期任务 Agent</span></div><button id="browserBtn" class="btn ghost" style="margin-left:auto;padding:5px 11px;font-size:12px" onclick="toggleBrowser()" title="切换自动化浏览器窗口的显示/隐藏">窗口…</button><button id="themeBtn" class="btn ghost" style="padding:5px 11px;font-size:12px" onclick="toggleTheme()">浅色</button></div>
+    <div class="brand"><span class="mark">CB</span><div class="bname"><b>CopilotBridge</b><span>长期任务 Agent</span></div><button id="browserBtn" class="btn ghost" style="margin-left:auto;padding:5px 11px;font-size:12px" onclick="toggleBrowser()" title="切换自动化浏览器窗口的显示/隐藏">窗口…</button><button id="themeBtn" class="btn ghost" style="padding:5px 11px;font-size:12px" onclick="toggleTheme()">浅色</button><button id="railBtn" class="btn ghost" style="padding:5px 9px;font-size:13px" title="收起/展开侧栏" onclick="toggleRail()">«</button></div>
     <details class="newtask" open><summary>新任务</summary><div class="ntbody">
       <input id="sid" placeholder="Session ID（可留空）">
       <input id="workspace" placeholder="工作目录（可留空）">
@@ -608,7 +619,13 @@ function toggleMore(e){e.stopPropagation();document.getElementById('moreMenu').c
 document.addEventListener('click',e=>{let m=document.getElementById('moreMenu');if(m&&m.classList.contains('open')&&!e.target.closest('#moreBtn'))m.classList.remove('open')});
 
 function toggleTheme(){let t=document.documentElement.dataset.theme==="light"?"":"light";if(t){document.documentElement.dataset.theme=t}else{document.documentElement.removeAttribute("data-theme")}try{localStorage.setItem("cbp-theme",t||"dark")}catch(e){}document.getElementById("themeBtn").textContent=t?"深色":"浅色"}
+/* ── 左侧栏折叠 ── */
+function toggleRail(){let r=document.documentElement,c=r.dataset.rail==='closed';
+ if(c){delete r.dataset.rail}else{r.dataset.rail='closed'}
+ document.getElementById('railBtn').textContent=c?'«':'»';
+ try{localStorage.setItem('cbp-rail',c?'':'closed')}catch(e){}}
 try{if(document.documentElement.dataset.theme==="light")document.getElementById("themeBtn").textContent="深色"}catch(e){}
+try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="»"}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
 (async()=>{try{let r=await fetch('/v1/agent/sessions');if(!r.ok)throw 0}catch(e){DEMO=true;document.getElementById('demoBadge').style.display='block'}
  loadModels();browserState();
