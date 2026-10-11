@@ -193,6 +193,16 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .toast.ok{border-color:var(--green);color:var(--green)}
 #gmInput{margin-top:4px}
 
+/* 使用手册 */
+.manual{line-height:1.8}
+.manual h3{margin:14px 0 6px;font-size:14px;color:var(--accent2);border-bottom:1px solid var(--line);padding-bottom:5px}
+.manual h3:first-child{margin-top:0}
+.manual p{margin:5px 0;color:var(--muted);font-size:13px}
+.manual li{color:var(--muted);font-size:13px;margin:3px 0}
+.manual b{color:var(--text)}
+.manual code{background:var(--term-bg);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-family:Consolas,monospace;font-size:12px;color:var(--nm)}
+.manual kbd{border:1px solid var(--line2);border-radius:5px;padding:1px 6px;font-size:12px;background:var(--panel2)}
+
 /* ── 主题：浅色 ── */
 :root[data-theme="light"]{
   --bg:#eef1f6;--panel:#ffffff;--panel2:#f4f6fa;--line:#e2e8f0;--line2:#cbd5e1;
@@ -332,7 +342,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
       <div style="display:flex;gap:6px"><button id="ntAgent" class="btn seg on" style="flex:1" onclick="setTaskMode('agent')">Agent 执行</button><button id="ntChat" class="btn seg" style="flex:1" onclick="setTaskMode('chat')">普通对话</button></div>
       <button class="btn accent block" onclick="runTask()">启动任务</button>
     </div></details>
-    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" placeholder="筛选…" oninput="drawSessions()"><button id="browserBtn" class="iconbtn" title="切换自动化浏览器窗口的显示/隐藏" onclick="toggleBrowser()">▣</button><button id="themeBtn" class="iconbtn" title="主题：深色（点击切换）" onclick="toggleTheme()">◐</button></div>
+    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" placeholder="筛选…" oninput="drawSessions()"><button class="iconbtn" title="使用手册" onclick="openManual()">📖</button><button id="browserBtn" class="iconbtn" title="切换自动化浏览器窗口的显示/隐藏" onclick="toggleBrowser()">▣</button><button id="themeBtn" class="iconbtn" title="主题：深色（点击切换）" onclick="toggleTheme()">◐</button></div>
     <div id="sessions" class="sesslist"></div>
   </aside>
   <main class="main">
@@ -414,6 +424,14 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
   </div>
 </div>
 <div id="demoBadge" class="demo" style="display:none">演示模式 · API 未连接</div>
+<!-- 使用手册 -->
+<div class="mask" id="manualMask" onclick="if(event.target===this)closeManual()">
+  <div class="dlg" style="width:min(760px,94vw)">
+    <div class="dhead"><span>📖 使用手册</span><span class="hint">Esc 关闭</span></div>
+    <div class="dbody manual" id="manualBody"></div>
+    <div class="dfoot"><button class="btn accent" onclick="closeManual()">关闭</button></div>
+  </div>
+</div>
 <div class="toasts" id="toasts"></div>
 <!-- 通用模态层：通知确认 / 危险确认 / 文本输入 -->
 <div class="mask" id="gmMask" onclick="if(event.target===this)gmClose(null)">
@@ -691,7 +709,54 @@ async function forceDeleteLocal(){
   if(d.deleted){closeDlg();current=null;document.getElementById('sessionView').style.display='none';document.getElementById('emptyState').style.display='flex';await refreshSessions()}
   else showDeleteResult(d)}catch(e){toast('强制清理失败: '+e,'err')}
  finally{b.disabled=false;b.textContent='重试远程并强制清理本地记录'}}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null)}});
+/* ── 使用手册 ── */
+const MANUAL_HTML=`
+<h3>快速上手</h3>
+<ul>
+<li>左侧「新任务」：填任务内容，选 <b>Agent 执行</b>（可读写工作区文件、自动验证）或 <b>普通对话</b>（纯问答），点「启动任务」。</li>
+<li>每个任务对应一个 Session，背后是一个独立的 Copilot 网页会话；左侧列表点选查看。</li>
+<li>自动化浏览器窗口可用 <b>▣</b> 按钮显示/隐藏（无头切换会重启浏览器但保留登录态）。</li>
+</ul>
+<h3>会话控制</h3>
+<ul>
+<li><b>暂停 / 恢复</b>：暂停在当前回合结束后停放；恢复直接从检查点续跑。</li>
+<li><b>压缩上下文</b>：手动把历史压缩成摘要（一般不需要，阈值自动触发）。</li>
+<li><b>继续执行</b>：追加指令并继续任务。<b>切换到页面</b>：让自动化浏览器跳到该会话。<b>打开会话</b>：在你自己的浏览器里打开 Copilot 页面。</li>
+<li><b>取消任务</b>：终止并标记取消。<b>更多 ▾</b>：归档、删除本地记录、连同 Copilot 网页会话一起删除。</li>
+</ul>
+<h3>跟进对话</h3>
+<ul>
+<li>会话卡片下方可继续发消息：<b>Agent 继续执行</b> 会执行工具动作；<b>普通对话</b> 只在 Copilot 会话里问答。输入框 <kbd>Enter</kbd> 发送、<kbd>Shift+Enter</kbd> 换行。</li>
+<li>跟进消息跟随 Session 自己的模型，不是左侧新任务表单的模型。</li>
+</ul>
+<h3>模型</h3>
+<ul>
+<li>模型下拉框来自后端 <code>/v1/models</code>：Copilot 网页模型（copilot-*）+ API 提供商模型（如 <code>deepseek/deepseek-chat</code>）。</li>
+<li>点 ↻ 重新枚举 Copilot 菜单（新上线的模型自动发现）；子菜单（如 GPT 下的模型）也能识别和选择。</li>
+<li>API 提供商需在环境变量配置 Key（如 <code>DEEPSEEK_API_KEY</code>），详见 README。</li>
+</ul>
+<h3>长任务机制</h3>
+<ul>
+<li>上下文超阈值自动压缩；单会话过长自动换会话接力（检查点摘要带过去）。</li>
+<li>Copilot 限流时状态变为「等待服务」并指数退避自动重试；对话被 Copilot 判满时自动换会话重发。</li>
+<li>服务重启后自动恢复被中断的任务（auto_resume）。</li>
+</ul>
+<h3>界面</h3>
+<ul>
+<li><b>◐</b> 主题轮换：深色/浅色/Nord 蓝/护眼米/Dracula 紫/柔粉/薄荷，刷新保持。</li>
+<li>侧栏左缘的细长拉手收起/展开侧栏；实时面板（执行状态/当前回答/发送内容）是选项卡，<b>⤢ 放大</b>看全文。</li>
+<li>步骤时间线每条带执行时间；「查看结果」展开结构化 JSON。</li>
+</ul>
+<h3>常见问题</h3>
+<ul>
+<li><b>服务重启后短暂停在登录页</b>：企业 SSO 会经过公司 ADFS 自动回跳，约需 40 秒，一般无需手动登录；若停在账户选择页，手动点一下即可。</li>
+<li><b>提示找不到输入框/模型按钮</b>：登录态失效，运行 <code>python login.py</code> 重新登录（或在有窗口模式下直接登录）。</li>
+<li><b>任务显示等待服务</b>：Copilot 在限流，等它自动恢复；持续不可用会安全暂停，恢复后点「恢复」。</li>
+</ul>`;
+function openManual(){document.getElementById('manualBody').innerHTML=MANUAL_HTML;document.getElementById('manualMask').classList.add('open')}
+function closeManual(){document.getElementById('manualMask').classList.remove('open')}
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual()}});
 
 /* ── 实时面板选项卡 + 放大查看 ── */
 const LIVE_NAMES={activity:'当前执行状态',answer:'Copilot 当前回答',prompt:'最近发送给 Copilot 的内容'};
