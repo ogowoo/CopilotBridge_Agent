@@ -250,17 +250,49 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
   --danger-bg:#3d2830;--danger-border:#6e3540;--danger-text:#ff8080;--danger-hover-text:#ffa0a0;
   --mask-bg:rgba(20,21,28,.66);--dlg-shadow:rgba(0,0,0,.75);
 }
-/* 浅色系（light / solarized）的状态色覆写 */
-:root[data-theme="light"] .pill.run,:root[data-theme="solarized"] .pill.run{color:#15803d;border-color:#16a34a55;background:#16a34a12}
-:root[data-theme="light"] .pill.warn,:root[data-theme="solarized"] .pill.warn{color:#92400e;border-color:#d9770655;background:#d9770612}
-:root[data-theme="light"] .pill.bad,:root[data-theme="solarized"] .pill.bad{color:#b91c1c;border-color:#dc262655;background:#dc262612}
-:root[data-theme="light"] .pill.done,:root[data-theme="solarized"] .pill.done{color:#1d4ed8;border-color:#2563eb55;background:#2563eb12}
-:root[data-theme="light"] .step.error .schip,:root[data-theme="solarized"] .step.error .schip{color:#b91c1c}
-:root[data-theme="light"] .step.ok .schip,:root[data-theme="solarized"] .step.ok .schip{color:#15803d}
-:root[data-theme="light"] .demo,:root[data-theme="solarized"] .demo{background:#fef3c7;border-color:#d97706;color:#92400e}
-:root[data-theme="light"] .dres .err,:root[data-theme="solarized"] .dres .err{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
-:root[data-theme="light"] .dres.ok .ric,:root[data-theme="solarized"] .dres.ok .ric{background:#16a34a1a;color:#15803d;border-color:#16a34a55}
-:root[data-theme="light"] .dres.fail .ric,:root[data-theme="solarized"] .dres.fail .ric{background:#dc26261a;color:#b91c1c;border-color:#dc262655}
+/* ── 主题：柔粉 ── */
+:root[data-theme="roufen"]{
+  --bg:#fdf2f5;--panel:#ffffff;--panel2:#fdf7f9;--line:#f3dde4;--line2:#ecc9d5;
+  --text:#4a2e38;--muted:#8a6673;--faint:#b3929e;
+  --accent:#ec5c8a;--accent2:#d64575;
+  --green:#16a34a;--amber:#b45309;--red:#dc2626;--blue:#2563eb;--purple:#9333ea;
+  --scrollbar:#ecc9d5;--input-bg:#fff;--btn-bg:#fff;--btn-hover-text:var(--text);
+  --sess-hover:#fbeef3;--sess-sel:#fbe4ec;--dot-off:#d8b3c1;
+  --menu-shadow:rgba(236,92,138,.15);--menu-hover:#fce9f0;--meter:#f3dde4;
+  --term-bg:#fdf7f9;--term-text:#5a3a46;--step-line:#f6e6ec;
+  --jv-bg:#fdf7f9;--jv-text:#5a3a46;--jv-border:#f3dde4;--jv-ind:#ecc9d5;
+  --ky:#9333ea;--st:#16a34a;--nm:#1d4ed8;--bl:#b45309;--nl:#b3929e;
+  --msg-user-bg:#fce4ec;--msg-user-border:#f5c6d8;--big:#ecc9d5;
+  --danger-bg:#fef2f2;--danger-border:#f3c1bd;--danger-text:#b91c1c;--danger-hover-text:#7f1d1d;
+  --mask-bg:rgba(74,46,56,.25);--dlg-shadow:rgba(74,46,56,.2);
+}
+/* ── 主题：薄荷 ── */
+:root[data-theme="mint"]{
+  --bg:#eef7f3;--panel:#ffffff;--panel2:#f2faf6;--line:#d9ece2;--line2:#c2ddd0;
+  --text:#1e3d32;--muted:#52766a;--faint:#8aa79b;
+  --accent:#10b981;--accent2:#0d9e70;
+  --green:#059669;--amber:#b45309;--red:#dc2626;--blue:#2563eb;--purple:#7c3aed;
+  --scrollbar:#c2ddd0;--input-bg:#fff;--btn-bg:#fff;--btn-hover-text:var(--text);
+  --sess-hover:#e8f5ee;--sess-sel:#dff0e7;--dot-off:#a9c8ba;
+  --menu-shadow:rgba(16,185,129,.15);--menu-hover:#e6f4ec;--meter:#d9ece2;
+  --term-bg:#f4faf7;--term-text:#2b4a3e;--step-line:#e2f0e8;
+  --jv-bg:#f4faf7;--jv-text:#2b4a3e;--jv-border:#d9ece2;--jv-ind:#c2ddd0;
+  --ky:#7c3aed;--st:#059669;--nm:#1d4ed8;--bl:#b45309;--nl:#8aa79b;
+  --msg-user-bg:#d9f2e5;--msg-user-border:#bee5d2;--big:#c2ddd0;
+  --danger-bg:#fef2f2;--danger-border:#f3c1bd;--danger-text:#b91c1c;--danger-hover-text:#7f1d1d;
+  --mask-bg:rgba(30,61,50,.25);--dlg-shadow:rgba(30,61,50,.2);
+}
+/* 浅色系（light / solarized / roufen / mint）的状态色覆写 */
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .pill.run{color:#15803d;border-color:#16a34a55;background:#16a34a12}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .pill.warn{color:#92400e;border-color:#d9770655;background:#d9770612}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .pill.bad{color:#b91c1c;border-color:#dc262655;background:#dc262612}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .pill.done{color:#1d4ed8;border-color:#2563eb55;background:#2563eb12}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .step.error .schip{color:#b91c1c}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .step.ok .schip{color:#15803d}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .demo{background:#fef3c7;border-color:#d97706;color:#92400e}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres .err{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres.ok .ric{background:#16a34a1a;color:#15803d;border-color:#16a34a55}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres.fail .ric{background:#dc26261a;color:#b91c1c;border-color:#dc262655}
 @media(max-width:1100px){.content{grid-template-columns:1fr;min-height:0;flex:none}.steps,.livepane{flex:none;max-height:60vh}.kpis{grid-template-columns:repeat(2,1fr)}}
 /* 左侧栏折叠（仅宽屏生效）：侧栏宽度归零，只剩边缘拉手 */
 @media(min-width:861px){
@@ -663,7 +695,7 @@ async function runTask(){
 function toggleMore(e){e.stopPropagation();document.getElementById('moreMenu').classList.toggle('open')}
 document.addEventListener('click',e=>{let m=document.getElementById('moreMenu');if(m&&m.classList.contains('open')&&!e.target.closest('#moreBtn'))m.classList.remove('open')});
 
-const THEMES=[["","深色"],["light","浅色"],["nord","Nord 蓝"],["solarized","护眼米"],["dracula","Dracula 紫"]];
+const THEMES=[["","深色"],["light","浅色"],["nord","Nord 蓝"],["solarized","护眼米"],["dracula","Dracula 紫"],["roufen","柔粉"],["mint","薄荷"]];
 function toggleTheme(){
  let cur=document.documentElement.dataset.theme||'';
  let i=THEMES.findIndex(x=>x[0]===cur);if(i<0)i=0;
