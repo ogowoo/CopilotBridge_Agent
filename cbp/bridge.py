@@ -11,12 +11,12 @@ from typing import Literal
 from fastapi import HTTPException
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
-from agent import AgentRunner, AgentPaused, CopilotServiceUnavailable, CopilotConversationFull, validate_token_budget
-from tools import ToolRegistry, ToolError
-from session_store import SessionStore
-import providers as providers_mod
+from .agent import AgentRunner, AgentPaused, CopilotServiceUnavailable, CopilotConversationFull, validate_token_budget
+from .tools import ToolRegistry, ToolError
+from .session_store import SessionStore
+from . import providers as providers_mod
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(__file__).resolve().parent.parent  # 包在 cbp/ 内，项目根目录再上一层
 CFG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
 validate_token_budget(CFG.get("agent", {}))
 PROFILE = BASE / "EdgeProfile"
@@ -1518,6 +1518,6 @@ async def shutdown_browser():
     pw = None
 
 # OWA 后端注册（模块尾部导入：owa 依赖本模块已初始化完毕的 CFG/访问器）
-import owa as _owa_mod
+from . import owa as _owa_mod
 
 AGENT_TOOLS.outlook_backend = _owa_mod.OWA_BACKEND

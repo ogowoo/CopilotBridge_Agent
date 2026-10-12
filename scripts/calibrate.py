@@ -2,7 +2,7 @@
 """conv_stats 阈值校准分析：用实测数据反推 compact/rollover 配置。
 
 用法:
-    python calibrate.py [data/agent.db]
+    python scripts/calibrate.py [data/agent.db]   # 从项目根目录运行
 
 原理:
     M365 Copilot 的对话长度上限不公开且动态变化。conv_stats 表在每个

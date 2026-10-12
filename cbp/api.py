@@ -13,9 +13,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 from playwright.async_api import async_playwright
 
-import bridge as b
-import copilot_delete as cd
-from bridge import Message, Request, SessionMessageRequest, AgentRequest
+from . import bridge as b
+from . import copilot_delete as cd
+from .bridge import Message, Request, SessionMessageRequest, AgentRequest
 
 # ── 访问控制 ──
 # api_token：配置后所有 /v1/* 端点要求 "Authorization: Bearer <token>"。

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from playwright.async_api import async_playwright
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(__file__).resolve().parent.parent  # 脚本在 scripts/ 内，项目根目录再上一层
 CFG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
 PROFILE = BASE / "EdgeProfile"
 PORT = int(CFG.get("server", {}).get("port", 8765))

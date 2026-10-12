@@ -43,7 +43,7 @@ python install.py
 copy config.example.json config.json
 
 # 3. 登录 Copilot（会打开 Edge，登录完成后回车）
-python login.py
+python scripts/login.py
 
 # 4. 启动服务（默认 http://127.0.0.1:8765）
 python start.py
@@ -56,8 +56,8 @@ python start.py
 登录态保存在 `EdgeProfile/`，Windows 的账户选择器（WAM）常会**自动推荐系统当前登录的普通账号**，导致桥接用错账号。切换方法（任选其一）：
 
 1. **直接在自动化窗口里换**（服务有窗口模式运行时）：在自动化 Edge 的 Copilot 页面右上角头像处「注销」，再用订阅账号登录——登录态自动保存，无需重启服务；
-2. **重新走登录向导**（先停服务）：`python login.py`，弹出账户选择器时务必点「使用其他账户 / Use another account」，输入订阅账号；
-3. **登录态已混乱时彻底重来**：`python login.py --reset` 删除 EdgeProfile 后全新登录。
+2. **重新走登录向导**（先停服务）：`python scripts/login.py`，弹出账户选择器时务必点「使用其他账户 / Use another account」，输入订阅账号；
+3. **登录态已混乱时彻底重来**：`python scripts/login.py --reset` 删除 EdgeProfile 后全新登录。
 
 ### 普通对话（OpenAI SDK）
 
@@ -214,20 +214,21 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 ## 项目结构
 
 ```
-app.py            组装入口（from api import app，uvicorn 加载点）
-api.py            HTTP 路由层：FastAPI 应用与全部端点，只做请求/响应适配
-bridge.py         配置、运行状态、Copilot 浏览器自动化核心与会话编排
-copilot_delete.py Copilot 侧栏会话删除流程（URL 身份 + 标记同属校验 + 对账终验）
-owa.py            Outlook 网页版（OWA）自动化后端
-agent.py          Agent 主循环、JSON 动作协议、容错解析、压缩/换会话
-tools.py          工作区工具集（路径沙箱、Office 文档、Outlook 路由）
-providers.py      API 提供商接入层（OpenAI/DeepSeek/Kimi/Grok 等）
-session_store.py  SQLite 会话持久化、中断恢复、会话实测统计
-webui/index.html  零依赖单文件 Web 管理台
-login.py          首次登录向导（--reset 重置登录态）
-install.py        依赖安装
+app.py            组装入口（shim：from cbp.api import app，uvicorn 加载点）
 start.py          服务入口
-scripts/          工具脚本（calibrate.py 阈值校准、outlook_selftest.py COM 自检）
+install.py        依赖安装
+cbp/              核心包
+  api.py            HTTP 路由层：FastAPI 应用与全部端点，只做请求/响应适配
+  bridge.py         配置、运行状态、Copilot 浏览器自动化核心与会话编排
+  copilot_delete.py Copilot 侧栏会话删除流程（URL 身份 + 标记同属校验 + 对账终验）
+  owa.py            Outlook 网页版（OWA）自动化后端
+  agent.py          Agent 主循环、JSON 动作协议、容错解析、压缩/换会话
+  tools.py          工作区工具集（路径沙箱、Office 文档、Outlook 路由）
+  providers.py      API 提供商接入层（OpenAI/DeepSeek/Kimi/Grok 等）
+  session_store.py  SQLite 会话持久化、中断恢复、会话实测统计
+webui/index.html  零依赖单文件 Web 管理台
+scripts/          工具脚本（login.py 登录向导、calibrate.py 阈值校准、
+                  outlook_selftest.py COM 自检）
 tests/            单元测试（python -m unittest discover -s tests）
 ```
 

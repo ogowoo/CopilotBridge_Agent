@@ -9,8 +9,8 @@ import asyncio
 import re
 import time
 
-import bridge as _b
-from bridge import diagnostics
+from . import bridge as _b
+from .bridge import diagnostics
 
 
 def __getattr__(name):

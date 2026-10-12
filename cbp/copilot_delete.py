@@ -10,8 +10,8 @@ import asyncio
 import re
 import time
 
-import bridge as _b
-from bridge import visible, visible_locator, diagnostics, log, CONVERSATION_URL_RE, _agent_chat_marker, wait_copilot_ready
+from . import bridge as _b
+from .bridge import visible, visible_locator, diagnostics, log, CONVERSATION_URL_RE, _agent_chat_marker, wait_copilot_ready
 
 
 def __getattr__(name):

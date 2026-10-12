@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from tools import ToolRegistry
+from .tools import ToolRegistry
 
 ChatFunction = Callable[[str, str, bool], Awaitable[str]]
 

@@ -126,8 +126,8 @@ def main():
         # 第 7 步：用修复后的专用 COM 线程(_ComWorker)再跑一遍——预期通过。
         print("\n-- 专用 COM 线程模式验证（服务端新代码路径）--")
         try:
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
-            from tools import _ComWorker
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+            from cbp.tools import _ComWorker
 
             async def worker_probe():
                 def work():
