@@ -18,12 +18,13 @@ def ok(msg):
     print(f"  [OK] {msg}")
 
 
-def fail(msg, advice=""):
+def fail(msg, advice="", exit=True):
     STEPS.append(("FAIL", msg))
     print(f"  [FAIL] {msg}")
     if advice:
         print(f"  建议: {advice}")
-    sys.exit(1)
+    if exit:
+        sys.exit(1)
 
 
 HRESULT_HINTS = {
@@ -118,8 +119,9 @@ def main():
             n = asyncio.run(threaded_probe())
             ok(f"线程池模式遍历收件箱前 {n} 封（与服务 _outlook_run 同路径）")
         except Exception as exc:
-            fail(f"线程池模式复现失败\n  {explain(exc)}",
-                 "主线程过、线程池挂 = COM 公寓/消息泵问题；把结果发给维护者切换 COM 调用方案")
+            # 预期失败：这一步就是复现服务端报错的。继续跑第 7 步看新方案是否修好。
+            STEPS.append(("FAIL", "threaded"))
+            print(f"  [FAIL] 线程池模式复现失败（预期内，复现服务端现象）\n  {explain(exc)}")
 
         # 第 7 步：用修复后的专用 COM 线程(_ComWorker)再跑一遍——预期通过。
         print("\n-- 专用 COM 线程模式验证（服务端新代码路径）--")
@@ -149,6 +151,12 @@ def main():
         except Exception as exc:
             fail(f"专用 COM 线程模式也失败\n  {explain(exc)}",
                  "把完整输出发给维护者")
+
+        # 对照结论
+        results = dict(STEPS)
+        if results.get("FAIL") == "threaded":
+            print("\n== 诊断确认：线程池模式失败、专用 COM 线程模式通过 ==")
+            print("== 服务端 git pull 换新代码并重启后，Outlook 工具即正常 ==")
     finally:
         try:
             pythoncom.CoUninitialize()
