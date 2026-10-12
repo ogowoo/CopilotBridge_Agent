@@ -92,7 +92,7 @@ class AgentRunner:
 写大文件的标准流程：write_text_b64 写第一块 → append_text_b64 逐块追加直到全部内容写完（每一块都不要重复之前已写的内容）→ read_text 抽查 → 最后才执行 validate_python 和 run_unittest。
 文件没有写完之前禁止执行 validate_python 或 run_unittest：只写了一半的文件必然语法检查失败，这不是需要修复的缺陷。若验证失败且原因是文件不完整，正确做法是继续 append_text_b64 补全剩余内容，而不是重写整个文件或对残缺文件反复打补丁。
 单个 JSON 动作必须尽量短，禁止一次返回两个 JSON 对象。
-治理或代码修改任务必须形成验证闭环：写入后执行 validate_python，再执行 run_unittest；验证失败必须继续修复，不得返回 final。
+治理或代码修改任务必须形成验证闭环：文件全部写完后执行 validate_python，再执行 run_unittest；真实验证失败必须继续修复，不得返回 final（文件未写完时的验证不通过不算失败，按上面的分块流程继续追加即可）。
 只有 validate_python 和 run_unittest 均返回 passed=true 后，才可宣称治理完成或把 TODO 标记为完成。
 可用工具：
 """ + json.dumps(self.tools.descriptions(), ensure_ascii=False)
