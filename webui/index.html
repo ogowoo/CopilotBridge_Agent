@@ -400,7 +400,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
         </div>
       </section>
       <div class="content">
-        <section class="card"><div class="chead">步骤时间线<span id="stepCount" class="hint"></span></div><div id="steps" class="steps"></div></section>
+        <section class="card"><div class="chead">步骤时间线<span class="hint"><span id="stepCount" style="margin-right:8px"></span><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="导出完整时间线 JSON（含每步参数、结果与错误现场），便于调试" onclick="exportTimeline()">⬇ 导出</button></span></div><div id="steps" class="steps"></div></section>
         <div class="livecol">
           <section class="card">
             <div class="chead"><span id="pulse" class="dot-off"></span>
@@ -593,6 +593,21 @@ function renderMessages(messages){
  messages.forEach(m=>{let e=document.createElement('div');e.className='msg '+m.role;
   e.innerHTML=`<b>${m.role==='user'?'你':'Copilot'}</b>${esc(m.content)}`;box.appendChild(e)});
  box.scrollTop=box.scrollHeight}
+
+/* 导出完整时间线：调试/复盘用，含每步原始参数、结果与 invalid_action 的 raw_tail */
+async function exportTimeline(){
+ if(!current){toast('请先选择 Session','err');return}
+ try{
+  let d=await api('/v1/agent/sessions/'+encodeURIComponent(current));
+  let payload={exported_at:new Date().toISOString(),app:'CopilotBridge Agent',
+               api:'/v1/agent/sessions/'+encodeURIComponent(current),
+               session:d.session||{},steps:d.steps||[],messages:d.messages||[],files:d.files||[]};
+  let blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  let a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='cbp-'+current+'-timeline-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.json';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+  toast('时间线已导出（'+((payload.steps||[]).length)+' 步）','ok')}catch(e){toast('导出失败: '+e,'err')}}
 
 /* ── 页面内通知（toast）与通用模态层（替代原生 alert/confirm/prompt） ── */
 function toast(msg,type=''){let box=document.getElementById('toasts'),e=document.createElement('div');
