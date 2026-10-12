@@ -1475,17 +1475,45 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
         session_prefix = marker_match.group(1)
 
         # 删除成功/已被删除后 Copilot 常弹 "This chat is no longer available"
-        # 提示框：它会遮挡侧栏导致列表校验误判。当前页正是目标会话 URL 时，
-        # 该弹窗本身就是删除成功的强证据；无论如何都关掉它以免干扰后续检查。
+        # 提示框。该弹窗常由 Fluent UI 渲染在 shadow DOM 里，body 的
+        # inner_text 读不到其中文本，必须改用可穿透 shadow root 的
+        # Playwright locator 探测；这也是删除成功的强证据。
         _target_id_m = CONVERSATION_URL_RE.search(url or "")
         _target_id = _target_id_m.group(0) if _target_id_m else ""
 
+        GONE_DIALOG_RE = re.compile(r"no longer available|recently deleted|不再可用|已被删除|已删除", re.I)
+
+        async def _gone_dialog_present() -> bool:
+            # 先在对话框容器内找（中英文），容器选择器可穿透 shadow DOM。
+            for sel in ('[role="alertdialog"]', '[role="dialog"]', '.fui-DialogSurface'):
+                loc = page.locator(sel)
+                for i in range(min(await loc.count(), 5)):
+                    try:
+                        if await loc.nth(i).get_by_text(GONE_DIALOG_RE).count():
+                            return True
+                    except Exception:
+                        pass
+            # 兜底一：整页 light DOM 文本。
+            try:
+                if GONE_DIALOG_RE.search(await body_text()):
+                    return True
+            except Exception:
+                pass
+            # 兜底二：整页 shadow DOM 探测，仅限英文特征串——对话内容几乎
+            # 不可能含 "no longer available"，中文特征串可能出现在文件内容里，
+            # 全页匹配会有误报，故仅限容器内使用。
+            try:
+                if await page.get_by_text(re.compile(r"no longer available|recently deleted", re.I)).count():
+                    return True
+            except Exception:
+                pass
+            return False
+
         async def _dismiss_gone_dialog() -> bool:
             try:
-                body = await body_text()
+                if not await _gone_dialog_present():
+                    return False
             except Exception:
-                return False
-            if not re.search(r"no longer available|recently deleted|不再可用|已被删除|已删除", body, re.I):
                 return False
             btn = await visible([
                 'button:has-text("Close")',
@@ -1498,21 +1526,29 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
                     await btn.click(timeout=2000)
                 except Exception:
                     pass
-                await asyncio.sleep(.5)
+            else:
+                # 找不到关闭按钮时 Escape 兜底，避免弹窗残留遮挡侧栏校验
+                try:
+                    await page.keyboard.press("Escape")
+                except Exception:
+                    pass
+            await asyncio.sleep(.5)
             return True
-
-        def _on_target_page() -> bool:
-            return bool(_target_id and _target_id in (page.url or ""))
 
         has_conv_id = bool(CONVERSATION_URL_RE.search(url or ""))
         if has_conv_id:
             await page.goto(url, wait_until="domcontentloaded", timeout=120000)
             await asyncio.sleep(1.5)
             # 重试删除已不存在的会话时，打开 URL 即弹"不再可用"：直接认定已删除。
-            if await _dismiss_gone_dialog() and _on_target_page():
+            # 刚完成目标 URL 的导航，弹窗说的必然是该会话；删除后 Copilot 常会
+            # 立即跳走（URL 不再含会话 ID），不能再用 _on_target_page() 附加条件。
+            if await _dismiss_gone_dialog():
                 result["deleted"] = True
                 result["method"] = "already-gone"
                 return result
+        # 清理残留弹窗（无会话 ID 的兜底路径不会触发上面的导航清洗），
+        # 保证后续"点击确认后出现的弹窗 = 本次删除的强证据"这一推理成立。
+        await _dismiss_gone_dialog()
         await _open_chat_sidebar()
 
         # Locate the exact saved conversation URL. Do not infer Cnnn from list order.
@@ -1654,8 +1690,9 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
         await asyncio.sleep(0.5)
 
         # 点击确认后的校验：先识别"不再可用"弹窗（删除成功强证据），
-        # 再做侧栏列表轮询。
-        if await _dismiss_gone_dialog() and _on_target_page():
+        # 再做侧栏列表轮询。入口阶段已清过残留弹窗，此刻出现的弹窗
+        # 必为本次删除所致，无需再校验当前 URL。
+        if await _dismiss_gone_dialog():
             result["deleted"] = True
             return result
 
@@ -1674,7 +1711,7 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
         # 侧栏是虚拟滚动列表，删除后可能短暂残留：轮询等待，必要时刷新再判定。
         gone_deadline = time.monotonic() + 8
         while time.monotonic() < gone_deadline:
-            if await _dismiss_gone_dialog() and _on_target_page():
+            if await _dismiss_gone_dialog():
                 result["deleted"] = True
                 return result
             if not await _still_listed():
@@ -1687,7 +1724,7 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
                 await _open_chat_sidebar()
             except Exception:
                 pass
-        if await _dismiss_gone_dialog() and _on_target_page():
+        if await _dismiss_gone_dialog():
             result["deleted"] = True
             return result
         if await _still_listed():
