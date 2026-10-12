@@ -558,13 +558,56 @@ class ToolRegistry:
             except ToolError:
                 raise
             except Exception as exc:
-                raise ToolError(f"Outlook 不可用（未安装或未登录账号）: {exc}")
+                raise ToolError(self._explain_outlook_error(exc))
             finally:
                 pythoncom.CoUninitialize()
 
         # COM 弹安全确认框或 Outlook 脱机时会永久阻塞，加超时保护
-        return await asyncio.wait_for(asyncio.to_thread(runner),
-                                      timeout=max(self.python_timeout, 30) * 2)
+        timeout = max(self.python_timeout, 30) * 2
+        for attempt in (1, 2):
+            try:
+                return await asyncio.wait_for(asyncio.to_thread(runner), timeout=timeout)
+            except ToolError:
+                raise
+            except Exception as exc:
+                if attempt == 1 and self._busy_hresult(exc):
+                    await asyncio.sleep(2.0)  # Outlook 繁忙瞬时拒绝：退后重试一次
+                    continue
+                if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+                    raise ToolError("调用 Outlook 超时（40 秒无响应）——Outlook 可能弹出了安全确认框、"
+                                    "处于脱机或卡死状态；请在本机桌面确认 Outlook 后重试")
+                raise ToolError(self._explain_outlook_error(exc))
+
+    @staticmethod
+    def _busy_hresult(exc) -> bool:
+        # RPC_E_CALL_REJECTED / RPC_E_SERVERCALL_RETRYLATER：Outlook 正忙
+        try:
+            code = int(exc.args[0]) & 0xFFFFFFFF
+        except Exception:
+            return False
+        return code in (0x80010001, 0x80010102)
+
+    @staticmethod
+    def _explain_outlook_error(exc) -> str:
+        """把 COM 异常翻译成可操作的诊断信息——'已登录但不可用'几乎都是这几类。"""
+        hresult = None
+        try:
+            hresult = int(exc.args[0]) & 0xFFFFFFFF
+        except Exception:
+            pass
+        known = {
+            0x80040154: "未注册 Outlook COM 类——本机未安装 Outlook/Office",
+            0x80080005: "Outlook 拒绝本次自动化调用——最常见于 Outlook 与服务的运行权限不一致"
+                        "（一个管理员运行、一个非管理员运行）或不同 Windows 用户；"
+                        "Outlook 与服务需在相同用户、相同提权状态下运行",
+            0x8000401A: "当前会话无法启动 Outlook（非交互式会话）——请在已登录用户的桌面会话中运行服务",
+            0x80070005: "访问被拒绝——Outlook 安全策略或杀毒软件拦截了 COM 自动化",
+            0x80010105: "与 Outlook 的 RPC 通信失败——Outlook 可能卡死，重启 Outlook 后重试",
+        }
+        if hresult:
+            hint = known.get(hresult, "未识别的 COM 错误，请把本段发给维护者")
+            return f"Outlook 不可用：{hint}（0x{hresult:08X}: {exc}）"
+        return f"Outlook 不可用（未安装、未启动或未登录账号）: {exc}"
 
     @staticmethod
     def _mail_brief(item) -> dict[str, Any]:

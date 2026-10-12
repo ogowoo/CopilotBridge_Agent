@@ -1,0 +1,98 @@
+# -*- coding: utf-8 -*-
+"""Outlook COM 自检：在跑服务的机器上、用服务同一个 Python 环境运行。
+
+    python outlook_selftest.py
+
+逐步检查并把 COM 错误翻译成可操作的结论：
+  pywin32 导入 -> CoInitialize -> Dispatch -> MAPI -> 收件箱 -> 未读过滤
+每一步失败即停，打印 HRESULT 对应的典型原因（权限不一致/会话隔离/
+未安装/被安全软件拦截等），并给出下一步建议。
+"""
+import sys
+
+STEPS = []
+
+
+def ok(msg):
+    STEPS.append(("OK", msg))
+    print(f"  [OK] {msg}")
+
+
+def fail(msg, advice=""):
+    STEPS.append(("FAIL", msg))
+    print(f"  [FAIL] {msg}")
+    if advice:
+        print(f"  建议: {advice}")
+    sys.exit(1)
+
+
+HRESULT_HINTS = {
+    0x80040154: "未注册 Outlook COM 类——本机未安装 Outlook/Office",
+    0x80080005: "Outlook 拒绝自动化调用——最常见原因：Outlook 与本脚本运行权限不一致"
+                "（一个用管理员、一个不用）或不同 Windows 用户。让两者同用户同提权状态再试",
+    0x8000401A: "非交互式会话无法启动 Outlook——必须在已登录用户的桌面会话里运行",
+    0x80070005: "访问被拒绝——Outlook 安全策略或杀毒软件拦截了 COM 自动化",
+    0x80010105: "RPC 通信失败——Outlook 卡死，重启 Outlook",
+}
+
+
+def explain(exc):
+    code = None
+    try:
+        code = int(exc.args[0]) & 0xFFFFFFFF
+    except Exception:
+        pass
+    if code:
+        hint = HRESULT_HINTS.get(code, "未识别错误，把完整输出发给维护者")
+        return f"0x{code:08X}: {exc}\n  典型原因: {hint}"
+    return repr(exc)
+
+
+def main():
+    print("== Outlook COM 自检 ==\n环境:", sys.executable, "\n")
+
+    try:
+        import pythoncom
+        import win32com.client
+    except ImportError as exc:
+        fail(f"pywin32 未安装: {exc}", "pip install pywin32")
+    ok("pywin32 导入")
+
+    pythoncom.CoInitialize()
+    try:
+        try:
+            app = win32com.client.Dispatch("Outlook.Application")
+        except Exception as exc:
+            fail(f"Dispatch(Outlook.Application) 失败\n  {explain(exc)}")
+        ok("Outlook.Application 获取")
+
+        try:
+            ns = app.GetNamespace("MAPI")
+        except Exception as exc:
+            fail(f"GetNamespace(MAPI) 失败\n  {explain(exc)}")
+        ok("MAPI 命名空间")
+
+        try:
+            inbox = ns.GetDefaultFolder(6)
+            count = inbox.Items.Count
+        except Exception as exc:
+            fail(f"收件箱访问失败\n  {explain(exc)}")
+        ok(f"收件箱可访问（{count} 条）")
+
+        try:
+            unread = inbox.Items.Restrict("[Unread] = true").Count
+        except Exception as exc:
+            fail(f"未读过滤失败\n  {explain(exc)}")
+        ok(f"未读过滤可用（{unread} 封未读）")
+    finally:
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
+
+    print("\n== 全部通过：服务端 Outlook 工具应可正常工作 ==")
+    print("若服务端仍失败，请核对服务进程的启动用户/提权状态与 Outlook 是否一致。")
+
+
+if __name__ == "__main__":
+    main()
