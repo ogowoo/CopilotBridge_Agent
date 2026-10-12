@@ -495,7 +495,12 @@ async def select_model(model_id):
             if not has_popup:
                 continue
             await _expand_submenu(parent)
-            option = await visible_locator(_menu_target_locators(target))
+            # 子菜单展开有动画延迟，立刻找可能落空：短轮询三次
+            for _try in range(3):
+                option = await visible_locator(_menu_target_locators(target))
+                if option:
+                    break
+                await asyncio.sleep(.4)
             if option:
                 break
     if not option:
@@ -915,8 +920,15 @@ async def _copilot_attach(path: str, question: str = "请分析这个文件的�
         raise ToolError(f"文件不存在: {path}")
     if target.stat().st_size > 50 * 1024 * 1024:
         raise ToolError("文件超过 50MB，Copilot 网页上传可能失败")
+    # 跟随当前会话的模型而不是默认模型：否则每次上传都把会话切成 Auto，
+    # 下一回合又切回去，形成模型乒乓（每条消息都开一次菜单）。
+    model = DEFAULT_MODEL
+    if ACTIVE_SESSION_ID:
+        st = AGENT_SESSIONS.get(ACTIVE_SESSION_ID)
+        if st and st.get("model"):
+            model = st["model"]
     await attach_file_to_copilot(target)
-    answer = await agent_chat_once(question, DEFAULT_MODEL, False)
+    answer = await agent_chat_once(question, model, False)
     return {"path": path, "question": question, "answer": answer}
 
 
