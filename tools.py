@@ -106,6 +106,8 @@ class ToolRegistry:
         self.allow_office = bool(config.get("allow_office", True))
         self.allow_outlook = bool(config.get("allow_outlook", False))
         self.allow_outlook_send = bool(config.get("allow_outlook_send", False))
+        # Outlook 后端：bridge 层注册的 OWA 网页自动化后端；None 时走 COM（经典 Outlook）
+        self.outlook_backend = None
         self.python_timeout = float(config.get("python_timeout_seconds", 20))
         # 工作区根目录白名单：配置后 set_root 只能切到这些根目录之下，
         # 防止 API 把工具根目录移到 C:\ 之类的地方使路径沙箱形同虚设。
@@ -697,8 +699,19 @@ class ToolRegistry:
                 "sender": str(item.SenderName or ""), "received": str(item.ReceivedTime),
                 "unread": bool(item.UnRead)}
 
+    def _owa_or_none(self):
+        """已注册 OWA 后端时返回它；同时校验开关。"""
+        if self.outlook_backend is None:
+            return None
+        if not self.allow_outlook:
+            raise ToolError("Outlook 工具已在 config.json 中禁用（allow_outlook=false）")
+        return self.outlook_backend
+
     async def outlook_unread(self, max_count: int = 20) -> dict[str, Any]:
         limit = max(1, min(self._int_arg(max_count, 20, "max_count"), 100))
+        backend = self._owa_or_none()
+        if backend is not None:
+            return await backend.unread(limit)
 
         def work(ns):
             items = ns.GetDefaultFolder(6).Items.Restrict("[Unread] = true")  # 6=olFolderInbox
@@ -716,6 +729,10 @@ class ToolRegistry:
     async def outlook_read(self, entry_id: str) -> dict[str, Any]:
         if not entry_id:
             raise ToolError("entry_id 不能为空")
+        backend = self._owa_or_none()
+        if backend is not None:
+            # OWA 后端没有 entry_id 概念，按主题关键词定位
+            return await backend.read(entry_id)
 
         def work(ns):
             item = ns.GetItemFromID(entry_id)
@@ -733,8 +750,15 @@ class ToolRegistry:
 
         不再用 MAPI DASL @SQL 查询：它在部分环境会抛 0x80004004
         (Operation aborted) 且无规律可循；改为本地迭代过滤，行为确定。
+        OWA 后端注册时优先走网页版（folder/since 参数暂不支持，忽略）。
         """
         limit = max(1, min(self._int_arg(max_count, 20, "max_count"), 100))
+        keyword = str(keyword or "").strip()
+        backend = self._owa_or_none()
+        if backend is not None:
+            if not keyword:
+                raise ToolError("OWA 模式下 outlook_search 需要 keyword")
+            return await backend.search(keyword, limit)
         folder_key = str(folder or "inbox").strip().lower()
         folder_id = {"inbox": 6, "sent": 5, "outbox": 4, "deleted": 3, "drafts": 16}.get(folder_key)
         if folder_id is None:
@@ -779,6 +803,8 @@ class ToolRegistry:
             raise ToolError("发送邮件已在 config.json 中禁用（allow_outlook_send=false）")
         if not to or not subject:
             raise ToolError("to 和 subject 不能为空")
+        if self.outlook_backend is not None:
+            return await self.outlook_backend.send(to, subject, body, cc)
 
         def work(ns):
             app = ns.Application
