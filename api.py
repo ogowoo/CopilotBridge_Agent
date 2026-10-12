@@ -393,6 +393,9 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
             for index, url in enumerate(urls):
                 marker = b._agent_chat_marker(sid, index)
                 remote_results.append(await b.delete_copilot_conversation(url, marker))
+            # 对账式终验：按 [CBP-AGENT][sid] 标记清点侧栏——补删漏网会话，
+            # 并把弹窗识别误判的失败条目改判为已删除（以侧栏实际残留为准）。
+            remote_results = await b.finalize_session_remote_deletion(sid, remote_results)
             b._forget_selected_model()  # 删除过程中页面在多个会话间跳转
         failed = [x for x in remote_results if not x["deleted"]]
         if failed and not force_local:

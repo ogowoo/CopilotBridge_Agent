@@ -1737,6 +1737,112 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
 
 
 
+async def finalize_session_remote_deletion(sid: str, remote_results: list) -> list:
+    """对账式终验：以 [CBP-AGENT][sid] 侧栏标记为准，而不是逐个 URL 的弹窗识别。
+
+    逐 URL 删除的判定（"no longer available" 弹窗、删除后轮询）在不同租户
+    实现差异大，会误判。对账阶段回到基准地址清点侧栏：
+    1. 把所有仍带本 Session 标记的会话（含 conversation_urls 未记录到的漏网）
+       补删一遍；
+    2. 刷新后清点残留，报失败但已不在侧栏的条目改判删除成功（verified-absent）。
+    最终仍以侧栏实际残留为准，避免误识别双向出错（不会漏报，也不会误报成功）。
+    """
+    prefix = _agent_chat_marker(sid, 0)[:-6]  # [CBP-AGENT][<sid>]，与侧栏标题前缀一致
+
+    def _conv_id(url: str) -> str:
+        m = CONVERSATION_URL_RE.search(url or "")
+        return m.group(0).rsplit("/", 1)[-1] if m else (url or "")
+
+    def _already_ok(url: str) -> bool:
+        cid = _conv_id(url)
+        return any(r.get("deleted") and _conv_id(r.get("url") or "") == cid for r in remote_results)
+
+    async def _rows_with_marker() -> dict:
+        """侧栏中所有带本 Session 标记的会话：href -> conversation_index（未知为 None）。"""
+        found: dict = {}
+        hits = page.get_by_text(re.compile(re.escape(prefix)))
+        for i in range(min(await hits.count(), 60)):
+            try:
+                hit = hits.nth(i)
+                if not await hit.is_visible():
+                    continue
+                row = await _chat_row_from_link(hit)
+                text = (await row.inner_text()).strip()
+                if prefix not in text:
+                    continue
+                link = row.locator('a[href*="/conversation/"]').first
+                if not await link.count():
+                    continue
+                href = await link.get_attribute("href")
+                if not href:
+                    continue
+                if href.startswith("/"):
+                    href = "https://m365.cloud.microsoft" + href
+                m = re.search(r"\[C(\d+)\]", text)
+                if href not in found:
+                    found[href] = int(m.group(1)) if m else None
+            except Exception:
+                pass
+        return found
+
+    async def _scroll_sidebar():
+        """虚拟滚动列表只渲染可视行：悬停到列表上滚动一轮，触发更多行渲染。"""
+        try:
+            anchor = page.locator('a[href*="/conversation/"]').first
+            if await anchor.count():
+                await anchor.hover(timeout=3000)
+                await page.mouse.wheel(0, 1500)
+                await asyncio.sleep(1.0)
+        except Exception:
+            pass
+
+    try:
+        base = str(CFG.get("copilot_url") or "https://m365.cloud.microsoft/chat/")
+        await page.goto(base, wait_until="domcontentloaded", timeout=120000)
+        await wait_copilot_ready(90)
+        await _open_chat_sidebar()
+        await asyncio.sleep(1.0)
+    except Exception:
+        return remote_results  # 基准页都打不开时维持原结果，不误判
+
+    # 第一遍清点（先滚动再收，尽量覆盖虚拟列表）
+    await _scroll_sidebar()
+    for _round in range(2):
+        rows = await _rows_with_marker()
+        pending = {u: c for u, c in rows.items() if not _already_ok(u)}
+        if not pending:
+            break
+        for url, cidx in pending.items():
+            marker = _agent_chat_marker(sid, cidx if cidx is not None else 0)
+            try:
+                remote_results.append(await delete_copilot_conversation(url, marker))
+            except Exception as exc:  # 单条失败不中断对账
+                remote_results.append({"url": url, "expected_title": marker, "deleted": False,
+                                       "error": str(exc), "method": "url-plus-session-marker"})
+        await asyncio.sleep(1.0)
+        await _scroll_sidebar()
+
+    # 终验：刷新列表（虚拟列表残留不可靠），以最终残留为准改判
+    try:
+        await page.reload(wait_until="domcontentloaded", timeout=60000)
+        await asyncio.sleep(2.0)
+        await _open_chat_sidebar()
+        await _scroll_sidebar()
+    except Exception:
+        pass
+    remaining = await _rows_with_marker()
+    remaining_ids = {_conv_id(u) for u in remaining}
+    for r in remote_results:
+        if r.get("deleted"):
+            continue
+        cid = _conv_id(r.get("url") or "")
+        if cid and cid not in remaining_ids:
+            r["deleted"] = True
+            r["method"] = "verified-absent"
+            r["error"] = None
+    return remote_results
+
+
 async def plain_chat_turn(sid: str, content: str, model_id: str) -> dict:
     """普通对话回合：在 Session 绑定的 Copilot 会话里问答，不跑工具循环。
 
