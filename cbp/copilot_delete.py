@@ -506,6 +506,24 @@ async def finalize_session_remote_deletion(sid: str, remote_results: list) -> li
             r["deleted"] = True
             r["method"] = "verified-absent"
             r["error"] = None
+
+    # 侧栏兜底仍失败的条目：逐个再导航一次目标 URL。已删除的会话会弹
+    # "no longer available"，delete_copilot_conversation 的 already-gone
+    # 分支直接改判成功——侧栏虚拟列表刷新后仍可能残留，URL 级证据最权威。
+    for r in remote_results:
+        if r.get("deleted"):
+            continue
+        url = r.get("url") or ""
+        if not CONVERSATION_URL_RE.search(url):
+            continue
+        try:
+            retry = await delete_copilot_conversation(url, r.get("expected_title") or "")
+            if retry.get("deleted"):
+                r["deleted"] = True
+                r["method"] = retry.get("method", "verified-gone-page")
+                r["error"] = None
+        except Exception:
+            pass
     return remote_results
 
 
