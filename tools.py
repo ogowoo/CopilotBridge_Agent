@@ -4,8 +4,10 @@ import asyncio
 import base64
 import hashlib
 import json
+import queue
 import shutil
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -13,6 +15,84 @@ from typing import Any, Awaitable, Callable
 
 class ToolError(RuntimeError):
     pass
+
+
+class _ComWorker:
+    """专用 COM 线程：常驻 + Windows 消息泵，Outlook COM 调用全部串行在它上面执行。
+
+    为什么不用线程池：Outlook COM 从后台线程调用且该线程没有消息泵时，
+    需要 UI 交互的 MAPI 调用会以 0x80004004 (E_ABORT, Operation aborted)
+    中止。主线程自检能通过是因为控制台主线程自带消息泵；线程池线程没有。
+    单 COM 线程 + PumpWaitingMessages 是 Office 自动化从服务/异步代码
+    调用的标准做法（同时天然串行化并发 Outlook 操作）。
+    """
+
+    _instance = None
+    _instance_lock = threading.Lock()
+
+    @classmethod
+    def get(cls) -> "_ComWorker":
+        with cls._instance_lock:
+            if cls._instance is None:
+                cls._instance = cls()
+            return cls._instance
+
+    def __init__(self):
+        self._queue: "queue.Queue" = queue.Queue()
+        self._thread = threading.Thread(target=self._run, name="outlook-com", daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        pythoncom = None
+        try:
+            import pythoncom
+            pythoncom.CoInitializeEx(0)
+        except Exception:
+            return  # pywin32 缺失：submit 侧会因超时得到明确错误
+        while True:
+            try:
+                item = self._queue.get(timeout=0.05)
+            except queue.Empty:
+                try:
+                    pythoncom.PumpWaitingMessages()
+                except Exception:
+                    pass
+                continue
+            if item is None:
+                break
+            fn, loop, fut = item
+            try:
+                result = fn()
+            except Exception as exc:
+                self._dispatch(loop, fut, exc=exc)
+            else:
+                self._dispatch(loop, fut, result=result)
+            try:
+                pythoncom.PumpWaitingMessages()
+            except Exception:
+                pass
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _dispatch(loop, fut, result=None, exc=None):
+        try:
+            if loop.is_closed():
+                return
+            if exc is not None:
+                loop.call_soon_threadsafe(fut.set_exception, exc)
+            else:
+                loop.call_soon_threadsafe(fut.set_result, result)
+        except Exception:
+            pass
+
+    def submit(self, fn):
+        loop = asyncio.get_running_loop()
+        fut = loop.create_future()
+        self._queue.put((fn, loop, fut))
+        return fut
 
 
 class ToolRegistry:
@@ -547,11 +627,11 @@ class ToolRegistry:
 
         def runner():
             try:
-                import pythoncom
                 import win32com.client
             except ImportError:
                 raise ToolError("缺少依赖 pywin32，请运行 pip install pywin32")
-            pythoncom.CoInitialize()
+            # COM 线程初始化由 _ComWorker 统一负责（CoInitializeEx + 消息泵），
+            # 这里不再每调用 CoInitialize/CoUninitialize，避免破坏公寓状态。
             try:
                 app = win32com.client.Dispatch("Outlook.Application")
                 ns = app.GetNamespace("MAPI")
@@ -560,14 +640,13 @@ class ToolRegistry:
                 raise
             except Exception as exc:
                 raise ToolError(self._explain_outlook_error(exc))
-            finally:
-                pythoncom.CoUninitialize()
 
         # COM 弹安全确认框或 Outlook 脱机时会永久阻塞，加超时保护
         timeout = max(self.python_timeout, 30) * 2
+        worker = _ComWorker.get()
         for attempt in (1, 2):
             try:
-                return await asyncio.wait_for(asyncio.to_thread(runner), timeout=timeout)
+                return await asyncio.wait_for(worker.submit(runner), timeout=timeout)
             except ToolError:
                 raise
             except Exception as exc:

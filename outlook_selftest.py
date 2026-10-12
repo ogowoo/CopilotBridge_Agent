@@ -120,6 +120,35 @@ def main():
         except Exception as exc:
             fail(f"线程池模式复现失败\n  {explain(exc)}",
                  "主线程过、线程池挂 = COM 公寓/消息泵问题；把结果发给维护者切换 COM 调用方案")
+
+        # 第 7 步：用修复后的专用 COM 线程(_ComWorker)再跑一遍——预期通过。
+        print("\n-- 专用 COM 线程模式验证（服务端新代码路径）--")
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from tools import _ComWorker
+
+            async def worker_probe():
+                def work():
+                    import win32com.client
+                    app = win32com.client.Dispatch("Outlook.Application")
+                    ns = app.GetNamespace("MAPI")
+                    items = ns.GetDefaultFolder(6).Items
+                    items.Sort("[ReceivedTime]", True)
+                    out = 0
+                    for i, item in enumerate(items):
+                        if i >= 20:
+                            break
+                        _ = (str(item.Subject), str(item.ReceivedTime), str(item.SenderName))
+                        out += 1
+                    return out
+
+                return await asyncio.wait_for(_ComWorker.get().submit(work), timeout=60)
+
+            n = asyncio.run(worker_probe())
+            ok(f"专用 COM 线程模式遍历 {n} 封（新代码 _ComWorker 路径）")
+        except Exception as exc:
+            fail(f"专用 COM 线程模式也失败\n  {explain(exc)}",
+                 "把完整输出发给维护者")
     finally:
         try:
             pythoncom.CoUninitialize()
