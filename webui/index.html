@@ -96,8 +96,9 @@ textarea{resize:vertical}
 .menuList button:hover{background:var(--menu-hover)}
 .menuList button.danger{color:#ff8a80}
 
-/* KPI 条 */
-.kpis{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr)) minmax(220px,1.6fr);gap:10px;margin:14px 0}
+/* KPI 条：auto-fit 让卡片数随可用宽度自适应，杜绝窄窗口网格溢出互相挤压 */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+.kpis .kpi:last-child{grid-column:span 2}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 14px}
 .kpi span{display:block;font-size:11px;letter-spacing:1px;color:var(--faint);margin-bottom:5px}
 .kpi b{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
@@ -163,7 +164,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .btn.seg{padding:3px 12px;font-size:12px;height:28px;border-radius:20px}
 .btn.seg.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 
-.demo{position:fixed;right:16px;bottom:14px;z-index:99;background:#3d2b10;border:1px solid #9e6a03;color:#e8b339;font-size:12px;padding:6px 13px;border-radius:20px}
+.demo{position:fixed;top:16px;right:18px;z-index:99;background:#3d2b10;border:1px solid #9e6a03;color:#e8b339;font-size:12px;padding:6px 13px;border-radius:20px}
 
 /* ── 删除结果弹窗 ── */
 .mask{position:fixed;inset:0;background:var(--mask-bg);display:none;align-items:center;justify-content:center;z-index:60;padding:22px}
@@ -310,7 +311,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 :root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres .err{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
 :root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres.ok .ric{background:#16a34a1a;color:#15803d;border-color:#16a34a55}
 :root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres.fail .ric{background:#dc26261a;color:#b91c1c;border-color:#dc262655}
-@media(max-width:1100px){.content{grid-template-columns:1fr;min-height:0;flex:none}.steps,.livepane{flex:none;max-height:60vh}.kpis{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1100px){.content{grid-template-columns:1fr;min-height:0;flex:none}.steps,.livepane{flex:none;max-height:60vh}}
 /* 左侧栏折叠（仅宽屏生效）：侧栏宽度归零，只剩边缘拉手 */
 @media(min-width:861px){
   :root[data-rail="closed"] .app{grid-template-columns:0 1fr}
@@ -321,7 +322,14 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 /* 手机：彻底回退为自然文档流，页面整体滚动，禁用填满窗口的 flex 布局 */
 @media(max-width:860px){
   .app{grid-template-columns:1fr}
-  .rail{max-height:46vh;border-right:0;border-bottom:1px solid var(--line)}
+  /* 侧栏高度受限时必须截断溢出：新任务表单在自身内部滚动，
+     会话列表获得独立的滚动区，溢出内容不再被主区覆盖造成元素干涉 */
+  .rail{max-height:56vh;border-right:0;border-bottom:1px solid var(--line);overflow:hidden;min-height:0}
+  .newtask{flex:none;min-height:0}
+  .newtask[open]{max-height:62%;overflow:auto}
+  .listhead{flex:none}
+  .sesslist{min-height:0}
+  .kpis .kpi:last-child{grid-column:auto}
   .main{display:block}
   #sessionView{display:block;flex:none}
   .content{display:block;min-height:0}
