@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -116,7 +117,7 @@ class ToolRegistry:
             items += [
                 {"name": "outlook_unread", "description": "列出 Outlook 收件箱未读邮件", "arguments": {"max_count": "最多条数，默认 20"}},
                 {"name": "outlook_read", "description": "按 entry_id 读取邮件正文", "arguments": {"entry_id": "来自 outlook_unread/outlook_search"}},
-                {"name": "outlook_search", "description": "按主题关键词搜索收件箱邮件", "arguments": {"keyword": "关键词", "max_count": "默认 20"}},
+                {"name": "outlook_search", "description": "按主题关键词和日期搜索指定文件夹（inbox 收件箱/sent 已发送/outbox/deleted/drafts）", "arguments": {"keyword": "主题关键词，可留空", "folder": "文件夹，默认 inbox", "since": "起始日期 YYYY-MM-DD，可留空", "max_count": "默认 20"}},
             ]
             if self.allow_outlook_send:
                 items.append({"name": "outlook_send", "description": "发送邮件（会真实发出，谨慎）", "arguments": {"to": "收件人", "subject": "主题", "body": "正文", "cc": "抄送，可选"}})
@@ -603,6 +604,8 @@ class ToolRegistry:
             0x8000401A: "当前会话无法启动 Outlook（非交互式会话）——请在已登录用户的桌面会话中运行服务",
             0x80070005: "访问被拒绝——Outlook 安全策略或杀毒软件拦截了 COM 自动化",
             0x80010105: "与 Outlook 的 RPC 通信失败——Outlook 可能卡死，重启 Outlook 后重试",
+            0x80004004: "操作被中止——Outlook 忙、有模态对话框或安全确认被取消/超时；稍后重试，"
+                        "持续出现请重启 Outlook（outlook_search 已改为本地过滤，不再触发此类查询中止）",
         }
         if hresult:
             hint = known.get(hresult, "未识别的 COM 错误，请把本段发给维护者")
@@ -645,25 +648,52 @@ class ToolRegistry:
 
         return await self._outlook_run(work)
 
-    async def outlook_search(self, keyword: str, max_count: int = 20) -> dict[str, Any]:
-        if not keyword:
-            raise ToolError("keyword 不能为空")
+    async def outlook_search(self, keyword: str = "", folder: str = "inbox",
+                             since: str = "", max_count: int = 20) -> dict[str, Any]:
+        """按关键词/日期搜索指定邮件文件夹（收件箱、已发送等）。
+
+        不再用 MAPI DASL @SQL 查询：它在部分环境会抛 0x80004004
+        (Operation aborted) 且无规律可循；改为本地迭代过滤，行为确定。
+        """
         limit = max(1, min(self._int_arg(max_count, 20, "max_count"), 100))
-        safe = str(keyword).replace("'", "''")
+        folder_key = str(folder or "inbox").strip().lower()
+        folder_id = {"inbox": 6, "sent": 5, "outbox": 4, "deleted": 3, "drafts": 16}.get(folder_key)
+        if folder_id is None:
+            try:
+                folder_id = int(folder)
+            except (TypeError, ValueError):
+                raise ToolError(f"未知文件夹: {folder}（可用 inbox/sent/outbox/deleted/drafts 或 olFolder 数字）")
+        keyword = str(keyword or "").strip()
+        since_date = None
+        if str(since or "").strip():
+            try:
+                since_date = datetime.strptime(str(since).strip()[:10], "%Y-%m-%d").date()
+            except ValueError:
+                raise ToolError("since 格式应为 YYYY-MM-DD")
 
         def work(ns):
-            items = ns.GetDefaultFolder(6).Items.Restrict(
-                f"@SQL=\"urn:schemas:httpmail:subject\" LIKE '%{safe}%'")
-            items.Sort("[ReceivedTime]", True)
+            items = ns.GetDefaultFolder(folder_id).Items
+            items.Sort("[ReceivedTime]", True)  # 倒序：配合 since 可以提前终止
             out = []
             for item in items:
                 if len(out) >= limit:
                     break
+                try:
+                    when = item.ReceivedTime
+                    d = when.date() if when is not None else None
+                except Exception:
+                    d = None
+                if since_date is not None:
+                    if d is None or d < since_date:
+                        break  # 倒序遍历：更早的条目不可能命中
+                if keyword and keyword.lower() not in str(item.Subject or "").lower():
+                    continue
                 out.append(self._mail_brief(item))
             return out
 
         mails = await self._outlook_run(work)
-        return {"keyword": keyword, "returned": len(mails), "items": mails}
+        return {"folder": folder_key, "keyword": keyword, "since": since or None,
+                "returned": len(mails), "items": mails}
 
     async def outlook_send(self, to: str, subject: str, body: str, cc: str = "") -> dict[str, Any]:
         if not self.allow_outlook_send:
