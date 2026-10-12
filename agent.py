@@ -88,6 +88,7 @@ class AgentRunner:
 {"type":"final","content":"最终答复"}
 规则：先检查再修改；路径相对于当前工作目录；工具失败后调整方案；完成后必须立即返回 final。
 修改现有文本优先使用 replace_text，不得使用 run_python 修改项目文件。
+读取大文件必须分段：read_text 单次进入上下文的内容约 6000 字符封顶，超过会只看到文件开头；总长大于 5000 字符的文件用 offset 参数逐段读取（每段 4000~5000 字符，按返回的 total_chars 和 next_offset 翻页），直到读完全文再下结论。
 创建或追加代码、JSON、HTML、Markdown 时必须使用 write_text_b64 或 append_text_b64，禁止把源码直接放入普通 JSON content。每次解码后内容不超过 3000 字符；大文件必须分多次 append_text_b64 追加，宁可多回合也不要让单个 JSON 动作过长（过长会被截断导致整个动作作废）。如果上一回合因过长被截断，下一回合只输出未写入的剩余分块。文件写完后用 read_text 验证。
 写大文件的标准流程：write_text_b64 写第一块 → append_text_b64 逐块追加直到全部内容写完（每一块都不要重复之前已写的内容）→ read_text 抽查 → 最后才执行 validate_python 和 run_unittest。
 文件没有写完之前禁止执行 validate_python 或 run_unittest：只写了一半的文件必然语法检查失败，这不是需要修复的缺陷。若验证失败且原因是文件不完整，正确做法是继续 append_text_b64 补全剩余内容，而不是重写整个文件或对残缺文件反复打补丁。

@@ -87,7 +87,7 @@ class ToolRegistry:
         items = [
             {"name": "list_directory", "description": "列出工作区目录", "arguments": {"path": "相对路径，默认 ."}},
             {"name": "find_files", "description": "按 glob 查找文件", "arguments": {"pattern": "如 **/*.log"}},
-            {"name": "read_text", "description": "读取 UTF-8 文本", "arguments": {"path": "相对路径"}},
+            {"name": "read_text", "description": "读取 UTF-8 文本；文件较大时用 offset 分段读取（每次建议≤5000字符）", "arguments": {"path": "相对路径", "offset": "字符偏移，默认0", "limit": "本次最多返回字符数，默认120000"}},
             {"name": "write_text", "description": "覆盖写入 UTF-8 文本；仅用于新文件或完整短文件", "arguments": {"path": "相对路径", "content": "文本"}},
             {"name": "append_text", "description": "追加普通 UTF-8 文本", "arguments": {"path": "相对路径", "content": "文本"}},
             {"name": "write_text_b64", "description": "Base64 解码后覆盖写入 UTF-8；代码、JSON、HTML、Markdown 必须用此工具", "arguments": {"path": "相对路径", "content_b64": "UTF-8 内容的 Base64"}},
@@ -167,10 +167,31 @@ class ToolRegistry:
                 break
         return {"pattern": pattern, "matches": matches, "truncated": len(matches) >= 1000}
 
-    async def read_text(self, path: str) -> dict[str, Any]:
+    async def read_text(self, path: str, offset: int = 0, limit: int = 0) -> dict[str, Any]:
         target = self._path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}")
+        offset = max(0, self._int_arg(offset, 0, "offset"))
+        limit = max(0, self._int_arg(limit, 0, "limit"))
+        if offset or limit:
+            # 分段读取：整文件统计 total_chars 后按字符切片。供 Agent 翻页
+            # 读大文件——单次读取的上下文预算约 6000 字符，超过就读不到尾部，
+            # 必须靠 offset 定位。limit 封顶 max_read，防止一次灌爆上下文。
+            try:
+                with target.open("r", encoding="utf-8", newline="") as f:
+                    full = f.read()
+            except UnicodeDecodeError as exc:
+                raise ToolError(f"文件不是有效的 UTF-8 文本: {exc}")
+            total = len(full)
+            if offset >= total:
+                return {"path": path, "content": "", "offset": offset, "returned_chars": 0,
+                        "total_chars": total, "truncated": False}
+            cap = min(limit, self.max_read) if limit else self.max_read
+            end = min(total, offset + cap)
+            return {"path": path, "content": full[offset:end], "offset": offset,
+                    "returned_chars": end - offset, "total_chars": total,
+                    "truncated": end < total,
+                    "next_offset": end if end < total else None}
         # 流式读 max_read+1 个字符即停：GB 级文件不会全量进内存。
         # newline="" 不做换行转换，读到什么是什么。
         with target.open("r", encoding="utf-8", errors="replace", newline="") as f:
@@ -178,7 +199,10 @@ class ToolRegistry:
         truncated = len(text) > self.max_read
         if truncated:
             text = text[:self.max_read]
-        return {"path": path, "content": text, "truncated": truncated}
+        result = {"path": path, "content": text, "truncated": truncated}
+        if truncated:
+            result["hint"] = "文件超过单次读取上限，已截断：请用 offset 参数分段读取全文"
+        return result
 
     @staticmethod
     def _hash(path: Path) -> str | None:
