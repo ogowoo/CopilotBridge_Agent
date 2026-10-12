@@ -533,10 +533,13 @@ async function loadModels(){
  if(DEMO)return;
  try{let d=await api('/v1/models'),sel=document.getElementById('model');
   if(!d.data||!d.data.length)return;
+  // 只显示可用的：未配 API Key 的提供商模型、菜单扫描没见到的 Copilot 模型不显示
+  let avail=d.data.filter(m=>m.available!==false);
+  if(!avail.length)avail=d.data;  // 兜底：全不可用时不过滤，防止下拉为空
   let prev=sel.value;
   sel.innerHTML='';
-  d.data.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;if(m.description)o.title=m.description;sel.appendChild(o)});
-  sel.value=d.data.some(m=>m.id===prev)?prev:'copilot-auto'}catch(e){}
+  avail.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;if(m.description)o.title=m.description;sel.appendChild(o)});
+  sel.value=avail.some(m=>m.id===prev)?prev:avail[0].id}catch(e){}
 }
 async function refreshModels(){
  if(DEMO)return;

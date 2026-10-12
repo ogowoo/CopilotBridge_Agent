@@ -251,10 +251,12 @@ async def models():
             "created": created,
             "owned_by": "microsoft-copilot",
             "description": item["description"],
+            # 菜单实况可见性：扫描没见到的不显示在 WebUI
+            "available": b.copilot_model_available(item),
         }
         for model_id, item in b.MODELS.items()
     ]
-    # API 提供商模型（provider/model），未配置 Key 的在描述里标注
+    # API 提供商模型（provider/model），未配置 Key 的标注不可用，WebUI 不显示
     for pname, p in b.PROVIDERS.items():
         for m in p.models:
             data.append({
@@ -263,6 +265,7 @@ async def models():
                 "created": created,
                 "owned_by": pname,
                 "description": p.description + ("" if p.configured else "（未配置 API Key）"),
+                "available": p.configured,
             })
     return {"object": "list", "data": data}
 

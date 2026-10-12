@@ -183,6 +183,17 @@ def normalize_model_soft(model_id) -> str:
         return DEFAULT_MODEL
 
 
+# 上次成功扫描 Copilot 菜单看到的标签（casefold）；None = 尚未成功扫描
+DISCOVERED_LABELS: set | None = None
+
+
+def copilot_model_available(item: dict) -> bool:
+    """内置模型在菜单实况中是否可见；未成功扫描过则默认可用（兜底全显示）。"""
+    if DISCOVERED_LABELS is None:
+        return True
+    return any(name.casefold() in DISCOVERED_LABELS for name in item["ui_names"])
+
+
 def all_model_ids() -> list:
     """Copilot 网页模型 + 已配置提供商的模型。"""
     ids = list(MODELS)
@@ -375,11 +386,13 @@ async def discover_models() -> list:
     await asyncio.sleep(.6)
     labels = []
     expanded = set()
+    seen_all = set()  # 全部可见项（含父项），用于内置模型的可用性判断
     try:
         # 主菜单 + 最多两级子菜单；每展开一个父项立即收集新出现的选项
         for _depth in range(3):
             entries = await _visible_menu_items()
             for _item, label, has_popup in entries:
+                seen_all.add(label.casefold())
                 if not has_popup and label not in labels:
                     labels.append(label)
             pending = [(item, label) for item, label, has_popup in entries
@@ -396,6 +409,8 @@ async def discover_models() -> list:
                 await asyncio.sleep(.2)
             except Exception:
                 pass
+    global DISCOVERED_LABELS
+    DISCOVERED_LABELS = seen_all  # 本次扫描成功，记录菜单实况
     added = []
     known_names = {name.casefold() for item in MODELS.values() for name in item["ui_names"]}
     for label in labels:
