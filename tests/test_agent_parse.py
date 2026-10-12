@@ -67,5 +67,62 @@ class EscapeDecodeTests(unittest.TestCase):
         self.assertEqual(a["arguments"]["content"], "第一行\\n第二行")
 
 
+class TruncatedWriteRecoveryTests(unittest.TestCase):
+    """Copilot 输出上限截断写入动作时的部分恢复回归测试。"""
+
+    def test_truncated_b64_write_partial_recovered(self):
+        import base64 as b64
+        full = 'print("hello")\nprint("world")\n'
+        blob = b64.b64encode(full.encode("utf-8")).decode()
+        # 模拟输出在 b64 中间被截断（约保留前 2/3）
+        cut = blob[: len(blob) // 3 * 2]
+        raw = '{"type":"tool","tool":"write_text_b64","arguments":{"path":"t.py","content_b64":"' + cut
+        a = AgentRunner._parse(raw)
+        self.assertEqual(a["tool"], "write_text")
+        self.assertTrue(a["_truncated_partial"])
+        self.assertIn('print("hello")', a["arguments"]["content"])
+
+    def test_truncated_b64_multibyte_tail(self):
+        import base64 as b64
+        full = "第一行\n第二行\n第三行\n"
+        blob = b64.b64encode(full.encode("utf-8")).decode()
+        # 截在任意位置（可能切断多字节 UTF-8 字符）
+        raw = ('{"type":"tool","tool":"append_text_b64","arguments":{"path":"t.txt",'
+               '"content_b64":"' + blob[: len(blob) - 1])
+        a = AgentRunner._parse(raw)
+        self.assertEqual(a["tool"], "append_text")
+        self.assertTrue(a["_truncated_partial"])
+        # 恢复的内容必须是原前缀（损坏的尾部字节被丢弃）
+        self.assertTrue(full.startswith(a["arguments"]["content"]))
+
+    def test_truncated_inline_write_partial_recovered(self):
+        raw = ('{"type":"tool","tool":"write_text","arguments":{"path":"t.txt",'
+               '"content":"line1\\nline2\\nline3')
+        a = AgentRunner._parse(raw)
+        self.assertEqual(a["tool"], "write_text")
+        self.assertTrue(a["_truncated_partial"])
+        self.assertIn("line1\nline2", a["arguments"]["content"])
+
+    def test_complete_b64_action_not_marked_truncated(self):
+        import base64 as b64
+        blob = b64.b64encode(b"ok\n").decode()
+        raw = ('{"type":"tool","tool":"write_text_b64","arguments":{"path":"t.txt",'
+               '"content_b64":"' + blob + '"},"reason":"写"}')
+        a = AgentRunner._parse(raw)
+        self.assertNotIn("_truncated_partial", a)
+        self.assertEqual(a["tool"], "write_text_b64")
+
+    def test_non_write_action_still_rejected(self):
+        with self.assertRaises(ValueError):
+            AgentRunner._parse('{"type":"tool","tool":"read_text","arguments":{"path":"a')
+
+    def test_invalid_action_keeps_raw_tail(self):
+        from agent import AgentRunner as AR
+        step = {"step": 3, "status": "invalid_action",
+                "error": "x", "raw_tail": '{"tool":"write_text","content_b64":"abc'}
+        kept = AR.compact_value(step, 6000)
+        self.assertIn("raw_tail", kept)
+
+
 if __name__ == "__main__":
     unittest.main()

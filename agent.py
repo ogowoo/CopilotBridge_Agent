@@ -88,7 +88,7 @@ class AgentRunner:
 {"type":"final","content":"最终答复"}
 规则：先检查再修改；路径相对于当前工作目录；工具失败后调整方案；完成后必须立即返回 final。
 修改现有文本优先使用 replace_text，不得使用 run_python 修改项目文件。
-创建或追加代码、JSON、HTML、Markdown 时必须使用 write_text_b64 或 append_text_b64，禁止把源码直接放入普通 JSON content。每次解码后内容不超过 8000 字符。文件写完后用 read_text 验证。
+创建或追加代码、JSON、HTML、Markdown 时必须使用 write_text_b64 或 append_text_b64，禁止把源码直接放入普通 JSON content。每次解码后内容不超过 3000 字符；大文件必须分多次 append_text_b64 追加，宁可多回合也不要让单个 JSON 动作过长（过长会被截断导致整个动作作废）。如果上一回合因过长被截断，下一回合只输出未写入的剩余分块。文件写完后用 read_text 验证。
 单个 JSON 动作必须尽量短，禁止一次返回两个 JSON 对象。
 治理或代码修改任务必须形成验证闭环：写入后执行 validate_python，再执行 run_unittest；验证失败必须继续修复，不得返回 final。
 只有 validate_python 和 run_unittest 均返回 passed=true 后，才可宣称治理完成或把 TODO 标记为完成。
@@ -162,6 +162,61 @@ class AgentRunner:
                     yield obj
             except Exception:
                 continue
+
+    @staticmethod
+    def _recover_truncated_write(raw: str) -> dict[str, Any] | None:
+        """Copilot 单条消息有输出上限：写入动作可能在 content 中间被截断。
+
+        此时 JSON 永远不完整，常规解析与未转义容错都会失败，整个分块作废。
+        但 tool/path 前缀是完整的，b64/文本内容也保留了截断前的全部有效
+        部分——宽容解码后按部分写入（write→覆盖首个分块，append→保住已
+        追加部分），让被截断的回合也能落盘，配合分块追加最终写全文件。
+        """
+        tool_match = re.search(
+            r'["\'](?:tool|type)["\']\s*:\s*["\'](write_text|append_text|write_text_b64|append_text_b64)["\']',
+            raw, re.I,
+        )
+        if not tool_match:
+            return None
+        path_match = re.search(r'["\']path["\']\s*:\s*["\']([^"\']+)["\']', raw, re.I)
+        key_match = re.search(r'["\'](content_b64|content)["\']\s*:\s*["\']', raw, re.I)
+        if not path_match or not key_match:
+            return None
+        value = raw[key_match.end():].strip()
+        if len(value) < 8:
+            return None
+        tool = tool_match.group(1).lower()
+        base_tool = tool.replace('_b64', '')
+        arguments: dict[str, Any] = {'path': path_match.group(1)}
+        if key_match.group(1).lower() == 'content_b64':
+            # 只保留 b64 字母表字符，丢弃截断处的引号/空白残留；尾部 0~3 字节
+            # 可能切断多字节 UTF-8 字符，逐字符回退直到能完整解码。
+            candidate = re.sub(r'[^A-Za-z0-9+/=]', '', value)
+            content = None
+            for cut in range(0, 5):
+                piece = candidate[:len(candidate) - cut] if cut else candidate
+                if not piece:
+                    break
+                piece = piece.rstrip('=')
+                pad = (-len(piece)) % 4
+                try:
+                    content = base64.b64decode(piece + '=' * pad, validate=False).decode('utf-8')
+                    break
+                except Exception:
+                    continue
+            if content is None or not content:
+                return None
+            arguments['content'] = content
+        else:
+            arguments['content'] = _decode_fragment(value)
+        return {
+            'type': 'tool',
+            'tool': base_tool,
+            'arguments': arguments,
+            'reason': '已恢复被截断的写入动作（仅部分内容）。请用 append_text_b64 从断开处继续写剩余分块，每次不超过 3000 字符',
+            '_recovered_malformed_json': True,
+            '_truncated_partial': True,
+        }
 
     @classmethod
     def _parse(cls, text: str) -> dict[str, Any]:
@@ -300,6 +355,13 @@ class AgentRunner:
                         '_recovered_malformed_json': True,
                     }
 
+        # 最后兜底：动作在 content 中间被 Copilot 输出上限截断。tool/path 前缀
+        # 完整、内容保留截断前有效部分时，宽容解码后按部分写入，不让整个
+        # 分块作废（否则文件永远停在最后一个完整分块）。
+        recovered = cls._recover_truncated_write(raw)
+        if recovered:
+            return recovered
+
         raise ValueError('Copilot 未返回完整、可解析的 Agent JSON 动作')
 
 
@@ -322,7 +384,7 @@ class AgentRunner:
             return [AgentRunner.compact_value(x, limit) for x in value]
         if isinstance(value, dict):
             return {k: AgentRunner.compact_value(v, limit) for k, v in value.items()
-                    if k not in {"raw_tail", "content_b64"}}
+                    if k != "content_b64"}  # raw_tail 保留：模型需要看到自己被截断的输出
         return value
 
     def __init__(self, tools: ToolRegistry, chat: ChatFunction, config: dict[str, Any],
@@ -533,7 +595,18 @@ class AgentRunner:
                     carrying_pending = True
                 else:
                     last = self.compact_value(history[-1], 6000) if history else summary
-                    prompt = "继续同一任务。上一动作实际结果：\n" + json.dumps(last, ensure_ascii=False)
+                    last_json = json.dumps(last, ensure_ascii=False)
+                    if isinstance(last, dict) and last.get("status") == "invalid_action":
+                        # 解析失败最常见的原因是回答超出 Copilot 单条输出上限被
+                        # 截断。明确告知模型原因和应对（更小的 b64 分块），避免它
+                        # 只看到一句"无法解析"后原样重试、再次截断的无效循环。
+                        prompt = ("继续同一任务。上一回合的回答不完整（通常是内容过长被系统截断），"
+                                  "未能执行任何工具，该回合没有任何文件变更。"
+                                  "请把内容拆成更小的分块：使用 write_text_b64/append_text_b64，"
+                                  "单次解码后不超过 3000 字符，只返回下一个 JSON 动作。"
+                                  "上一回合记录（含被截断的输出尾部）：\n" + last_json)
+                    else:
+                        prompt = "继续同一任务。上一动作实际结果：\n" + last_json
                     force_new = False
 
             prompt += f"\n\n当前总步骤 {total + 1}/{self.max_total_steps}。只返回下一个 JSON 动作。"
