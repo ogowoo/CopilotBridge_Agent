@@ -711,6 +711,7 @@ function showDeleteResult(d){
  document.getElementById('dlgMask').classList.add('open')}
 function closeDlg(){document.getElementById('dlgMask').classList.remove('open')}
 document.getElementById('dlgCopy').onclick=()=>{if(!lastDeleteResult)return;try{navigator.clipboard.writeText(JSON.stringify(lastDeleteResult,null,2))}catch(e){}};
+document.getElementById('dlgForce').onclick=()=>forceDeleteLocal();
 async function forceDeleteLocal(){
  if(!current)return;let b=document.getElementById('dlgForce');b.disabled=true;b.textContent='处理中…';
  try{let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'?delete_remote=true&force_local=true',{method:'DELETE'});
