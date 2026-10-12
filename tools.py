@@ -96,8 +96,8 @@ class ToolRegistry:
             {"name": "make_directory", "description": "创建目录", "arguments": {"path": "相对路径"}},
             {"name": "copy_path", "description": "复制文件或目录", "arguments": {"source": "相对路径", "destination": "相对路径"}},
             {"name": "move_path", "description": "移动文件或目录", "arguments": {"source": "相对路径", "destination": "相对路径"}},
-            {"name": "validate_python", "description": "检查 Python 文件或目录语法；修改 Python 后必须执行", "arguments": {"path": "相对路径，默认 ."}},
-            {"name": "run_unittest", "description": "执行 unittest 测试发现；治理完成前必须通过", "arguments": {"path": "测试目录，默认 tests", "pattern": "默认 test_*.py"}},
+            {"name": "validate_python", "description": "检查 Python 文件或目录语法；仅在文件全部写完后执行（写了一半的文件必然失败，不是缺陷）", "arguments": {"path": "相对路径，默认 ."}},
+            {"name": "run_unittest", "description": "执行 unittest 测试发现；仅在文件全部写完后执行", "arguments": {"path": "测试目录，默认 tests", "pattern": "默认 test_*.py"}},
         ]
         if self.allow_delete:
             items.append({"name": "delete_path", "description": "删除路径", "arguments": {"path": "相对路径"}})
