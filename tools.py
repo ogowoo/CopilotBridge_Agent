@@ -170,7 +170,7 @@ class ToolRegistry:
         items = [
             {"name": "list_directory", "description": "列出工作区目录", "arguments": {"path": "相对路径，默认 ."}},
             {"name": "find_files", "description": "按 glob 查找文件", "arguments": {"pattern": "如 **/*.log"}},
-            {"name": "read_text", "description": "读取 UTF-8 文本；文件较大时用 offset 分段读取（每次建议≤5000字符）", "arguments": {"path": "相对路径", "offset": "字符偏移，默认0", "limit": "本次最多返回字符数，默认120000"}},
+            {"name": "read_text", "description": "读取 UTF-8 文本；默认读全文件（上限 max_read_chars），文件超大时用 offset/limit 分段（每段可到 20000 字符，别分太碎）", "arguments": {"path": "相对路径", "offset": "字符偏移，默认0", "limit": "本次最多返回字符数，默认120000"}},
             {"name": "write_text", "description": "覆盖写入 UTF-8 文本；仅用于新文件或完整短文件", "arguments": {"path": "相对路径", "content": "文本"}},
             {"name": "append_text", "description": "追加普通 UTF-8 文本", "arguments": {"path": "相对路径", "content": "文本"}},
             {"name": "write_text_b64", "description": "Base64 解码后覆盖写入 UTF-8；代码、JSON、HTML、Markdown 必须用此工具", "arguments": {"path": "相对路径", "content_b64": "UTF-8 内容的 Base64"}},

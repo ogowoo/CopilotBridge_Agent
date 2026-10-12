@@ -1377,16 +1377,34 @@ async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pa
     runtime_update(phase="waiting", detail=f"Agent 回合 {turn_id} 已确认，等待 Copilot 回答")
     return await wait_agent_answer(previous, pause_check=pause_check)
 
+# API 提供商的协议强化：网页 Copilot 对 JSON 协议遵循度高，但 DeepSeek/Kimi
+# 等聊天模型爱在动作外面加解释或输出两段 JSON（撞严格防线烧回合）。
+# 用独立 system 消息下达硬性输出约束，实测可显著降低解析失败率。
+_PROVIDER_PROTOCOL = """你在与一个自动化执行器对话。你的整个回复必须严格遵守输出协议：
+1. 只输出一个 JSON 对象：第一个字符必须是 {，最后一个字符必须是 }。
+2. 禁止任何解释、思考过程、Markdown、代码块围栏（```），禁止输出第二个 JSON 对象。
+3. JSON 只能是两种之一：
+   {"type":"tool","tool":"工具名","arguments":{},"reason":"原因"}
+   {"type":"final","content":"最终答复"}
+4. 创建/追加代码、JSON、HTML、Markdown 内容必须用 write_text_b64 / append_text_b64，
+   内容放 content_b64 字段（UTF-8 的 Base64），单次解码后不超过 8000 字符。
+5. 工具名只能从用户消息末尾的可用工具清单里逐字照抄（如 list_directory、read_text），
+   禁止猜测或创造工具名（如 list_dir、list_files、bash 都不存在）。
+违反任何一条都会被系统拒绝执行并浪费回合。"""
+
+
 async def provider_turn(model_id: str, prompt: str) -> str:
-    """API 提供商的 Agent 回合：单条 user 消息发整段提示，返回回答文本。
+    """API 提供商的 Agent 回合：system 协议约束 + user 提示，返回回答文本。
 
     限流/5xx/超时映射为 CopilotServiceUnavailable，复用 AgentRunner 的
     指数退避重试；其他错误原样抛出计入解析失败/失败处理。
     """
     pm = providers_mod.split_provider_model(model_id)
     provider = PROVIDERS[pm[0]]
+    messages = [{"role": "system", "content": _PROVIDER_PROTOCOL},
+                {"role": "user", "content": prompt}]
     try:
-        return await provider.complete(pm[1], [{"role": "user", "content": prompt}])
+        return await provider.complete(pm[1], messages)
     except providers_mod.ProviderUnavailable as exc:
         raise CopilotServiceUnavailable(str(exc)) from exc
 
