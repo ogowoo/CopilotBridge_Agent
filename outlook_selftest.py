@@ -85,6 +85,41 @@ def main():
         except Exception as exc:
             fail(f"未读过滤失败\n  {explain(exc)}")
         ok(f"未读过滤可用（{unread} 封未读）")
+
+        # 第 6 步：复现服务端的调用模式（asyncio.to_thread 线程池 + 每线程
+        # CoInitialize + 遍历条目）。主线程全过但服务报 0x80004004 时，差异
+        # 就在这一层：后台线程无消息泵，Outlook 需要 UI 交互的调用会被中止。
+        print("\n-- 服务端同款调用模式复现（线程池线程）--")
+        try:
+            import asyncio
+
+            async def threaded_probe():
+                def work():
+                    import pythoncom
+                    import win32com.client
+                    pythoncom.CoInitialize()
+                    try:
+                        app = win32com.client.Dispatch("Outlook.Application")
+                        ns = app.GetNamespace("MAPI")
+                        items = ns.GetDefaultFolder(6).Items
+                        items.Sort("[ReceivedTime]", True)
+                        out = 0
+                        for i, item in enumerate(items):
+                            if i >= 20:
+                                break
+                            _ = (str(item.Subject), str(item.ReceivedTime), str(item.SenderName))
+                            out += 1
+                        return out
+                    finally:
+                        pythoncom.CoUninitialize()
+
+                return await asyncio.wait_for(asyncio.to_thread(work), timeout=60)
+
+            n = asyncio.run(threaded_probe())
+            ok(f"线程池模式遍历收件箱前 {n} 封（与服务 _outlook_run 同路径）")
+        except Exception as exc:
+            fail(f"线程池模式复现失败\n  {explain(exc)}",
+                 "主线程过、线程池挂 = COM 公寓/消息泵问题；把结果发给维护者切换 COM 调用方案")
     finally:
         try:
             pythoncom.CoUninitialize()
