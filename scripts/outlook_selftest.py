@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Outlook COM 自检：在跑服务的机器上、用服务同一个 Python 环境运行。
 
-    python outlook_selftest.py
+    python scripts/outlook_selftest.py    # 从项目根目录运行
 
 逐步检查并把 COM 错误翻译成可操作的结论：
   pywin32 导入 -> CoInitialize -> Dispatch -> MAPI -> 收件箱 -> 未读过滤
@@ -9,6 +9,7 @@
 未安装/被安全软件拦截等），并给出下一步建议。
 """
 import sys
+from pathlib import Path
 
 STEPS = []
 
