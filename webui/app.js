@@ -1,4 +1,4 @@
-let current=null,currentUrl=null,currentModel=null,lastStepCount=-1,lastDetail='',renderedSteps=0,sessCache=[];
+let current=null,currentUrl=null,currentModel=null,lastStepCount=-1,lastTotal=-1,lastDetail='',renderedSteps=0,sessCache=[];
 let modelCache=[];   // /v1/models 的可用模型（会话页选择器复用）
 let budget=0; // 由后端 token_budget 下发，避免与 config.json 脱节
 let DEMO=false;
@@ -32,7 +32,29 @@ function demoApi(u,o={}){
  return{deleted:true,local_deleted:true,remote_results:[],session_id:'task-demo01'};
 }
 
-async function api(u,o={}){if(DEMO)return demoApi(u,o);let r=await fetch(u,o),t=await r.text();if(!r.ok)throw Error(t);return t?JSON.parse(t):{}}
+function apiToken(){try{return localStorage.getItem('cbp-token')||''}catch(e){return ''}}
+let tokenPrompting=null;   // 并发 401 只弹一次：每秒轮询可能同时发起多个请求
+async function api(u,o={}){
+  if(DEMO)return demoApi(u,o);
+  const call=tk=>{const opt=Object.assign({},o);opt.headers=Object.assign({},o.headers||{});
+    if(tk)opt.headers['X-CBP-Token']=tk;return fetch(u,opt)};
+  let r=await call(apiToken());
+  if(r.status===401){
+    // 服务端配置了 api_token：就地询问一次并记住（仅本机浏览器 localStorage）。
+    // 复用同一个 promise，避免轮询期间连弹多次、把用户正在看的确认框顶掉。
+    if(!tokenPrompting){
+      tokenPrompting=(async()=>{
+        try{
+          const tk=await dlgPrompt('本服务启用了 api_token，请输入访问令牌（只保存在本机浏览器）',apiToken(),'需要访问令牌');
+          if(tk){try{localStorage.setItem('cbp-token',tk)}catch(e){}}
+          return tk;
+        }finally{tokenPrompting=null}
+      })();
+    }
+    const tk=await tokenPrompting;
+    if(tk)r=await call(tk);
+  }
+  let t=await r.text();if(!r.ok)throw Error(t);return t?JSON.parse(t):{}}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function jv(v,key){
  if(v===null||v===undefined)return '<span class="nl">null</span>';
@@ -161,7 +183,7 @@ function renderSteps(steps){
   let cls=s.status==='ok'?'ok':(s.status==='error'||s.status==='invalid_action'?'error':'info');
   let e=document.createElement('div');e.className='step '+cls;
   let tm=s._time?new Date(s._time*1000).toLocaleTimeString('zh-CN',{hour12:false}):'';
-  e.innerHTML=`<div class="head"><b>步骤 ${s.step??'-'} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(s.reason||s.error||'')}</div>${s.result?`<details><summary>查看结果</summary><div class="jsonview">${jv(s.result)}</div></details>`:''}`;
+  e.innerHTML=`<div class="head"><b>步骤 ${esc(s.step??'-')} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(s.reason||s.error||'')}</div>${s.result?`<details><summary>查看结果</summary><div class="jsonview">${jv(s.result)}</div></details>`:''}`;
   box.prepend(e)});
  renderedSteps=steps.length}
 
@@ -246,6 +268,7 @@ async function load(id){
  renderSteps(d.steps);lastStepCount=d.steps.length;
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
+ if(current!==myId)return;   // 等待期间已切换会话：丢弃迟到的详情
  await runtime();await refreshSessions()}
 
 /* 轮询在飞保护 + 会话切换竞态防护：
@@ -266,8 +289,9 @@ async function runtime(){
   if(_ans!==lastAns){lastAns=_ans;if(liveTabName!=='answer')document.getElementById('tabAnswer').classList.add('new')}
   document.getElementById('prompt').textContent=r.prompt_preview||'';
   setPill(r.session_state);setKpis(r);
-  if(r.total_steps!==lastStepCount||(r.detail||'')!==lastDetail){
+  if(r.total_steps!==lastTotal||(r.detail||'')!==lastDetail){
    lastDetail=r.detail||'';
+   lastTotal=r.total_steps??lastTotal;
    let d=await api('/v1/agent/sessions/'+encodeURIComponent(myId));
    if(current!==myId)return;
    renderSteps(d.steps);lastStepCount=d.steps.length}
@@ -466,12 +490,13 @@ async function runTask(){
  setPill('running');
  document.getElementById('activity').textContent=(taskMode==='agent'?'正在建立 Agent 任务 ':'正在发送普通对话 ')+current+'...';
  if(DEMO){await refreshSessions();return}
- fetch('/v1/agent/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})
-  .then(async r=>{let t=await r.text(),d=null;try{d=JSON.parse(t)}catch(e){}
-   if(!r.ok||!d)throw Error(d&&d.detail?JSON.stringify(d.detail):t.slice(0,300)||('HTTP '+r.status));
-   current=d.session_id;await load(current)})
-  .catch(e=>{current=null;document.getElementById('sessionView').style.display='none';
-   document.getElementById('emptyState').style.display='flex';toast('任务启动失败: '+e,'err')});
+  // 走 api()：裸 fetch 不带 X-CBP-Token，配置 api_token 时「启动任务」必然 401
+  api('/v1/agent/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})
+   .then(async d=>{
+    if(!d)throw Error('HTTP 响应为空');
+    current=d.session_id;await load(current)})
+   .catch(e=>{current=null;document.getElementById('sessionView').style.display='none';
+    document.getElementById('emptyState').style.display='flex';toast('任务启动失败: '+e,'err')});
  waitSessionReady(current);
  setTimeout(refreshSessions,700)}
 
@@ -506,7 +531,16 @@ try{if(document.documentElement.dataset.rail==="closed")document.getElementById(
 try{let cur=document.documentElement.dataset.theme||'',i=THEMES.findIndex(x=>x[0]===cur);document.getElementById('themeBtn').title='主题：'+THEMES[i<0?0:i][1]+'（点击切换）'}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
 document.getElementById('sessModel').onchange=e=>setSessionModel(e.target.value);
-(async()=>{try{let r=await fetch('/v1/agent/sessions');if(!r.ok){document.getElementById('demoBadge').textContent='API 异常 '+r.status;document.getElementById('demoBadge').style.display='block';return}}catch(e){DEMO=true;document.getElementById('demoBadge').style.display='block'}
+(async()=>{try{await api('/v1/agent/sessions')}
+ catch(e){let msg=String(e&&e.message||e);
+  if(msg.includes('401')){
+   // 配置了 api_token：先让 api() 的令牌输入框有机会弹出，再继续加载，
+   // 不要在这里 return（否则界面永久空白、连输入令牌的入口都没有）。
+   document.getElementById('demoBadge').style.display='block';
+   document.getElementById('demoBadge').textContent='需要 api_token，请输入后重试';
+  }else{
+   DEMO=true;document.getElementById('demoBadge').style.display='block';
+  }}
  loadModels();browserState();
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime()},1000)})();

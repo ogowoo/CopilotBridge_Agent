@@ -53,12 +53,18 @@ class BatchParseTests(unittest.TestCase):
         parsed = AgentRunner._parse(raw)
         self.assertEqual(parsed["batch_size"], 1)
 
-    def test_final_inside_batch_rejected_but_tools_survive(self):
+    def test_final_inside_batch_deferred_to_gate(self):
+        """批内 final 不再静默丢弃：保留在动作末尾，由 run() 走验证门判定。
+
+        丢弃它会让"批内写代码 + 宣布完成"这一轮根本不产生验证门事件。
+        """
         raw = json.dumps({"type": "actions", "actions": [
             act("read_text", path="a"), {"type": "final", "content": "完成"}]}, ensure_ascii=False)
         parsed = AgentRunner._parse(raw)
-        self.assertEqual(parsed["batch_size"], 1)
         self.assertTrue(parsed.get("_batch_has_final"))
+        self.assertEqual(parsed["actions"][-1]["type"], "final")
+        self.assertEqual(len([a for a in parsed["actions"] if a.get("type") == "tool"]), 1)
+        self.assertEqual(parsed["batch_size"], 2)
 
     def test_batch_with_only_final_raises(self):
         raw = json.dumps({"type": "actions", "actions": [{"type": "final", "content": "x"}]},

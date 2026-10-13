@@ -30,7 +30,12 @@ class SessionModelTests(unittest.TestCase):
         b.AGENT_TOOLS.root = self.ws
         b.AGENT_SESSIONS.create("s1", "任务标题", str(self.ws), "copilot-think-deeper")
         from cbp.api import app
-        self.c = TestClient(app)
+        # 本机 config.json 可能配置了 api_token（合法部署）：测试要带上它，
+        # 否则会因 401 失败，把"配置正确"误报成"代码有问题"。
+        headers = {}
+        if b.CFG.get("api_token"):
+            headers["X-CBP-Token"] = str(b.CFG["api_token"])
+        self.c = TestClient(app, headers=headers)
 
     def tearDown(self):
         b.AGENT_SESSIONS, b.SNAPSHOTS, b.AGENT_TOOLS.root = self.saved

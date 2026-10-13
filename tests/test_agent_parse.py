@@ -47,8 +47,9 @@ class ParseTests(unittest.TestCase):
         raw = '{"type":"final","content":"a"}\n{"type":"tool","tool":"read_text","arguments":{}}'
         a = AgentRunner._parse(raw)
         self.assertEqual(a["type"], "actions")
-        # final 不进批量：完成必须单独返回，保证验证闭环
-        self.assertEqual([x["tool"] for x in a["actions"]], ["read_text"])
+        # 批内 final 保留在工具动作之后，由 run() 走验证门判定（不再静默丢弃）
+        self.assertEqual([x["tool"] for x in a["actions"] if x.get("type") == "tool"], ["read_text"])
+        self.assertEqual(a["actions"][-1]["type"], "final")
         self.assertTrue(a.get("_batch_has_final"))
 
     def test_nested_json_in_content_not_phantom(self):

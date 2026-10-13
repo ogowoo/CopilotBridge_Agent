@@ -168,6 +168,10 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
         _target_id = _target_id_m.group(0) if _target_id_m else ""
 
         GONE_DIALOG_RE = re.compile(r"no longer available|recently deleted|不再可用|已被删除|已删除", re.I)
+        # 整页兜底只认英文特征串：中文"已删除"会大量出现在对话正文/侧栏标题里
+        # （例如本服务自己的删除类任务），整页匹配会把"还在的会话"误判成已删除，
+        # 造成假成功（本地记录删了、Copilot 侧栏还留着）。
+        GONE_PAGE_RE = re.compile(r"this chat is no longer available|recently deleted", re.I)
 
         async def _gone_dialog_present() -> bool:
             # 先在对话框容器内找（中英文），容器选择器可穿透 shadow DOM。
@@ -179,17 +183,15 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
                             return True
                     except Exception:
                         pass
-            # 兜底一：整页 light DOM 文本。
+            # 兜底一：整页 light DOM 文本，仅英文强特征串（见 GONE_PAGE_RE 注释）。
             try:
-                if GONE_DIALOG_RE.search(await body_text()):
+                if GONE_PAGE_RE.search(await body_text()):
                     return True
             except Exception:
                 pass
-            # 兜底二：整页 shadow DOM 探测，仅限英文特征串——对话内容几乎
-            # 不可能含 "no longer available"，中文特征串可能出现在文件内容里，
-            # 全页匹配会有误报，故仅限容器内使用。
+            # 兜底二：整页 shadow DOM 探测，同样仅限英文特征串。
             try:
-                if await page.get_by_text(re.compile(r"no longer available|recently deleted", re.I)).count():
+                if await page.get_by_text(GONE_PAGE_RE).count():
                     return True
             except Exception:
                 pass
@@ -571,23 +573,33 @@ async def finalize_session_remote_deletion(sid: str, remote_results: list) -> li
         r["method"] = "verified-absent"
         r["error"] = None
 
-    # 侧栏兜底仍失败的条目：逐个再导航一次目标 URL。已删除的会话会弹
-    # "no longer available"，delete_copilot_conversation 的 already-gone
-    # 分支直接改判成功——侧栏虚拟列表刷新后仍可能残留，URL 级证据最权威。
+    # 终判一律回到 URL 级证据：
+    # - verified-absent 只是"这次侧栏没看到"，而虚拟列表可能压根没渲染目标行，
+    #   凭它宣称成功就是假成功（本地记录删掉、Copilot 侧栏还留着）；必须导航
+    #   目标 URL 复核——已删除的会话会弹 gone 弹窗走 already-gone 分支。
+    # - 仍失败的条目也复核一次：真已删除就改判成功，真还在就顺手删掉。
     for r in remote_results:
-        if r.get("deleted"):
-            continue
         url = r.get("url") or ""
-        if not CONVERSATION_URL_RE.search(url):
+        weak = r.get("method") == "verified-absent"
+        if not ((not r.get("deleted")) or weak) or not CONVERSATION_URL_RE.search(url):
             continue
         try:
             retry = await delete_copilot_conversation(url, r.get("expected_title") or "")
-            if retry.get("deleted"):
-                r["deleted"] = True
-                r["method"] = retry.get("method", "verified-gone-page")
-                r["error"] = None
-        except Exception:
-            pass
+        except Exception as exc:
+            if weak:
+                r["deleted"] = False
+                r["method"] = "recheck-failed"
+                r["error"] = f"侧栏判为已删除，但 URL 级复核失败: {exc}"
+            continue
+        if retry.get("deleted"):
+            r["deleted"] = True
+            r["method"] = retry.get("method", "already-gone")
+            r["error"] = None
+        elif weak:
+            # 复核不能确认 → 不许报成功，保留本地记录让用户决定
+            r["deleted"] = False
+            r["method"] = "recheck-failed"
+            r["error"] = retry.get("error") or "URL 级复核未能确认已删除"
     return remote_results
 
 

@@ -80,6 +80,12 @@ class SessionStore:
                     con.execute(f"ALTER TABLE sessions ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
                 except Exception:
                     pass  # 列已存在
+            # 迁移：验证闭环旗持久化——暂停/重启后必须记得"代码改了还没验证"，
+            # 否则恢复出来的 Agent 直接返回 final 就能绕过验证门。
+            try:
+                con.execute("ALTER TABLE sessions ADD COLUMN gate_state TEXT")
+            except Exception:
+                pass  # 列已存在
 
     @staticmethod
     def _decode(row):
@@ -115,7 +121,7 @@ class SessionStore:
         allowed = {"title","state","workspace","model","current_url","conversation_index","conversation_urls",
                    "total_steps","conversation_steps","estimated_tokens","estimated_chars","summary","recent_steps",
                    "modified_files","pending","last_error","cancel_requested","archived","compact_requested",
-                   "rollover_requested","conv_tokens","conv_chars"}
+                   "rollover_requested","conv_tokens","conv_chars","gate_state"}
         values = {k:v for k,v in values.items() if k in allowed}
         if "state" in values and values["state"] not in self.STATES: raise ValueError("invalid state")
         for key in ("conversation_urls","summary","recent_steps","modified_files","pending"):
@@ -178,8 +184,19 @@ class SessionStore:
             return [dict(x) for x in con.execute("SELECT * FROM conv_stats WHERE session_id=? ORDER BY id", (sid,))]
 
     def delete(self, sid: str):
+        """删除会话及其全部从属数据。
+
+        只删 sessions 行会让 messages/steps/file_events/conv_stats 永久残留
+        （会话已不可达，等于不可回收的垃圾数据）。
+        """
         with self.lock, self._connect() as con:
-            return con.execute("DELETE FROM sessions WHERE id=?",(sid,)).rowcount > 0
+            existed = con.execute("DELETE FROM sessions WHERE id=?", (sid,)).rowcount > 0
+            for table in ("messages", "steps", "file_events", "conv_stats"):
+                try:
+                    con.execute(f"DELETE FROM {table} WHERE session_id=?", (sid,))
+                except Exception:
+                    pass  # 老库可能缺表：删主记录成功即视为成功
+            return existed
 
     def recover_interrupted(self):
         with self.lock, self._connect() as con:

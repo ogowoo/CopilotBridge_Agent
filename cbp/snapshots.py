@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import time
@@ -30,10 +31,42 @@ class SnapshotStore:
     def __init__(self, base: Path, retention: int = 50):
         self.base = Path(base).resolve()
         self.retention = max(1, int(retention))
+        # 立即建目录：否则全新安装（还没有任何快照）时，读状态/列作用域的
+        # iterdir() 会抛 FileNotFoundError，把 /self/status 与离线回滚打挂。
+        try:
+            self.base.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+    def scopes(self, prefix: str = "") -> list[str]:
+        """列出可回滚的作用域目录（只含有 manifest.json 的，避免被 prune 的
+        半成品目录导致后续 stat()/restore 抛错）。"""
+        try:
+            dirs = [d for d in self.base.iterdir() if d.is_dir()]
+        except OSError:
+            return []
+        out = []
+        for d in dirs:
+            if prefix and not d.name.startswith(prefix):
+                continue
+            if self.manifest_path(d.name).is_file():
+                out.append(d.name)
+        return out
 
     # ── 路径与元数据 ──────────────────────────────────────────────
     def _dir(self, sid: str) -> Path:
         safe = re.sub(r"[^0-9A-Za-z._-]+", "-", str(sid)).strip("-")[:80] or "session"
+        # "." / ".." / "..." 这类名字会被 _dir 原样保留，使 clear()/restore()
+        # 直接作用到 snapshots 根或其父目录（rmtree 掉 data/ 整个目录）：
+        # 必须以字母数字开头，并用 resolve 再确认结果是 base 的直接子目录。
+        if not re.match(r"^[0-9A-Za-z]", safe):
+            safe = "s" + safe
+        candidate = (self.base / safe).resolve()
+        if candidate.parent != self.base.resolve() or candidate == self.base.resolve():
+            safe = "s" + re.sub(r"[^0-9A-Za-z._-]+", "-", str(sid)).strip("-")[:76]
+            candidate = (self.base / safe).resolve()
+            if candidate.parent != self.base.resolve():
+                safe = "session"
         return self.base / safe
 
     def manifest_path(self, sid: str) -> Path:
@@ -82,14 +115,28 @@ class SnapshotStore:
         return total
 
     # ── 捕获 ──────────────────────────────────────────────────────
-    def capture(self, sid: str, rel: str, target: Path, tool: str = "") -> None:
-        """写操作前调用。任何异常都被吞掉：快照是安全网，不能反过来阻断写入。"""
+    def capture(self, sid: str, rel: str, target: Path, tool: str = "",
+                root: Path | None = None) -> None:
+        """写操作前调用。任何异常都被吞掉：快照是安全网，不能反过来阻断写入。
+
+        root 记录本条原像所属的根目录（工作区/安装目录）。同一 Session 若换过
+        工作区，同名相对路径会撞在一起；restore 时按 root 过滤，避免把 A 根的
+        内容写回 B 根。
+        """
         try:
-            self._capture(sid, rel, Path(target), tool)
+            self._capture(sid, rel, Path(target), tool, Path(root).resolve() if root else None)
         except Exception:
             pass
 
-    def _capture(self, sid: str, rel: str, target: Path, tool: str) -> None:
+    def _capture(self, sid: str, rel: str, target: Path, tool: str,
+                 root: Path | None = None) -> None:
+        # 快照目录自己不能被快照：工作区等于安装目录时，copytree 会把快照
+        # 目录抄进新快照，逐轮指数膨胀。
+        try:
+            target.resolve().relative_to(self.base)
+            return
+        except ValueError:
+            pass
         data = self.load(sid)
         rel_norm = str(rel).replace("\\", "/").lstrip("/") or "."
         if rel_norm in data["files"]:
@@ -98,8 +145,15 @@ class SnapshotStore:
             data["skipped"].append({"path": rel_norm, "reason": "条目数超限"})
             self._save(sid, data)
             return
+        # 总量上限（此前 MAX_TOTAL_BYTES 只是定义、从未生效）
+        if self._tree_bytes(self._dir(sid) / "files") >= self.MAX_TOTAL_BYTES:
+            data["skipped"].append({"path": rel_norm, "reason": "原像总量超限"})
+            self._save(sid, data)
+            return
 
         entry: dict[str, Any] = {"path": rel_norm, "tool": tool, "captured": time.time()}
+        if root is not None:
+            entry["root"] = str(root)
         if target.is_file():
             size = target.stat().st_size
             if size > self.MAX_FILE_BYTES:
@@ -153,8 +207,16 @@ class SnapshotStore:
         want = {str(x).replace("\\", "/") for x in only} if only else None
         results = []
         restored = deleted = failed = 0
+        scope_dir = self._dir(sid).resolve()
         for rel, entry in files.items():
             if want is not None and rel not in want:
+                continue
+            # 根维度校验：原像来自另一个根（会话中途换过工作区）时不动它，
+            # 否则会把 A 根的内容写回 B 根的同名路径。
+            stored_root = entry.get("root")
+            if stored_root and Path(stored_root) != Path(root):
+                results.append({"path": rel, "status": "skipped",
+                                "detail": f"原像属于其它根目录 {stored_root}，未回滚"})
                 continue
             target = (root / rel).resolve()
             # 沙箱：只允许在工作区根内回滚
@@ -165,6 +227,7 @@ class SnapshotStore:
                 failed += 1
                 continue
             kind = entry.get("kind")
+            tmp: Path | None = None
             try:
                 if kind == "absent":
                     if target.is_dir():
@@ -175,7 +238,12 @@ class SnapshotStore:
                                     "detail": "任务期间新建，回滚已删除"})
                     deleted += 1
                     continue
-                src = self._dir(sid) / entry["stored"]
+                # 原像路径校验：清单里的 stored 不能被构造成 ../../ 逃出快照目录
+                src = (scope_dir / str(entry.get("stored") or "")).resolve()
+                try:
+                    src.relative_to(scope_dir)
+                except ValueError:
+                    raise RuntimeError("快照原像路径非法")
                 if not src.exists():
                     raise RuntimeError("快照原像缺失")
                 if kind == "dir":
@@ -183,12 +251,21 @@ class SnapshotStore:
                         shutil.rmtree(target)
                     shutil.copytree(src, target, dirs_exist_ok=True)
                 else:
+                    # 原子还原：直接 copy2 到目标会在失败时留下被截断的文件
+                    # （回滚反而把工作区改坏），先写临时文件再替换。
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src, target)
+                    tmp = target.with_name(target.name + ".cbp-restore-tmp")
+                    shutil.copy2(src, tmp)
+                    os.replace(tmp, target)
                 results.append({"path": rel, "status": "restored",
                                 "bytes": entry.get("bytes", 0)})
                 restored += 1
             except Exception as exc:
+                try:
+                    if tmp is not None and tmp.exists():
+                        tmp.unlink()
+                except Exception:
+                    pass
                 results.append({"path": rel, "status": "failed", "error": str(exc)})
                 failed += 1
         return {"restored": restored, "deleted": deleted, "failed": failed,

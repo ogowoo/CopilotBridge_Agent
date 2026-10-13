@@ -512,6 +512,20 @@ class ToolRegistry:
         if self.workspace_roots and not any(target == r or r in target.parents
                                             for r in self.workspace_roots):
             raise ToolError("目标目录不在 workspace_roots 白名单内")
+        # 权限门：工作区若覆盖服务安装目录，普通文件工具就能直接改服务代码/
+        # config.json/data —— 等于绕过 allow_self_upgrade、self 白名单与自升级
+        # 验证闭环。因此这种工作区必须显式开启自升级权限才允许。
+        if self.global_root and not self.allow_self_upgrade:
+            install = Path(self.global_root).resolve()
+            try:
+                install.relative_to(target)
+                raise ToolError(
+                    f"工作目录 {target} 覆盖了服务安装目录 {install}："
+                    "把工作区设成服务自身目录需要先开启 allow_self_upgrade"
+                    "（否则可绕过自升级权限与验证门直接改服务代码），"
+                    "请改用独立工作区（如 workspace/）")
+            except ValueError:
+                pass
         if create:
             target.mkdir(parents=True, exist_ok=True)
         if not target.exists():
@@ -583,6 +597,21 @@ class ToolRegistry:
             candidate.relative_to(self.root)
         except ValueError as exc:
             raise ToolError("拒绝访问工作区之外的路径") from exc
+        # 纵深防御：工作区覆盖服务安装目录时（已要求 allow_self_upgrade），
+        # 敏感路径仍按自升级黑名单拒绝——config.json/data/EdgeProfile 不该
+        # 因为"换个工作目录"就变成可写。
+        if self.global_root:
+            try:
+                rel = candidate.relative_to(Path(self.global_root).resolve()).as_posix()
+            except ValueError:
+                rel = ""
+            if rel:
+                for deny in self.self_denylist:
+                    if deny.endswith("/"):
+                        if rel.startswith(deny) or rel == deny.rstrip("/"):
+                            raise ToolError(f"该路径属于服务敏感目录，禁止通过工作区工具访问: {rel}")
+                    elif rel == deny:
+                        raise ToolError(f"该路径属于服务敏感文件，禁止通过工作区工具访问: {rel}")
         return candidate
 
     async def execute(self, name: str, arguments: dict[str, Any] | None) -> Any:
@@ -1192,8 +1221,12 @@ class ToolRegistry:
             raise ToolError("发送邮件已在 config.json 中禁用（allow_outlook_send=false）")
         if not to or not subject:
             raise ToolError("to 和 subject 不能为空")
-        if self.outlook_backend is not None:
-            return await self.outlook_backend.send(to, subject, body, cc)
+        # 走 _owa_or_none 而不是直接判 backend：它会一并校验 allow_outlook，
+        # 与 COM 路径的权限语义保持一致（否则 allow_outlook=false +
+        # allow_outlook_send=true 时仍能通过 OWA 真实发信）。
+        backend = self._owa_or_none()
+        if backend is not None:
+            return await backend.send(to, subject, body, cc)
 
         def work(ns):
             app = ns.Application

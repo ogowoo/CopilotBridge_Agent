@@ -653,7 +653,11 @@ async def discover_models() -> dict:
     labels = [lbl for lbl in labels_order if lbl not in parents]
     leaf_labels = {lbl.casefold() for lbl in labels}
     global DISCOVERED_LABELS, DISCOVERY_MATCHED
-    DISCOVERED_LABELS = leaf_labels  # 只记叶子：GPT 这类子菜单父项不是可选模型
+    # 半渲染/子菜单未飞出时只枚举到 1 个叶子：这种"扫描结果"会把其它模型
+    # 全部标成不可用（WebUI 下拉大面积消失），且在下一次成功扫描前不自愈。
+    # 因此只在扫到 ≥2 个叶子时更新可见性集合；空结果保留上次快照。
+    if len(leaf_labels) >= 2 or not DISCOVERED_LABELS:
+        DISCOVERED_LABELS = leaf_labels  # 只记叶子：GPT 这类子菜单父项不是可选模型
     added = []
     known_names = {name.casefold() for item in MODELS.values() for name in item["ui_names"]}
     for label in labels:
@@ -1217,9 +1221,9 @@ def self_snapshot_hook(sid: str):
         t = Path(target)
         try:
             t.relative_to(AGENT_TOOLS.root)
-            SNAPSHOTS.capture(sid, rel, t, tool)          # 工作区内
+            SNAPSHOTS.capture(sid, rel, t, tool, root=AGENT_TOOLS.root)      # 工作区内
         except ValueError:
-            SNAPSHOTS.capture(self_scope(sid), rel, t, tool)  # 服务代码
+            SNAPSHOTS.capture(self_scope(sid), rel, t, tool, root=BASE)      # 服务代码
     return hook
 
 
@@ -1227,14 +1231,19 @@ async def rollback_self_upgrade(sid: str | None = None, use_last: bool = False) 
     """回滚服务自身代码的自升级改动（不依赖 WebUI 的离线通道见 scripts/rollback.py）。"""
     scope = self_scope(sid) if sid else ""
     if use_last or not scope:
-        # 取最近修改的自升级快照作用域
-        cands = ([d.name for d in SNAPSHOTS.base.iterdir()
-                  if d.is_dir() and d.name.startswith("_self_")]
-                 if SNAPSHOTS.base.is_dir() else [])
+        # 取最近修改的自升级快照作用域（只认有 manifest 的，且容忍被并发 prune）
+        cands = SNAPSHOTS.scopes("_self_")
         if not cands:
             return {"restored": 0, "deleted": 0, "failed": 0, "results": [],
                     "message": "没有自升级快照记录"}
-        scope = max(cands, key=lambda n: SNAPSHOTS.manifest_path(n).stat().st_mtime)
+
+        def _mtime(name: str) -> float:
+            try:
+                return SNAPSHOTS.manifest_path(name).stat().st_mtime
+            except OSError:
+                return 0.0
+
+        scope = max(cands, key=_mtime)
     result = SNAPSHOTS.restore(scope, BASE)
     if sid and AGENT_SESSIONS.get(sid):
         state = AGENT_SESSIONS.get(sid) or {}
@@ -1246,10 +1255,13 @@ async def rollback_self_upgrade(sid: str | None = None, use_last: bool = False) 
                            "results": result["results"][:50]}}
         AGENT_SESSIONS.add_step(sid, step["step"], int(state.get("conversation_index", 0)), step)
     if result.get("restored") or result.get("deleted"):
-        try:
-            SELF_UPGRADE_MARKER.unlink(missing_ok=True)
-        except Exception:
-            pass
+        # 只在全部成功时清标记：否则部分文件仍是坏代码，清掉标记会让重启后
+        # 误报"已加载上一轮自升级改动"，掩盖未回滚的失败项。
+        if not result.get("failed"):
+            try:
+                SELF_UPGRADE_MARKER.unlink(missing_ok=True)
+            except Exception:
+                pass
     return result
 
 
@@ -1260,9 +1272,7 @@ def self_upgrade_status() -> dict:
             pending = [x for x in SELF_UPGRADE_MARKER.read_text(encoding="utf-8").splitlines() if x.strip()]
         except Exception:
             pending = []
-    scopes = ([d.name for d in SNAPSHOTS.base.iterdir()
-               if d.is_dir() and d.name.startswith("_self_")]
-              if SNAPSHOTS.base.is_dir() else [])
+    scopes = SNAPSHOTS.scopes("_self_")
     return {"enabled": bool(getattr(AGENT_TOOLS, "allow_self_upgrade", False)),
             "base": str(BASE), "restart_pending": bool(pending),
             "pending_entries": pending[-20:], "snapshot_scopes": scopes,
@@ -1507,11 +1517,16 @@ async def periodic_session_cleanup():
 
 
 _RESUMING: set = set()
+# 已排队但还没拿到锁的 resume 任务：同一会话来新消息时应当被取代，
+# 否则 resume 用的旧任务文本会和用户新消息各跑一遍（顺序双跑、重复动作）。
+_PENDING_RESUME: dict = {}
 
 
 def _bg_task_done(sid: str):
     def cb(t):
         _RESUMING.discard(sid)
+        if _PENDING_RESUME.get(sid) is t:
+            _PENDING_RESUME.pop(sid, None)
         if not t.cancelled() and t.exception():
             log(f"后台任务 {sid} 异常结束: {t.exception()}")
     return cb
@@ -1538,9 +1553,11 @@ async def resume_session_task(sid: str) -> bool:
             messages=[Message(role="user", content=state.get("original_task") or "继续")],
             stream=False, session_id=sid, workspace=state.get("workspace"))
         task = asyncio.create_task(run_agent(req))
+        _PENDING_RESUME[sid] = task
         task.add_done_callback(_bg_task_done(sid))
     except Exception:
         _RESUMING.discard(sid)
+        _PENDING_RESUME.pop(sid, None)
         raise
     return True
 
@@ -1572,7 +1589,9 @@ async def auto_resume_interrupted():
 
 def _has_complete_agent_action(text: str) -> bool:
     try:
-        from agent import AgentRunner
+        # 用模块级已导入的 AgentRunner：函数体内 `from agent import ...`
+        # 在包结构下必然 ModuleNotFoundError，会被下面裸 except 吞掉，
+        # 使本函数恒返回 False（完整动作被当畸形、合法 final 被当限流）。
         return AgentRunner._parse(text).get("type") in {"tool", "final"}
     except Exception:
         return False
@@ -1865,6 +1884,12 @@ async def run_agent(req: AgentRequest):
         # 正在运行会话的删除保护/busy 判定/resume 守卫会整体失效。
         prev_active = ACTIVE_SESSION_ID
         ACTIVE_SESSION_ID = sid
+        # 同一会话若有排队中的 resume 任务，被本次新消息取代：否则旧任务文本
+        # 与本次消息会各跑一遍（顺序双跑，重复动作如 append/下载）。
+        _pend = _PENDING_RESUME.pop(sid, None)
+        if _pend is not None and not _pend.done() and _pend is not asyncio.current_task():
+            _pend.cancel()
+            log(f"会话 {sid} 的排队恢复任务已被新消息取代")
         existing=AGENT_SESSIONS.get(sid)
         workspace=(req.workspace.strip() if req.workspace else None) or (existing or {}).get("workspace") or DEFAULT_WORKSPACE
         AGENT_TOOLS.set_root(workspace,False)
@@ -1954,6 +1979,13 @@ async def run_agent(req: AgentRequest):
             runtime_update(sid, phase="completed", detail=result.content, answer_preview=result.content)
             SNAPSHOTS.prune()
             return result, sid
+        except AgentPaused:
+            # 用户暂停不是失败：写 failed 会让 AgentRunner 的停放逻辑（只认
+            # paused）失效、重启后的 auto_resume（只捞 paused）也捞不回来，
+            # 于是"暂停"在回合等待期间等于把会话卡死。
+            AGENT_SESSIONS.patch(sid, state="paused", last_error=None)
+            runtime_update(sid, phase="paused", detail="用户暂停，可从检查点恢复")
+            raise
         except Exception as exc:
             runtime_update(sid, phase="failed", detail=str(exc))
             AGENT_SESSIONS.patch(sid,state="failed",last_error=str(exc))

@@ -4,7 +4,10 @@
 """
 
 import asyncio
+import hmac
 import json
+import logging
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -90,10 +93,36 @@ async def token_auth(request, call_next):
     if API_TOKEN and request.url.path.startswith("/v1/"):
         from fastapi.responses import JSONResponse
         auth = request.headers.get("authorization", "")
+        header_token = request.headers.get("x-cbp-token", "")
         token = request.query_params.get("token", "")
-        if auth != f"Bearer {API_TOKEN}" and token != API_TOKEN:
+        # 常量时间比较：避免用逐字符比较泄漏前缀长度（本机场景风险低，但成本几乎为零）
+        ok = any(hmac.compare_digest(candidate, API_TOKEN)
+                 for candidate in (auth[len("Bearer "):] if auth.startswith("Bearer ") else auth,
+                                   header_token, token)
+                 if candidate)
+        if not ok:
             return JSONResponse({"detail": "未授权：缺少或错误的 api_token"}, status_code=401)
     return await call_next(request)
+
+
+class _RedactTokenFilter(logging.Filter):
+    """把访问日志里的 token=xxx 抹掉：?token= 便捷用法不能让密钥进日志。"""
+
+    _RE = re.compile(r"(token=)[^&\s\"]+", re.I)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            if isinstance(record.args, tuple):
+                record.args = tuple(self._RE.sub(r"\1***", a) if isinstance(a, str) else a
+                                    for a in record.args)
+            elif isinstance(record.msg, str):
+                record.msg = self._RE.sub(r"\1***", record.msg)
+        except Exception:
+            pass
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_RedactTokenFilter())
 
 
 def sse(data):
@@ -477,8 +506,8 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
     state = b.AGENT_SESSIONS.get(sid)
     if not state:
         raise HTTPException(404, "Session 不存在")
-    if b.lock.locked() and b.ACTIVE_SESSION_ID == sid:
-        raise HTTPException(409, "Session 正在运行，不能删除")
+    # delete_remote + force_local 是 WebUI「重试远端并强制清理本地记录」的合法组合：
+    # 先尽力删远端，失败的条目如实返回，再清本地。不视为参数冲突。
 
     remote_results = []
     if delete_remote:
@@ -486,6 +515,10 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
         if state.get("current_url") and state["current_url"] not in urls:
             urls.append(state["current_url"])
         async with b.lock:
+            # 运行权判定必须在锁内复检：锁外判完再取锁之间，runner 可能刚好
+            # 拿到锁开始执行（TOCTOU），此时删掉 sessions 行会让它的落库全崩。
+            if b.ACTIVE_SESSION_ID == sid:
+                raise HTTPException(409, "Session 正在运行，不能删除")
             for index, url in enumerate(urls):
                 marker = b._agent_chat_marker(sid, index)
                 remote_results.append(await cd.delete_copilot_conversation(url, marker))
@@ -505,12 +538,16 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
     local_deleted = b.AGENT_SESSIONS.delete(sid)
     b.RUNTIME.pop(sid, None)
     if local_deleted:
-        # 会话记录已删除，其快照不再可回滚（回滚端点要求会话存在）：回收磁盘
+        # 会话记录已删除，其快照不再可回滚（回滚端点要求会话存在）：回收磁盘。
+        # 自升级作用域 _self_<sid> 同样要清——否则孤儿作用域会被"回滚最近一次
+        # 自升级"选中，把服务代码恢复到某个已不存在任务的旧原像。
         b.SNAPSHOTS.clear(sid)
+        b.SNAPSHOTS.clear(b.self_scope(sid))
     return {
         "deleted": local_deleted,
         "local_deleted": local_deleted,
         "remote_results": remote_results,
+        "remote_skipped": "未记录任何远端会话 URL，跳过远端删除" if delete_remote and not remote_results else None,
     }
 
 

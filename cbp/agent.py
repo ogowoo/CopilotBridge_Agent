@@ -292,13 +292,18 @@ class AgentRunner:
         - 同一动作重复出现时去重（模型偶尔会重复粘贴）。
         """
         cleaned: list[dict[str, Any]] = []
+        deferred_final: dict[str, Any] | None = None
         seen: set = set()
-        skipped_final = False
         for obj in items:
             kind = str(obj.get('type', '')).strip().lower()
+            if kind == 'final':
+                # 批内 final 不能静默丢弃：丢弃会让这一轮的验证门根本没被评估，
+                # 批内若写了代码就等于绕过闭环。保留下来交给 run() 按"批内 final"
+                # 规则处理（未通过验证时记 validation_gate 事件并拒绝完成）。
+                if deferred_final is None:
+                    deferred_final = {"type": "final", "content": obj.get("content") or "任务已完成。"}
+                continue
             if kind != 'tool':
-                if kind == 'final':
-                    skipped_final = True
                 continue
             obj['type'] = 'tool'
             obj['tool'] = str(obj.get('tool', '')).strip()
@@ -313,13 +318,16 @@ class AgentRunner:
             cleaned.append(obj)
         if not cleaned:
             raise ValueError('批量动作里没有可执行的工具动作'
-                             + ('（其中包含 final，已拒绝——完成必须单独返回）' if skipped_final else ''))
+                             + ('（其中包含 final，已拒绝——完成必须单独返回）' if deferred_final else ''))
         over = len(cleaned) > cls.MAX_BATCH_ACTIONS
         cleaned = cleaned[:cls.MAX_BATCH_ACTIONS]
+        if deferred_final is not None:
+            # final 放在工具动作之后：工具先执行，再由 run() 决定能否完成
+            cleaned.append(deferred_final)
         batch = {"type": "actions", "actions": cleaned, "batch_size": len(cleaned)}
         if over:
             batch["_batch_truncated"] = True
-        if skipped_final:
+        if deferred_final is not None:
             batch["_batch_has_final"] = True
         return batch
 
@@ -739,9 +747,28 @@ class AgentRunner:
         all_steps: list[dict[str, Any]] = []
         parse_failures = 0
         service_failures = 0
-        validation_required = False
-        syntax_validated = False
-        tests_passed = False
+        # 验证闭环三面旗必须从持久状态恢复：暂停→继续/服务重启会新建 runner，
+        # 若从 False 起步，"代码已改但没验证"的记忆就丢了，恢复后的 Agent 直接
+        # 返回 final 即可绕过验证门（实测过）。
+        gate = {}
+        try:
+            raw_gate = state.get("gate_state")
+            if isinstance(raw_gate, str):
+                gate = json.loads(raw_gate) if raw_gate.strip() else {}
+            elif isinstance(raw_gate, dict):
+                gate = raw_gate
+        except Exception:
+            gate = {}
+        validation_required = bool(gate.get("validation_required"))
+        syntax_validated = bool(gate.get("syntax_validated"))
+        tests_passed = bool(gate.get("tests_passed"))
+
+        def _save_gate() -> None:
+            self.state_saver(gate_state=json.dumps({
+                "validation_required": validation_required,
+                "syntax_validated": syntax_validated,
+                "tests_passed": tests_passed,
+            }, ensure_ascii=False))
         # 工作区项目上下文：AGENT.md 全量注入 + skills 清单。每次 run 重新读取，
         # 恢复运行/换工作区后总能拿到最新版本。
         self._agent_md = self._load_agent_md()
@@ -974,6 +1001,9 @@ class AgentRunner:
                                      conversation_steps=conv_steps + 1,
                                      estimated_tokens=tokens + used_tokens,
                                      estimated_chars=chars + used_chars)
+                    # 正常完成：清掉验证旗，避免会话被追加新任务时被旧旗误拦
+                    validation_required = syntax_validated = tests_passed = False
+                    _save_gate()
                     return AgentResult(sub.get("content") or "任务已完成。", all_steps)
 
                 tool, arguments = sub.get("tool", ""), sub.get("arguments") or {}
@@ -987,10 +1017,15 @@ class AgentRunner:
                 # 追加、move/copy 会重复搬运），与上一成功动作完全相同时跳过执行。
                 duplicate = False
                 if tool in NON_IDEMPOTENT_TOOLS and history:
-                    last = history[-1]
-                    duplicate = (last.get("status") == "ok" and last.get("tool") == tool and
-                                 json.dumps(last.get("arguments") or {}, sort_keys=True, ensure_ascii=False)
-                                 == json.dumps(arguments, sort_keys=True, ensure_ascii=False))
+                    # 只看 history[-1] 会被"中间夹一个其它成功动作"击穿：模型重放
+                    # 更早的 append/move 时会真实执行第二遍。改为回看最近若干步。
+                    key = json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+                    for prev in reversed(history[-10:]):
+                        if (prev.get("status") == "ok" and prev.get("tool") == tool and
+                                json.dumps(prev.get("arguments") or {}, sort_keys=True,
+                                           ensure_ascii=False) == key):
+                            duplicate = True
+                            break
                 if duplicate:
                     step.update({"status": "ok", "result": {"skipped_duplicate": True,
                                  "detail": "与上一成功动作完全相同，幂等保护已跳过重复执行"}})
@@ -1003,7 +1038,11 @@ class AgentRunner:
                         step.update({"status": "error", "error": str(exc)})
                 if step.get("status") == "ok" and not duplicate:
                     changed_path = str(arguments.get("path") or arguments.get("destination") or "")
-                    if tool in {"write_text", "append_text", "replace_text", "copy_path",
+                    # 注意必须含 b64 写入族：提示词要求代码/JSON/HTML 一律用
+                    # write_text_b64 / append_text_b64 写，漏掉它们等于给验证
+                    # 闭环开了个后门（写完代码直接 final 也不会被拦）。
+                    if tool in {"write_text", "append_text", "write_text_b64", "append_text_b64",
+                                "replace_text", "copy_path",
                                 "move_path", "copilot_file"} and changed_path.lower().endswith((".py", ".json", ".html")):
                         validation_required = True
                         syntax_validated = False
@@ -1029,6 +1068,7 @@ class AgentRunner:
                         syntax_validated = bool(step["result"].get("passed"))
                     if tool == "self_unittest" and isinstance(step.get("result"), dict):
                         tests_passed = bool(step["result"].get("passed"))
+                    _save_gate()   # 旗一变就落库：暂停/重启后仍记得"改了还没验证"
                 if step.get("status") == "ok":
                     batch_ok += 1
                 else:
