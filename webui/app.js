@@ -528,74 +528,104 @@ function toggleRail(){let r=document.documentElement,c=r.dataset.rail==='closed'
  try{localStorage.setItem('cbp-rail',c?'':'closed')}catch(e){}}
 function railNewTask(){if(document.documentElement.dataset.rail==='closed')toggleRail();openTask()}
 try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="›"}catch(e){}
-/* ── 长期记忆管理面板（自包含：按钮/弹窗全部动态注入，不依赖页面结构）── */
+/* ── 长期记忆管理面板（自包含；样式全部使用主题变量，7 套主题通用）── */
 let memScope='all',memQuery='';
+const MEM_CSS=`
+#memBtn{position:fixed;right:16px;bottom:64px;z-index:40}
+#memMask{position:fixed;inset:0;background:var(--mask-bg);z-index:60;display:flex;align-items:center;justify-content:center}
+#memBox{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;
+ box-shadow:0 12px 40px var(--dlg-shadow);width:min(880px,92vw);max-height:82vh;display:flex;flex-direction:column;padding:14px;gap:8px}
+#memBox h3{margin:0;font-size:15px}
+#memHead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#memHead input,#memHead select{background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+#memHead input{flex:1;min-width:150px}
+#memStats{color:var(--muted);font-size:12px}
+#memList{overflow:auto;display:flex;flex-direction:column}
+.mem-row{border-top:1px solid var(--line);padding:8px 2px}
+.mem-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.mem-meta .sp{margin-left:auto}
+.mem-kind{color:var(--accent)}
+.mem-pin{color:var(--amber)}
+.mem-text{white-space:pre-wrap;margin-top:4px;line-height:1.45}
+.mem-empty{color:var(--muted);padding:12px 2px}
+.mem-del{color:var(--danger-text);border-color:var(--danger-border)!important;background:var(--danger-bg)!important}
+button{background:var(--btn-bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer}
+button:hover{color:var(--btn-hover-text);border-color:var(--line2)}
+`;
+function memInjectCss(){
+ if(document.getElementById('memCss'))return;
+ const st=document.createElement('style');st.id='memCss';st.textContent=MEM_CSS;document.head.appendChild(st);
+}
 function memBtn(){
+ memInjectCss();
  let b=document.getElementById('memBtn');
  if(b)return b;
  b=document.createElement('button');
  b.id='memBtn';b.textContent='🧠 记忆';b.title='长期记忆：查看 / 检索 / 置顶 / 删除';
- b.style.cssText='position:fixed;right:16px;bottom:64px;z-index:40';
  document.body.appendChild(b);
  b.onclick=openMemory;
  return b;
 }
 async function openMemory(){
- let d=document.getElementById('memDlg');
- if(!d){
-  d=document.createElement('div');d.id='memDlg';
-  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:flex;align-items:center;justify-content:center';
-  d.innerHTML=`<div style="background:var(--bg2,#1e1e1e);color:var(--fg,#eee);width:min(860px,92vw);max-height:82vh;display:flex;flex-direction:column;border-radius:10px;padding:14px;box-shadow:0 12px 40px rgba(0,0,0,.5)">
-   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <b>长期记忆</b>
+ let mask=document.getElementById('memMask');
+ if(!mask){
+  mask=document.createElement('div');mask.id='memMask';
+  mask.innerHTML=`<div id="memBox">
+   <h3>长期记忆</h3>
+   <div id="memHead">
     <select id="memScopeSel"><option value="all">全部作用域</option><option value="global">仅全局</option><option value="project">仅当前项目</option></select>
-    <input id="memSearch" placeholder="关键词检索…" style="flex:1;min-width:140px">
+    <input id="memSearch" placeholder="关键词检索…（回车）">
     <button id="memReload">检索</button>
     <button id="memClose">关闭</button>
    </div>
-   <div id="memStats" style="opacity:.75;margin:6px 0;font-size:12px"></div>
-   <div id="memList" style="overflow:auto;flex:1"></div>
+   <div id="memStats"></div>
+   <div id="memList"></div>
   </div>`;
-  document.body.appendChild(d);
-  d.querySelector('#memClose').onclick=()=>d.style.display='none';
-  d.querySelector('#memReload').onclick=loadMemory;
-  d.querySelector('#memScopeSel').onchange=e=>{memScope=e.target.value;loadMemory()};
-  d.querySelector('#memSearch').onkeydown=e=>{if(e.key==='Enter')loadMemory()};
-  d.onclick=e=>{if(e.target===d)d.style.display='none'};
+  document.body.appendChild(mask);
+  mask.querySelector('#memClose').onclick=()=>mask.style.display='none';
+  mask.querySelector('#memReload').onclick=loadMemory;
+  mask.querySelector('#memScopeSel').onchange=e=>{memScope=e.target.value;loadMemory()};
+  mask.querySelector('#memSearch').onkeydown=e=>{if(e.key==='Enter')loadMemory()};
+  mask.onclick=e=>{if(e.target===mask)mask.style.display='none'};
  }
- d.style.display='flex';
+ mask.style.display='flex';
  await loadMemory();
 }
 async function loadMemory(){
- let q=document.getElementById('memSearch'),sel=document.getElementById('memScopeSel');
+ const q=document.getElementById('memSearch'),sel=document.getElementById('memScopeSel');
  if(q)memQuery=q.value.trim();
  if(sel)memScope=sel.value;
  let d=await api('/v1/agent/memory?scope='+encodeURIComponent(memScope)+'&query='+encodeURIComponent(memQuery));
- let st=d.stats||{};
- document.getElementById('memStats').textContent=`共 ${st.total||0} 条 · 置顶 ${st.pinned||0} · 从未命中 ${st.unused||0} · 分类 ${JSON.stringify(st.by_kind||{})} · 作用域 ${(d.scopes||[]).join(', ')}`;
- let box=document.getElementById('memList');
- if(!(d.items||[]).length){box.innerHTML='<div style="opacity:.7;padding:12px">没有匹配的记忆。Agent 完成任务时会自动沉淀，也可以直接让它「记到长期记忆」。</div>';return}
- box.innerHTML=d.items.map(m=>`<div style="border-top:1px solid rgba(128,128,128,.25);padding:8px 2px">
-   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;opacity:.75">
-    <span>#${m.id}</span><span>${esc(m.kind)}</span><span>${esc(m.scope)}</span>
-    <span>命中 ${m.use_count||0}</span>
+ const st=d.stats||{};
+ document.getElementById('memStats').textContent=
+  `共 ${st.total||0} 条 · 置顶 ${st.pinned||0} · 从未命中 ${st.unused||0} · ${JSON.stringify(st.by_kind||{})} · ${(d.scopes||[]).join(', ')}`;
+ const box=document.getElementById('memList');
+ if(!(d.items||[]).length){
+  box.innerHTML='<div class="mem-empty">没有匹配的记忆。Agent 完成任务时会自动沉淀，也可以直接让它「记到长期记忆」。</div>';return}
+ box.innerHTML=d.items.map(m=>`<div class="mem-row">
+   <div class="mem-meta">
+    <span>#${esc(m.id)}</span><span class="mem-kind">${esc(m.kind)}</span><span>${esc(m.scope)}</span>
+    <span>命中 ${m.use_count||0}</span>${m.pinned?'<span class="mem-pin">★ 置顶</span>':''}
     ${(m.tags||[]).map(t=>`<span>#${esc(t)}</span>`).join('')}
-    <span style="margin-left:auto"></span>
-    <button data-pin="${m.id}" data-v="${m.pinned?1:0}">${m.pinned?'★ 取消置顶':'☆ 置顶'}</button>
-    <button data-del="${m.id}">删除</button>
+    <span class="sp"></span>
+    <button data-pin="${m.id}" data-v="${m.pinned?1:0}">${m.pinned?'取消置顶':'置顶'}</button>
+    <button class="mem-del" data-del="${m.id}">删除</button>
    </div>
-   <div style="white-space:pre-wrap;margin-top:4px">${esc(m.text)}</div>
+   <div class="mem-text">${esc(m.text)}</div>
   </div>`).join('');
  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
   if(!await dlgConfirm('删除这条长期记忆？删除后不再参与检索。','删除记忆',true))return;
-  try{await api('/v1/agent/memory/'+b.dataset.del+'?scope='+encodeURIComponent(memScope),{method:'DELETE'});toast('已删除记忆 #'+b.dataset.del,'ok');loadMemory()}catch(e){toast('删除失败: '+e,'err')}});
+  try{await api('/v1/agent/memory/'+b.dataset.del+'?scope='+encodeURIComponent(memScope),{method:'DELETE'});
+   toast('已删除记忆 #'+b.dataset.del,'ok');loadMemory()}
+  catch(e){toast('删除失败: '+e,'err')}});
  box.querySelectorAll('[data-pin]').forEach(b=>b.onclick=async()=>{
   const want=b.dataset.v!=='1';
   try{await api('/v1/agent/memory/'+b.dataset.pin+'/pin?pinned='+want+'&scope='+encodeURIComponent(memScope),{method:'POST'});
-   toast(want?'已置顶（每次检索恒定注入）':'已取消置顶','ok');loadMemory()}
+   toast(want?'已置顶（检索时恒定注入）':'已取消置顶','ok');loadMemory()}
   catch(e){toast('操作失败: '+e,'err')}});
 }
 try{memBtn()}catch(e){}
+
 
 try{let cur=document.documentElement.dataset.theme||'',i=THEMES.findIndex(x=>x[0]===cur);document.getElementById('themeBtn').title='主题：'+THEMES[i<0?0:i][1]+'（点击切换）'}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
