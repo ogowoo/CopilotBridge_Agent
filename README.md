@@ -19,6 +19,7 @@
 - **API 提供商接入**：除 Copilot 网页自动化外，可直接接入任何 OpenAI 兼容 HTTP API（内置 OpenAI / DeepSeek / Kimi / Grok 预设，可自定义）。模型 ID 形如 `deepseek/deepseek-chat`，API Key 走环境变量；普通对话和 **Agent 模式（含工具循环）都可用**——JSON 动作协议是纯 prompt 驱动，与提供商无关。
 - **Agent 模式**：Copilot 每回合返回一个 JSON 动作（调用工具或最终答复），本地执行工具后把结果送回，循环直到任务完成。**支持批量动作**：一次回答可带多个工具动作（`{"type":"actions","actions":[...]}` 或直接给动作数组），按顺序执行、每步单独记账——写多个小文件/多处小替换不必一块一个回合，省下大量 Copilot 回合；批量里不允许 `final`（完成必须单独返回，验证闭环不被绕过），动作数上限由 `max_actions_per_turn` 控制，批量被输出上限截断时仍会执行已完整的前几个动作。
 - **15+ 个工作区工具**：目录/文件读写（Base64 写入防 JSON 转义损坏）、精确替换、复制/移动/删除、`validate_python`、`run_unittest`、`run_python`，全部限制在工作区根目录内。
+- **Copilot 直接生成文件（`copilot_file`）**：让 Copilot 把结果生成为**可下载文件**，桥接再把文件下载进工作区——内容**不经过聊天消息**，因此完全绕开 Copilot 单条输出上限，一个大文件一个回合就能拿到，不再需要 b64 分块。支持 `blob:`/`data:` 链接与"下载"按钮（点击并用浏览器下载事件接住），落盘前照样存原像（可回滚）、写 `.py/.json/.html` 仍进验证闭环。开关：`agent.allow_copilot_file`（默认开）。找不到下载入口时会保存 `last_answer.html` 供排查，并提示改回分块写入。
 - **两级项目上下文（全局 + 项目）**：`AGENT.md` 与 `skills/` 都有两个作用域——**全局**放在服务安装目录（对所有工作区生效），**项目**放在工作区根目录；两份合并注入，同名技能/约定项目级优先，同一文件自动去重。全局技能位于工作区之外，用 `skill_read` 工具读取（`skill_list` 列清单）。`AGENT.md` 单份默认 8000 字符截断（`agent_md_max_chars`），SKILL.md 支持 YAML frontmatter（`name`/`description`），缺省回退"首个一级标题 + 首个段落"。本仓库自身即带全局 [AGENT.md](AGENT.md) 与示例技能。
 - **服务自升级（可选，默认关闭）**：`agent.allow_self_upgrade: true` 后，Agent 可用 `self_read_text`/`self_write_text_b64`/`self_append_text_b64`/`self_replace_text` 直接修改**服务自身代码**（即使工作区是别的项目），白名单限定 `cbp/`、`webui/`、`scripts/`、`docs/`、`tests/` 与若干顶层文件，`config.json`/`data/`/`EdgeProfile/` 禁止触碰；写完必须 `self_validate` + `self_unittest` 双通过（提前 final 会被 `validation_gate` 拦下），并提供 `self_rollback` 工具回滚本次自升级。
 - **改动快照与两级回滚（自我升级 failback）**：写操作**执行前**把目标原像存入 `data/snapshots/<sid>/`（工作区）与 `data/snapshots/_self_<sid>/`（服务代码），同一路径只保留最早状态，因此回滚恢复的是"任务开始前"。入口：WebUI「更多 ▾ → 回滚任务改动…／回滚服务自升级…」、`POST /v1/agent/sessions/{sid}/rollback`、`POST /v1/agent/self/rollback?last=true`，以及**服务/WebUI 起不来时的离线通道** `python scripts/rollback.py [--scope self] --last --yes`（`app.py` 导入失败会自动打印指引）。自升级写盘会落 `data/.self_upgrade_pending` 标记，服务重启后自动归档。
@@ -174,6 +175,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `max_sessions` | `100` | 未归档会话数量上限，超出时从最久未更新的开始归档 |
 | `max_parse_failures` | `5` | 连续解析失败多少次后强制压缩上下文 |
 | `max_actions_per_turn` | `4` | 一次回答里最多执行几个动作（批量协议，硬顶 12）；调大能省回合但更容易被 Copilot 输出上限截断 |
+| `allow_copilot_file` | `true` | 是否开放 `copilot_file`（让 Copilot 直接生成文件并下载进工作区，内容不走聊天消息、不受输出上限约束） |
 | `max_service_unavailable` | `30` | 限流退避重试上限，超过后转入安全暂停 |
 | `service_retry_base_seconds` / `service_retry_max_seconds` | `30` / `600` | 限流指数退避的起始/上限 |
 | `max_read_chars` / `max_write_chars` | `120000` / `200000` | 工具单次读写上限 |
@@ -292,8 +294,25 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 
 > ⚠️ 自升级等于把服务代码交给模型改。建议：先确保 `tests/` 能跑；一次只让 Agent 做一件事；升级后先重启看能否正常启动与跑测试，确认无误再继续下一个改动。
 
-### 5. 常用运维命令
+### 5. 大文件：让 Copilot 直接生成再下载
 
+写大文件的传统路径是 b64 分块（每块 ≤3000 字符，受 Copilot 单条输出上限约束）。更省事的是让 Copilot 自己生成文件、桥接下载：
+
+```json
+{"type":"tool","tool":"copilot_file","arguments":{
+  "path": "minesweeper.py",
+  "instruction": "实现一个可运行的扫雷游戏，命令行版，带难度选择"}}
+```
+
+- 内容**不经过聊天消息**，所以没有输出上限、没有截断、没有分块，一个回合拿到完整文件
+- 桥接会认 `blob:`/`data:` 链接与"下载"按钮两种入口；多个入口时按文件名优先
+- 落盘前照常存原像（可回滚）；`.py/.json/.html` 仍需 `validate_python` + `run_unittest` 通过才算完成
+- 关掉它：`agent.allow_copilot_file: false`
+- 报"没有找到下载入口"时看服务目录的 `last_answer.html`（回答区现场快照），把结构发维护者；同时 Agent 会自动改用分块写入
+
+**什么时候用哪个**：内容由 Copilot 生成（新写一个大文件/Office 文档）→ `copilot_file` 最省；内容来自本地已有材料、需要精确控制（逐字节一致的改写、二进制搬运）→ 本地工具 + 批量动作（`{"type":"actions",...}`,一次回答多个小动作）更稳。
+
+### 6. 常用运维命令
 ```powershell
 python start.py                              # 启动服务（默认 127.0.0.1:8765）
 python scripts/login.py                      # 登录向导（--reset 彻底重来；服务运行时会拒绝执行）
@@ -303,12 +322,12 @@ python scripts/outlook_selftest.py           # Outlook 分步自检（含线程�
 python scripts/rollback.py --list            # 查看可回滚的任务与自升级记录
 ```
 
-### 6. 故障排查
+### 7. 故障排查
 
 | 现象 | 处理 |
 |---|---|
 | 服务起不来、导入报错 | 多半是自升级改坏了：`python scripts/rollback.py --scope self --last --yes` 后重启 |
-| 任务文件只写了一半、写文件中断 | WebUI 导出该会话时间线发维护者；确认用的是 b64 分块（每块 ≤3000 字符） |
+| 写文件只写了一半、写文件中断 | WebUI 导出该会话时间线发维护者；确认用的是 b64 分块（每块 ≤3000 字符）；大文件优先改用 `copilot_file` 让 Copilot 直接生成下载 |
 | 任务卡在「等待服务」 | Copilot 限流，指数退避自动重试；长时间不恢复会安全暂停，服务恢复后点「恢复」 |
 | 页面找不到输入框/模型按钮 | 登录态失效：停服务后 `python scripts/login.py`（必要时 `--reset`） |
 | 频繁换会话/上下文被压缩 | 跑 `scripts/calibrate.py`，按建议调整 `compact_at_tokens`/`rollover_at_tokens` |

@@ -3,7 +3,7 @@
 HTTP 路由在 api.py；本模块不定义任何 FastAPI 端点。
 """
 
-import asyncio, json, re, time, uuid
+import asyncio, base64, json, re, time, uuid
 from os.path import commonprefix
 from datetime import datetime
 from pathlib import Path
@@ -1312,6 +1312,175 @@ AGENT_TOOLS.register(
     "把文件上传到 Copilot 网页版分析并返回回答（用于图片/复杂文档等本地工具无法解析的文件）",
     {"path": "相对路径", "question": "给 Copilot 的分析指令，可选"},
 )
+
+
+# ── copilot_file：让 Copilot 直接生成可下载文件，桥接下载进工作区 ──────
+
+DOWNLOAD_HINT_RE = re.compile(r"download|下载|保存文件|save file", re.I)
+
+
+async def _answer_area_html() -> str:
+    """取最近一条回答所在区域的外层 HTML，用于提取下载入口与失败诊断。"""
+    try:
+        nodes = page.locator('[data-content="ai-message"], [class*="ai-message" i], '
+                             '[class*="assistant" i], article')
+        count = await nodes.count()
+        if count:
+            return await nodes.nth(count - 1).evaluate("el => el.outerHTML")
+    except Exception:
+        pass
+    try:
+        return await page.locator("body").evaluate("el => el.outerHTML")
+    except Exception:
+        return ""
+
+
+async def _download_candidates():
+    """当前页面里可能的下载入口，新的排在前面。
+
+    实测形态：a[download]、blob:/data: 链接、文件卡片里的链接、带
+    "下载/Download" 文案或 aria-label 的按钮。
+    """
+    candidates = []
+    selectors = [
+        'a[download]',
+        'a[href^="blob:"]',
+        'a[href^="data:"]',
+        '[role="link"][href^="blob:"]',
+        '[class*="file" i] a[href]',
+        'button[aria-label*="Download" i]',
+        'button[aria-label*="下载"]',
+        'a[aria-label*="Download" i]',
+        'a[aria-label*="下载"]',
+        '[role="button"][aria-label*="Download" i]',
+        '[role="button"][aria-label*="下载"]',
+    ]
+    for sel in selectors:
+        loc = page.locator(sel)
+        try:
+            for i in range(await loc.count()):
+                el = loc.nth(i)
+                try:
+                    if not await el.is_visible():
+                        continue
+                    href = await el.get_attribute("href") or ""
+                    name = ((await el.get_attribute("download")) or ""
+                            + " " + ((await el.inner_text()) or "")[:60]
+                            + " " + ((await el.get_attribute("aria-label")) or ""))
+                    candidates.append({"el": el, "href": href, "text": name.strip()})
+                except Exception:
+                    continue
+        except Exception:
+            continue
+    return candidates
+
+
+async def _save_from_href(href: str, target: Path) -> int:
+    """把 blob:/data:/http(s) 内容写入目标文件，返回字节数。
+
+    blob: 走页内 fetch + FileReader（页面上下文，天然带登录态）；
+    http(s) 走浏览器上下文的 request（复用 Cookie）。
+    """
+    if href.startswith("blob:") or href.startswith("data:"):
+        b64 = await page.evaluate(
+            """async (url) => {
+                const resp = await fetch(url);
+                const buf = await resp.arrayBuffer();
+                let bin = '';
+                const bytes = new Uint8Array(buf);
+                const CH = 0x8000;
+                for (let i = 0; i < bytes.length; i += CH) {
+                    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+                }
+                return btoa(bin);
+            }""", href)
+        data = base64.b64decode(b64)
+    else:
+        resp = await ctx.request.get(href, timeout=120000)
+        if not resp.ok:
+            raise ToolError(f"下载失败 HTTP {resp.status}: {href[:120]}")
+        data = await resp.body()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    return len(data)
+
+
+async def _copilot_file(path: str, instruction: str) -> dict:
+    """Agent 工具 copilot_file：让 Copilot 生成文件并下载到工作区。
+
+    与 write_text_b64 分块写的根本区别：文件内容不经过聊天消息，因此不受
+    Copilot 单条输出上限约束——一个大文件一个回合就能拿到，不再截断。
+    代价是内容由 Copilot 侧生成，本地无法逐块校验；写完后仍按普通写入
+    走验证闭环（.py/.json/.html 需要 validate_python + run_unittest）。
+    """
+    if not AGENT_CFG.get("allow_copilot_file", True):
+        raise ToolError("copilot_file 已在 config.json 中禁用（allow_copilot_file=false）")
+    instruction = str(instruction or "").strip()
+    if not instruction:
+        raise ToolError("instruction 不能为空")
+    target = AGENT_TOOLS._path(path)          # 复用工作区路径沙箱
+    filename = target.name
+    model = DEFAULT_MODEL
+    if ACTIVE_SESSION_ID:
+        st = AGENT_SESSIONS.get(ACTIVE_SESSION_ID)
+        if st and st.get("model"):
+            model = st["model"]
+    prompt = (f"请把结果生成为一个可下载的文件，文件名：{filename}\n"
+              f"要求：只生成文件并提供下载入口，不要在回答里粘贴文件正文或大段内容。\n"
+              f"内容要求：{instruction}")
+    await agent_chat_once(prompt, model, False)
+
+    # 找下载入口：优先文件名匹配，其次取最新的一个
+    candidates = await _download_candidates()
+    if not candidates:
+        dump = await _answer_area_html()
+        try:
+            (BASE / "last_answer.html").write_text(dump[:400000], encoding="utf-8")
+        except Exception:
+            pass
+        raise ToolError("Copilot 回答里没有找到下载入口（已存 last_answer.html 供排查）；"
+                        "可改用 write_text_b64/append_text_b64 分块写入")
+
+    chosen = None
+    stem = Path(filename).stem.lower()
+    for cand in candidates:
+        text = (cand["text"] + " " + cand["href"]).lower()
+        if stem and stem in text:
+            chosen = cand
+            break
+    chosen = chosen or candidates[0]
+
+    AGENT_TOOLS._snap("copilot_file", path, target)   # 覆盖前存原像，可回滚
+    before = AGENT_TOOLS._hash(target)
+    size = 0
+    if chosen["href"]:
+        size = await _save_from_href(chosen["href"], target)
+    else:
+        # 按钮型入口：点它并把浏览器下载事件接住
+        try:
+            async with page.expect_download(timeout=120000) as dl_info:
+                await chosen["el"].click(timeout=8000)
+            download = await dl_info.value
+            await download.save_as(str(target))
+            size = target.stat().st_size
+        except Exception as exc:
+            raise ToolError(f"点击下载入口失败: {exc}") from exc
+    if size <= 0:
+        raise ToolError("下载到 0 字节，可能不是有效文件；请让 Copilot 重新生成或改用分块写入")
+    return {"path": path, "bytes": size, "filename": filename,
+            "source": "copilot-download",
+            "file_event": {"tool": "copilot_file", "path": path, "before_hash": before,
+                           "after_hash": AGENT_TOOLS._hash(target), "result": "ok"}}
+
+
+if AGENT_CFG.get("allow_copilot_file", True):
+    AGENT_TOOLS.register(
+        "copilot_file",
+        _copilot_file,
+        "让 Copilot 直接生成文件并下载到工作区（内容不走聊天消息，不受输出长度上限约束，"
+        "一个大文件一个回合即可拿到；适合代码文件、Office 文档等；写完后仍需验证）",
+        {"path": "工作区相对路径（决定文件名与落盘位置）", "instruction": "要生成的内容要求"},
+    )
 async def periodic_session_cleanup():
     """每小时执行一次会话维护，使 session_timeout_seconds /
     completed_session_retention_days / max_sessions 三项配置生效。"""

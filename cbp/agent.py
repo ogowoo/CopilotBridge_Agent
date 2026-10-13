@@ -969,7 +969,8 @@ class AgentRunner:
                         step.update({"status": "error", "error": str(exc)})
                 if step.get("status") == "ok" and not duplicate:
                     changed_path = str(arguments.get("path") or arguments.get("destination") or "")
-                    if tool in {"write_text", "append_text", "replace_text", "copy_path", "move_path"} and changed_path.lower().endswith((".py", ".json", ".html")):
+                    if tool in {"write_text", "append_text", "replace_text", "copy_path",
+                                "move_path", "copilot_file"} and changed_path.lower().endswith((".py", ".json", ".html")):
                         validation_required = True
                         syntax_validated = False
                         tests_passed = False
