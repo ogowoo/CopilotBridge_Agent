@@ -196,6 +196,34 @@ class AgentRunner:
         return []
 
     @staticmethod
+    def _repair_prompt(last: dict, last_json: str) -> str:
+        """按现场诊断生成修复提示词——不要一律让模型"分块写文件"。
+
+        实测教训：上一回合其实是 final 答复被截断（我们抓到半截文本），
+        却提示"请用 write_text_b64 拆分内容"，模型会去重写本来已经正确的
+        文件，白干活还可能改坏。因此按 raw_tail 里露出的动作类型分别指引。
+        """
+        tail = str(last.get("raw_tail") or "")
+        head = "继续同一任务。上一回合的回答被截断了，未能解析成可执行动作。"
+        if re.search(r'["\']type["\']\s*:\s*["\']final["\']', tail, re.I):
+            return (head + "从截断的片段看，你上一回合要返回的是 final（最终答复）"
+                    "——如果任务其实已经完成，请**直接重新返回完整的 final JSON**，"
+                    "不要重写文件、不要重复验证、不要拆分内容；"
+                    "若确实还有没做完的事，再返回下一个工具动作。"
+                    "注意整个 JSON 要一次写完、不要中途停顿。"
+                    "上一回合记录（含被截断的输出尾部）：\n" + last_json)
+        if re.search(r'["\']tool["\']\s*:\s*["\'](write_text|append_text|self_write|self_append)',
+                     tail, re.I):
+            return (head + "从截断的片段看，你上一回合在写文件："
+                    "请把内容拆成更小的分块（write_text_b64/append_text_b64，"
+                    "单次解码后不超过 3000 字符），只返回下一个 JSON 动作，"
+                    "已完成的分块不要重复写。"
+                    "上一回合记录（含被截断的输出尾部）：\n" + last_json)
+        return (head + "请只返回**一个**短小完整的 JSON 动作（内容长就分块），"
+                "不要在 JSON 前后添加解释，也不要一次返回多个动作。"
+                "上一回合记录（含被截断的输出尾部）：\n" + last_json)
+
+    @staticmethod
     def _is_instruction_path(path: str) -> bool:
         """是否为"自我指令"文件：工作区根的 AGENT.md 或 skills/ 下的 Markdown。"""
         p = str(path or "").replace("\\", "/").lstrip("./").lower()
@@ -819,14 +847,7 @@ class AgentRunner:
                     last = self.compact_value(history[-1], 6000) if history else summary
                     last_json = json.dumps(last, ensure_ascii=False)
                     if isinstance(last, dict) and last.get("status") == "invalid_action":
-                        # 解析失败最常见的原因是回答超出 Copilot 单条输出上限被
-                        # 截断。明确告知模型原因和应对（更小的 b64 分块），避免它
-                        # 只看到一句"无法解析"后原样重试、再次截断的无效循环。
-                        prompt = ("继续同一任务。上一回合的回答不完整（通常是内容过长被系统截断），"
-                                  "未能执行任何工具，该回合没有任何文件变更。"
-                                  "请把内容拆成更小的分块：使用 write_text_b64/append_text_b64，"
-                                  "单次解码后不超过 3000 字符，只返回下一个 JSON 动作。"
-                                  "上一回合记录（含被截断的输出尾部）：\n" + last_json)
+                        prompt = self._repair_prompt(last, last_json)
                     else:
                         prompt = "继续同一任务。上一动作实际结果：\n" + last_json
                     force_new = False

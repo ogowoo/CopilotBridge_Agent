@@ -252,5 +252,29 @@ class TruncatedFinalTests(unittest.TestCase):
         self.assertFalse(parsed.get("_recovered_truncated_json"))
 
 
+class RepairPromptTests(unittest.TestCase):
+    """修复提示词按现场诊断：final 截断时不要让模型去重写文件。"""
+
+    def _record(self, raw_tail):
+        return {"status": "invalid_action", "raw_tail": raw_tail}
+
+    def test_truncated_final_asks_to_resend_final(self):
+        tail = '{"type":"final","content":"已完成重建…文件：x.p'
+        prompt = AgentRunner._repair_prompt(self._record(tail), tail)
+        self.assertIn("直接重新返回完整的 final JSON", prompt)
+        self.assertIn("不要重写文件", prompt)
+        self.assertNotIn("write_text_b64/append_text_b64", prompt)
+
+    def test_truncated_write_asks_for_smaller_chunks(self):
+        tail = '{"type":"tool","tool":"append_text_b64","arguments":{"path":"a.py","content_b64":"aGVs'
+        prompt = AgentRunner._repair_prompt(self._record(tail), tail)
+        self.assertIn("write_text_b64/append_text_b64", prompt)
+        self.assertIn("不超过 3000 字符", prompt)
+
+    def test_unknown_shape_asks_for_single_small_action(self):
+        prompt = AgentRunner._repair_prompt(self._record("乱七八糟"), "乱七八糟")
+        self.assertIn("只返回**一个**短小完整的 JSON 动作", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()
