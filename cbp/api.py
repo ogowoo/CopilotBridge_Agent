@@ -499,6 +499,9 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
 
     local_deleted = b.AGENT_SESSIONS.delete(sid)
     b.RUNTIME.pop(sid, None)
+    if local_deleted:
+        # 会话记录已删除，其快照不再可回滚（回滚端点要求会话存在）：回收磁盘
+        b.SNAPSHOTS.clear(sid)
     return {
         "deleted": local_deleted,
         "local_deleted": local_deleted,

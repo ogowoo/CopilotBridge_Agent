@@ -1958,6 +1958,7 @@ async def run_agent(req: AgentRequest):
         except Exception as exc:
             runtime_update(sid, phase="failed", detail=str(exc))
             AGENT_SESSIONS.patch(sid,state="failed",last_error=str(exc))
+            SNAPSHOTS.prune()  # 失败/取消路径也要按保留数回收，避免只增不减
             raise
         finally:
             AGENT_TOOLS.set_snapshot_hook(None)
