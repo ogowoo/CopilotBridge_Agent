@@ -498,14 +498,43 @@ async def finalize_session_remote_deletion(sid: str, remote_results: list) -> li
         pass
     remaining = await _rows_with_marker()
     remaining_ids = {_conv_id(u) for u in remaining}
+
+    async def _visible_conversation_rows() -> int:
+        """页面里可见的会话行数（不限本 Session）。
+
+        用于判断"侧栏到底读出来了没有"：只有列表确实渲染了内容时，
+        "找不到目标会话"才算删除成功的证据；列表根本没渲染（未登录、
+        面板没打开、前端改版）时找不到是因为看不见，不能据此改判。
+        """
+        n = 0
+        try:
+            links = page.locator('a[href*="/conversation/"]')
+            for i in range(min(await links.count(), 300)):
+                try:
+                    if await links.nth(i).is_visible():
+                        n += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return n
+
+    rows_readable = await _visible_conversation_rows() > 0
     for r in remote_results:
         if r.get("deleted"):
             continue
         cid = _conv_id(r.get("url") or "")
-        if cid and cid not in remaining_ids:
-            r["deleted"] = True
-            r["method"] = "verified-absent"
-            r["error"] = None
+        if not cid or cid in remaining_ids:
+            continue                      # 明确还在侧栏 → 保持失败
+        if not rows_readable:
+            # 列表读不出来时不得改判：否则会把"看不见"当成"已删除"（假成功，
+            # 会话其实还留在 Copilot 侧栏里）
+            note = "侧栏未能读出会话列表，无法确认是否已删除"
+            r["error"] = f"{r['error']}；{note}" if r.get("error") else note
+            continue
+        r["deleted"] = True
+        r["method"] = "verified-absent"
+        r["error"] = None
 
     # 侧栏兜底仍失败的条目：逐个再导航一次目标 URL。已删除的会话会弹
     # "no longer available"，delete_copilot_conversation 的 already-gone
