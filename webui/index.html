@@ -124,7 +124,7 @@
     <div class="dbody">
       <input id="sid" placeholder="Session ID（可留空）">
       <input id="workspace" placeholder="工作目录（可留空）">
-      <div style="display:flex;gap:6px"><select id="model"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select><button id="btnRefreshModels" title="重新扫描 Copilot 模型菜单（菜单改版后模型消失时用）">↻ 刷新</button><button id="refreshModelsBtn" class="btn" style="flex:none;padding:5px 10px" title="重新读取 Copilot 模型菜单" onclick="refreshModels()">↻</button></div>
+      <div style="display:flex;gap:6px"><select id="model"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select><button id="refreshModelsBtn" class="btn" style="flex:none;padding:5px 10px" title="重新读取 Copilot 模型菜单" onclick="refreshModels()">↻</button></div>
       <textarea id="task" rows="6" placeholder="任务内容，例如：分析 workspace 里的项目并生成 TODO"></textarea>
       <div style="display:flex;gap:6px"><button id="ntAgent" class="btn seg on" style="flex:1" onclick="setTaskMode('agent')">Agent 执行</button><button id="ntChat" class="btn seg" style="flex:1" onclick="setTaskMode('chat')">普通对话</button></div>
     </div>

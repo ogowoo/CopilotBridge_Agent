@@ -388,7 +388,7 @@ async def web_ui():
 
 @app.get("/ui/", include_in_schema=False)
 async def web_ui_index():
-    return FileResponse(b.BASE / "webui" / "index.html")
+    return FileResponse(b.BASE / "webui" / "index.html", headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 @app.get("/ui/{asset}", include_in_schema=False)
@@ -396,7 +396,7 @@ async def web_ui_asset(asset: str):
     # 静态资产白名单，禁止路径穿越
     if asset not in ("style.css", "app.js"):
         raise HTTPException(404, "Not Found")
-    return FileResponse(b.BASE / "webui" / asset)
+    return FileResponse(b.BASE / "webui" / asset, headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 @app.get("/v1/agent/sessions")

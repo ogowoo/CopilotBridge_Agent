@@ -630,11 +630,7 @@ try{const _rs=document.getElementById('btnRefreshSess');if(_rs)_rs.onclick=async
  try{await refreshModels();refreshSessModelOptions();toast('模型列表已刷新','ok')}
  catch(e){toast('刷新失败: '+e,'err')}
  finally{_rs.disabled=false;_rs.textContent=_t}};}catch(e){}
-try{const _rm=document.getElementById('btnRefreshModels');if(_rm)_rm.onclick=async()=>{
- _rm.disabled=true;const _t=_rm.textContent;_rm.textContent='刷新中…';
- try{await refreshModels();if(currentModel)refreshSessModelOptions();toast('模型列表已刷新','ok')}
- catch(e){toast('刷新失败: '+e,'err')}
- finally{_rm.disabled=false;_rm.textContent=_t}};}catch(e){}
+
 
 
 try{let cur=document.documentElement.dataset.theme||'',i=THEMES.findIndex(x=>x[0]===cur);document.getElementById('themeBtn').title='主题：'+THEMES[i<0?0:i][1]+'（点击切换）'}catch(e){}
