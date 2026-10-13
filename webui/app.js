@@ -626,10 +626,10 @@ async function loadMemory(){
 }
 try{memBtn()}catch(e){}
 try{const _rs=document.getElementById('btnRefreshSess');if(_rs)_rs.onclick=async()=>{
- _rs.disabled=true;const _t=_rs.textContent;_rs.textContent='刷新中…';
+ if(_rs.disabled)return;_rs.disabled=true;_rs.style.opacity=.5;
  try{await refreshModels();refreshSessModelOptions();toast('模型列表已刷新','ok')}
  catch(e){toast('刷新失败: '+e,'err')}
- finally{_rs.disabled=false;_rs.textContent=_t}};}catch(e){}
+ finally{_rs.disabled=false;_rs.style.opacity=1}};}catch(e){}
 
 
 
