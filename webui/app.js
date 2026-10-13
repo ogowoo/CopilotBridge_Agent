@@ -413,6 +413,13 @@ async function runTask(){
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
  resetView();
+ // 先用本地已知信息填标题/状态：/v1/agent/completions 会一直挂到整轮任务
+ // 结束才返回，等它的回调会让整个任务期间标题都显示"—"
+ let title=(task.split('\n')[0]||'').trim().slice(0,120)||current;
+ document.getElementById('title').textContent=title;
+ document.getElementById('status').textContent=(taskMode==='agent'?'Agent 执行':'普通对话')
+  +' · '+(b.workspace||'默认工作区');
+ setPill('running');
  document.getElementById('activity').textContent=(taskMode==='agent'?'正在建立 Agent 任务 ':'正在发送普通对话 ')+current+'...';
  if(DEMO){await refreshSessions();return}
  fetch('/v1/agent/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})
@@ -421,7 +428,18 @@ async function runTask(){
    current=d.session_id;await load(current)})
   .catch(e=>{current=null;document.getElementById('sessionView').style.display='none';
    document.getElementById('emptyState').style.display='flex';toast('任务启动失败: '+e,'err')});
+ waitSessionReady(current);
  setTimeout(refreshSessions,700)}
+
+/* 新任务启动后：轮询会话是否已在后端建立，一旦出现就用真实数据填充
+   标题/工作区/步骤并进入每秒运行状态刷新（排队等锁时可能几十秒才有会话）。 */
+async function waitSessionReady(sid){
+ for(let i=0;i<200;i++){
+  if(current!==sid)return;                  // 用户已切换到别的会话
+  try{let d=await api('/v1/agent/sessions/'+encodeURIComponent(sid));
+   if(d&&d.session){await load(sid);return}}catch(e){}
+  await new Promise(r=>setTimeout(r,1000));
+ }}
 
 function toggleMore(e){e.stopPropagation();document.getElementById('moreMenu').classList.toggle('open')}
 document.addEventListener('click',e=>{let m=document.getElementById('moreMenu');if(m&&m.classList.contains('open')&&!e.target.closest('#moreBtn'))m.classList.remove('open')});
