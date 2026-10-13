@@ -116,6 +116,7 @@ class ToolRegistry:
             for p in (config.get("workspace_roots") or [])
         ]
         self._extra_descriptions: list[dict[str, Any]] = []
+        self._snapshot_hook: Callable[[str, str, Path], None] | None = None
         self._tools: dict[str, Callable[..., Awaitable[Any]]] = {
             "list_directory": self.list_directory,
             "find_files": self.find_files,
@@ -150,6 +151,23 @@ class ToolRegistry:
         self._tools[name] = fn
         self._extra_descriptions.append(
             {"name": name, "description": description, "arguments": arguments})
+
+    def set_snapshot_hook(self, fn: Callable[[str, str, Path], None] | None) -> None:
+        """设置写操作前的快照钩子 fn(tool, relative_path, absolute_target)。
+
+        由桥接层绑定当前 Session 的快照存储，用于"回滚整个任务的改动"。
+        钩子内部异常不会影响写入本身。
+        """
+        self._snapshot_hook = fn
+
+    def _snap(self, tool: str, rel: str, target: Path) -> None:
+        hook = getattr(self, "_snapshot_hook", None)
+        if not hook:
+            return
+        try:
+            hook(tool, rel, target)
+        except Exception:
+            pass
 
     def set_root(self, value: str | Path, create: bool = False) -> str:
         target = Path(value).expanduser()
@@ -299,6 +317,7 @@ class ToolRegistry:
         if len(content) > self.max_write:
             raise ToolError("写入内容超过限制")
         target = self._path(path)
+        self._snap("write_text", path, target)
         target.parent.mkdir(parents=True, exist_ok=True)
         before=self._hash(target)
         # newline=""：原样写入，Windows 下不把 \n 静默转成 \r\n
@@ -310,6 +329,7 @@ class ToolRegistry:
         if len(content) > self.max_write:
             raise ToolError("追加内容超过限制")
         target = self._path(path)
+        self._snap("append_text", path, target)
         target.parent.mkdir(parents=True, exist_ok=True)
         before=self._hash(target)
         with target.open("a", encoding="utf-8", newline="") as f: f.write(content)
@@ -360,12 +380,15 @@ class ToolRegistry:
             raise ToolError("未找到要替换的原文本，请先 read_text 后使用精确短片段")
         replaced = min(found, count)
         before=self._hash(target)
+        self._snap("replace_text", path, target)
         with target.open("w", encoding="utf-8", newline="") as f: f.write(text.replace(old,new,count))
         after=self._hash(target)
         return {"path":path,"replaced":replaced,"remaining_matches":max(0,found-replaced),"file_event":{"tool":"replace_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
 
     async def make_directory(self, path: str) -> dict[str, Any]:
         target = self._path(path)
+        if not target.exists():
+            self._snap("make_directory", path, target)
         target.mkdir(parents=True, exist_ok=True)
         return {"path": path, "created": True}
 
@@ -375,6 +398,7 @@ class ToolRegistry:
             raise ToolError(f"源路径不存在: {source}")
         if dst == src or src in dst.parents:
             raise ToolError("禁止把目录复制/移动到它自己的子目录里")
+        self._snap("copy_path", destination, dst)
         dst.parent.mkdir(parents=True, exist_ok=True)
         if src.is_dir():
             shutil.copytree(src, dst, dirs_exist_ok=True)
@@ -388,6 +412,9 @@ class ToolRegistry:
             raise ToolError(f"源路径不存在: {source}")
         if dst == src or src in dst.parents:
             raise ToolError("禁止把目录复制/移动到它自己的子目录里")
+        # 源会被移走、目标是新增内容：两端都要有原像才能回滚
+        self._snap("move_path", source, src)
+        self._snap("move_path", destination, dst)
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))
         return {"source": source, "destination": destination, "moved": True}
@@ -400,6 +427,7 @@ class ToolRegistry:
             return {"path": path, "deleted": False, "reason": "not_found"}
         if target == self.root:
             raise ToolError("禁止删除工作区根目录")
+        self._snap("delete_path", path, target)
         shutil.rmtree(target) if target.is_dir() else target.unlink()
         return {"path": path, "deleted": True}
 
@@ -500,6 +528,7 @@ class ToolRegistry:
         except ImportError:
             raise ToolError("缺少依赖 openpyxl，请运行 pip install openpyxl")
         target = self._path(path)
+        self._snap("write_excel", path, target)
         target.parent.mkdir(parents=True, exist_ok=True)
         before = self._hash(target)
         try:
@@ -564,6 +593,7 @@ class ToolRegistry:
         except ImportError:
             raise ToolError("缺少依赖 python-docx，请运行 pip install python-docx")
         target = self._path(path)
+        self._snap("write_docx", path, target)
         target.parent.mkdir(parents=True, exist_ok=True)
         before = self._hash(target)
         if mode == "overwrite" or not target.is_file():

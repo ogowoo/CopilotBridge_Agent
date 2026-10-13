@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from .agent import AgentRunner, AgentPaused, CopilotServiceUnavailable, CopilotConversationFull, validate_token_budget
 from .tools import ToolRegistry, ToolError
 from .session_store import SessionStore
+from .snapshots import SnapshotStore
 from . import providers as providers_mod
 
 BASE = Path(__file__).resolve().parent.parent  # 包在 cbp/ 内，项目根目录再上一层
@@ -891,6 +892,37 @@ if not SESSION_DB.is_absolute(): SESSION_DB = BASE / SESSION_DB
 AGENT_SESSIONS = SessionStore(SESSION_DB)
 AGENT_SESSIONS.recover_interrupted()
 
+# ── 工作区快照：写操作前记录原像，支持"回滚整个任务的改动" ──────────
+SNAPSHOT_DIR = BASE / "data" / "snapshots"
+SNAPSHOTS = SnapshotStore(SNAPSHOT_DIR, int(AGENT_CFG.get("snapshot_retention", 50)))
+
+
+async def rollback_session_changes(sid: str) -> dict:
+    """把某个 Session 期间改过的工作区文件恢复到任务开始前的状态。
+
+    快照在写操作前捕获（同一路径保留最早状态），因此这是"任务级回滚"：
+    修改过的文件还原、任务新建的文件删除。会话处于运行/等待状态时拒绝，
+    避免和正在进行的写操作打架。
+    """
+    state = AGENT_SESSIONS.get(sid)
+    if not state:
+        raise HTTPException(404, "Session 不存在")
+    if state.get("state") in {"running", "waiting", "ready"}:
+        raise HTTPException(409, "Session 正在运行或待命，请先暂停/取消后再回滚")
+    root = Path(state.get("workspace") or AGENT_TOOLS.root)
+    if not root.is_dir():
+        raise HTTPException(400, f"工作区不存在: {root}")
+    result = SNAPSHOTS.restore(sid, root)
+    step = {"step": int(state.get("total_steps", 0)), "status": "rollback",
+            "reason": f"回滚任务改动：还原 {result['restored']} 个、删除 {result['deleted']} 个"
+                      f"、失败 {result['failed']} 个",
+            "result": {"restored": result["restored"], "deleted": result["deleted"],
+                       "failed": result["failed"], "root": result.get("root"),
+                       "results": result["results"][:50]}}
+    AGENT_SESSIONS.add_step(sid, step["step"], int(state.get("conversation_index", 0)), step)
+    AGENT_SESSIONS.patch(sid, last_error=None if not result["failed"] else "回滚存在失败项")
+    return result
+
 
 # ── Outlook 网页版（OWA）自动化后端 ─────────────────────────────
 # New Outlook 无 COM 接口、EWS 正在全球禁用、Graph 需要管理员授权。
@@ -1381,16 +1413,21 @@ async def run_agent(req: AgentRequest):
             st=get(); AGENT_SESSIONS.add_step(sid,int(x.get("step",st["total_steps"]+1)),int(st["conversation_index"]),x)
         def add_file(x): AGENT_SESSIONS.add_file_event(sid,x)
         def add_conv_stat(x): AGENT_SESSIONS.add_conv_stat(sid,x)
+        # 写操作前捕获原像：任务结束可整体回滚（自我升级 failback 的安全网）
+        AGENT_TOOLS.set_snapshot_hook(
+            lambda tool, rel, target: SNAPSHOTS.capture(sid, rel, target, tool))
         runner=AgentRunner(AGENT_TOOLS,turn,AGENT_CFG,get,save,add_step,add_file,add_conv_stat)
         try:
             result = await runner.run(effective_task,req.model)
             runtime_update(sid, phase="completed", detail=result.content, answer_preview=result.content)
+            SNAPSHOTS.prune()
             return result, sid
         except Exception as exc:
             runtime_update(sid, phase="failed", detail=str(exc))
             AGENT_SESSIONS.patch(sid,state="failed",last_error=str(exc))
             raise
         finally:
+            AGENT_TOOLS.set_snapshot_hook(None)
             # 恢复进入前的值而非置 None：排队任务接管时不会被误清
             ACTIVE_SESSION_ID = prev_active
 

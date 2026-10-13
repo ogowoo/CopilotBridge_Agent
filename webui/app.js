@@ -244,6 +244,22 @@ async function removeSession(remote){
   document.getElementById('sessionView').style.display='none';
   document.getElementById('emptyState').style.display='flex';
   await refreshSessions()}catch(e){toast('删除失败: '+e,'err')}}
+/* ── 回滚任务改动：按写操作前捕获的原像还原工作区 ── */
+async function rollbackSession(){
+ if(!current){toast('请先选择 Session','err');return}
+ try{
+  let s=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/snapshots');
+  let files=s.files||[];
+  if(!files.length){toast('该任务没有可回滚的文件改动','err');return}
+  let preview=files.slice(0,12).map(f=>`· [${f.kind}] ${f.path}`).join('\n');
+  let more=files.length>12?`\n… 另有 ${files.length-12} 个`:'';
+  let msg=`将把该任务改动过的 ${files.length} 个路径恢复到任务开始前：\n修改过的还原、任务新建的删除。\n\n${preview}${more}\n\n此操作不可撤销，确定继续？`;
+  if(!await dlgConfirm(msg,'回滚任务改动',true))return;
+  let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/rollback`,{method:'POST'});
+  let tail=d.failed?`，失败 ${d.failed}`:'';
+  toast(`回滚完成：还原 ${d.restored}、删除 ${d.deleted}${tail}`, d.failed?'err':'ok');
+  await load(current)
+ }catch(e){toast('回滚失败: '+e,'err')}}
 /* ── 删除结果可视化弹窗 ── */
 let lastDeleteResult=null;
 function showDeleteResult(d){

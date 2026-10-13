@@ -159,7 +159,8 @@ class WorkspaceContextTests(unittest.TestCase):
         runner, _ = self._runner(None)
         runner._agent_md = runner._load_agent_md()
         self.assertEqual(runner._agent_md, "")
-        self.assertNotIn("项目约定", runner._system_prompt())
+        # 基础提示里会提到 AGENT.md（自更新规则），但注入段表头不应出现
+        self.assertNotIn("项目约定（来自工作区 AGENT.md", runner._system_prompt())
 
     def test_skill_catalog_frontmatter(self):
         import tempfile
@@ -200,6 +201,25 @@ class WorkspaceContextTests(unittest.TestCase):
         self.assertIn("可用技能", prompt)
         self.assertIn("测试技能", prompt)
         self.assertIn("SKILL.md", prompt)
+
+
+class InstructionPathTests(unittest.TestCase):
+    """自我指令文件识别：AGENT.md 与 skills/*.md 改动需在时间线里可见。"""
+
+    def test_recognizes_instruction_files(self):
+        from cbp.agent import AgentRunner as AR
+        self.assertTrue(AR._is_instruction_path("AGENT.md"))
+        self.assertTrue(AR._is_instruction_path("agent.md"))
+        self.assertTrue(AR._is_instruction_path(r"AGENT.md"))
+        self.assertTrue(AR._is_instruction_path("skills/webui-change/SKILL.md"))
+        self.assertTrue(AR._is_instruction_path(r"skills\debug\SKILL.md"))
+
+    def test_ignores_other_files(self):
+        from cbp.agent import AgentRunner as AR
+        self.assertFalse(AR._is_instruction_path("cbp/agent.py"))
+        self.assertFalse(AR._is_instruction_path("README.md"))
+        self.assertFalse(AR._is_instruction_path("docs/AGENT.md"))
+        self.assertFalse(AR._is_instruction_path(""))
 
 
 if __name__ == "__main__":

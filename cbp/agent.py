@@ -98,6 +98,7 @@ class AgentRunner:
 单个 JSON 动作必须尽量短，禁止一次返回两个 JSON 对象。
 治理或代码修改任务必须形成验证闭环：文件全部写完后执行 validate_python，再执行 run_unittest；真实验证失败必须继续修复，不得返回 final（文件未写完时的验证不通过不算失败，按上面的分块流程继续追加即可）。
 只有 validate_python 和 run_unittest 均返回 passed=true 后，才可宣称治理完成或把 TODO 标记为完成。
+你可以按需更新工作区的 AGENT.md 与 skills/*/SKILL.md：把本次任务中验证有效的项目约定、命令、踩坑结论沉淀进去（保持精炼，AGENT.md 控制在 8000 字符内），让后续任务直接受益。禁止删除既有的安全约束与验证闭环规则；这类改动会被标记为"自我指令更新"并可通过回滚撤销，改动前先 read_text 看清原文再替换，不要整篇重写。
 可用工具：
 """ + json.dumps(self.tools.descriptions(), ensure_ascii=False) + self._workspace_context()
 
@@ -168,6 +169,14 @@ class AgentRunner:
             return out
         except Exception:
             return []
+
+    @staticmethod
+    def _is_instruction_path(path: str) -> bool:
+        """是否为"自我指令"文件：工作区根的 AGENT.md 或 skills/ 下的 Markdown。"""
+        p = str(path or "").replace("\\", "/").lstrip("./").lower()
+        if p in {"agent.md"}:
+            return True
+        return p.startswith("skills/") and p.endswith(".md")
 
     @staticmethod
     def _parse_skill_md(dirname: str, text: str) -> tuple[str, str]:
@@ -851,6 +860,13 @@ class AgentRunner:
                     validation_required = True
                     syntax_validated = False
                     tests_passed = False
+                # 自我指令更新（AGENT.md / skills/*.md）：允许，但必须在时间线里
+                # 显式标记 —— 这类改动会改变后续所有任务的行为，且原像已进快照，
+                # 可用"回滚任务改动"撤销。
+                if changed_path and self._is_instruction_path(changed_path):
+                    step["instruction_update"] = True
+                    step["reason"] = (str(step.get("reason") or "")
+                                      + "（自我指令更新：AGENT.md/skills，可用回滚撤销）").strip()
                 if tool == "validate_python" and isinstance(step.get("result"), dict):
                     syntax_validated = bool(step["result"].get("passed"))
                 if tool == "run_unittest" and isinstance(step.get("result"), dict):

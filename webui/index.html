@@ -31,6 +31,7 @@
             <button class="btn danger" onclick="control('cancel')">取消任务</button>
             <div class="menu"><button class="btn ghost" id="moreBtn" onclick="toggleMore(event)">更多 ▾</button><div class="menuList" id="moreMenu">
               <button onclick="control('archive')">归档</button>
+              <button onclick="rollbackSession()">回滚任务改动…</button>
               <button onclick="removeSession(false)">仅删除本地记录</button>
               <button class="danger" onclick="removeSession(true)">同时删除 Copilot 会话</button>
             </div></div>

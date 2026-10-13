@@ -367,7 +367,24 @@ async def session(sid: str):
     return {"session": x, "steps": b.AGENT_SESSIONS.steps(sid),
             "files": b.AGENT_SESSIONS.file_events(sid),
             "messages": b.AGENT_SESSIONS.messages(sid),
-            "token_budget": b.TOKEN_BUDGET, "conv_stats": b.AGENT_SESSIONS.conv_stats(sid)}
+            "token_budget": b.TOKEN_BUDGET, "conv_stats": b.AGENT_SESSIONS.conv_stats(sid),
+            "snapshots": b.SNAPSHOTS.summary(sid)}
+
+
+@app.get("/v1/agent/sessions/{sid}/snapshots")
+async def session_snapshots(sid: str):
+    """任务改动快照摘要：可回滚的文件清单。"""
+    if not b.AGENT_SESSIONS.get(sid):
+        raise HTTPException(404, "Session 不存在")
+    return b.SNAPSHOTS.summary(sid)
+
+
+@app.post("/v1/agent/sessions/{sid}/rollback")
+async def session_rollback(sid: str):
+    """回滚该 Session 期间的全部工作区改动（修改还原、新建删除）。"""
+    async with b.lock:
+        result = await b.rollback_session_changes(sid)
+    return result
 
 
 @app.post("/v1/agent/sessions/{sid}/actions/{action}")
