@@ -561,7 +561,7 @@ function memBtn(){
  let b=document.getElementById('memBtn');
  if(b)return b;
  b=document.createElement('button');
- b.id='memBtn';b.textContent='🧠 记忆';b.title='长期记忆：查看 / 检索 / 置顶 / 删除';
+ b.id='memBtn';b.className='iconbtn';b.textContent='🧠';b.title='长期记忆：查看 / 检索 / 置顶 / 删除';
  document.body.appendChild(b);
  b.onclick=openMemory;
  return b;
