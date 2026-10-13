@@ -17,7 +17,7 @@
 
 - **OpenAI 兼容**：`/v1/chat/completions` 支持 stream / non-stream，可接入任何 OpenAI SDK 客户端；`/v1/models` 列出可用模型。模型列表以内置表为基础（Auto / Quick response / Think deeper / GPT / GPT-5.6 / Sol / Think，可在配置中扩展），并**在启动时自动打开 Copilot 模型菜单枚举选项（含 GPT 等父项下的二级子菜单）**——菜单里新出现的模型会自动并入（ID 形如 `copilot-gpt-5-7`），选择模型时也会自动展开子菜单定位；也可用 `POST /v1/models/refresh` 随时重扫。
 - **API 提供商接入**：除 Copilot 网页自动化外，可直接接入任何 OpenAI 兼容 HTTP API（内置 OpenAI / DeepSeek / Kimi / Grok 预设，可自定义）。模型 ID 形如 `deepseek/deepseek-chat`，API Key 走环境变量；普通对话和 **Agent 模式（含工具循环）都可用**——JSON 动作协议是纯 prompt 驱动，与提供商无关。
-- **Agent 模式**：Copilot 每回合返回一个 JSON 动作（调用工具或最终答复），本地执行工具后把结果送回，循环直到任务完成。
+- **Agent 模式**：Copilot 每回合返回一个 JSON 动作（调用工具或最终答复），本地执行工具后把结果送回，循环直到任务完成。**支持批量动作**：一次回答可带多个工具动作（`{"type":"actions","actions":[...]}` 或直接给动作数组），按顺序执行、每步单独记账——写多个小文件/多处小替换不必一块一个回合，省下大量 Copilot 回合；批量里不允许 `final`（完成必须单独返回，验证闭环不被绕过），动作数上限由 `max_actions_per_turn` 控制，批量被输出上限截断时仍会执行已完整的前几个动作。
 - **15+ 个工作区工具**：目录/文件读写（Base64 写入防 JSON 转义损坏）、精确替换、复制/移动/删除、`validate_python`、`run_unittest`、`run_python`，全部限制在工作区根目录内。
 - **两级项目上下文（全局 + 项目）**：`AGENT.md` 与 `skills/` 都有两个作用域——**全局**放在服务安装目录（对所有工作区生效），**项目**放在工作区根目录；两份合并注入，同名技能/约定项目级优先，同一文件自动去重。全局技能位于工作区之外，用 `skill_read` 工具读取（`skill_list` 列清单）。`AGENT.md` 单份默认 8000 字符截断（`agent_md_max_chars`），SKILL.md 支持 YAML frontmatter（`name`/`description`），缺省回退"首个一级标题 + 首个段落"。本仓库自身即带全局 [AGENT.md](AGENT.md) 与示例技能。
 - **服务自升级（可选，默认关闭）**：`agent.allow_self_upgrade: true` 后，Agent 可用 `self_read_text`/`self_write_text_b64`/`self_append_text_b64`/`self_replace_text` 直接修改**服务自身代码**（即使工作区是别的项目），白名单限定 `cbp/`、`webui/`、`scripts/`、`docs/`、`tests/` 与若干顶层文件，`config.json`/`data/`/`EdgeProfile/` 禁止触碰；写完必须 `self_validate` + `self_unittest` 双通过（提前 final 会被 `validation_gate` 拦下），并提供 `self_rollback` 工具回滚本次自升级。
@@ -173,6 +173,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `completed_session_retention_days` | `30` | 已结束（完成/取消/失败/过期）会话超过该天数后自动归档 |
 | `max_sessions` | `100` | 未归档会话数量上限，超出时从最久未更新的开始归档 |
 | `max_parse_failures` | `5` | 连续解析失败多少次后强制压缩上下文 |
+| `max_actions_per_turn` | `4` | 一次回答里最多执行几个动作（批量协议，硬顶 12）；调大能省回合但更容易被 Copilot 输出上限截断 |
 | `max_service_unavailable` | `30` | 限流退避重试上限，超过后转入安全暂停 |
 | `service_retry_base_seconds` / `service_retry_max_seconds` | `30` / `600` | 限流指数退避的起始/上限 |
 | `max_read_chars` / `max_write_chars` | `120000` / `200000` | 工具单次读写上限 |

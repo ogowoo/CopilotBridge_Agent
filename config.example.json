@@ -40,6 +40,7 @@
     "max_sessions": 100,
 
     "max_parse_failures": 5,
+    "max_actions_per_turn": 4,
     "max_service_unavailable": 30,
     "service_retry_base_seconds": 30,
     "service_retry_max_seconds": 600,

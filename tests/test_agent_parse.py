@@ -41,10 +41,15 @@ class ParseTests(unittest.TestCase):
         a = AgentRunner._parse(raw)
         self.assertEqual(a["content"], "x")
 
-    def test_distinct_actions_rejected(self):
+    def test_distinct_actions_become_batch(self):
+        # 行为变更：多个不同动作不再拒绝，而是作为批量动作按顺序执行
+        # （每个分块一个回合太浪费 Copilot 会话）
         raw = '{"type":"final","content":"a"}\n{"type":"tool","tool":"read_text","arguments":{}}'
-        with self.assertRaises(ValueError):
-            AgentRunner._parse(raw)
+        a = AgentRunner._parse(raw)
+        self.assertEqual(a["type"], "actions")
+        # final 不进批量：完成必须单独返回，保证验证闭环
+        self.assertEqual([x["tool"] for x in a["actions"]], ["read_text"])
+        self.assertTrue(a.get("_batch_has_final"))
 
     def test_nested_json_in_content_not_phantom(self):
         # content 里嵌一段 JSON 文本，不应被当成第二个动作

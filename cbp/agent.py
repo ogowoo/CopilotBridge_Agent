@@ -74,6 +74,9 @@ class AgentResult:
 NON_IDEMPOTENT_TOOLS = {"append_text", "append_text_b64", "move_path", "copy_path"}
 
 class AgentRunner:
+    # 一次回答里最多执行多少个动作（配置 max_actions_per_turn 可调，硬顶 12）。
+    # 越长的批量输出越容易被 Copilot 输出上限截断，默认保守取 4。
+    MAX_BATCH_ACTIONS = 4
  # removed compatibility method: def __new__(cls, tools, chat, config, *args, **kwargs):
   # removed compatibility allocation: super().__new__(cls)
   # compatibility assignment removed
@@ -96,6 +99,7 @@ class AgentRunner:
 写大文件的标准流程：write_text_b64 写第一块 → append_text_b64 逐块追加直到全部内容写完（每一块都不要重复之前已写的内容）→ read_text 抽查 → 最后才执行 validate_python 和 run_unittest。
 文件没有写完之前禁止执行 validate_python 或 run_unittest：只写了一半的文件必然语法检查失败，这不是需要修复的缺陷。若验证失败且原因是文件不完整，正确做法是继续 append_text_b64 补全剩余内容，而不是重写整个文件或对残缺文件反复打补丁。
 单个 JSON 动作必须尽量短，禁止一次返回两个 JSON 对象。
+少量互相独立的小动作可以合并成一次批量，省掉来回回合（每个分块一个回合很浪费）：格式为 {"type":"actions","actions":[动作1,动作2,...]}，数组里只能是工具动作（不能含 final），最多 4 个，每个动作仍满足上面的分块上限。适合批量的是：多处小替换、多个短文件写入、读几个小文件后统一决策。**大内容的连续分块不要塞进一个批量**（输出越长越容易被截断，一批失败反而更贵），这类仍按"每回合一块"的节奏追加。
 治理或代码修改任务必须形成验证闭环：文件全部写完后执行 validate_python，再执行 run_unittest；真实验证失败必须继续修复，不得返回 final（文件未写完时的验证不通过不算失败，按上面的分块流程继续追加即可）。
 只有 validate_python 和 run_unittest 均返回 passed=true 后，才可宣称治理完成或把 TODO 标记为完成。
 你可以按需更新工作区的 AGENT.md 与 skills/*/SKILL.md：把本次任务中验证有效的项目约定、命令、踩坑结论沉淀进去（保持精炼，AGENT.md 控制在 8000 字符内），让后续任务直接受益。禁止删除既有的安全约束与验证闭环规则；这类改动会被标记为"自我指令更新"并可通过回滚撤销，改动前先 read_text 看清原文再替换，不要整篇重写。
@@ -248,6 +252,83 @@ class AgentRunner:
             # for-else 不便判断生成器是否产出，改用显式收集重来
             pass
 
+    @classmethod
+    def _build_batch(cls, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """把多个动作规范成批量动作：只允许 tool，去重，按上限截断。
+
+        - 批量里不允许 final：完成语义必须单独一个动作，避免"边写边宣布完成"
+          绕过验证闭环；
+        - 动作数上限 MAX_BATCH_ACTIONS（配置 max_actions_per_turn，硬顶 12），
+          超出部分丢弃并标记，避免一次输出过长被 Copilot 截断；
+        - 同一动作重复出现时去重（模型偶尔会重复粘贴）。
+        """
+        cleaned: list[dict[str, Any]] = []
+        seen: set = set()
+        skipped_final = False
+        for obj in items:
+            kind = str(obj.get('type', '')).strip().lower()
+            if kind != 'tool':
+                if kind == 'final':
+                    skipped_final = True
+                continue
+            obj['type'] = 'tool'
+            obj['tool'] = str(obj.get('tool', '')).strip()
+            if not isinstance(obj.get('arguments'), dict):
+                obj['arguments'] = {}
+            if not obj['tool']:
+                continue
+            key = json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(obj)
+        if not cleaned:
+            raise ValueError('批量动作里没有可执行的工具动作'
+                             + ('（其中包含 final，已拒绝——完成必须单独返回）' if skipped_final else ''))
+        over = len(cleaned) > cls.MAX_BATCH_ACTIONS
+        cleaned = cleaned[:cls.MAX_BATCH_ACTIONS]
+        batch = {"type": "actions", "actions": cleaned, "batch_size": len(cleaned)}
+        if over:
+            batch["_batch_truncated"] = True
+        if skipped_final:
+            batch["_batch_has_final"] = True
+        return batch
+
+    @classmethod
+    def _recover_partial_batch(cls, text: str) -> dict[str, Any] | None:
+        """批量动作被 Copilot 输出上限截断时的部分恢复。
+
+        截断发生在数组中间时，外层 JSON 不完整，但前面的动作对象是完整的：
+        _objects 的碎片扫描已经能逐个解析出来。这里把它们当批量执行——
+        比整批作废、下回合重发全部内容划算得多。
+        """
+        probe = html.unescape(text or '').strip()
+        if not re.search(r'["\']type["\']\s*:\s*["\']actions["\']', probe, re.I):
+            return None
+        try:
+            _first = probe.find('{')
+            outer_ok = False
+            if _first >= 0:
+                try:
+                    outer, _ = json.JSONDecoder().raw_decode(probe[_first:])
+                    outer_ok = isinstance(outer, dict)
+                except Exception:
+                    outer_ok = False
+            if outer_ok:
+                return None      # 完整批量由正常路径处理
+            found = []
+            for obj in cls._objects_fallback(probe):
+                if str(obj.get('type', '')).strip().lower() == 'tool' and obj.get('tool'):
+                    found.append(obj)
+            if len(found) < 2:      # 单个动作的截断由 _recover_truncated_write 处理
+                return None
+            batch = cls._build_batch(found)
+            batch["_recovered_malformed_json"] = True
+            batch["_recovered_truncated_batch"] = True
+            return batch
+        except Exception:
+            return None
+
     @staticmethod
     def _objects_fallback(text: str):
         """原文解析失败后的 HTML 反转义变体扫描。"""
@@ -336,13 +417,22 @@ class AgentRunner:
         unique = []
         seen = set()
         for obj in candidates:
-            if str(obj.get('type', '')).lower() not in {'tool', 'final'}:
+            if str(obj.get('type', '')).lower() not in {'tool', 'final', 'actions'}:
                 continue
             key = json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
             if key not in seen:
                 seen.add(key); unique.append(obj)
-        if len(unique) > 1:
-            raise ValueError('Copilot 一次返回了多个不同动作，已拒绝执行')
+        # 批量协议：显式 {"type":"actions","actions":[...]} 或模型直接给出的动作数组。
+        # 多个动作不再拒绝——每个分块一个回合太浪费 Copilot 会话；改为按顺序执行，
+        # 每步仍单独记账（时间线/审计/幂等保护不变）。
+        batch: list[dict[str, Any]] = []
+        if len(unique) == 1 and str(unique[0].get('type', '')).lower() == 'actions':
+            raw_items = unique[0].get('actions')
+            batch = [x for x in raw_items if isinstance(x, dict)] if isinstance(raw_items, list) else []
+        elif len(unique) > 1:
+            batch = list(unique)
+        if batch:
+            return cls._build_batch(batch)
         candidates = unique
         # 外层动作损坏时，_objects 可能从字符串碎片里解析出嵌套的
         # {"type":"final",...}（典型场景：写入的测试代码里嵌了一段 JSON）。
@@ -468,6 +558,10 @@ class AgentRunner:
         # 最后兜底：动作在 content 中间被 Copilot 输出上限截断。tool/path 前缀
         # 完整、内容保留截断前有效部分时，宽容解码后按部分写入，不让整个
         # 分块作废（否则文件永远停在最后一个完整分块）。
+        recovered = cls._recover_partial_batch(raw)
+        if recovered:
+            return recovered
+
         recovered = cls._recover_truncated_write(raw)
         if recovered:
             return recovered
@@ -504,6 +598,8 @@ class AgentRunner:
         self.step_saver, self.file_event_saver = step_saver, file_event_saver
         self.conv_stat_saver = conv_stat_saver
         self.max_total_steps = min(int(config.get("max_total_steps", 1000)), 10000)
+        # 一次回答最多执行几个动作（批量协议）：上限越小越不容易被输出上限截断
+        self.max_actions_per_turn = max(1, min(int(config.get("max_actions_per_turn", 4)), 12))
         self.per_conversation = max(5, int(config.get("max_steps_per_conversation", 40)))
         self.max_rollovers = max(1, int(config.get("max_conversation_rollovers", 25)))
         self.compact_at = int(config.get("compact_at_tokens", 18000))
@@ -820,75 +916,110 @@ class AgentRunner:
                     parse_failures = 0
                 continue
 
-            if action["type"] == "final":
-                if validation_required and not (syntax_validated and tests_passed):
-                    step = {"step": total + 1, "status": "validation_gate",
-                            "error": "代码已修改但尚未通过语法检查和单元测试，拒绝提前完成"}
-                    history.append(step); all_steps.append(step); self.step_saver(step)
-                    self.state_saver(total_steps=total + 1, conversation_steps=conv_steps + 1,
-                                     recent_steps=history[-self.keep_recent:], last_error=step["error"])
-                    continue
-                self._record_conv_stat(state, conv_steps + 1, conv_t + used_tokens,
-                                       conv_c + used_chars, "completed", model)
-                self.state_saver(state="completed", total_steps=total + 1, conversation_steps=conv_steps + 1,
-                                 estimated_tokens=tokens + used_tokens, estimated_chars=chars + used_chars)
-                return AgentResult(action.get("content") or "任务已完成。", all_steps)
+            # 单个动作与批量动作统一处理：批量协议一次回答执行多个工具动作，
+            # 省掉"每个分块一个 Copilot 回合"的开销；每个动作仍单独记一步
+            # （时间线、文件审计、幂等保护、验证闭环都不变）。
+            todo = (action.get("actions") if str(action.get("type")) == "actions" else [action]) or []
+            todo = todo[:self.max_actions_per_turn]
+            batch_size = len(todo)
+            batch_ok = batch_errors = 0
+            usage_counted = False
+            for idx, sub in enumerate(todo):
+                if str(sub.get("type")) == "final":
+                    if validation_required and not (syntax_validated and tests_passed):
+                        step = {"step": total + 1, "status": "validation_gate",
+                                "error": "代码已修改但尚未通过语法检查和单元测试，拒绝提前完成"}
+                        history.append(step); all_steps.append(step); self.step_saver(step)
+                        self.state_saver(total_steps=total + 1, conversation_steps=conv_steps + 1,
+                                         recent_steps=history[-self.keep_recent:], last_error=step["error"])
+                        total += 1; conv_steps += 1
+                        break
+                    self._record_conv_stat(state, conv_steps + 1, conv_t + used_tokens,
+                                           conv_c + used_chars, "completed", model)
+                    self.state_saver(state="completed", total_steps=total + 1,
+                                     conversation_steps=conv_steps + 1,
+                                     estimated_tokens=tokens + used_tokens,
+                                     estimated_chars=chars + used_chars)
+                    return AgentResult(sub.get("content") or "任务已完成。", all_steps)
 
-            tool, arguments = action.get("tool", ""), action.get("arguments") or {}
-            step = {"step": total + 1, "tool": tool, "arguments": arguments, "reason": action.get("reason", "")}
-            event = None
-            # 幂等保护：换会话接力时摘要若没让模型明确感知"上一动作已完成"，
-            # 或回合重发，同一动作可能连续到达。对非幂等工具（append 会重复
-            # 追加、move/copy 会重复搬运），与上一成功动作完全相同时跳过执行。
-            duplicate = False
-            if tool in NON_IDEMPOTENT_TOOLS and history:
-                last = history[-1]
-                duplicate = (last.get("status") == "ok" and last.get("tool") == tool and
-                             json.dumps(last.get("arguments") or {}, sort_keys=True, ensure_ascii=False)
-                             == json.dumps(arguments, sort_keys=True, ensure_ascii=False))
-            if duplicate:
-                step.update({"status": "ok", "result": {"skipped_duplicate": True,
-                             "detail": "与上一成功动作完全相同，幂等保护已跳过重复执行"}})
-            else:
-                try:
-                    result = await self.tools.execute(tool, arguments)
-                    step.update({"status": "ok", "result": result})
-                    event = result.get("file_event") if isinstance(result, dict) else None
-                except Exception as exc:
-                    step.update({"status": "error", "error": str(exc)})
-            if step.get("status") == "ok" and not duplicate:
-                changed_path = str(arguments.get("path") or arguments.get("destination") or "")
-                if tool in {"write_text", "append_text", "replace_text", "copy_path", "move_path"} and changed_path.lower().endswith((".py", ".json", ".html")):
-                    validation_required = True
-                    syntax_validated = False
-                    tests_passed = False
-                # 自升级（改动服务自身代码）：同样进验证闭环，且必须用
-                # self_validate / self_unittest 证明，不能只跑工作区的验证。
-                if tool in {"self_write_text_b64", "self_append_text_b64", "self_replace_text"}:
-                    validation_required = True
-                    syntax_validated = False
-                    tests_passed = False
-                # 自我指令更新（AGENT.md / skills/*.md）：允许，但必须在时间线里
-                # 显式标记 —— 这类改动会改变后续所有任务的行为，且原像已进快照，
-                # 可用"回滚任务改动"撤销。
-                if changed_path and self._is_instruction_path(changed_path):
-                    step["instruction_update"] = True
-                    step["reason"] = (str(step.get("reason") or "")
-                                      + "（自我指令更新：AGENT.md/skills，可用回滚撤销）").strip()
-                if tool == "validate_python" and isinstance(step.get("result"), dict):
-                    syntax_validated = bool(step["result"].get("passed"))
-                if tool == "run_unittest" and isinstance(step.get("result"), dict):
-                    tests_passed = bool(step["result"].get("passed"))
-                if tool == "self_validate" and isinstance(step.get("result"), dict):
-                    syntax_validated = bool(step["result"].get("passed"))
-                if tool == "self_unittest" and isinstance(step.get("result"), dict):
-                    tests_passed = bool(step["result"].get("passed"))
-            history.append(step); all_steps.append(step); self.step_saver(step)
-            if event: self.file_event_saver(event)
-            self.state_saver(total_steps=total + 1, conversation_steps=conv_steps + 1,
-                             estimated_tokens=tokens + used_tokens, estimated_chars=chars + used_chars,
-                             conv_tokens=conv_t + used_tokens, conv_chars=conv_c + used_chars,
-                             recent_steps=history[-self.keep_recent:])
+                tool, arguments = sub.get("tool", ""), sub.get("arguments") or {}
+                step = {"step": total + 1, "tool": tool, "arguments": arguments,
+                        "reason": sub.get("reason", "")}
+                if batch_size > 1:
+                    step["batch_of"] = batch_size
+                event = None
+                # 幂等保护：换会话接力时摘要若没让模型明确感知"上一动作已完成"，
+                # 或回合重发，同一动作可能连续到达。对非幂等工具（append 会重复
+                # 追加、move/copy 会重复搬运），与上一成功动作完全相同时跳过执行。
+                duplicate = False
+                if tool in NON_IDEMPOTENT_TOOLS and history:
+                    last = history[-1]
+                    duplicate = (last.get("status") == "ok" and last.get("tool") == tool and
+                                 json.dumps(last.get("arguments") or {}, sort_keys=True, ensure_ascii=False)
+                                 == json.dumps(arguments, sort_keys=True, ensure_ascii=False))
+                if duplicate:
+                    step.update({"status": "ok", "result": {"skipped_duplicate": True,
+                                 "detail": "与上一成功动作完全相同，幂等保护已跳过重复执行"}})
+                else:
+                    try:
+                        result = await self.tools.execute(tool, arguments)
+                        step.update({"status": "ok", "result": result})
+                        event = result.get("file_event") if isinstance(result, dict) else None
+                    except Exception as exc:
+                        step.update({"status": "error", "error": str(exc)})
+                if step.get("status") == "ok" and not duplicate:
+                    changed_path = str(arguments.get("path") or arguments.get("destination") or "")
+                    if tool in {"write_text", "append_text", "replace_text", "copy_path", "move_path"} and changed_path.lower().endswith((".py", ".json", ".html")):
+                        validation_required = True
+                        syntax_validated = False
+                        tests_passed = False
+                    # 自升级（改动服务自身代码）：同样进验证闭环，且必须用
+                    # self_validate / self_unittest 证明，不能只跑工作区的验证。
+                    if tool in {"self_write_text_b64", "self_append_text_b64", "self_replace_text"}:
+                        validation_required = True
+                        syntax_validated = False
+                        tests_passed = False
+                    # 自我指令更新（AGENT.md / skills/*.md）：允许，但必须在时间线里
+                    # 显式标记 —— 这类改动会改变后续所有任务的行为，且原像已进快照，
+                    # 可用"回滚任务改动"撤销。
+                    if changed_path and self._is_instruction_path(changed_path):
+                        step["instruction_update"] = True
+                        step["reason"] = (str(step.get("reason") or "")
+                                          + "（自我指令更新：AGENT.md/skills，可用回滚撤销）").strip()
+                    if tool == "validate_python" and isinstance(step.get("result"), dict):
+                        syntax_validated = bool(step["result"].get("passed"))
+                    if tool == "run_unittest" and isinstance(step.get("result"), dict):
+                        tests_passed = bool(step["result"].get("passed"))
+                    if tool == "self_validate" and isinstance(step.get("result"), dict):
+                        syntax_validated = bool(step["result"].get("passed"))
+                    if tool == "self_unittest" and isinstance(step.get("result"), dict):
+                        tests_passed = bool(step["result"].get("passed"))
+                if step.get("status") == "ok":
+                    batch_ok += 1
+                else:
+                    batch_errors += 1
+                # 批量汇总写在最后一个动作上（在保存之前）：让模型下一回合能
+                # 看到"这批整体执行结果"。注意不要再调一次 step_saver —— 那会
+                # 在时间线里多存一条重复记录。
+                if batch_size > 1 and idx == len(todo) - 1:
+                    step["batch_result"] = {"size": batch_size, "ok": batch_ok,
+                                           "error": batch_errors}
+                history.append(step); all_steps.append(step); self.step_saver(step)
+                if event: self.file_event_saver(event)
+                # 回合成本（prompt+回答）只记一次：同一回合内的多个动作不重复计入，
+                # 否则批量执行会把 token 计数放大 N 倍、提前触发压缩/换会话。
+                add_t = 0 if usage_counted else used_tokens
+                add_c = 0 if usage_counted else used_chars
+                usage_counted = True
+                total += 1; conv_steps += 1
+                tokens += add_t; chars += add_c; conv_t += add_t; conv_c += add_c
+                self.state_saver(total_steps=total, conversation_steps=conv_steps,
+                                 estimated_tokens=tokens, estimated_chars=chars,
+                                 conv_tokens=conv_t, conv_chars=conv_c,
+                                 recent_steps=history[-self.keep_recent:])
+                if total >= self.max_total_steps:
+                    break
+            continue
 
         self._record_conv_stat(state, int(state.get("conversation_steps", 0)),
                                int(state.get("conv_tokens", 0)), int(state.get("conv_chars", 0)),
