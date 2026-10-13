@@ -528,29 +528,26 @@ function toggleRail(){let r=document.documentElement,c=r.dataset.rail==='closed'
  try{localStorage.setItem('cbp-rail',c?'':'closed')}catch(e){}}
 function railNewTask(){if(document.documentElement.dataset.rail==='closed')toggleRail();openTask()}
 try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="›"}catch(e){}
-/* ── 长期记忆管理面板（自包含；样式全部使用主题变量，7 套主题通用）── */
+/* ── 长期记忆管理面板 ───────────────────────────────────────────────
+   外观复用项目既有的 .mask/.dlg 弹窗类（与确认框同款），图标用内联 SVG
+   而不是 emoji：emoji 在 Windows 上是彩色位图，和界面风格不搭。 */
 let memScope='all',memQuery='';
+const MEM_ICON='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" '
+ +'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+ +'<path d="M12 5a3 3 0 0 0-3 3v1a2.5 2.5 0 0 0 0 5v1a3 3 0 0 0 6 0v-1a2.5 2.5 0 0 0 0-5V8a3 3 0 0 0-3-3z"/>'
+ +'<path d="M9 9H7.5a2 2 0 0 0 0 4H9M15 9h1.5a2 2 0 0 1 0 4H15"/></svg>';
 const MEM_CSS=`
-#memBtn{position:fixed;right:16px;bottom:64px;z-index:40}
-#memMask{position:fixed;inset:0;background:var(--mask-bg);z-index:55;display:flex;align-items:center;justify-content:center}
-#memBox{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;
- box-shadow:0 12px 40px var(--dlg-shadow);width:min(880px,92vw);max-height:82vh;display:flex;flex-direction:column;padding:14px;gap:8px}
-#memBox h3{margin:0;font-size:15px}
-#memHead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-#memHead input,#memHead select{background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
-#memHead input{flex:1;min-width:150px}
-#memStats{color:var(--muted);font-size:12px}
-#memList{overflow:auto;display:flex;flex-direction:column}
-.mem-row{border-top:1px solid var(--line);padding:8px 2px}
+#memBtn{position:fixed;right:16px;bottom:64px;z-index:40;display:inline-flex;align-items:center;gap:6px}
+#memStats{color:var(--muted);font-size:12px;margin:6px 0;font-variant-numeric:tabular-nums}
+#memList{overflow:auto;flex:1;min-height:120px}
+.mem-row{border-top:1px solid var(--line);padding:9px 2px}
+.mem-row:first-child{border-top:0}
 .mem-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .mem-meta .sp{margin-left:auto}
 .mem-kind{color:var(--accent)}
 .mem-pin{color:var(--amber)}
-.mem-text{white-space:pre-wrap;margin-top:4px;line-height:1.45}
-.mem-empty{color:var(--muted);padding:12px 2px}
-.mem-del{color:var(--danger-text);border-color:var(--danger-border)!important;background:var(--danger-bg)!important}
-button{background:var(--btn-bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer}
-button:hover{color:var(--btn-hover-text);border-color:var(--line2)}
+.mem-text{white-space:pre-wrap;margin-top:4px;line-height:1.5;font-size:13px}
+.mem-empty{color:var(--muted);padding:14px 2px}
 `;
 function memInjectCss(){
  if(document.getElementById('memCss'))return;
@@ -561,7 +558,8 @@ function memBtn(){
  let b=document.getElementById('memBtn');
  if(b)return b;
  b=document.createElement('button');
- b.id='memBtn';b.className='iconbtn';b.textContent='🧠';b.title='长期记忆：查看 / 检索 / 置顶 / 删除';
+ b.id='memBtn';b.type='button';b.className='btn ghost';b.innerHTML=MEM_ICON;
+ b.title='长期记忆：查看 / 检索 / 置顶 / 删除';
  document.body.appendChild(b);
  b.onclick=openMemory;
  return b;
@@ -569,17 +567,22 @@ function memBtn(){
 async function openMemory(){
  let mask=document.getElementById('memMask');
  if(!mask){
-  mask=document.createElement('div');mask.id='memMask';
-  mask.innerHTML=`<div id="memBox">
-   <h3>长期记忆</h3>
-   <div id="memHead">
-    <select id="memScopeSel"><option value="all">全部作用域</option><option value="global">仅全局</option><option value="project">仅当前项目</option></select>
-    <input id="memSearch" placeholder="关键词检索…（回车）">
-    <button id="memReload">检索</button>
-    <button id="memClose">关闭</button>
+  mask=document.createElement('div');
+  mask.id='memMask';mask.className='mask';
+  mask.innerHTML=`<div class="dlg" style="width:min(720px,94vw)">
+   <div class="chead" style="border-bottom:1px solid var(--line)">长期记忆
+    <span class="hint"><button class="btn ghost" id="memClose" style="padding:2px 10px;font-size:12px">关闭</button></span></div>
+   <div style="padding:12px 15px;display:flex;flex-direction:column;gap:8px;min-height:0">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+     <select id="memScopeSel" class="btn ghost" style="padding:4px 8px">
+      <option value="all">全部作用域</option><option value="global">仅全局</option><option value="project">仅当前项目</option>
+     </select>
+     <input id="memSearch" class="btn ghost" style="flex:1;min-width:150px;padding:4px 10px;text-align:left" placeholder="关键词检索…（回车）">
+     <button class="btn ghost" id="memReload" style="padding:4px 12px">检索</button>
+    </div>
+    <div id="memStats"></div>
+    <div id="memList"></div>
    </div>
-   <div id="memStats"></div>
-   <div id="memList"></div>
   </div>`;
   document.body.appendChild(mask);
   mask.querySelector('#memClose').onclick=()=>mask.style.display='none';
@@ -595,7 +598,7 @@ async function loadMemory(){
  const q=document.getElementById('memSearch'),sel=document.getElementById('memScopeSel');
  if(q)memQuery=q.value.trim();
  if(sel)memScope=sel.value;
- let d=await api('/v1/agent/memory?scope='+encodeURIComponent(memScope)+'&query='+encodeURIComponent(memQuery));
+ const d=await api('/v1/agent/memory?scope='+encodeURIComponent(memScope)+'&query='+encodeURIComponent(memQuery));
  const st=d.stats||{};
  document.getElementById('memStats').textContent=
   `共 ${st.total||0} 条 · 置顶 ${st.pinned||0} · 从未命中 ${st.unused||0} · ${JSON.stringify(st.by_kind||{})} · ${(d.scopes||[]).join(', ')}`;
@@ -608,8 +611,8 @@ async function loadMemory(){
     <span>命中 ${m.use_count||0}</span>${m.pinned?'<span class="mem-pin">★ 置顶</span>':''}
     ${(m.tags||[]).map(t=>`<span>#${esc(t)}</span>`).join('')}
     <span class="sp"></span>
-    <button data-pin="${m.id}" data-v="${m.pinned?1:0}">${m.pinned?'取消置顶':'置顶'}</button>
-    <button class="mem-del" data-del="${m.id}">删除</button>
+    <button class="btn ghost" data-pin="${m.id}" data-v="${m.pinned?1:0}" style="padding:2px 10px;font-size:12px">${m.pinned?'取消置顶':'置顶'}</button>
+    <button class="btn ghost" data-del="${m.id}" style="padding:2px 10px;font-size:12px;color:var(--danger-text);border-color:var(--danger-border)">删除</button>
    </div>
    <div class="mem-text">${esc(m.text)}</div>
   </div>`).join('');
