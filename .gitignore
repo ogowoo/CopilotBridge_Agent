@@ -11,6 +11,11 @@ workspace/
 # ── 运行时诊断快照 ──
 last_page.txt
 last_page.html
+last_menu.html
+last_menu.txt
+last_answer.html
+# 调试用的时间线导出（for debug/ 目录由用户自建，不入库）
+for debug/
 
 # ── Python ──
 __pycache__/
