@@ -532,12 +532,15 @@ try{if(document.documentElement.dataset.rail==="closed")document.getElementById(
    外观复用项目既有的 .mask/.dlg 弹窗类（与确认框同款），图标用内联 SVG
    而不是 emoji：emoji 在 Windows 上是彩色位图，和界面风格不搭。 */
 let memScope='all',memQuery='';
-const MEM_ICON='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" '
+const MEM_ICON='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" '
  +'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
  +'<path d="M12 5a3 3 0 0 0-3 3v1a2.5 2.5 0 0 0 0 5v1a3 3 0 0 0 6 0v-1a2.5 2.5 0 0 0 0-5V8a3 3 0 0 0-3-3z"/>'
  +'<path d="M9 9H7.5a2 2 0 0 0 0 4H9M15 9h1.5a2 2 0 0 1 0 4H15"/></svg>';
 const MEM_CSS=`
-#memBtn{position:fixed;right:16px;bottom:64px;z-index:40;display:inline-flex;align-items:center;gap:6px}
+#memBtn{position:fixed;right:18px;bottom:66px;z-index:40;display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;box-shadow:none;padding:2px;cursor:pointer;color:var(--muted)}
+#memBtn svg{width:17px;height:17px}
+#memBtn:hover{color:var(--text);background:transparent}
+#memBtn:focus-visible{outline:1px solid var(--accent);border-radius:6px}
 #memStats{color:var(--muted);font-size:12px;margin:6px 0;font-variant-numeric:tabular-nums}
 #memList{overflow:auto;flex:1;min-height:120px}
 .mem-row{border-top:1px solid var(--line);padding:9px 2px}
@@ -558,7 +561,7 @@ function memBtn(){
  let b=document.getElementById('memBtn');
  if(b)return b;
  b=document.createElement('button');
- b.id='memBtn';b.type='button';b.className='btn ghost';b.innerHTML=MEM_ICON;
+ b.id='memBtn';b.type='button';b.className='memicon';b.innerHTML=MEM_ICON;
  b.title='长期记忆：查看 / 检索 / 置顶 / 删除';
  document.body.appendChild(b);
  b.onclick=openMemory;
