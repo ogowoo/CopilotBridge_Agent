@@ -51,6 +51,16 @@ MODELS = {
         "ui_names": ["GPT-5.6", "GPT 5.6", "GPT5.6"],
         "description": "使用 Copilot 菜单中的 GPT-5.6 模型",
     },
+    # GPT 父项下二级子菜单的叶子选项（实测菜单里只有这两个可选）：
+    # 内置一份，未扫描前也能直接选中；扫描后若菜单改名会被自动发现覆盖。
+    "copilot-gpt-5-6-sol-quick-response": {
+        "ui_names": ["GPT-5.6 Sol Quick response"],
+        "description": "GPT-5.6 Sol 快速响应（GPT 子菜单）",
+    },
+    "copilot-gpt-5-6-sol-think-deeper": {
+        "ui_names": ["GPT-5.6 Sol Think deeper"],
+        "description": "GPT-5.6 Sol 深入思考（GPT 子菜单）",
+    },
     "copilot-sol": {
         "ui_names": ["Sol", "SOL"],
         "description": "使用 Copilot 菜单中的 Sol 模型",
@@ -354,19 +364,74 @@ async def _visible_menu_items():
     return entries
 
 
-async def _expand_submenu(parent) -> None:
-    """Open a submenu parent: hover first (Fluent UI opens on hover), click as fallback."""
+async def _submenu_hinted(item) -> bool:
+    """条目"看起来像"子菜单父项——仅用于决定能否点击展开。
+
+    悬停是安全的，点击叶子会真的切换模型，所以必须有依据才允许点。
+    实测 Copilot 的父项标记并不统一：GPT 这类项可能只有 aria-haspopup="true"
+    （不是 "menu"）、aria-expanded，或仅一个 chevron 图标，只认 "menu" 会漏。
+    用一次 evaluate 取全部信号：逐条 locator 查询会把菜单扫描拖慢几十秒。
+    """
     try:
-        await parent.hover(timeout=3000)
+        info = await item.evaluate(
+            """el => ({
+                popup: (el.getAttribute('aria-haspopup') || '').toLowerCase(),
+                expanded: el.hasAttribute('aria-expanded'),
+                icon: !!el.querySelector(
+                    '[data-icon-name*="Chevron" i],[class*="submenuIndicator" i],' +
+                    '[class*="Chevron" i],[class*="expandIcon" i]')
+            })""",
+            timeout=1000,   # 飞出的子菜单项常已随父菜单失效：短超时，别等默认 30s
+        )
+    except Exception:
+        return False
+    if info.get("popup") in {"menu", "true", "listbox", "tree", "dialog"}:
+        return True
+    return bool(info.get("expanded") or info.get("icon"))
+
+
+async def _menu_label_set() -> set:
+    return {label for _item, label, _hint in await _visible_menu_items()}
+
+
+async def _expand_submenu(parent, allow_click: bool = False, timeout: int = 1200) -> None:
+    """悬停展开子菜单（Fluent UI 悬停即开）；allow_click 时才补一次点击。
+
+    timeout 取小值：探测过程中条目可能已随父菜单收起，干等默认 30s/3s
+    会把一次模型刷新拖成几十秒。
+    """
+    try:
+        await parent.hover(timeout=timeout)
         await asyncio.sleep(.4)
-        return
     except Exception:
         pass
+    if allow_click:
+        try:
+            await parent.click(timeout=timeout)
+            await asyncio.sleep(.4)
+        except Exception:
+            pass
+
+
+async def _probe_submenu(item, hinted: bool, base_labels: set) -> bool:
+    """尝试展开条目，用"菜单项是否变多"判定它到底是不是父项。
+
+    不依赖 aria 标记：先把每个条目都悬停一遍，只有真的多出菜单项才算父项；
+    有 aria 依据的再补一次点击（叶子绝不点击，避免误切换模型）。
+    """
     try:
-        await parent.click(timeout=3000)
-        await asyncio.sleep(.4)
+        if not await item.is_visible():   # 条目可能已随父菜单收起：直接跳过
+            return False
     except Exception:
-        pass
+        return False
+    await _expand_submenu(item, allow_click=False)
+    if (await _menu_label_set()) - base_labels:
+        return True
+    if hinted:
+        await _expand_submenu(item, allow_click=True)
+        if (await _menu_label_set()) - base_labels:
+            return True
+    return False
 
 
 COPILOT_URL_MARK = re.compile(r"m365\.cloud\.microsoft|/chat|copilot\.microsoft\.com", re.I)
@@ -424,25 +489,41 @@ async def discover_models() -> dict:
     except Exception:
         await button.click(timeout=3000, force=True)
     await asyncio.sleep(.6)
-    labels = []
-    expanded = set()
-    leaf_labels = set()  # 叶子项（真正可选中）；父项只是容器，不算可用模型
+    labels: list[str] = []
+    labels_order: list[str] = []
+    seen_labels: set = set()
+    parents: set = set()      # 实测能展开出子菜单的父项（不算模型）
+    probed: set = set()       # 已探测过的条目标签，避免重复悬停
+    leaf_labels = set()       # 叶子项（真正可选中）；父项只是容器，不算可用模型
     try:
-        # 主菜单 + 最多两级子菜单；每展开一个父项立即收集新出现的选项
+        # 逐轮探测：每轮把未见过的条目悬停一遍，谁能展开出子菜单谁就是父项。
+        # 关键点：**每轮都增量累积可见项**——飞出的子菜单在鼠标移开后就消失，
+        # 只在最后统一收集会漏掉二级菜单（实测踩过）。
         for _depth in range(3):
             entries = await _visible_menu_items()
-            for _item, label, has_popup in entries:
-                if not has_popup:
-                    leaf_labels.add(label.casefold())
-                    if label not in labels:
-                        labels.append(label)
-            pending = [(item, label) for item, label, has_popup in entries
-                       if has_popup and label not in expanded]
-            if not pending:
+            if not entries:
                 break
-            for item, label in pending:
-                expanded.add(label)
-                await _expand_submenu(item)
+            base_labels = {lbl for _i, lbl, _h in entries}
+            for _i, lbl, _h in entries:
+                if lbl not in seen_labels:
+                    seen_labels.add(lbl)
+                    labels_order.append(lbl)
+            grew = False
+            for item, label, hinted in entries:
+                if label in probed:
+                    continue
+                probed.add(label)
+                if await _probe_submenu(item, await _submenu_hinted(item), base_labels):
+                    parents.add(label)
+                    grew = True
+                    break   # 菜单结构已变，重新收集后再继续探测
+            if not grew:
+                break
+        # 收尾再累积一次（此刻可能仍开着某个子菜单）
+        for _i, lbl, _h in await _visible_menu_items():
+            if lbl not in seen_labels:
+                seen_labels.add(lbl)
+                labels_order.append(lbl)
     finally:
         for _ in range(3):  # 子菜单可能多级展开，多按几次 Escape 确保全部关闭
             try:
@@ -450,6 +531,8 @@ async def discover_models() -> dict:
                 await asyncio.sleep(.2)
             except Exception:
                 pass
+    labels = [lbl for lbl in labels_order if lbl not in parents]
+    leaf_labels = {lbl.casefold() for lbl in labels}
     global DISCOVERED_LABELS
     DISCOVERED_LABELS = leaf_labels  # 只记叶子：GPT 这类子菜单父项不是可选模型
     added = []
@@ -532,13 +615,13 @@ async def select_model(model_id):
     target = re.compile(r"^(?:" + "|".join(re.escape(name) for name in target_names) + r")$", re.I)
     option = await visible_locator(_menu_target_locators(target))
     if not option:
-        # 目标可能藏在二级子菜单（如 GPT 父项飞出更多模型）：
-        # 逐个展开带 aria-haspopup 的父项后重新查找。
+        # 目标可能藏在二级子菜单（如 GPT 父项飞出更多模型）：逐个探测展开。
+        # 不再依赖 aria-haspopup 判定父项——悬停安全，按效果确认是否父项。
         entries = await _visible_menu_items()
-        for parent, label, has_popup in entries:
-            if not has_popup:
+        base_labels = {lbl for _i, lbl, _h in entries}
+        for parent, label, _hint in entries:
+            if not await _probe_submenu(parent, await _submenu_hinted(parent), base_labels):
                 continue
-            await _expand_submenu(parent)
             # 子菜单展开有动画延迟，立刻找可能落空：短轮询三次
             for _try in range(3):
                 option = await visible_locator(_menu_target_locators(target))
@@ -547,6 +630,7 @@ async def select_model(model_id):
                 await asyncio.sleep(.4)
             if option:
                 break
+            base_labels = await _menu_label_set()
     if not option:
         try: await page.keyboard.press("Escape")
         except Exception: pass
