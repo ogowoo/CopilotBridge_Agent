@@ -371,8 +371,7 @@ async function forceDeleteLocal(){
   else showDeleteResult(d)}catch(e){toast('强制清理失败: '+e,'err')}
  finally{b.disabled=false;b.textContent='重试远程并强制清理本地记录'}}
 /* ── 使用手册 ── */
-const MANUAL_HTML=`
-<h3>快速上手</h3>
+const MANUAL_HTML=`<h3>快速上手</h3>
 <ul>
 <li>左侧「新任务」：填任务内容，选 <b>Agent 执行</b>（可读写工作区文件、自动验证）或 <b>普通对话</b>（纯问答），点「启动任务」。</li>
 <li>每个任务对应一个 Session，背后是一个独立的 Copilot 网页会话；左侧列表点选查看。</li>
@@ -385,6 +384,14 @@ const MANUAL_HTML=`
 <li><b>继续执行</b>：追加指令并继续任务。<b>切换到页面</b>：让自动化浏览器跳到该会话。<b>打开会话</b>：在你自己的浏览器里打开 Copilot 页面。</li>
 <li><b>取消任务</b>：终止并标记取消。<b>更多 ▾</b>：归档、删除本地记录、连同 Copilot 网页会话一起删除。</li>
 </ul>
+<h3>任务快照与回滚</h3>
+<ul>
+<li>任何写操作前自动记录<b>改动前原像</b>（同一路径只记一次，保留最早状态）。</li>
+<li>会话详情页点<b>回滚任务改动</b>：改过的文件还原、任务新建的文件/目录删除，回到<b>任务开始前</b>。</li>
+<li>上限：单文件 8MB / 单会话 800 条目 / 原像总量 256MB；超限只记入 skipped，<b>不阻断写入</b>。</li>
+<li>删除会话会同时回收其工作区快照与自升级快照。</li>
+</ul>
+
 <h3>跟进对话</h3>
 <ul>
 <li>会话卡片下方可继续发消息：<b>Agent 继续执行</b> 会执行工具动作；<b>普通对话</b> 只在 Copilot 会话里问答。输入框 <kbd>Enter</kbd> 发送、<kbd>Shift+Enter</kbd> 换行。</li>
@@ -396,28 +403,22 @@ const MANUAL_HTML=`
 <li>点 ↻ 重新枚举 Copilot 菜单（新上线的模型自动发现）；子菜单（如 GPT 下的模型）也能识别和选择。</li>
 <li>API 提供商需在环境变量配置 Key（如 <code>DEEPSEEK_API_KEY</code>），详见 README。</li>
 </ul>
+<h3>模型列表刷新</h3>
+<p>Copilot 菜单改版或渲染不全时模型会"消失"。会话页顶部模型下拉旁的 <b>↻ 图标</b>可一键重扫
+（等价于 <code>POST /v1/models/refresh</code>）；刷新期间按钮禁用，完成后提示并同步会话内模型选项。</p>
+
 <h3>长任务机制</h3>
 <ul>
 <li>上下文超阈值自动压缩；单会话过长自动换会话接力（检查点摘要带过去）。</li>
 <li>Copilot 限流时状态变为「等待服务」并指数退避自动重试；对话被 Copilot 判满时自动换会话重发。</li>
 <li>服务重启后自动恢复被中断的任务（auto_resume）。</li>
 </ul>
-<h3>界面</h3>
-<ul>
-<li><b>◐</b> 主题轮换：深色/浅色/Nord 蓝/护眼米/Dracula 紫/柔粉/薄荷，刷新保持。</li>
-<li>侧栏左缘的细长拉手收起/展开侧栏；实时面板（执行状态/当前回答/发送内容/继续对话）是选项卡，<b>⤢ 放大</b>看全文。</li>
-<li>步骤时间线每条带执行时间；「查看结果」展开结构化 JSON。</li>
-</ul>
-<h3>常见问题</h3>
-<ul>
-<li><b>服务重启后短暂停在登录页</b>：企业 SSO 会经过公司 ADFS 自动回跳，约需 40 秒，一般无需手动登录；若停在账户选择页，手动点一下即可。</li>
-<li><b>提示找不到输入框/模型按钮</b>：登录态失效，运行 <code>python login.py</code> 重新登录（或在有窗口模式下直接登录）。</li>
-<li><b>任务显示等待服务</b>：Copilot 在限流，等它自动恢复；持续不可用会安全暂停，恢复后点「恢复」。</li>
-</ul>`;
-/* ── 使用手册增补：记忆 / 技能沉淀 / 快照回滚 / 自升级 / 批量动作 / 模型刷新 ── */
-const MANUAL_ADDENDUM=`
-<section>
-<h2>长期记忆（跨会话）</h2>
+<h3>批量动作（省 Copilot 回合）</h3>
+<p>模型可一次返回多个动作：<code>{"type":"actions","actions":[动作1,动作2,...]}</code>，本地按顺序执行，每个动作仍单独记一步。</p>
+<ul><li>上限由 <code>max_actions_per_turn</code> 控制（默认 4，硬顶 12）。</li>
+<li>批内某动作失败不影响后续；批内 final 会被延后，由<b>验证门</b>裁决能否完成。</li></ul>
+
+<h3>长期记忆（跨会话）</h3>
 <p>除了 <b>AGENT.md</b>（每回合全文注入的硬约定）与 <b>skills</b>（过程性"怎么做"），
 Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事实累积下来，后续相关任务会
 自动检索并注入提示词（关键词 + 中文二元组匹配，零依赖、不联网）。</p>
@@ -433,30 +434,22 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <code>POST /v1/agent/memory/{id}/pin</code>、<code>DELETE /v1/agent/memory/{id}</code>；
 存储为独立库 <code>data/memory.db</code>，上限 500 条/作用域，超出自动淘汰低价值条目。</li>
 </ul>
-</section>
 
-<section>
-<h2>技能自沉淀（skills）</h2>
+<h3>技能自沉淀（skills）</h3>
 <ul>
 <li>任务收尾时先 <code>skill_list</code> 查有没有相关技能；没有且做法可复用，用
 <code>skill_create</code> 新建（默认写当前工作区 <code>skills/&lt;名字&gt;/SKILL.md</code>）。</li>
 <li>写全局 <code>skills/</code>（对所有工作区生效）需开启 <code>allow_self_upgrade</code>。</li>
 <li>技能<b>即时可用</b>、无需重启；同名技能项目级覆盖全局。</li>
 </ul>
-</section>
 
-<section>
-<h2>任务快照与回滚</h2>
+<h3>界面</h3>
 <ul>
-<li>任何写操作前自动记录<b>改动前原像</b>（同一路径只记一次，保留最早状态）。</li>
-<li>会话详情页点<b>回滚任务改动</b>：改过的文件还原、任务新建的文件/目录删除，回到<b>任务开始前</b>。</li>
-<li>上限：单文件 8MB / 单会话 800 条目 / 原像总量 256MB；超限只记入 skipped，<b>不阻断写入</b>。</li>
-<li>删除会话会同时回收其工作区快照与自升级快照。</li>
+<li><b>◐</b> 主题轮换：深色/浅色/Nord 蓝/护眼米/Dracula 紫/柔粉/薄荷，刷新保持。</li>
+<li>侧栏左缘的细长拉手收起/展开侧栏；实时面板（执行状态/当前回答/发送内容/继续对话）是选项卡，<b>⤢ 放大</b>看全文。</li>
+<li>步骤时间线每条带执行时间；「查看结果」展开结构化 JSON。</li>
 </ul>
-</section>
-
-<section>
-<h2>服务自升级（默认关闭）</h2>
+<h3>服务自升级（默认关闭）</h3>
 <ol>
 <li>在 <code>config.json</code> 的 agent 段设 <code>"allow_self_upgrade": true</code> 并重启；
 随后注册 <code>self_*</code> 工具（白名单：<code>cbp/ webui/ scripts/ docs/ tests/ skills/</code> 等；
@@ -467,23 +460,14 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <li>回滚：<code>POST /v1/agent/self/rollback</code>（在线）或 <code>python scripts/rollback.py</code>（离线）。</li>
 </ol>
 <p class="hint">工作区不允许指向服务安装目录（除非已开启自升级）——否则普通文件工具即可改服务代码，绕过权限门。</p>
-</section>
 
-<section>
-<h2>批量动作（省 Copilot 回合）</h2>
-<p>模型可一次返回多个动作：<code>{"type":"actions","actions":[动作1,动作2,...]}</code>，本地按顺序执行，每个动作仍单独记一步。</p>
-<ul><li>上限由 <code>max_actions_per_turn</code> 控制（默认 4，硬顶 12）。</li>
-<li>批内某动作失败不影响后续；批内 final 会被延后，由<b>验证门</b>裁决能否完成。</li></ul>
-</section>
-
-<section>
-<h2>模型列表刷新</h2>
-<p>Copilot 菜单改版或渲染不全时模型会"消失"。会话页顶部模型下拉旁的 <b>↻ 图标</b>可一键重扫
-（等价于 <code>POST /v1/models/refresh</code>）；刷新期间按钮禁用，完成后提示并同步会话内模型选项。</p>
-</section>
-`;
-
-function openManual(){document.getElementById('manualBody').innerHTML=MANUAL_HTML+MANUAL_ADDENDUM;document.getElementById('manualMask').classList.add('open')}
+<h3>常见问题</h3>
+<ul>
+<li><b>服务重启后短暂停在登录页</b>：企业 SSO 会经过公司 ADFS 自动回跳，约需 40 秒，一般无需手动登录；若停在账户选择页，手动点一下即可。</li>
+<li><b>提示找不到输入框/模型按钮</b>：登录态失效，运行 <code>python login.py</code> 重新登录（或在有窗口模式下直接登录）。</li>
+<li><b>任务显示等待服务</b>：Copilot 在限流，等它自动恢复；持续不可用会安全暂停，恢复后点「恢复」。</li>
+</ul>`;
+function openManual(){document.getElementById('manualBody').innerHTML=MANUAL_HTML;document.getElementById('manualMask').classList.add('open')}
 function closeManual(){document.getElementById('manualMask').classList.remove('open')}
 function openTask(){document.getElementById('taskMask').classList.add('open');setTimeout(()=>document.getElementById('task').focus(),60)}
 function closeTask(){document.getElementById('taskMask').classList.remove('open')}
