@@ -555,6 +555,18 @@ class AgentRunner:
                         '_recovered_malformed_json': True,
                     }
 
+        # 截断的 final 也要救：Copilot 生成 JSON 中途停顿/被上限截断时，界面上
+        # 答案可能是完整的，我们却抓到最后少了一个引号的半截文本。final 没有
+        # 副作用（只是答复），把已写出的内容取出来比白白浪费一个修复回合好。
+        m = re.search(r'["\']type["\']\s*:\s*["\']final["\']\s*,\s*["\']content["\']\s*:\s*["\'](.*)$',
+                      raw, re.I | re.S)
+        if m:
+            content = _decode_fragment(m.group(1))
+            content = re.sub(r'["\'}\s]+$', '', content).strip()
+            if content:
+                return {'type': 'final', 'content': content,
+                        '_recovered_truncated_json': True}
+
         # 最后兜底：动作在 content 中间被 Copilot 输出上限截断。tool/path 前缀
         # 完整、内容保留截断前有效部分时，宽容解码后按部分写入，不让整个
         # 分块作废（否则文件永远停在最后一个完整分块）。

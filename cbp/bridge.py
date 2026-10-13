@@ -1695,11 +1695,24 @@ async def wait_agent_answer(previous: str = "", pause_check=None) -> str:
             if unavailable and quiet_for >= max(1.0, POLL * 3):
                 await diagnostics("copilot_service_unavailable")
                 raise CopilotServiceUnavailable(unavailable)
-            # Do not wait until TIMEOUT for a finished malformed response. Let
-            # AgentRunner parse/recover it and issue a repair turn if necessary.
-            if generation_seen and quiet_for >= max(STABLE, 3.0):
+            # 无法解析的回答有可能是"暂歇"而非写完：Copilot 生成 JSON 中途停顿
+            # （渲染文件链接、网络抖动）时，3 秒静默就取快照会拿到半截文本，上层
+            # 只能报 invalid_action——实测就发生过：界面上答案完整（final JSON），
+            # 我们却抓到 "...sharepoint_uploader_ui.p"。因此畸形回答要等更久，
+            # 且认定结束前再读一次页面确认（仍在增长就继续等）。
+            malformed_grace = max(STABLE * 2.0, 8.0)
+            if generation_seen and quiet_for >= malformed_grace:
+                confirm = (await current_answer()).strip()
+                if confirm != current:
+                    current = confirm
+                    last_change = time.monotonic()
+                    idle_deadline = last_change + TIMEOUT
+                    continue
+                if _has_complete_agent_action(confirm):
+                    await diagnostics("agent_answer_ready_late")
+                    return confirm
                 await diagnostics("agent_answer_needs_repair")
-                return current
+                return confirm
 
         if now >= idle_deadline:
             final = (await current_answer()).strip()

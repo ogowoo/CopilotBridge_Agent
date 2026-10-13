@@ -227,5 +227,30 @@ class InstructionPathTests(unittest.TestCase):
         self.assertFalse(AR._is_instruction_path(""))
 
 
+class TruncatedFinalTests(unittest.TestCase):
+    """截断的 final 要能救出来（无副作用，别浪费一个修复回合）。
+
+    真实故障：Copilot 生成 final JSON 中途停顿，桥接在 3 秒静默时取了快照，
+    上层只拿到 "...sharepoint_uploader_ui.p" 这样的半截文本 → invalid_action，
+    而界面上答案是完整的。
+    """
+
+    def test_truncated_final_recovered(self):
+        raw = ('{"type":"final","content":"已完成重建，语法检查及全部 5 项单元测试'
+               '均已通过。文件：sharepoint_uploader_ui.p')
+        parsed = AgentRunner._parse(raw)
+        self.assertEqual(parsed["type"], "final")
+        self.assertIn("已完成重建", parsed["content"])
+        self.assertTrue(parsed.get("_recovered_truncated_json"))
+
+    def test_truncated_final_without_closing_quote(self):
+        parsed = AgentRunner._parse('{"type":"final","content":"已完成重建')
+        self.assertEqual(parsed["content"], "已完成重建")
+
+    def test_complete_final_not_marked_recovered(self):
+        parsed = AgentRunner._parse('{"type":"final","content":"完成"}')
+        self.assertFalse(parsed.get("_recovered_truncated_json"))
+
+
 if __name__ == "__main__":
     unittest.main()
