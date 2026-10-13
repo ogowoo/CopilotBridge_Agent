@@ -30,13 +30,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 #railBtn:hover{color:var(--accent2);border-color:var(--accent)}
 .iconbtn{width:26px;height:26px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;display:grid;place-items:center;flex:none}
 .iconbtn:hover{background:var(--panel2);color:var(--text);border-color:var(--line2)}
-.newtask{margin:12px 12px 4px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
-.newtask>summary{list-style:none;cursor:pointer;padding:11px 14px;font-weight:600;color:var(--accent2);user-select:none}
-.newtask>summary::-webkit-details-marker{display:none}
-.newtask>summary::before{content:"＋ ";color:var(--accent)}
-.newtask[open]>summary{border-bottom:1px solid var(--line);color:var(--text)}
-.newtask[open]>summary::before{content:"－ ";color:var(--muted)}
-.ntbody{padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px}
+.railtop{padding:12px 12px 4px;flex:none}
 .listhead{display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-size:11px;letter-spacing:1.5px;color:var(--faint)}
 .listhead input{flex:1;padding:5px 9px;font-size:12px;letter-spacing:0}
 .sesslist{flex:1;overflow:auto;padding:0 8px 12px}
@@ -322,11 +316,10 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 /* 手机：彻底回退为自然文档流，页面整体滚动，禁用填满窗口的 flex 布局 */
 @media(max-width:860px){
   .app{grid-template-columns:1fr}
-  /* 侧栏高度受限时必须截断溢出：新任务表单在自身内部滚动，
-     会话列表获得独立的滚动区，溢出内容不再被主区覆盖造成元素干涉 */
+  /* 侧栏高度受限时必须截断溢出；新任务改为按钮+弹窗后侧栏只剩会话列表，
+     溢出约束保留防止极端情况下的元素干涉 */
   .rail{max-height:56vh;border-right:0;border-bottom:1px solid var(--line);overflow:hidden;min-height:0}
-  .newtask{flex:none;min-height:0}
-  .newtask[open]{max-height:62%;overflow:auto}
+  .railtop{flex:none}
   .listhead{flex:none}
   .sesslist{min-height:0}
   .kpis .kpi:last-child{grid-column:auto}
@@ -342,14 +335,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 <div class="app">
   <aside class="rail">
     <button id="railBtn" title="收起/展开侧栏" onclick="toggleRail()">‹</button>
-    <details class="newtask" open><summary>新任务</summary><div class="ntbody">
-      <input id="sid" placeholder="Session ID（可留空）">
-      <input id="workspace" placeholder="工作目录（可留空）">
-      <div style="display:flex;gap:6px"><select id="model"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select><button class="btn" style="flex:none;padding:5px 10px" title="重新读取 Copilot 模型菜单" onclick="refreshModels()">↻</button></div>
-      <textarea id="task" rows="4" placeholder="任务内容，例如：分析 workspace 里的项目并生成 TODO"></textarea>
-      <div style="display:flex;gap:6px"><button id="ntAgent" class="btn seg on" style="flex:1" onclick="setTaskMode('agent')">Agent 执行</button><button id="ntChat" class="btn seg" style="flex:1" onclick="setTaskMode('chat')">普通对话</button></div>
-      <button class="btn accent block" onclick="runTask()">启动任务</button>
-    </div></details>
+    <div class="railtop"><button class="btn accent block" onclick="openTask()">＋ 新任务</button></div>
     <div class="listhead"><span>SESSIONS</span><input id="sessFilter" placeholder="筛选…" oninput="drawSessions()"><button class="iconbtn" title="使用手册" onclick="openManual()">📖</button><button id="browserBtn" class="iconbtn" title="切换自动化浏览器窗口的显示/隐藏" onclick="toggleBrowser()">▣</button><button id="themeBtn" class="iconbtn" title="主题：深色（点击切换）" onclick="toggleTheme()">◐</button></div>
     <div id="sessions" class="sesslist"></div>
   </aside>
@@ -460,6 +446,23 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
     <div class="dfoot">
       <button class="btn ghost" id="liveCopy">复制内容</button>
       <button class="btn accent" onclick="closeLive()">关闭</button>
+    </div>
+  </div>
+</div>
+<!-- 新任务弹窗：表单字段与元素 ID 保持与旧内嵌版一致，JS 无需改动 -->
+<div class="mask" id="taskMask" onclick="if(event.target===this)closeTask()">
+  <div class="dlg" style="width:min(560px,94vw)">
+    <div class="dhead"><span>发起新任务</span><span class="hint">Esc 关闭</span></div>
+    <div class="dbody">
+      <input id="sid" placeholder="Session ID（可留空）">
+      <input id="workspace" placeholder="工作目录（可留空）">
+      <div style="display:flex;gap:6px"><select id="model"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select><button class="btn" style="flex:none;padding:5px 10px" title="重新读取 Copilot 模型菜单" onclick="refreshModels()">↻</button></div>
+      <textarea id="task" rows="6" placeholder="任务内容，例如：分析 workspace 里的项目并生成 TODO"></textarea>
+      <div style="display:flex;gap:6px"><button id="ntAgent" class="btn seg on" style="flex:1" onclick="setTaskMode('agent')">Agent 执行</button><button id="ntChat" class="btn seg" style="flex:1" onclick="setTaskMode('chat')">普通对话</button></div>
+    </div>
+    <div class="dfoot">
+      <button class="btn ghost" onclick="closeTask()">取消</button>
+      <button class="btn accent" onclick="runTask()">启动任务</button>
     </div>
   </div>
 </div>
@@ -782,8 +785,10 @@ const MANUAL_HTML=`
 </ul>`;
 function openManual(){document.getElementById('manualBody').innerHTML=MANUAL_HTML;document.getElementById('manualMask').classList.add('open')}
 function closeManual(){document.getElementById('manualMask').classList.remove('open')}
+function openTask(){document.getElementById('taskMask').classList.add('open');setTimeout(()=>document.getElementById('task').focus(),60)}
+function closeTask(){document.getElementById('taskMask').classList.remove('open')}
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closeTask()}});
 
 /* ── 实时面板选项卡 + 放大查看 ── */
 const LIVE_NAMES={activity:'当前执行状态',answer:'Copilot 当前回答',prompt:'最近发送给 Copilot 的内容'};
@@ -832,6 +837,7 @@ async function runTask(){
  let task=document.getElementById('task').value.trim();if(!task)return;
  let b={model:document.getElementById('model').value,messages:[{role:'user',content:task}],stream:false,session_id:document.getElementById('sid').value.trim()||('task-'+Date.now().toString(36)),workspace:document.getElementById('workspace').value.trim()||null,reuse_session:true,agent_mode:taskMode==='agent'};
  current=b.session_id;
+ closeTask();
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
  resetView();
@@ -861,9 +867,7 @@ function toggleRail(){let r=document.documentElement,c=r.dataset.rail==='closed'
  if(c){delete r.dataset.rail}else{r.dataset.rail='closed'}
  document.getElementById('railBtn').textContent=c?'‹':'›';
  try{localStorage.setItem('cbp-rail',c?'':'closed')}catch(e){}}
-function railNewTask(){if(document.documentElement.dataset.rail==='closed')toggleRail();
- let d=document.querySelector('.newtask');if(d)d.open=true;
- let t=document.getElementById('task');if(t)t.focus()}
+function railNewTask(){if(document.documentElement.dataset.rail==='closed')toggleRail();openTask()}
 try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="›"}catch(e){}
 try{let cur=document.documentElement.dataset.theme||'',i=THEMES.findIndex(x=>x[0]===cur);document.getElementById('themeBtn').title='主题：'+THEMES[i<0?0:i][1]+'（点击切换）'}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
