@@ -1163,6 +1163,30 @@ AGENT_SESSIONS.recover_interrupted()
 SNAPSHOT_DIR = BASE / "data" / "snapshots"
 SNAPSHOTS = SnapshotStore(SNAPSHOT_DIR, int(AGENT_CFG.get("snapshot_retention", 50)))
 
+# ── 长期记忆：跨会话累积的事实/偏好/结论（独立库，互不影响迁移与备份）──
+from .memory import MemoryStore  # noqa: E402
+
+MEMORY = MemoryStore(BASE / "data" / "memory.db")
+AGENT_TOOLS.memory = MEMORY
+
+
+def memory_scopes(scope: str = "all") -> list[str]:
+    """记忆作用域解析：all=全局+当前工作区；global/project 各自单取。"""
+    key = str(scope or "all").strip().lower()
+    if key.startswith("glob"):
+        return ["global"]
+    ws = memory_scope_for(AGENT_TOOLS.root)
+    if key.startswith("proj") or key.startswith("work"):
+        return [ws]
+    return ["global", ws]
+
+
+def memory_scope_for(root: Path) -> str:
+    """工作区作用域：同一目录（含不同大小写/相对写法）映射到同一作用域名。"""
+    import hashlib
+    key = str(Path(root).resolve()).casefold().encode("utf-8")
+    return "ws:" + hashlib.sha1(key).hexdigest()[:12]
+
 
 async def rollback_session_changes(sid: str) -> dict:
     """把某个 Session 期间改过的工作区文件恢复到任务开始前的状态。
@@ -1893,6 +1917,9 @@ async def run_agent(req: AgentRequest):
         existing=AGENT_SESSIONS.get(sid)
         workspace=(req.workspace.strip() if req.workspace else None) or (existing or {}).get("workspace") or DEFAULT_WORKSPACE
         AGENT_TOOLS.set_root(workspace,False)
+        # 记忆作用域随工作区切换：工作区记忆不跨项目泄露；来源会话用于溯源
+        AGENT_TOOLS.memory_scope = memory_scope_for(AGENT_TOOLS.root)
+        AGENT_TOOLS.current_session_id = sid
         if not existing:
             existing=AGENT_SESSIONS.create(sid,task,str(AGENT_TOOLS.root),req.model)
             effective_task = task

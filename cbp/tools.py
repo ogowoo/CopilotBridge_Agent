@@ -136,6 +136,10 @@ class ToolRegistry:
         self.allow_outlook_send = bool(config.get("allow_outlook_send", False))
         # 技能写入：项目级技能默认允许（只影响当前工作区）；全局级需 allow_self_upgrade
         self.allow_skill_write = bool(config.get("allow_skill_write", True))
+        # 长期记忆：跨会话累积的事实/偏好/结论（cbp/memory.py）
+        self.allow_memory_write = bool(config.get("allow_memory_write", True))
+        self.memory = None            # 由桥接层注入 MemoryStore
+        self.memory_scope = "global"  # 当前工作区作用域名，由桥接层按 root 设定
         # Outlook 后端：bridge 层注册的 OWA 网页自动化后端；None 时走 COM（经典 Outlook）
         self.outlook_backend = None
         self.python_timeout = float(config.get("python_timeout_seconds", 20))
@@ -180,6 +184,9 @@ class ToolRegistry:
             "skill_list": self.skill_list,
             "skill_read": self.skill_read,
             "skill_create": self.skill_create,
+            "memory_write": self.memory_write,
+            "memory_search": self.memory_search,
+            "memory_forget": self.memory_forget,
             "read_excel": self.read_excel,
             "write_excel": self.write_excel,
             "read_docx": self.read_docx,
@@ -351,6 +358,59 @@ class ToolRegistry:
                 "note": "技能即时可用（下次 skill_list/任务上下文即出现），无需重启服务",
                 "file_event": {"tool": "skill_create", "path": str(target),
                                "before_hash": before, "after_hash": self._hash(target), "result": "ok"}}
+
+    # ── 长期记忆 ────────────────────────────────────────────────────
+    def _mem_scopes(self, scope: str = "all") -> list[str]:
+        key = str(scope or "all").strip().lower()
+        if key.startswith("glob"):
+            return ["global"]
+        if key.startswith("proj") or key.startswith("work"):
+            return [self.memory_scope]
+        return ["global", self.memory_scope]
+
+    def _mem(self):
+        if self.memory is None:
+            raise ToolError("长期记忆未启用（服务未注入 MemoryStore）")
+        return self.memory
+
+    async def memory_write(self, text: str, kind: str = "fact", tags: list | None = None,
+                           pinned: bool = False, scope: str = "global") -> dict[str, Any]:
+        """记录一条长期记忆：跨会话累积的事实、偏好、结论与踩坑。"""
+        if not self.allow_memory_write:
+            raise ToolError("记忆写入已在 config.json 中禁用（allow_memory_write=false）")
+        if isinstance(tags, str):
+            tags = [t.strip() for t in re.split(r"[,，]", tags) if t.strip()]
+        target = "global" if str(scope or "global").lower().startswith("glob") else self.memory_scope
+        try:
+            r = self._mem().remember(target, text, kind=kind, tags=list(tags or []),
+                                     source_session=getattr(self, "current_session_id", None),
+                                     pinned=bool(pinned))
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        r["note"] = "已写入长期记忆：后续相关任务会自动检索到（无需重启）"
+        return r
+
+    async def memory_search(self, query: str = "", limit: int = 8, scope: str = "all") -> dict[str, Any]:
+        """检索长期记忆。query 为空时返回最近更新的若干条。"""
+        limit = max(1, min(self._int_arg(limit, 8, "limit"), 30))
+        scopes = self._mem_scopes(scope)
+        store = self._mem()
+        items = (store.search(query, scopes, limit=limit) if str(query or "").strip()
+                 else store.list(scopes, limit=limit))
+        return {"query": query, "checked_scopes": scopes, "returned": len(items),
+                "items": [{"id": m["id"], "kind": m["kind"], "text": m["text"],
+                           "tags": m.get("tags") or [], "pinned": bool(m["pinned"]),
+                           "use_count": m["use_count"], "scope": m["scope"]} for m in items]}
+
+    async def memory_forget(self, id: int) -> dict[str, Any]:
+        """删除一条记忆（只允许删当前任务可见作用域内的）。"""
+        mid = self._int_arg(id, 0, "id")
+        if mid <= 0:
+            raise ToolError("id 必须是正整数")
+        ok = self._mem().forget(mid, scopes=["global", self.memory_scope])
+        if not ok:
+            raise ToolError(f"未找到可删除的记忆 id={mid}（可能属于别的工作区）")
+        return {"forgot": mid}
 
     # ── 自升级（修改服务自身代码）────────────────────────────────────
     def _self_rel(self, candidate: Path) -> str:
@@ -576,6 +636,9 @@ class ToolRegistry:
             items += [
                 {"name": "skill_list", "description": "列出可用技能（全局 + 项目两级，项目同名覆盖全局）", "arguments": {}},
                 {"name": "skill_read", "description": "读取技能 SKILL.md 全文（全局技能在工作区外，只能用此工具读取）", "arguments": {"name": "技能名"}},
+                {"name": "memory_write", "description": "记录一条跨会话有用的长期记忆（事实/偏好/决定/踩坑）。只在确实对后续任务有价值时写，写入即去重合并；scope=global 对所有任务可见，project 仅当前工作区", "arguments": {"text": "一条自足的事实描述（不要写'本次任务'这类指代）", "kind": "fact|preference|decision|pitfall|convention", "tags": "标签数组，可省略", "pinned": "是否常驻提示词（只在极重要时用）", "scope": "global（默认）或 project"}},
+                {"name": "memory_search", "description": "检索长期记忆（关键词匹配，返回最相关若干条）", "arguments": {"query": "检索词", "limit": "返回条数，默认 8", "scope": "global|project|all，默认 all"}},
+                {"name": "memory_forget", "description": "删除一条过时或错误的长期记忆", "arguments": {"id": "记忆 ID"}},
                 {"name": "skill_create", "description": "把任务中验证有效的做法沉淀为技能（SKILL.md）。scope=project 写工作区 skills/（默认）；scope=global 写服务安装目录 skills/（需自升级权限）；已存在需 overwrite=true", "arguments": {"name": "技能名，小写短横线如 webui-theme-change", "content": "技能正文（Markdown：什么时候用/步骤/坑）", "description": "一句话描述，可省略（从正文首行提炼）", "scope": "project（默认）或 global", "overwrite": "是否覆盖已有技能，默认 false"}},
             ]
         if self.allow_self_upgrade:

@@ -451,6 +451,28 @@ async def set_session_model(sid: str, req: b.SessionModelRequest):
 
 
 # ── 自升级（修改服务自身代码）───────────────────────────────────
+@app.get("/v1/agent/memory")
+async def list_memory(query: str = "", scope: str = "all", limit: int = 100):
+    """长期记忆清单/检索：跨会话累积的事实、偏好、结论与踩坑。"""
+    scopes = b.memory_scopes(scope)
+    store = b.MEMORY
+    items = (store.search(query, scopes, limit=min(limit, 50)) if query.strip()
+             else store.list(scopes, limit=limit))
+    return {"query": query, "scopes": scopes, "stats": store.stats(scopes),
+            "count": len(items),
+            "items": [{k: m.get(k) for k in ("id", "scope", "kind", "text", "tags",
+                                             "pinned", "use_count", "created", "updated",
+                                             "source_session")} for m in items]}
+
+
+@app.delete("/v1/agent/memory/{mid}")
+async def delete_memory(mid: int, scope: str = "all"):
+    """删除一条记忆（作用域做同属校验，不能跨工作区删）。"""
+    if not b.MEMORY.forget(mid, scopes=b.memory_scopes(scope)):
+        raise HTTPException(404, "记忆不存在或不属于当前可见作用域")
+    return {"deleted": True, "id": mid}
+
+
 @app.get("/v1/agent/self/status")
 async def self_status():
     """自升级状态：是否启用、白名单、待重启标记、自升级快照作用域。"""

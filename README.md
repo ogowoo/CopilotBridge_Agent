@@ -182,6 +182,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `allow_delete` | `false` | 是否开放 `delete_path` 工具 |
 | `allow_python` | `false` | 是否开放 `run_python` 工具（**可执行任意代码，谨慎开启**） |
 | `allow_office` | `true` | 是否开放 Office 文档工具（Excel/Word/PPT/PDF） |
+| `allow_memory_write` | `true` | 是否允许 Agent 用 `memory_write` 沉淀**长期记忆**（跨会话事实/偏好/结论，自动按相关性检索注入；`memory_forget` 可删除） |
 | `allow_skill_write` | `true` | 是否允许 `skill_create` 沉淀技能（项目级写入工作区 `skills/`；全局级还需 `allow_self_upgrade`） |
 | `allow_outlook` | `false` | 是否开放 Outlook 读取工具（未读/正文/搜索） |
 | `allow_outlook_send` | `false` | 是否开放 `outlook_send`（会真实发出邮件，**谨慎开启**） |
@@ -235,6 +236,20 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | KPI 条 | 状态、总步骤、当前会话步骤、会话切换次数、TOKEN 估算（带预算进度条） |
 | 实时面板（四选项卡） | **当前执行状态**（阶段/等待详情/计数）、**Copilot 当前回答**（有更新时页签出现绿点）、**最近发送内容**（发给 Copilot 的原文尾部）、**继续对话**（模式切换 + 聊天记录 + 输入框，Enter 发送／Shift+Enter 换行）；右上 ⤢ 放大 看全文 |
 | 步骤时间线 | 每步带时间与状态；「查看结果」展开完整参数/结果 JSON；右上「⬇ 导出」下载完整时间线 JSON（排查问题首选） |
+
+### 长期记忆（跨会话）
+
+除了 AGENT.md 与 skills，Agent 还有一套**长期记忆**：把以往任务里验证过的零散事实
+累积下来，后续相关任务自动检索注入（关键词+中文二元组匹配，零依赖）。
+
+- 写入：Agent 在收尾时自行调用 `memory_write`；也可让它在任务中随时记。
+- 检索：`memory_search`；提示词里只注入**最相关的几条**（不是全量），冲突时以当前事实为准。
+- 删除：`memory_forget`，或在 WebUI/接口 `DELETE /v1/agent/memory/{id}`。
+- 作用域：`global`（所有任务）与 `project`（仅当前工作区），互不泄露。
+- 管理：`GET /v1/agent/memory?query=&scope=` 查看清单与统计；上限 500 条/作用域，
+  超出按 pinned → 使用次数 → 更新时间淘汰；重复写入自动合并。
+- 什么时候用记忆而不是 AGENT.md：需要**每回合全文遵守**的硬约定写 AGENT.md；
+  「做过什么、踩过什么坑」这类可检索经验写记忆。
 
 ### 2. 写 AGENT.md 与 skills（两级作用域）
 

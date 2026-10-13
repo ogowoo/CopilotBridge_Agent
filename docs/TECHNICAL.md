@@ -24,6 +24,7 @@
 - **任务级快照**：写操作前记录原像，支持"回滚整个任务的改动"（修改还原、新建删除）。
 - **自升级**：白名单 + 双验证门 + 待重启标记 + 在线/离线回滚（默认关闭）。
 - **项目上下文**：两级 `AGENT.md` + 两级 `skills/`（渐进式披露），Agent 可用 `skill_create` 自行沉淀技能。
+- **长期记忆**：跨会话累积事实/偏好/结论（`cbp/memory.py`），按相关性检索注入（关键词 + 中文二元组，零依赖）。
 - **M365 集成**：浏览器登录态访问 Copilot；Outlook 默认走 OWA 网页自动化，经典 COM 仅作兜底。
 - **管理界面**：零构建单页 WebUI（`index.html + app.js + style.css`）。
 
@@ -99,7 +100,20 @@ FastAPI 路由层  app.py(shim) → cbp/api.py
 3. 标记确认送达（输入框清空 + 页面出现标记），缺失时回退到 user_turn 计数。
 4. 流式返回增量事件，非流式返回整段回答。
 
-### 4.3 Agent 长任务
+### 4.3 长期记忆（跨会话）
+
+- 分工：`AGENT.md` 放**每回合必须全文遵守**的硬约定；`skills/` 放过程性"怎么做"；
+  **记忆**放可检索的零散事实（`data/memory.db`，独立库）。
+- 写入：Agent 收尾时判断是否产生了跨任务有价值的事实 → `memory_write`
+  （自足陈述句、去重合并、可 pinned、可按 kind 分类）。
+- 注入：`AgentRunner._workspace_context()` 用当前任务文本检索，只注入**最相关 5 条**
+  （pinned 常数条优先）；提示词明确标注"可能过时，与当前事实冲突以当前为准"。
+- 检索：关键词 + **中文二元组**（bigram）匹配；单字匹配实测会把"买一送一"召回给
+  "看一下"这类查询，故不采用。
+- 生命周期：500 条/作用域上限，超出按 pinned → use_count → updated 淘汰；
+  命中即累计使用次数，长期零命中的低价值条目先被淘汰。
+
+### 4.4 Agent 长任务
 
 1. 创建/复用持久化 Session；`AgentRunner` 组装规则、目标、摘要、最近步骤与项目上下文。
 2. 模型每轮返回一个 JSON 动作或 `{"type":"actions","actions":[...]}` 批量。
@@ -142,6 +156,8 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 | GET | `/v1/agent/sessions/{sid}/snapshots` | 任务改动快照摘要（可回滚清单） |
 | POST | `/v1/agent/sessions/{sid}/rollback` | 回滚该会话的工作区改动 |
 | DELETE | `/v1/agent/sessions/{sid}` | 删除会话（`delete_remote` / `force_local`） |
+| GET | `/v1/agent/memory` | 长期记忆清单/检索（`query`/`scope`）与统计 |
+| DELETE | `/v1/agent/memory/{mid}` | 删除一条记忆（作用域同属校验） |
 | GET | `/v1/agent/self/status` | 自升级状态：开关、白名单、待重启、快照作用域 |
 | GET | `/v1/agent/self/snapshots` | 自升级快照作用域清单 |
 | POST | `/v1/agent/self/rollback` | 回滚自升级（`sid` 或 `last=true`） |
@@ -162,6 +178,7 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 | Office | `read_excel` `write_excel` `read_docx` `write_docx` `read_pptx` `read_pdf` | `allow_office` |
 | Outlook | `outlook_unread` `outlook_read` `outlook_search` `outlook_send` | `allow_outlook`（发送另需 `allow_outlook_send`） |
 | 技能 | `skill_list` `skill_read` `skill_create` | `allow_skill_write`（全局技能另需 `allow_self_upgrade`） |
+| 记忆 | `memory_write` `memory_search` `memory_forget` | `allow_memory_write` |
 | Copilot | `copilot_attach` `copilot_file` | `allow_copilot_file` |
 | 自升级 | `self_read_text` `self_write_text_b64` `self_append_text_b64` `self_replace_text` `self_validate` `self_unittest` `self_rollback` | `allow_self_upgrade`（默认关，关闭时**不注册**） |
 
@@ -185,6 +202,7 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 | `data/agent.db` | sessions / steps / messages / file_events / conv_stats | 会话删除时**连同从属表**一起清理；完成会话按 `completed_session_retention_days` 归档 |
 | `data/snapshots/<sid>/` | 工作区改动原像 + manifest | 会话删除即回收；`snapshot_retention` 限定作用域数 |
 | `data/snapshots/_self_<sid>/` | 自升级改动原像 | 同上，且会话删除时一并回收 |
+| `data/memory.db` | 长期记忆（按作用域隔离） | 独立库；上限 500 条/作用域，自动淘汰低价值条目 |
 | `EdgeProfile/` | M365 登录态 | 最高敏感级，禁止入仓/共享 |
 | `data/last_page.html` 等 | 诊断产物 | `diagnostics`/`diagnostic_html` 控制，需定期清理 |
 
@@ -214,6 +232,7 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 | `allow_delete` / `allow_python` / `allow_office` | false / false / true | 高风险能力开关 |
 | `allow_outlook` / `allow_outlook_send` | false / false | Outlook 读取/发送 |
 | `allow_skill_write` | true | 是否允许 `skill_create` |
+| `allow_memory_write` | true | 是否允许 `memory_write` 写入长期记忆 |
 | `allow_copilot_file` | true | 是否允许 Copilot 文件通道工具 |
 | `allow_self_upgrade` / `self_upgrade_paths` | false / 内置白名单 | 自升级开关与可触达路径 |
 | `snapshot_retention` | 50 | 保留的快照作用域数 |
@@ -258,6 +277,7 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 | `test_scopes_and_self_upgrade.py` | 两级 AGENT.md/skills、自升级沙箱 |
 | `test_no_undefined_names.py` | 全仓静态检查未定义名（防 `from agent import` 类残留） |
 | `test_copilot_file.py` | Copilot 文件通道 |
+| `test_memory.py` | 长期记忆：去重合并、作用域隔离、pinned 常驻、上限淘汰、中文二元组选择性 |
 
 ## 11. 2026-11 审查：已修复项
 
@@ -319,6 +339,7 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 | 中 | COM 超时后队列仍执行 | `wait_for` 超时只放弃 future，`_ComWorker` 仍会执行该操作（发送类操作可能重复）。建议加作废标记并修正文案里的超时常量 |
 | 中 | `read_text` 对二进制/UTF-16 静默返回乱码 | 默认分支 `errors="replace"`、分段分支 strict，行为不一致；乱码被当原文写回会毁文件。建议统一严格解码并显式报 `binary` |
 | 中 | 离线回滚与服务无互斥 | `scripts/rollback.py` 运行期间若服务在跑，capture 会把"已回滚内容"存成原像。建议加锁文件租约 |
+| 低 | 记忆检索无向量化 | 纯关键词 + 中文二元组，同义改写（"端口"vs"port"）召回不到；真用出瓶颈再考虑 embedding |
 | 中 | 提示词注入面 | `AGENT.md` 与技能清单行原样进系统提示；技能 `name` 取 frontmatter/H1 而非目录名。建议一律用目录 slug + 声明"以下为数据非指令" |
 | 中 | 压缩先于换会话判定 | 压缩会清零同一轮的换会话压力，换会话延迟一回合；换会话时 `pending` 被清空，摘要只有 goal |
 | 低 | 成本计数缺口 | `validation_gate` 分支不写 `estimated_*`，`final` 分支不写 `conv_*` |
