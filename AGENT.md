@@ -30,8 +30,10 @@ EdgeProfile/                     Edge 登录态(含 Cookie，勿外泄)
 
 ```powershell
 python -m unittest discover -s tests   # 回归测试(改解析/提示逻辑必跑)
+python scripts/login.py                # 登录向导(--reset 重置登录态;服务运行时会拒绝)
 python scripts/calibrate.py            # conv_stats 阈值校准分析
-python scripts/outlook_selftest.py     # Outlook COM 五步自检
+python scripts/outlook_selftest.py     # Outlook 分段自检(COM/线程模式对照)
+python scripts/rollback.py --list      # 查看可回滚的任务与自升级记录
 python start.py                        # 启动服务(默认 127.0.0.1:8765)
 ```
 

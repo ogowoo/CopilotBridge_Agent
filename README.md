@@ -11,6 +11,8 @@
                      └─ /ui                       内置 Web 管理台
 ```
 
+> 第一次用：看下面 **快速开始**（4 条命令）→ **操作手册**（WebUI 怎么用、AGENT.md/skills 怎么写、怎么回滚、怎么自升级、故障排查）。
+
 ## 功能特性
 
 - **OpenAI 兼容**：`/v1/chat/completions` 支持 stream / non-stream，可接入任何 OpenAI SDK 客户端；`/v1/models` 列出可用模型。模型列表以内置表为基础（Auto / Quick response / Think deeper / GPT / GPT-5.6 / Sol / Think，可在配置中扩展），并**在启动时自动打开 Copilot 模型菜单枚举选项（含 GPT 等父项下的二级子菜单）**——菜单里新出现的模型会自动并入（ID 形如 `copilot-gpt-5-7`），选择模型时也会自动展开子菜单定位；也可用 `POST /v1/models/refresh` 随时重扫。
@@ -32,7 +34,7 @@
   - **实测校准**：每个 Copilot 会话结束时记录实测数据（回合数/估算 Token/字符数/结束原因/模型/URL）存入 `conv_stats` 表，会话详情接口可查，用于持续校准本地阈值；
   - 修改代码后强制验证闭环：`validate_python` 与 `run_unittest` 都通过才允许宣称完成。
 - **会话持久化**：SQLite（WAL）保存步骤时间线、文件变更哈希、对话消息；服务重启后可从检查点继续。
-- **Web 管理台**：`/ui` 提供任务发起、实时进度、步骤时间线、暂停/恢复/取消、会话归档与远程 Copilot 会话删除（带同 Session 标记防误删）。
+- **Web 管理台**：`/ui` 提供任务发起（按钮＋弹窗）、实时进度（执行状态/当前回答/发送内容/继续对话 四选项卡）、全宽步骤时间线（可导出 JSON）、暂停/恢复/取消、会话归档与远程 Copilot 会话删除（带同 Session 标记防误删与对账终验）。详见[操作手册](#1-webui-怎么用)。
 
 ## 快速开始
 
@@ -179,7 +181,12 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `allow_office` | `true` | 是否开放 Office 文档工具（Excel/Word/PPT/PDF） |
 | `allow_outlook` | `false` | 是否开放 Outlook 读取工具（未读/正文/搜索） |
 | `allow_outlook_send` | `false` | 是否开放 `outlook_send`（会真实发出邮件，**谨慎开启**） |
+| `outlook_url` | `https://outlook.office.com/mail/` | OWA 自动化入口（`allow_outlook` 时使用） |
 | `python_timeout_seconds` | `20` | `run_python` 超时 |
+| `snapshot_retention` | `50` | 保留多少个会话的改动快照，超出按最旧清理 |
+| `agent_md_max_chars` | `8000` | 单份 `AGENT.md` 注入上限（全局、项目各自计算） |
+| `allow_self_upgrade` | `false` | 是否允许 Agent 修改**服务自身代码**（`self_*` 工具，**高权限，理解风险后再开**） |
+| `self_upgrade_paths` | 见 `config.example.json` | 自升级可触达的路径白名单（安装目录相对路径） |
 
 ## API 一览
 
@@ -206,18 +213,124 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | GET/POST | `/v1/agent/browser` | 查询/切换浏览器窗口显示（无头 ↔ 有窗口；带登录态重启浏览器上下文，`persist=true` 可写回 config.json） |
 | GET | `/ui` | Web 管理台 |
 
+## 操作手册
+
+### 1. WebUI 怎么用
+
+打开 `http://127.0.0.1:8765/ui`（建议强刷 `Ctrl+F5` 确保加载最新前端）。
+
+| 位置 | 操作 |
+|---|---|
+| 侧栏顶部 **＋ 新任务** | 弹出对话框：填 Session ID（可留空）、工作目录（可留空＝用默认工作区）、选模型、写任务内容，选 **Agent 执行** 或 **普通对话**，点「启动任务」 |
+| 侧栏 **SESSIONS** | 会话列表（状态圆点：绿=运行、黄=等待/暂停、红=失败、蓝=完成）；`筛选…` 输入框按标题/ID 过滤；右侧三个图标：📖 使用手册、▣ 切换自动化浏览器窗口显示、◐ 轮换主题（7 套，刷新保持） |
+| 侧栏左缘细长拉手 | 收起/展开整个侧栏（会话列表占满宽度） |
+| 顶部操作条 | 暂停 / 恢复 / 压缩上下文 / 继续执行 / 切换到页面（把自动化 Edge 跳到该会话）/ 打开会话（在你自己浏览器打开）/ 取消任务 / 更多 ▾（归档、回滚任务改动、回滚服务自升级、删除记录、连同 Copilot 会话删除） |
+| KPI 条 | 状态、总步骤、当前会话步骤、会话切换次数、TOKEN 估算（带预算进度条） |
+| 实时面板（四选项卡） | **当前执行状态**（阶段/等待详情/计数）、**Copilot 当前回答**（有更新时页签出现绿点）、**最近发送内容**（发给 Copilot 的原文尾部）、**继续对话**（模式切换 + 聊天记录 + 输入框，Enter 发送／Shift+Enter 换行）；右上 ⤢ 放大 看全文 |
+| 步骤时间线 | 每步带时间与状态；「查看结果」展开完整参数/结果 JSON；右上「⬇ 导出」下载完整时间线 JSON（排查问题首选） |
+
+### 2. 写 AGENT.md 与 skills（两级作用域）
+
+| 作用域 | 位置 | 生效范围 |
+|---|---|---|
+| **全局** | 服务安装目录：`AGENT.md`、`skills/<名字>/SKILL.md` | 所有工作区、所有任务 |
+| **项目** | 工作区根目录：`AGENT.md`、`skills/<名字>/SKILL.md` | 仅该项目 |
+
+- 两份 `AGENT.md` **合并注入**（各自 ≤8000 字符，可用 `agent_md_max_chars` 调整），同路径自动去重，**项目级优先**
+- 技能**渐进式披露**：提示里只放「名称 + 一行简介」，Agent 判断相关时用 `skill_read` 取全文；同名技能项目级覆盖全局
+- SKILL.md 支持 YAML frontmatter，缺省回退「首个一级标题 + 首个段落」：
+
+```markdown
+---
+name: webui-change
+description: 修改 WebUI 时的结构规范与验证清单
+---
+
+# WebUI 修改规范
+（正文：Agent 读到全文后照着执行）
+```
+
+- Agent 也可以**自己更新**这两类文件（沉淀有效结论），这类改动会在时间线标记 `instruction_update`，且可通过回滚撤销
+
+### 3. 回滚（改了东西想还原）
+
+写操作**执行前**会自动把目标文件原像存入 `data/snapshots/`（同一路径只保留最早状态），因此回滚恢复的是**任务开始前**的样子。三个通道：
+
+```powershell
+# ① WebUI：会话「更多 ▾ → 回滚任务改动…」（带文件清单确认；运行中会拒绝，先暂停）
+
+# ② HTTP API
+curl -X POST http://127.0.0.1:8765/v1/agent/sessions/<sid>/rollback
+
+# ③ 离线 CLI（服务/WebUI 起不来时也能用）
+python scripts/rollback.py --list                      # 看有哪些可回滚
+python scripts/rollback.py --last --yes                # 回滚最近一次任务的工作区改动
+python scripts/rollback.py --scope self --last --yes   # 回滚最近一次「服务自升级」
+```
+
+规则：修改过的文件还原内容、任务新建的文件被删除；快照限额单文件 8MB、单会话 800 条（超限记入 `skipped`，那些路径不回滚）。
+
+### 4. 服务自升级（默认关闭）
+
+`config.json` 中把 `agent.allow_self_upgrade` 设为 `true` 并重启后，Agent 获得 `self_*` 工具，可以修改**服务自身的代码**（即使当前工作区是别的项目）：
+
+```powershell
+# 开启后确认状态
+curl http://127.0.0.1:8765/v1/agent/self/status
+```
+
+给 Agent 的任务示例：「读 cbp/tools.py，把 outlook_search 的 max_count 上限从 100 提到 200，然后自升级验证并跑单测」。
+
+内置护栏：
+
+1. **白名单**：`cbp/`、`webui/`、`scripts/`、`docs/`、`tests/` + 若干顶层文件；`config.json`、`data/`、`EdgeProfile/`、`.git/` 一律拒绝
+2. **验证门**：写完必须 `self_validate`（全安装目录语法检查）+ `self_unittest`（服务自身单测）双通过，提前返回 final 会被 `validation_gate` 拦下
+3. **独立快照**：自升级改动存 `data/snapshots/_self_<会话>/`，与工作区改动分开回滚
+4. **重启标记**：写盘落 `data/.self_upgrade_pending`，你重启服务后标记自动归档，启动日志会打印「已加载上一轮自升级改动」
+5. **失败兜底**：若升级把服务改到起不来，`app.py` 导入失败时会直接打印回滚命令；用 `python scripts/rollback.py --scope self --last --yes` 还原（该命令不依赖服务）
+
+> ⚠️ 自升级等于把服务代码交给模型改。建议：先确保 `tests/` 能跑；一次只让 Agent 做一件事；升级后先重启看能否正常启动与跑测试，确认无误再继续下一个改动。
+
+### 5. 常用运维命令
+
+```powershell
+python start.py                              # 启动服务（默认 127.0.0.1:8765）
+python scripts/login.py                      # 登录向导（--reset 彻底重来；服务运行时会拒绝执行）
+python -m unittest discover -s tests         # 回归测试
+python scripts/calibrate.py                  # 会话阈值校准（读 data/agent.db 的实测样本）
+python scripts/outlook_selftest.py           # Outlook 分步自检（含线程池/专用COM线程对照）
+python scripts/rollback.py --list            # 查看可回滚的任务与自升级记录
+```
+
+### 6. 故障排查
+
+| 现象 | 处理 |
+|---|---|
+| 服务起不来、导入报错 | 多半是自升级改坏了：`python scripts/rollback.py --scope self --last --yes` 后重启 |
+| 任务文件只写了一半、写文件中断 | WebUI 导出该会话时间线发维护者；确认用的是 b64 分块（每块 ≤3000 字符） |
+| 任务卡在「等待服务」 | Copilot 限流，指数退避自动重试；长时间不恢复会安全暂停，服务恢复后点「恢复」 |
+| 页面找不到输入框/模型按钮 | 登录态失效：停服务后 `python scripts/login.py`（必要时 `--reset`） |
+| 频繁换会话/上下文被压缩 | 跑 `scripts/calibrate.py`，按建议调整 `compact_at_tokens`/`rollover_at_tokens` |
+| Outlook 报「不可用」或 0x8000400x | 跑 `scripts/outlook_selftest.py` 定位；COM 路径必须走专用消息泵线程（`_ComWorker`），OWA 路径看登录态 |
+| 浏览器层异常 | 看服务目录 `last_page.txt`（出错时的整页文本快照），必要时在 `config.json` 的 `markers` 追加界面文案锚点 |
+| 删会话报「部分失败」 | 看结果弹窗的 `verified-absent` 标记；仍失败可点「重试远程并强制清理本地记录」 |
+
 ## 安全警告
 
 1. **API 鉴权**：默认绑 `127.0.0.1` 仅本机可达；配置 `api_token` 后所有 `/v1/*` 端点要求 Bearer 令牌。绑非回环地址且未配置 token 时**服务拒绝启动**。`agent.workspace_roots` 可进一步把工具工作区限制在白名单根目录内。
 2. **间接 Prompt Injection**：Agent 读取的工作区文件内容会进入 Copilot 上下文，而返回的动作会被直接执行。**不要让 Agent 处理来源不可信的文件**；开启 `allow_python` / `allow_delete` 后风险升级为任意代码执行与文件删除。
 3. **登录态敏感**：`EdgeProfile/` 目录包含你的 Copilot 登录 Cookie，已被 `.gitignore` 排除，请勿外泄。
 4. **容错写文件**：对 Copilot 返回的未转义写文件动作有正则容错恢复，恢复结果可能不完美；重要文件请先备份，`.py/.json/.html` 有语法+单测验证闭环兜底，其他类型没有。
+5. **自升级是高权限开关**：`allow_self_upgrade=true` 后 Agent 能改服务自身代码（白名单内）。虽然每次改动前都有快照、验证不过会被门拦住、且有离线回滚通道，但它仍是"让模型改运行中的服务"——只在你能接受这个前提、并且测试套件可用的前提下开启；不要在工作区里处理来源不可信的文件时同时开着自升级。
+6. **凭据与快照**：`data/snapshots/` 保存了被改文件的**改动前原像**，其中可能包含敏感内容（例如曾写入过密钥的文件），外发调试数据前先确认；`data/` 与 `EdgeProfile/` 都不要提交或分享。
 
 ## 已知限制
 
 - 依赖 Copilot 页面的可访问性文本（如 `Copilot said:`）与 DOM 结构，**Microsoft 前端更新可能导致桥接失效**，出错时查看 `last_page.txt` 诊断快照；
 - 普通对话的流式输出基于公共前缀 diff，若 Copilot 重写已输出文本可能出现重复/缺失（Agent 模式不受影响）;
-- 所有请求共享一把全局锁串行执行（同一时刻只能有一个回合在浏览器中进行）。
+- 所有请求共享一把全局锁串行执行（同一时刻只能有一个回合在浏览器中进行）；
+- 回滚是**任务/作用域级**的：同一任务里混做多件不相关的改动，回滚会整块回退，没法只挑其中一件；
+- 快照只覆盖经工具层的写操作；快照超限（单文件 8MB／单会话 800 条）的路径不记录、也就无法回滚。
 
 ## 项目结构
 

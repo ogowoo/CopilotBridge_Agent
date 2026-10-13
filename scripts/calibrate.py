@@ -20,7 +20,18 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-DB = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("data/agent.db")
+BASE = Path(__file__).resolve().parent.parent  # scripts/ 的上一层是项目根
+
+
+def _default_db() -> Path:
+    """默认数据库：优先当前目录，其次项目根（与 cwd 无关，更稳）。"""
+    for candidate in (Path("data/agent.db"), BASE / "data" / "agent.db"):
+        if candidate.exists():
+            return candidate
+    return BASE / "data" / "agent.db"
+
+
+DB = Path(sys.argv[1]) if len(sys.argv) > 1 else _default_db()
 if not DB.exists():
     sys.exit(f"找不到数据库: {DB}（用法: python calibrate.py <agent.db 路径>）")
 
