@@ -17,6 +17,7 @@
 - **API 提供商接入**：除 Copilot 网页自动化外，可直接接入任何 OpenAI 兼容 HTTP API（内置 OpenAI / DeepSeek / Kimi / Grok 预设，可自定义）。模型 ID 形如 `deepseek/deepseek-chat`，API Key 走环境变量；普通对话和 **Agent 模式（含工具循环）都可用**——JSON 动作协议是纯 prompt 驱动，与提供商无关。
 - **Agent 模式**：Copilot 每回合返回一个 JSON 动作（调用工具或最终答复），本地执行工具后把结果送回，循环直到任务完成。
 - **15+ 个工作区工具**：目录/文件读写（Base64 写入防 JSON 转义损坏）、精确替换、复制/移动/删除、`validate_python`、`run_unittest`、`run_python`，全部限制在工作区根目录内。
+- **项目级约定与技能（AGENT.md / skills）**：工作区根目录的 `AGENT.md`（或 `agent.md`）会**全量注入系统提示**（默认 8000 字符截断，可用 `agent_md_max_chars` 调整），把项目规范、常用命令、禁忌事项直接交给 Agent；`skills/<名字>/SKILL.md` 目录式技能采用**渐进式披露**——提示里只注入技能名/一行简介/文件路径，模型判断与任务相关时再用 `read_text` 读取 SKILL.md 全文，多个技能也不会挤占上下文。SKILL.md 支持 YAML frontmatter（`name`/`description`），缺省时回退"首个一级标题 + 首个段落"。本仓库自身即带 [AGENT.md](AGENT.md) 与示例技能。
 - **M365 文件与软件集成**：
   - **Office 文档工具**：`read_excel`/`write_excel`（openpyxl）、`read_docx`/`write_docx`（python-docx）、`read_pptx`（python-pptx）、`read_pdf`（pypdf）——Agent 可直接分析/修改 xlsx、docx、pptx、pdf；
   - **Copilot 文件上传**：`copilot_attach` 工具把工作区文件挂到 Copilot 网页版附件框并取回分析结果，用于图片/扫描件/复杂版式等本地无法解析的文件；
@@ -226,7 +227,9 @@ cbp/              核心包
   tools.py          工作区工具集（路径沙箱、Office 文档、Outlook 路由）
   providers.py      API 提供商接入层（OpenAI/DeepSeek/Kimi/Grok 等）
   session_store.py  SQLite 会话持久化、中断恢复、会话实测统计
-webui/index.html  零依赖单文件 Web 管理台
+webui/            零依赖 Web 管理台（index.html 结构 + style.css + app.js）
+AGENT.md          项目级 Agent 约定（工作区根目录存在时自动注入系统提示）
+skills/           目录式技能库（每个技能一个 SKILL.md，按需加载）
 scripts/          工具脚本（login.py 登录向导、calibrate.py 阈值校准、
                   outlook_selftest.py COM 自检）
 tests/            单元测试（python -m unittest discover -s tests）

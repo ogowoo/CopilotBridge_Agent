@@ -9,6 +9,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from .tools import ToolRegistry
@@ -98,7 +99,100 @@ class AgentRunner:
 治理或代码修改任务必须形成验证闭环：文件全部写完后执行 validate_python，再执行 run_unittest；真实验证失败必须继续修复，不得返回 final（文件未写完时的验证不通过不算失败，按上面的分块流程继续追加即可）。
 只有 validate_python 和 run_unittest 均返回 passed=true 后，才可宣称治理完成或把 TODO 标记为完成。
 可用工具：
-""" + json.dumps(self.tools.descriptions(), ensure_ascii=False)
+""" + json.dumps(self.tools.descriptions(), ensure_ascii=False) + self._workspace_context()
+
+    def _workspace_context(self) -> str:
+        """工作区项目上下文：AGENT.md（全量注入）+ skills 目录（渐进式披露）。
+
+        AGENT.md 是项目级约定，直接注入系统提示；skills 只注入名称/简介/路径
+        清单，模型判断相关时用 read_text 读取对应 SKILL.md 获取完整指令，
+        避免多个技能的全文同时挤占上下文。
+        """
+        parts: list[str] = []
+        agent_md = getattr(self, "_agent_md", "") or ""
+        if agent_md:
+            parts.append("项目约定（来自工作区 AGENT.md，必须遵守）：\n" + agent_md)
+        skills = getattr(self, "_skills", None) or []
+        if skills:
+            lines = ["工作区可用技能（判断与某技能相关时，先用 read_text 读取其 SKILL.md 获取完整指令再执行）："]
+            for s in skills:
+                lines.append(f"- {s['name']}：{s['description']}（{s['path']}）")
+            parts.append("\n".join(lines))
+        return ("\n\n" + "\n\n".join(parts)) if parts else ""
+
+    def _load_agent_md(self) -> str:
+        """工作区根目录的 AGENT.md / agent.md：项目级指令与约定。"""
+        root = getattr(self.tools, "root", None)
+        if not root:
+            return ""
+        for name in ("AGENT.md", "agent.md"):
+            try:
+                p = Path(root) / name
+                if p.is_file():
+                    text = p.read_text(encoding="utf-8", errors="replace").strip()
+                    if not text:
+                        return ""
+                    cap = int(self.config.get("agent_md_max_chars", 8000))
+                    if len(text) > cap:
+                        text = text[:cap] + f"\n…[AGENT.md 共 {len(text)} 字符，已截断到 {cap}]"
+                    return text
+            except Exception:
+                continue
+        return ""
+
+    def _load_skill_catalog(self) -> list[dict[str, Any]]:
+        """skills/<name>/SKILL.md 目录扫描：只取元数据，不读全文。"""
+        root = getattr(self.tools, "root", None)
+        if not root:
+            return []
+        skills_dir = Path(root) / "skills"
+        try:
+            if not skills_dir.is_dir():
+                return []
+            out = []
+            for d in sorted(skills_dir.iterdir()):
+                try:
+                    if not d.is_dir():
+                        continue
+                    md = d / "SKILL.md"
+                    if not md.is_file():
+                        continue
+                    text = md.read_text(encoding="utf-8", errors="replace")
+                    name, desc = self._parse_skill_md(d.name, text)
+                    out.append({"name": name, "description": desc,
+                                "path": f"skills/{d.name}/SKILL.md"})
+                except Exception:
+                    continue
+                if len(out) >= 20:
+                    break
+            return out
+        except Exception:
+            return []
+
+    @staticmethod
+    def _parse_skill_md(dirname: str, text: str) -> tuple[str, str]:
+        """SKILL.md 元数据：优先 YAML frontmatter 的 name/description，
+        退回第一级标题 + 首个非空段落。description 单行封顶 120 字符。"""
+        name, desc, body = dirname, "", text
+        m = re.match(r"^---\s*\n(.*?)\n---\s*\n?", text, re.S)
+        if m:
+            for line in m.group(1).splitlines():
+                if line.startswith("name:"):
+                    name = line.split(":", 1)[1].strip() or name
+                elif line.startswith("description:"):
+                    desc = line.split(":", 1)[1].strip()
+            body = text[m.end():]
+        if not desc:
+            hm = re.search(r"^#\s+(.+)$", body, re.M)
+            if hm:
+                name = hm.group(1).strip() or name
+                rest = body[hm.end():]
+            else:
+                rest = body
+            para = next((p.strip() for p in rest.split("\n\n")
+                         if p.strip() and not p.strip().startswith("#")), "")
+            desc = " ".join(para.split())[:120]
+        return name, desc[:120]
 
     @staticmethod
     def _objects(text: str):
@@ -500,6 +594,10 @@ class AgentRunner:
         validation_required = False
         syntax_validated = False
         tests_passed = False
+        # 工作区项目上下文：AGENT.md 全量注入 + skills 清单。每次 run 重新读取，
+        # 恢复运行/换工作区后总能拿到最新版本。
+        self._agent_md = self._load_agent_md()
+        self._skills = self._load_skill_catalog()
         # 恢复运行不自动新建 Copilot 会话；只有显式 rollover_requested 才换会话。
         force_rollover = bool(state.get("rollover_requested"))
         rollover_reason = "Token/步数/手动触发自动创建新 Copilot 会话"

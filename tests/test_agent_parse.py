@@ -124,5 +124,83 @@ class TruncatedWriteRecoveryTests(unittest.TestCase):
         self.assertIn("raw_tail", kept)
 
 
+class WorkspaceContextTests(unittest.TestCase):
+    """AGENT.md 注入与 skills 目录清单(渐进式披露)。"""
+
+    def _runner(self, ws):
+        import tempfile
+        from pathlib import Path
+        from cbp.tools import ToolRegistry
+        root = Path(ws or tempfile.mkdtemp(prefix="cbp_ctx_"))
+        tools = ToolRegistry(root, {})
+        return AgentRunner(tools, None, {},
+                           state_getter=dict,
+                           state_saver=lambda **k: None,
+                           step_saver=lambda x: None,
+                           file_event_saver=lambda x: None), root
+
+    def test_agent_md_loaded_and_capped(self):
+        import tempfile
+        from pathlib import Path
+        ws = Path(tempfile.mkdtemp(prefix="cbp_ctx_"))
+        (ws / "AGENT.md").write_text("项目约定X" * 3, encoding="utf-8")
+        runner, _ = self._runner(ws)
+        runner._agent_md = runner._load_agent_md()
+        self.assertIn("项目约定X", runner._agent_md)
+        self.assertIn("项目约定X", runner._system_prompt())
+        # 超长发截断
+        (ws / "AGENT.md").write_text("长" * 9000, encoding="utf-8")
+        runner2, _ = self._runner(ws)
+        text = runner2._load_agent_md()
+        self.assertLessEqual(len(text), 8000 + 40)
+        self.assertIn("已截断", text)
+
+    def test_no_agent_md_no_section(self):
+        runner, _ = self._runner(None)
+        runner._agent_md = runner._load_agent_md()
+        self.assertEqual(runner._agent_md, "")
+        self.assertNotIn("项目约定", runner._system_prompt())
+
+    def test_skill_catalog_frontmatter(self):
+        import tempfile
+        from pathlib import Path
+        ws = Path(tempfile.mkdtemp(prefix="cbp_ctx_"))
+        d = ws / "skills" / "my-skill"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text("---\nname: 我的技能\ndescription: 做某件事\n---\n# 正文\n", encoding="utf-8")
+        runner, _ = self._runner(ws)
+        cat = runner._load_skill_catalog()
+        self.assertEqual(len(cat), 1)
+        self.assertEqual(cat[0]["name"], "我的技能")
+        self.assertEqual(cat[0]["description"], "做某件事")
+        self.assertEqual(cat[0]["path"], "skills/my-skill/SKILL.md")
+
+    def test_skill_catalog_fallback_parsing(self):
+        import tempfile
+        from pathlib import Path
+        ws = Path(tempfile.mkdtemp(prefix="cbp_ctx_"))
+        d = ws / "skills" / "plain-one"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text("# 标题技能\n\n这是简介段落。\n\n## 小节\n正文\n", encoding="utf-8")
+        runner, _ = self._runner(ws)
+        cat = runner._load_skill_catalog()
+        self.assertEqual(cat[0]["name"], "标题技能")
+        self.assertEqual(cat[0]["description"], "这是简介段落。")
+
+    def test_skills_in_system_prompt(self):
+        import tempfile
+        from pathlib import Path
+        ws = Path(tempfile.mkdtemp(prefix="cbp_ctx_"))
+        d = ws / "skills" / "x"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text("---\ndescription: 测试技能\n---\n", encoding="utf-8")
+        runner, _ = self._runner(ws)
+        runner._skills = runner._load_skill_catalog()
+        prompt = runner._system_prompt()
+        self.assertIn("可用技能", prompt)
+        self.assertIn("测试技能", prompt)
+        self.assertIn("SKILL.md", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()
