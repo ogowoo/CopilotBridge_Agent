@@ -340,3 +340,15 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
   .steps,.livepane{max-height:55vh}
   .tabs .tab{padding:3px 9px;font-size:11.5px}
 }
+
+
+/* ── 原生控件跟随主题 ──────────────────────────────────────────────
+   下拉弹层是浏览器原生渲染，只有 color-scheme 能让它变暗；否则在深色
+   主题下永远是系统白底（对比刺眼）。浅色主题显式声明 light。 */
+:root{color-scheme:dark}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]){color-scheme:light}
+select{background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:6px;
+ padding:4px 8px;font:inherit}
+select:hover{border-color:var(--line2)}
+select option{background:var(--panel);color:var(--text)}
+input,textarea{font:inherit}
