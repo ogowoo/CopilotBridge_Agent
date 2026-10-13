@@ -1,10 +1,11 @@
 let current=null,currentUrl=null,currentModel=null,lastStepCount=-1,lastDetail='',renderedSteps=0,sessCache=[];
+let modelCache=[];   // /v1/models 的可用模型（会话页选择器复用）
 let budget=0; // 由后端 token_budget 下发，避免与 config.json 脱节
 let DEMO=false;
 
 /* ── 演示模式：API 不可达时展示界面（仅预览用，正式环境不会触发） ── */
 const DEMO_SESSIONS=[
- {id:'task-demo01',title:'分析 cbp 项目并生成 TODO',state:'running',total_steps:47,conversation_steps:12,conversation_index:1,estimated_tokens:18320,workspace:'C:\\CopilotBridge\\workspace'},
+ {id:'task-demo01',title:'分析 cbp 项目并生成 TODO',state:'running',model:'copilot-think-deeper',total_steps:47,conversation_steps:12,conversation_index:1,estimated_tokens:18320,workspace:'C:\\CopilotBridge\\workspace'},
  {id:'task-demo02',title:'整理 Outlook 未读邮件',state:'paused',total_steps:23,conversation_steps:23,conversation_index:0,estimated_tokens:9640,workspace:'C:\\CopilotBridge\\workspace'},
  {id:'task-demo03',title:'对比两个目录差异',state:'failed',total_steps:101,conversation_steps:4,conversation_index:3,estimated_tokens:23110,workspace:'C:\\CopilotBridge\\workspace'},
  {id:'task-demo04',title:'深圳英文旅游手册',state:'completed',total_steps:15,conversation_steps:15,conversation_index:0,estimated_tokens:7420,workspace:'C:\\CopilotBridge\\workspace'}];
@@ -64,17 +65,47 @@ function setKpis(o){
 /* ── Session 列表（支持筛选） ── */
 /* ── 模型列表：从 /v1/models 动态加载，与后端（含 config.models 扩展）保持一致 ── */
 async function loadModels(){
- if(DEMO)return;
+ if(DEMO){modelCache=['copilot-auto','copilot-think-deeper','copilot-gpt-5-6-sol-think-deeper'];
+  fillModelSelect(document.getElementById('sessModel'),modelCache.map(id=>({id})),currentModel);return}
  try{let d=await api('/v1/models'),sel=document.getElementById('model');
   if(!d.data||!d.data.length)return;
   // 只显示可用的：未配 API Key 的提供商模型、菜单扫描没见到的 Copilot 模型不显示
   let avail=d.data.filter(m=>m.available!==false);
   if(!avail.length)avail=d.data;  // 兜底：全不可用时不过滤，防止下拉为空
+  modelCache=avail.map(m=>m.id);
+  fillModelSelect(document.getElementById('sessModel'), avail, document.getElementById('sessModel').value);
   let prev=sel.value;
   sel.innerHTML='';
   avail.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;if(m.description)o.title=m.description;sel.appendChild(o)});
-  sel.value=avail.some(m=>m.id===prev)?prev:avail[0].id}catch(e){}
+  sel.value=avail.some(m=>m.id===prev)?prev:avail[0].id;
+  refreshSessModelOptions()}catch(e){}
 }
+/* 填充模型下拉；keep 为当前会话的模型（不在可用列表里也要保留并标注） */
+function fillModelSelect(sel, avail, keep){
+ if(!sel)return;
+ let prev=keep||sel.value||'';
+ let seen=avail.map(m=>m.id);
+ sel.innerHTML='';
+ avail.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;if(m.description)o.title=m.description;sel.appendChild(o)});
+ if(prev&&!seen.includes(prev)){
+  let o=document.createElement('option');o.value=prev;o.textContent=prev+'（菜单里未找到）';sel.appendChild(o)}}
+/* 会话页模型选择器：显示当前会话自己的模型 */
+function refreshSessModelOptions(){
+ let sel=document.getElementById('sessModel');if(!sel)return;
+ let want=currentModel||'';
+ if(!want)return;
+ let has=[...sel.options].some(o=>o.value===want);
+ if(!has){let o=document.createElement('option');o.value=want;o.textContent=want+'（菜单里未找到）';sel.appendChild(o)}
+ sel.value=want;
+ sel.title='当前会话模型：'+want+'（下一回合生效，服务重启后仍沿用）'}	
+async function setSessionModel(model){
+ if(!current||!model)return;
+ try{
+  let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/model`,
+                  {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model})});
+  currentModel=d.model||model;
+  toast('会话模型已切换为 '+(d.model||model)+(d.note?'（'+d.note+'）':'')+'，下一回合生效', d.note?'':'ok')
+ }catch(e){toast('切换模型失败: '+e,'err');refreshSessModelOptions()}}
 async function refreshModels(){
  if(DEMO){toast('演示模式（API 未连接）：无法刷新模型列表','err');return}
  let btn=document.getElementById('refreshModelsBtn');
@@ -205,6 +236,7 @@ async function load(id){
  // 跟进消息应跟随 Session 自己的模型，而不是左侧新任务表单的选择
  let _ms=document.getElementById('model');
  if(currentModel&&[..._ms.options].some(o=>o.value===currentModel))_ms.value=currentModel;
+ refreshSessModelOptions();   // 会话页选择器显示该会话自己的模型
  document.getElementById('title').textContent=s.title;
  let _sc=document.getElementById('sidChip');
  if(_sc){_sc.textContent=s.id;_sc.onclick=()=>{try{navigator.clipboard.writeText(s.id);toast('已复制会话 ID: '+s.id,'ok')}catch(e){toast(s.id)}}}
@@ -227,7 +259,7 @@ async function runtime(){
   if(current!==myId)return;  // 等待期间用户已切换会话
   currentUrl=r.current_url||currentUrl;
   document.getElementById('pulse').className=r.busy?'pulse':'dot-off';
-  document.getElementById('activity').textContent=`阶段: ${r.phase||r.session_state}\n${r.detail||''}\n总步骤: ${r.total_steps}\n当前会话步骤: ${r.conversation_steps}\nToken估算: ${r.estimated_tokens}\n会话序号: ${(r.conversation_index??0)+1}\n最后更新: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():''}`;
+  document.getElementById('activity').textContent=`阶段: ${r.phase||r.session_state}\n${r.detail||''}\n总步骤: ${r.total_steps}\n当前会话步骤: ${r.conversation_steps}\nToken估算: ${r.estimated_tokens}\n会话序号: ${(r.conversation_index??0)+1}\n最后更新: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():''}${r.model_warning?`\n\n⚠ ${r.model_warning}`:''}`;
   let _ans=r.answer_preview||'等待 Copilot 回答…',_ae=document.getElementById('answer'),_pj=null;
   try{_pj=JSON.parse(_ans)}catch(e){}
   if(_pj&&typeof _pj==='object'){_ae.innerHTML='<div class="jsonview">'+jv(_pj)+'</div>'}else{_ae.textContent=_ans}
@@ -416,6 +448,7 @@ async function runTask(){
  let task=document.getElementById('task').value.trim();if(!task)return;
  let b={model:document.getElementById('model').value,messages:[{role:'user',content:task}],stream:false,session_id:document.getElementById('sid').value.trim()||('task-'+Date.now().toString(36)),workspace:document.getElementById('workspace').value.trim()||null,reuse_session:true,agent_mode:taskMode==='agent'};
  current=b.session_id;
+ currentModel=b.model;      // 会话页模型选择器随即显示本次任务用的模型
  closeTask();
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
@@ -426,6 +459,8 @@ async function runTask(){
  document.getElementById('title').textContent=title;
  let _sc=document.getElementById('sidChip');
  if(_sc){_sc.textContent=current;_sc.onclick=()=>{try{navigator.clipboard.writeText(current);toast('已复制会话 ID: '+current,'ok')}catch(e){toast(current)}}}
+ fillModelSelect(document.getElementById('sessModel'), modelCache.map(id=>({id})), currentModel);
+ refreshSessModelOptions();
  document.getElementById('status').textContent=(taskMode==='agent'?'Agent 执行':'普通对话')
   +' · '+(b.workspace||'默认工作区');
  setPill('running');
@@ -470,6 +505,7 @@ function railNewTask(){if(document.documentElement.dataset.rail==='closed')toggl
 try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="›"}catch(e){}
 try{let cur=document.documentElement.dataset.theme||'',i=THEMES.findIndex(x=>x[0]===cur);document.getElementById('themeBtn').title='主题：'+THEMES[i<0?0:i][1]+'（点击切换）'}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
+document.getElementById('sessModel').onchange=e=>setSessionModel(e.target.value);
 (async()=>{try{let r=await fetch('/v1/agent/sessions');if(!r.ok){document.getElementById('demoBadge').textContent='API 异常 '+r.status;document.getElementById('demoBadge').style.display='block';return}}catch(e){DEMO=true;document.getElementById('demoBadge').style.display='block'}
  loadModels();browserState();
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});

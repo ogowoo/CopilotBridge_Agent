@@ -398,6 +398,24 @@ async def session_rollback(sid: str):
     return result
 
 
+@app.post("/v1/agent/sessions/{sid}/model")
+async def set_session_model(sid: str, req: b.SessionModelRequest):
+    """切换该会话使用的模型：立即持久化，下一回合生效，服务重启后仍沿用。
+
+    会话级模型是续跑的依据——resume/auto_resume 都用它，所以这里落库后
+    就不会再出现"重启后悄悄换回 Auto"。
+    """
+    state = b.AGENT_SESSIONS.get(sid)
+    if not state:
+        raise HTTPException(404, "Session 不存在")
+    requested = (req.model or "").strip()
+    model_id = b.normalize_model_soft(requested)
+    b.AGENT_SESSIONS.patch(sid, model=model_id)
+    updated = b.AGENT_SESSIONS.get(sid)
+    note = "" if model_id == requested else f"{requested} 已失效，回退为 {model_id}"
+    return {**updated, "applies": "下一回合生效（服务重启后仍沿用）", "note": note}
+
+
 # ── 自升级（修改服务自身代码）───────────────────────────────────
 @app.get("/v1/agent/self/status")
 async def self_status():

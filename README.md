@@ -207,6 +207,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | POST | `/v1/agent/sessions/{sid}/actions/{pause\|resume\|cancel\|compact\|rollover\|archive}` | 会话控制 |
 | POST | `/v1/agent/sessions/{sid}/activate` | 把自动化浏览器切到该会话页面 |
 | DELETE | `/v1/agent/sessions/{sid}?delete_remote=true&force_local=true` | 删除会话（可选连带删除 Copilot 网页会话） |
+| POST | `/v1/agent/sessions/{sid}/model` | 切换该会话使用的模型（落库，下一回合生效，服务重启后仍沿用） |
 | GET | `/v1/agent/sessions/{sid}/snapshots` | 任务改动快照清单（可回滚的路径与类型） |
 | POST | `/v1/agent/sessions/{sid}/rollback` | 回滚该任务的全部工作区改动（运行中返回 409） |
 | GET | `/v1/agent/self/status` | 自升级状态（是否启用、白名单、待重启标记、快照作用域） |
@@ -228,6 +229,8 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | 侧栏 **SESSIONS** | 会话列表（状态圆点：绿=运行、黄=等待/暂停、红=失败、蓝=完成）；`筛选…` 输入框按标题/ID 过滤；右侧三个图标：📖 使用手册、▣ 切换自动化浏览器窗口显示、◐ 轮换主题（7 套，刷新保持） |
 | 侧栏左缘细长拉手 | 收起/展开整个侧栏（会话列表占满宽度） |
 | 顶部操作条 | 暂停 / 恢复 / 压缩上下文 / 继续执行 / 切换到页面（把自动化 Edge 跳到该会话）/ 打开会话（在你自己浏览器打开）/ 取消任务 / 更多 ▾（归档、回滚任务改动、回滚服务自升级、删除记录、连同 Copilot 会话删除） |
+| 顶栏右侧**模型选择器** | 显示**当前会话自己的模型**，可直接切换；落库到该会话，**下一回合生效、服务重启后仍沿用**。选项来自 `/v1/models` 的可用模型；若会话原先的模型已不在菜单里，会标注"（菜单里未找到）" |
+| 顶栏 ID 芯片 | 显示当前会话 ID，点击复制（删除前对号用） |
 | KPI 条 | 状态、总步骤、当前会话步骤、会话切换次数、TOKEN 估算（带预算进度条） |
 | 实时面板（四选项卡） | **当前执行状态**（阶段/等待详情/计数）、**Copilot 当前回答**（有更新时页签出现绿点）、**最近发送内容**（发给 Copilot 的原文尾部）、**继续对话**（模式切换 + 聊天记录 + 输入框，Enter 发送／Shift+Enter 换行）；右上 ⤢ 放大 看全文 |
 | 步骤时间线 | 每步带时间与状态；「查看结果」展开完整参数/结果 JSON；右上「⬇ 导出」下载完整时间线 JSON（排查问题首选） |

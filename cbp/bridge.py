@@ -148,6 +148,10 @@ class SessionMessageRequest(BaseModel):
     model: str | None = None
     agent_mode: bool = True
 
+class SessionModelRequest(BaseModel):
+    """切换某个会话使用的模型（下一回合生效，服务重启后仍沿用）。"""
+    model: str = Field(min_length=1, max_length=200)
+
 class AgentRequest(BaseModel):
     model: str = DEFAULT_MODEL
     messages: list[Message] = Field(min_length=1)
@@ -761,9 +765,14 @@ async def select_model(model_id):
         except Exception: pass
         await diagnostics("model_option_missing")
         # 菜单结构变化或标签未收录不应打死整个回合：按当前已选模型继续，
-        # 日志给出明确警告，由用户决定是否修正模型表。
+        # 但必须让用户看见——否则重启后"模型悄悄变回 Auto"完全无从察觉。
+        fallback = SELECTED_MODEL or normalized
         log(f"警告：模型菜单中找不到 {target_names[0]}，已按当前选中模型继续")
-        return SELECTED_MODEL or normalized
+        if ACTIVE_SESSION_ID:
+            runtime_update(ACTIVE_SESSION_ID, model_warning=(
+                f"模型 {target_names[0]} 未在 Copilot 菜单中找到，本回合沿用 "
+                f"{MODELS.get(fallback, {}).get('ui_names', [fallback])[0]}"))
+        return fallback
     try:
         await option.click(timeout=8000)
     except Exception:

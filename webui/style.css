@@ -51,6 +51,8 @@ button,input,textarea,select{font:inherit;color:inherit}
 .sidbig{flex:none;font-family:Consolas,"Cascadia Mono",monospace;font-size:11.5px;color:var(--faint);border:1px solid var(--line2);border-radius:6px;padding:2px 8px;cursor:copy;white-space:nowrap}
 .sidbig:empty{display:none}
 .sidbig:hover{color:var(--accent2);border-color:var(--accent)}
+/* 会话页模型选择器：宽屏贴右，窄屏随 trow 换行 */
+.sessmodel{margin-left:auto;flex:none;width:auto;max-width:230px;padding:4px 8px;font-size:12px;font-family:Consolas,"Cascadia Mono",monospace}
 .stag{flex:none;font-size:10.5px;color:var(--muted);border:1px solid var(--line2);border-radius:20px;padding:2px 8px}
 .sess-empty{color:var(--faint);text-align:center;padding:26px 10px;font-size:12.5px}
 
@@ -165,7 +167,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .btn.seg{padding:3px 12px;font-size:12px;height:28px;border-radius:20px}
 .btn.seg.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 
-.demo{position:fixed;top:16px;right:18px;z-index:99;background:#3d2b10;border:1px solid #9e6a03;color:#e8b339;font-size:12px;padding:6px 13px;border-radius:20px}
+.demo{position:fixed;left:16px;bottom:14px;z-index:99;background:#3d2b10;border:1px solid #9e6a03;color:#e8b339;font-size:12px;padding:6px 13px;border-radius:20px}
 
 /* ── 删除结果弹窗 ── */
 .mask{position:fixed;inset:0;background:var(--mask-bg);display:none;align-items:center;justify-content:center;z-index:60;padding:22px}
