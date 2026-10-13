@@ -44,31 +44,30 @@
         <div class="kpi"><span>会话切换</span><b id="kpiRoll">0</b></div>
         <div class="kpi"><span>TOKEN 估算</span><b id="kpiToken">0</b><small id="kpiBudget" style="color:var(--faint);font-size:12px"> / —</small><div class="meter"><span id="tokenbar"></span></div></div>
       </section>
-      <section class="card chat">
-        <div class="chead">继续当前 Session 对话<span class="hint" style="display:flex;gap:6px;align-items:center"><button id="modeAgent" class="btn seg on" onclick="setFollowupMode('agent')">Agent 继续执行</button><button id="modeChat" class="btn seg" onclick="setFollowupMode('chat')">普通对话</button></span></div>
-        <div id="chatlog" class="chatlog"><div class="meta">选择 Session 后，可以在这里继续对话。</div></div>
-        <div class="composer">
-          <textarea id="followup" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
-          <button id="sendFollowup" class="btn accent" onclick="sendFollowup()">发送</button>
+      <section class="card">
+        <div class="chead"><span id="pulse" class="dot-off"></span>
+          <div class="tabs">
+            <button class="tab on" id="tabActivity" onclick="liveTab('activity')">当前执行状态</button>
+            <button class="tab" id="tabAnswer" onclick="liveTab('answer')">Copilot 当前回答</button>
+            <button class="tab" id="tabPrompt" onclick="liveTab('prompt')">最近发送内容</button>
+            <button class="tab" id="tabChat" onclick="liveTab('chat')">继续对话</button>
+          </div>
+          <span class="hint"><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="放大查看当前面板" onclick="expandLive()">⤢ 放大</button></span>
+        </div>
+        <pre id="activity" class="term livepane">—</pre>
+        <pre id="answer" class="term livepane" style="display:none">等待回答…</pre>
+        <pre id="prompt" class="term livepane" style="display:none">—</pre>
+        <div id="chat" class="livepane chatwrap" style="display:none">
+          <div class="chatbar"><span class="meta">继续当前 Session 对话</span><span style="display:flex;gap:6px"><button id="modeAgent" class="btn seg on" onclick="setFollowupMode('agent')">Agent 继续执行</button><button id="modeChat" class="btn seg" onclick="setFollowupMode('chat')">普通对话</button></span></div>
+          <div id="chatlog" class="chatlog"><div class="meta">选择 Session 后，可以在这里继续对话。</div></div>
+          <div class="composer">
+            <textarea id="followup" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+            <button id="sendFollowup" class="btn accent" onclick="sendFollowup()">发送</button>
+          </div>
         </div>
       </section>
       <div class="content">
         <section class="card"><div class="chead">步骤时间线<span class="hint"><span id="stepCount" style="margin-right:8px"></span><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="导出完整时间线 JSON（含每步参数、结果与错误现场），便于调试" onclick="exportTimeline()">⬇ 导出</button></span></div><div id="steps" class="steps"></div></section>
-        <div class="livecol">
-          <section class="card">
-            <div class="chead"><span id="pulse" class="dot-off"></span>
-              <div class="tabs">
-                <button class="tab on" id="tabActivity" onclick="liveTab('activity')">当前执行状态</button>
-                <button class="tab" id="tabAnswer" onclick="liveTab('answer')">Copilot 当前回答</button>
-                <button class="tab" id="tabPrompt" onclick="liveTab('prompt')">最近发送内容</button>
-              </div>
-              <span class="hint"><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="放大查看当前面板" onclick="expandLive()">⤢ 放大</button></span>
-            </div>
-            <pre id="activity" class="term livepane">—</pre>
-            <pre id="answer" class="term livepane" style="display:none">等待回答…</pre>
-            <pre id="prompt" class="term livepane" style="display:none">—</pre>
-          </section>
-        </div>
       </div>
     </div>
   </main>

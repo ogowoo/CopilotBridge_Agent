@@ -98,25 +98,27 @@ textarea{resize:vertical}
 .meter{height:7px;background:var(--meter);border-radius:5px;overflow:hidden;margin-top:8px}
 .meter span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .5s}
 
-/* 内容双栏：占据窗口剩余高度，卡片内部面板 flex 自适应 */
-.content{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:12px;align-items:stretch;flex:1;min-height:280px}
+/* 内容区：实时面板已上移为独立选项卡卡片，这里只剩时间线独占整宽 */
+.content{display:grid;grid-template-columns:1fr;gap:12px;align-items:stretch;flex:1;min-height:280px}
 .content>.card{display:flex;flex-direction:column;min-height:0}
-.livecol{display:flex;flex-direction:column;gap:12px;min-height:0}
-.livecol .card{flex:1;display:flex;flex-direction:column;min-height:0}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
 .chead{display:flex;align-items:center;gap:9px;padding:11px 15px;border-bottom:1px solid var(--line);font-weight:600;font-size:13.5px}
 .chead .hint{margin-left:auto;font-weight:400;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
-.livecol{display:flex;flex-direction:column;gap:12px}
 .term{margin:0;padding:12px 15px;background:var(--term-bg);border-radius:0 0 11px 11px;color:var(--term-text);font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;min-height:64px;max-height:40vh;overflow:auto}
 .term.short{max-height:25vh}
 
-/* 实时面板选项卡（执行状态/当前回答/发送内容共用整列空间） */
+/* 实时面板选项卡（执行状态/当前回答/发送内容/继续对话共用面板体） */
 .tabs{display:flex;gap:6px;flex-wrap:wrap}
 .tab{border:1px solid var(--line2);background:transparent;border-radius:20px;padding:4px 13px;font-size:12.5px;cursor:pointer;color:var(--muted)}
 .tab:hover{border-color:var(--accent);color:var(--text)}
 .tab.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 .tab.new::after{content:'●';color:var(--green);font-size:9px;margin-left:5px;vertical-align:2px}
-.livepane{flex:1;min-height:0;max-height:none;font-size:13px;line-height:1.75}
+/* 面板体需要稳定高度：卡片不再被拉伸,flex:1 失效,改由 min-height 支撑 */
+.livepane{min-height:190px;max-height:38vh;overflow:auto;font-size:13px;line-height:1.75}
+#chat.livepane{max-height:48vh}
+.chatwrap{display:flex;flex-direction:column;padding:0}
+.chatbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 15px;border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap}
+.chatbar .meta{color:var(--faint);font-size:12.5px}
 .pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);animation:pulse 1.3s infinite}
 .dot-off{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--dot-off)}
 
@@ -143,9 +145,9 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .jsonview .st{color:var(--st);white-space:pre-wrap;word-break:break-word}
 .jsonview .nm{color:var(--nm)}.jsonview .bl{color:var(--bl)}.jsonview .nl{color:var(--nl)}
 
-/* 对话区 */
-.chat{margin:0 0 12px}
-.chatlog{min-height:140px;max-height:45vh;overflow:auto;padding:14px 15px;display:flex;flex-direction:column}
+/* 对话区（作为实时面板的"继续对话"选项卡） */
+.chatlog{min-height:120px;overflow:auto;padding:14px 15px;display:flex;flex-direction:column;flex:1}
+.chatwrap>.composer{flex:none}
 .chatlog .meta{color:var(--faint);font-size:12.5px}
 .msg{max-width:78%;margin:5px 0;padding:9px 13px;border-radius:13px;white-space:pre-wrap;word-break:break-word;font-size:13.5px;line-height:1.6}
 .msg.user{align-self:flex-end;background:var(--msg-user-bg);border:1px solid var(--msg-user-border)}

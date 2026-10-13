@@ -305,7 +305,7 @@ const MANUAL_HTML=`
 <h3>界面</h3>
 <ul>
 <li><b>◐</b> 主题轮换：深色/浅色/Nord 蓝/护眼米/Dracula 紫/柔粉/薄荷，刷新保持。</li>
-<li>侧栏左缘的细长拉手收起/展开侧栏；实时面板（执行状态/当前回答/发送内容）是选项卡，<b>⤢ 放大</b>看全文。</li>
+<li>侧栏左缘的细长拉手收起/展开侧栏；实时面板（执行状态/当前回答/发送内容/继续对话）是选项卡，<b>⤢ 放大</b>看全文。</li>
 <li>步骤时间线每条带执行时间；「查看结果」展开结构化 JSON。</li>
 </ul>
 <h3>常见问题</h3>
@@ -322,8 +322,8 @@ function closeTask(){document.getElementById('taskMask').classList.remove('open'
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closeTask()}});
 
 /* ── 实时面板选项卡 + 放大查看 ── */
-const LIVE_NAMES={activity:'当前执行状态',answer:'Copilot 当前回答',prompt:'最近发送给 Copilot 的内容'};
-const LIVE_TAB={activity:'tabActivity',answer:'tabAnswer',prompt:'tabPrompt'};
+const LIVE_NAMES={activity:'当前执行状态',answer:'Copilot 当前回答',prompt:'最近发送给 Copilot 的内容',chat:'继续对话'};
+const LIVE_TAB={activity:'tabActivity',answer:'tabAnswer',prompt:'tabPrompt',chat:'tabChat'};
 let liveTabName='activity';
 let lastAns='';
 function liveTab(n){liveTabName=n;
@@ -331,7 +331,10 @@ function liveTab(n){liveTabName=n;
   document.getElementById(LIVE_TAB[k]).className='tab'+(k===n?' on':'')}}  // className 覆盖即清除新内容圆点
 function expandLive(){
  document.getElementById('liveTitle').textContent=LIVE_NAMES[liveTabName];
- document.getElementById('liveBody').innerHTML=document.getElementById(liveTabName).innerHTML;
+ // 对话页只复制聊天记录，避免把输入框（含重复 ID）一并搬进弹窗
+ document.getElementById('liveBody').innerHTML=liveTabName==='chat'
+  ?document.getElementById('chatlog').innerHTML
+  :document.getElementById(liveTabName).innerHTML;
  document.getElementById('liveMask').classList.add('open')}
 function closeLive(){document.getElementById('liveMask').classList.remove('open')}
 document.getElementById('liveCopy').onclick=()=>{try{navigator.clipboard.writeText(document.getElementById('liveBody').textContent||'')}catch(e){}};
@@ -347,6 +350,7 @@ async function sendFollowup(){
  let box=document.getElementById('followup'),content=box.value.trim();
  if(!content)return;
  let btn=document.getElementById('sendFollowup');btn.disabled=true;btn.textContent='发送中';
+ liveTab('chat');  // 发送后确保停留在对话页看回复
  let log=document.getElementById('chatlog'),mine=document.createElement('div');
  mine.className='msg user';mine.innerHTML=`<b>你</b>${esc(content)}`;
  log.appendChild(mine);log.scrollTop=log.scrollHeight;box.value='';
