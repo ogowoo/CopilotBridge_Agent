@@ -62,6 +62,14 @@ class MemoryStoreTests(unittest.TestCase):
         self.assertTrue(self.mem.forget(mid, scopes=["global"]))
         self.assertEqual(self.mem.stats(["global"])["total"], 0)
 
+    def test_pin_toggle(self):
+        mid = self.mem.remember('global', '重要硬约定')['id']
+        self.assertTrue(self.mem.set_pinned(mid, True, scopes=['global']))
+        self.assertTrue(self.mem.list(['global'])[0]['pinned'])
+        self.assertTrue(self.mem.set_pinned(mid, False, scopes=['global']))
+        self.assertFalse(self.mem.list(['global'])[0]['pinned'])
+        self.assertFalse(self.mem.set_pinned(mid, True, scopes=['ws:other']), '跨作用域不得置顶')
+
     def test_cjk_bigram_selectivity(self):
         """中文按二元组匹配：查询里的"一下"不得命中"买一送一"这类无关记忆。"""
         self.mem.remember("global", "星巴克周三买一送一")

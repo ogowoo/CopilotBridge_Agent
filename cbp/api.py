@@ -465,6 +465,14 @@ async def list_memory(query: str = "", scope: str = "all", limit: int = 100):
                                              "source_session")} for m in items]}
 
 
+@app.post("/v1/agent/memory/{mid}/pin")
+async def pin_memory(mid: int, pinned: bool = True, scope: str = "all"):
+    """置顶/取消置顶一条记忆：置顶的会在每次检索时恒定注入提示词。"""
+    if not b.MEMORY.set_pinned(mid, pinned, scopes=b.memory_scopes(scope)):
+        raise HTTPException(404, "记忆不存在或不属于当前可见作用域")
+    return {"id": mid, "pinned": pinned}
+
+
 @app.delete("/v1/agent/memory/{mid}")
 async def delete_memory(mid: int, scope: str = "all"):
     """删除一条记忆（作用域做同属校验，不能跨工作区删）。"""

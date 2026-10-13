@@ -528,6 +528,75 @@ function toggleRail(){let r=document.documentElement,c=r.dataset.rail==='closed'
  try{localStorage.setItem('cbp-rail',c?'':'closed')}catch(e){}}
 function railNewTask(){if(document.documentElement.dataset.rail==='closed')toggleRail();openTask()}
 try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="›"}catch(e){}
+/* ── 长期记忆管理面板（自包含：按钮/弹窗全部动态注入，不依赖页面结构）── */
+let memScope='all',memQuery='';
+function memBtn(){
+ let b=document.getElementById('memBtn');
+ if(b)return b;
+ b=document.createElement('button');
+ b.id='memBtn';b.textContent='🧠 记忆';b.title='长期记忆：查看 / 检索 / 置顶 / 删除';
+ b.style.cssText='position:fixed;right:16px;bottom:64px;z-index:40';
+ document.body.appendChild(b);
+ b.onclick=openMemory;
+ return b;
+}
+async function openMemory(){
+ let d=document.getElementById('memDlg');
+ if(!d){
+  d=document.createElement('div');d.id='memDlg';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:flex;align-items:center;justify-content:center';
+  d.innerHTML=`<div style="background:var(--bg2,#1e1e1e);color:var(--fg,#eee);width:min(860px,92vw);max-height:82vh;display:flex;flex-direction:column;border-radius:10px;padding:14px;box-shadow:0 12px 40px rgba(0,0,0,.5)">
+   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <b>长期记忆</b>
+    <select id="memScopeSel"><option value="all">全部作用域</option><option value="global">仅全局</option><option value="project">仅当前项目</option></select>
+    <input id="memSearch" placeholder="关键词检索…" style="flex:1;min-width:140px">
+    <button id="memReload">检索</button>
+    <button id="memClose">关闭</button>
+   </div>
+   <div id="memStats" style="opacity:.75;margin:6px 0;font-size:12px"></div>
+   <div id="memList" style="overflow:auto;flex:1"></div>
+  </div>`;
+  document.body.appendChild(d);
+  d.querySelector('#memClose').onclick=()=>d.style.display='none';
+  d.querySelector('#memReload').onclick=loadMemory;
+  d.querySelector('#memScopeSel').onchange=e=>{memScope=e.target.value;loadMemory()};
+  d.querySelector('#memSearch').onkeydown=e=>{if(e.key==='Enter')loadMemory()};
+  d.onclick=e=>{if(e.target===d)d.style.display='none'};
+ }
+ d.style.display='flex';
+ await loadMemory();
+}
+async function loadMemory(){
+ let q=document.getElementById('memSearch'),sel=document.getElementById('memScopeSel');
+ if(q)memQuery=q.value.trim();
+ if(sel)memScope=sel.value;
+ let d=await api('/v1/agent/memory?scope='+encodeURIComponent(memScope)+'&query='+encodeURIComponent(memQuery));
+ let st=d.stats||{};
+ document.getElementById('memStats').textContent=`共 ${st.total||0} 条 · 置顶 ${st.pinned||0} · 从未命中 ${st.unused||0} · 分类 ${JSON.stringify(st.by_kind||{})} · 作用域 ${(d.scopes||[]).join(', ')}`;
+ let box=document.getElementById('memList');
+ if(!(d.items||[]).length){box.innerHTML='<div style="opacity:.7;padding:12px">没有匹配的记忆。Agent 完成任务时会自动沉淀，也可以直接让它「记到长期记忆」。</div>';return}
+ box.innerHTML=d.items.map(m=>`<div style="border-top:1px solid rgba(128,128,128,.25);padding:8px 2px">
+   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;opacity:.75">
+    <span>#${m.id}</span><span>${esc(m.kind)}</span><span>${esc(m.scope)}</span>
+    <span>命中 ${m.use_count||0}</span>
+    ${(m.tags||[]).map(t=>`<span>#${esc(t)}</span>`).join('')}
+    <span style="margin-left:auto"></span>
+    <button data-pin="${m.id}" data-v="${m.pinned?1:0}">${m.pinned?'★ 取消置顶':'☆ 置顶'}</button>
+    <button data-del="${m.id}">删除</button>
+   </div>
+   <div style="white-space:pre-wrap;margin-top:4px">${esc(m.text)}</div>
+  </div>`).join('');
+ box.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+  if(!await dlgConfirm('删除这条长期记忆？删除后不再参与检索。','删除记忆',true))return;
+  try{await api('/v1/agent/memory/'+b.dataset.del+'?scope='+encodeURIComponent(memScope),{method:'DELETE'});toast('已删除记忆 #'+b.dataset.del,'ok');loadMemory()}catch(e){toast('删除失败: '+e,'err')}});
+ box.querySelectorAll('[data-pin]').forEach(b=>b.onclick=async()=>{
+  const want=b.dataset.v!=='1';
+  try{await api('/v1/agent/memory/'+b.dataset.pin+'/pin?pinned='+want+'&scope='+encodeURIComponent(memScope),{method:'POST'});
+   toast(want?'已置顶（每次检索恒定注入）':'已取消置顶','ok');loadMemory()}
+  catch(e){toast('操作失败: '+e,'err')}});
+}
+try{memBtn()}catch(e){}
+
 try{let cur=document.documentElement.dataset.theme||'',i=THEMES.findIndex(x=>x[0]===cur);document.getElementById('themeBtn').title='主题：'+THEMES[i<0?0:i][1]+'（点击切换）'}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
 document.getElementById('sessModel').onchange=e=>setSessionModel(e.target.value);

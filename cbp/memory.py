@@ -201,6 +201,19 @@ class MemoryStore:
                 r["tags"] = []
         return rows
 
+    def set_pinned(self, mid: int, pinned: bool, scopes: list[str] | None = None) -> bool:
+        """置顶/取消置顶：pinned 记忆在检索时恒定返回（适合极重要的硬约定）。"""
+        with self._connect() as con:
+            if scopes:
+                placeholders = ",".join("?" for _ in scopes)
+                cur = con.execute(
+                    f"UPDATE memories SET pinned=?, updated=? WHERE id=? AND scope IN ({placeholders})",
+                    (1 if pinned else 0, time.time(), int(mid), *scopes))
+            else:
+                cur = con.execute("UPDATE memories SET pinned=?, updated=? WHERE id=?",
+                                  (1 if pinned else 0, time.time(), int(mid)))
+            return cur.rowcount > 0
+
     def forget(self, mid: int, scopes: list[str] | None = None) -> bool:
         with self._connect() as con:
             if scopes:
