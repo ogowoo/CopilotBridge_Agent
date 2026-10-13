@@ -532,7 +532,7 @@ try{if(document.documentElement.dataset.rail==="closed")document.getElementById(
 let memScope='all',memQuery='';
 const MEM_CSS=`
 #memBtn{position:fixed;right:16px;bottom:64px;z-index:40}
-#memMask{position:fixed;inset:0;background:var(--mask-bg);z-index:60;display:flex;align-items:center;justify-content:center}
+#memMask{position:fixed;inset:0;background:var(--mask-bg);z-index:55;display:flex;align-items:center;justify-content:center}
 #memBox{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;
  box-shadow:0 12px 40px var(--dlg-shadow);width:min(880px,92vw);max-height:82vh;display:flex;flex-direction:column;padding:14px;gap:8px}
 #memBox h3{margin:0;font-size:15px}
