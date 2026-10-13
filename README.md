@@ -182,6 +182,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `allow_delete` | `false` | 是否开放 `delete_path` 工具 |
 | `allow_python` | `false` | 是否开放 `run_python` 工具（**可执行任意代码，谨慎开启**） |
 | `allow_office` | `true` | 是否开放 Office 文档工具（Excel/Word/PPT/PDF） |
+| `allow_skill_write` | `true` | 是否允许 `skill_create` 沉淀技能（项目级写入工作区 `skills/`；全局级还需 `allow_self_upgrade`） |
 | `allow_outlook` | `false` | 是否开放 Outlook 读取工具（未读/正文/搜索） |
 | `allow_outlook_send` | `false` | 是否开放 `outlook_send`（会真实发出邮件，**谨慎开启**） |
 | `outlook_url` | `https://outlook.office.com/mail/` | OWA 自动化入口（`allow_outlook` 时使用） |
@@ -244,6 +245,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 
 - 两份 `AGENT.md` **合并注入**（各自 ≤8000 字符，可用 `agent_md_max_chars` 调整），同路径自动去重，**项目级优先**
 - 技能**渐进式披露**：提示里只放「名称 + 一行简介」，Agent 判断相关时用 `skill_read` 取全文；同名技能项目级覆盖全局
+- **Agent 可自行沉淀技能**：任务收尾时它会先 `skill_list` 查有没有相关技能，没有就用 `skill_create` 新建（默认写项目级 `工作区/skills/<名字>/SKILL.md`；要写全局 `skills/` 必须开启 `allow_self_upgrade`）。技能创建即时生效（下次任务上下文即出现），无需重启；关闭入口用 `allow_skill_write: false`
 - SKILL.md 支持 YAML frontmatter，缺省回退「首个一级标题 + 首个段落」：
 
 ```markdown

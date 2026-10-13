@@ -103,6 +103,7 @@ class AgentRunner:
 治理或代码修改任务必须形成验证闭环：文件全部写完后执行 validate_python，再执行 run_unittest；真实验证失败必须继续修复，不得返回 final（文件未写完时的验证不通过不算失败，按上面的分块流程继续追加即可）。
 只有 validate_python 和 run_unittest 均返回 passed=true 后，才可宣称治理完成或把 TODO 标记为完成。
 你可以按需更新工作区的 AGENT.md 与 skills/*/SKILL.md：把本次任务中验证有效的项目约定、命令、踩坑结论沉淀进去（保持精炼，AGENT.md 控制在 8000 字符内），让后续任务直接受益。禁止删除既有的安全约束与验证闭环规则；这类改动会被标记为"自我指令更新"并可通过回滚撤销，改动前先 read_text 看清原文再替换，不要整篇重写。
+技能沉淀（任务收尾必做的一次判断）：完成任务前先 skill_list 看有没有相关技能；如果这次任务暴露了「可复用的方法/命令/坑」且没有对应技能，用 skill_create 新建一个（scope 默认 project 写入当前工作区 skills/，只有确实对所有工作区都通用、且已开启自升级时才用 scope=global）。技能内容写清楚：什么时候用、关键步骤、踩过的坑与验证方式，控制在 8000 字符内；不要为了记录而记录，琐碎或一次性的过程不要沉淀。
 可用工具：
 """ + json.dumps(self.tools.descriptions(), ensure_ascii=False) + self._self_upgrade_rules() + self._workspace_context()
 
