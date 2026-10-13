@@ -76,11 +76,18 @@ async function loadModels(){
   sel.value=avail.some(m=>m.id===prev)?prev:avail[0].id}catch(e){}
 }
 async function refreshModels(){
- if(DEMO)return;
- try{let d=await api('/v1/models/refresh',{method:'POST'});
+ if(DEMO){toast('演示模式（API 未连接）：无法刷新模型列表','err');return}
+ let btn=document.getElementById('refreshModelsBtn');
+ if(btn){btn.disabled=true;btn.textContent='…'}
+ try{
+  let d=await api('/v1/models/refresh',{method:'POST'});
   await loadModels();
-  if(d.added&&d.added.length)toast('发现新模型: '+d.added.join(', '),'ok')}catch(e){toast('模型菜单读取失败: '+e,'err')}
-}
+  if(!d.scanned){toast('模型菜单未能扫描：'+(d.reason||'未知原因'),'err');return}
+  let n=(d.labels||[]).length;
+  if(d.added&&d.added.length)toast('发现新模型: '+d.added.join(', '),'ok');
+  else toast('已重新扫描（'+n+' 个菜单项，无新增）','');
+ }catch(e){toast('模型菜单读取失败: '+e,'err')}
+ finally{if(btn){btn.disabled=false;btn.textContent='↻'}}}
 
 /* ── 浏览器窗口显示/隐藏（headless 是启动参数，切换会带登录态重启浏览器上下文） ── */
 function drawBrowserBtn(h){let b=document.getElementById('browserBtn');b.textContent='▣';b.title=h?'当前为无头模式（窗口隐藏），点击显示自动化窗口':'当前显示自动化窗口，点击切换为无头模式（隐藏窗口）'}

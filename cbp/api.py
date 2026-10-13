@@ -48,11 +48,14 @@ async def lifespan(app):
     # 企业租户重启后 SSO/ADFS 回跳可能耗时几十秒，就绪后再做模型发现
     if await b.wait_copilot_ready():
         try:
-            added = await b.discover_models()
+            disc = await b.discover_models()
+            added = disc.get("added") or []
             if added:
                 b.log(f"从 Copilot 菜单自动发现新模型: {', '.join(added)}")
-            else:
+            elif disc.get("scanned"):
                 b.log("模型菜单未发现新模型")
+            else:
+                b.log(f"模型菜单扫描未完成（不影响已有模型）: {disc.get('reason') or '未知原因'}")
         except Exception as exc:
             b.log(f"模型菜单自动发现失败（不影响已有模型）: {exc}")
     cleanup_task = asyncio.create_task(b.periodic_session_cleanup())
@@ -273,14 +276,22 @@ async def models():
 
 @app.post("/v1/models/refresh")
 async def refresh_models():
-    """重新打开 Copilot 模型菜单枚举选项，把新出现的模型并入列表。"""
+    """重新打开 Copilot 模型菜单枚举选项，把新出现的模型并入列表。
+
+    返回结构化结果：scanned=false 时 reason 说明为什么没扫成（浏览器不在
+    对话页/未登录/前端改版），界面据此给出明确提示而不是静默。
+    """
     async with b.lock:
         try:
-            added = await b.discover_models()
+            result = await b.discover_models()
         except Exception as exc:
             await b.diagnostics("models_refresh_failed")
             raise HTTPException(500, f"模型菜单读取失败: {exc}")
-    return {"added": added, "available_models": list(b.MODELS)}
+    available = [mid for mid, item in b.MODELS.items() if b.copilot_model_available(item)]
+    return {"added": result["added"], "scanned": result["scanned"],
+            "reason": result["reason"], "labels": result["labels"],
+            "url": result["url"], "available_models": available,
+            "all_models": list(b.MODELS)}
 
 
 @app.get("/v1/chat/completions")

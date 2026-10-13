@@ -369,17 +369,56 @@ async def _expand_submenu(parent) -> None:
         pass
 
 
-async def discover_models() -> list:
+COPILOT_URL_MARK = re.compile(r"m365\.cloud\.microsoft|/chat|copilot\.microsoft\.com", re.I)
+
+
+async def ensure_copilot_page() -> str:
+    """确保自动化浏览器停在 Copilot 对话页——模型菜单只在对话页存在。
+
+    Outlook(OWA) 自动化、会话删除、普通对话都会让浏览器停在别的页面；
+    不先回到对话页就直接扫模型菜单，会找不到按钮而静默失败。
+    """
+    if page is None:
+        raise RuntimeError("自动化浏览器尚未启动")
+    current = ""
+    try:
+        current = page.url or ""
+    except Exception:
+        current = ""
+    if COPILOT_URL_MARK.search(current):
+        return current
+    base = str(CFG.get("copilot_url") or "https://m365.cloud.microsoft/chat/")
+    await page.goto(base, wait_until="domcontentloaded", timeout=120000)
+    await wait_copilot_ready(90)
+    await asyncio.sleep(1.0)
+    try:
+        return page.url or base
+    except Exception:
+        return base
+
+
+async def discover_models() -> dict:
     """打开 Copilot 模型菜单，枚举可见选项（含二级子菜单）并并入 MODELS。
+
+    返回结构化结果而不是裸列表：调用方需要区分"扫描成功但无新增"与
+    "压根没扫成"（浏览器不在对话页/未登录/UI 改版），否则界面只能静默。
 
     已知名字（含各 ui_names 别名）直接跳过；带 aria-haspopup 的父项会
     逐个 hover/click 展开后继续枚举其子菜单，父项本身不作为模型收录。
     新出现的叶子选项按标签生成 copilot-<slug> 形式的 ID。
     只读操作：结束后 Escape 逐级关闭菜单，不改变当前选中模型。
     """
+    result = {"added": [], "scanned": False, "labels": [], "reason": "", "url": ""}
+    try:
+        result["url"] = await ensure_copilot_page()
+    except Exception as exc:
+        result["reason"] = f"无法打开 Copilot 对话页: {exc}"
+        return result
     button = await model_button()
     if not button:
-        return []
+        result["reason"] = "未找到模型菜单按钮：页面可能未就绪/未登录，或 Copilot 前端改版"
+        await diagnostics("models_refresh_no_button")
+        return result
     try:
         await button.click(timeout=5000)
     except Exception:
@@ -427,7 +466,11 @@ async def discover_models() -> list:
         }
         known_names.add(label.casefold())
         added.append(model_id)
-    return added
+    result.update({"added": added, "scanned": True, "labels": labels})
+    if not labels:
+        result["reason"] = "模型菜单打开了但没有枚举到任何选项（可能是渲染延迟或前端改版）"
+        await diagnostics("models_refresh_empty_menu")
+    return result
 
 
 async def select_model(model_id):
