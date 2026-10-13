@@ -537,7 +537,7 @@ const MEM_ICON='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stro
  +'<path d="M12 5a3 3 0 0 0-3 3v1a2.5 2.5 0 0 0 0 5v1a3 3 0 0 0 6 0v-1a2.5 2.5 0 0 0 0-5V8a3 3 0 0 0-3-3z"/>'
  +'<path d="M9 9H7.5a2 2 0 0 0 0 4H9M15 9h1.5a2 2 0 0 1 0 4H15"/></svg>';
 const MEM_CSS=`
-#memBtn{position:fixed;right:18px;bottom:66px;z-index:40;display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;box-shadow:none;padding:2px;cursor:pointer;color:var(--muted)}
+#memBtn{display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;box-shadow:none;padding:2px;margin-left:2px;cursor:pointer;color:var(--muted);vertical-align:middle}
 #memBtn svg{width:17px;height:17px}
 #memBtn:hover{color:var(--text);background:transparent}
 #memBtn:focus-visible{outline:1px solid var(--accent);border-radius:6px}
@@ -562,8 +562,13 @@ function memBtn(){
  if(b)return b;
  b=document.createElement('button');
  b.id='memBtn';b.type='button';b.className='memicon';b.innerHTML=MEM_ICON;
- b.title='长期记忆：查看 / 检索 / 置顶 / 删除';
- document.body.appendChild(b);
+ b.title='长期记忆：查看 / 检索 / 置顶 / 删除（点击打开面板）';
+ // 放到顶部工具栏：优先贴着手册按钮，其次常见工具栏容器，最后才退回 body
+ const anchor=document.getElementById('btnRefreshSess')||document.querySelector('.trow')||document.getElementById('btnManual')
+   ||document.querySelector('.topbar .actions')||document.querySelector('header .actions')
+   ||document.querySelector('.topbar');
+ if(anchor&&anchor.parentElement){anchor.parentElement.insertBefore(b,anchor.nextSibling)}
+ else{document.body.appendChild(b)}
  b.onclick=openMemory;
  return b;
 }
