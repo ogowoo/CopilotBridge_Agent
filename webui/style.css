@@ -352,3 +352,9 @@ select{background:var(--input-bg);color:var(--text);border:1px solid var(--line)
 select:hover{border-color:var(--line2)}
 select option{background:var(--panel);color:var(--text)}
 input,textarea{font:inherit}
+
+/* ── 时间线卡片与上方「当前执行状态」内容贴太近 ─────────────────────
+   :has(#stepCount) 精确命中时间线那张卡片，不动其它区块。 */
+section.card:has(#stepCount){margin-top:14px}
+.card + .card{margin-top:14px}
+#activity{padding-bottom:8px;display:block}
