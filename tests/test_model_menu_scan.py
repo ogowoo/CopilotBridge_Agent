@@ -116,35 +116,45 @@ class ModelMenuScanTests(unittest.TestCase):
 
 
 class ModelAvailabilityTests(unittest.TestCase):
-    """菜单实况可见性：二级叶子存在 => 其父家族不算"菜单里没有"。"""
+    """菜单实况可见性：只显示真实可选叶子；整体改名时兜底放行。"""
 
-    def test_family_prefix_match(self):
+    LABELS = {"auto", "quick response", "think deeper",
+              "gpt-5.6 sol quick response", "gpt-5.6 sol think deeper"}
+
+    def setUp(self):
         from cbp import bridge as b
-        saved = b.DISCOVERED_LABELS
-        try:
-            b.DISCOVERED_LABELS = {"auto", "quick response", "think deeper",
-                                   "gpt-5.6 sol quick response",
-                                   "gpt-5.6 sol think deeper"}
-            self.assertTrue(b.copilot_model_available(b.MODELS["copilot-auto"]))
-            # 二级叶子可见 => GPT 家族（含父项）都不该被隐藏
-            self.assertTrue(b.copilot_model_available(b.MODELS["copilot-gpt"]))
-            self.assertTrue(b.copilot_model_available(b.MODELS["copilot-gpt-5-6"]))
-            self.assertTrue(b.copilot_model_available(
-                b.MODELS["copilot-gpt-5-6-sol-think-deeper"]))
-            # 完全没出现的模型仍应隐藏
-            self.assertFalse(b.copilot_model_available(b.MODELS["copilot-sol"]))
-        finally:
-            b.DISCOVERED_LABELS = saved
+        self.b = b
+        self.saved = (b.DISCOVERED_LABELS, b.DISCOVERY_MATCHED)
+
+    def tearDown(self):
+        self.b.DISCOVERED_LABELS, self.b.DISCOVERY_MATCHED = self.saved
+
+    def test_only_menu_leaves_shown(self):
+        b = self.b
+        b.DISCOVERED_LABELS = set(self.LABELS)
+        b.DISCOVERY_MATCHED = 3          # Auto / Quick response / Think deeper 命中
+        for mid in ("copilot-auto", "copilot-quick-response", "copilot-think-deeper",
+                    "copilot-gpt-5-6-sol-quick-response",
+                    "copilot-gpt-5-6-sol-think-deeper"):
+            self.assertTrue(b.copilot_model_available(b.MODELS[mid]), f"{mid} 应可用")
+        # 父项容器与菜单里不存在的旧标签都不显示（选中它们无法切换模型）
+        for mid in ("copilot-gpt", "copilot-gpt-5-6", "copilot-sol", "copilot-think"):
+            self.assertFalse(b.copilot_model_available(b.MODELS[mid]), f"{mid} 应隐藏")
 
     def test_no_scan_means_all_available(self):
-        from cbp import bridge as b
-        saved = b.DISCOVERED_LABELS
-        try:
-            b.DISCOVERED_LABELS = None
-            for item in b.MODELS.values():
-                self.assertTrue(b.copilot_model_available(item))
-        finally:
-            b.DISCOVERED_LABELS = saved
+        b = self.b
+        b.DISCOVERED_LABELS = None
+        b.DISCOVERY_MATCHED = 0
+        for item in b.MODELS.values():
+            self.assertTrue(b.copilot_model_available(item))
+
+    def test_total_rename_falls_back_to_all(self):
+        """菜单整体改名（一个内置模型都没命中）时不能把下拉清空。"""
+        b = self.b
+        b.DISCOVERED_LABELS = {"totally-new-name"}
+        b.DISCOVERY_MATCHED = 0
+        for item in b.MODELS.values():
+            self.assertTrue(b.copilot_model_available(item))
 
 
 if __name__ == "__main__":

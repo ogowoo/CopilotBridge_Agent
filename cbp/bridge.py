@@ -196,27 +196,23 @@ def normalize_model_soft(model_id) -> str:
 
 # 上次成功扫描 Copilot 菜单看到的标签（casefold）；None = 尚未成功扫描
 DISCOVERED_LABELS: set | None = None
+# 本次扫描命中的内置模型数：为 0 说明菜单整体改名/大改版，此时放行全部内置模型
+DISCOVERY_MATCHED: int = 0
 
 
 def copilot_model_available(item: dict) -> bool:
-    """内置模型在菜单实况中是否可见；未成功扫描过则默认可用（兜底全显示）。
+    """模型是否在菜单实况里真实可选（决定 WebUI 下拉是否显示）。
 
-    除精确匹配外还做"家族前缀"匹配：菜单里出现二级叶子（如
-    "GPT-5.6 Sol Quick response"）就说明 GPT / GPT-5.6 家族确实存在——
-    只认精确相等会把整个家族误判成"菜单里没有"而从界面隐藏。
+    严格对齐菜单叶子：只有名字确实出现在扫描到的叶子集合里才算可用。
+    父项容器（如 GPT 本身）不是可选项，选中它无法切换，故一并隐藏；
+    实测菜单的真实叶子是 Auto / Quick response / Think deeper /
+    GPT-5.6 Sol Quick response / GPT-5.6 Sol Think deeper。
+    兜底：未扫描过，或扫到了但一个内置模型都没命中（改名/大改版）时全放行，
+    避免下拉变空。
     """
-    if DISCOVERED_LABELS is None:
+    if DISCOVERED_LABELS is None or DISCOVERY_MATCHED == 0:
         return True
-    for name in item["ui_names"]:
-        n = name.casefold()
-        if n in DISCOVERED_LABELS:
-            return True
-        if len(n) >= 3 and any(
-            len(lbl) >= 3 and (lbl.startswith(n) or n.startswith(lbl))
-            for lbl in DISCOVERED_LABELS if lbl
-        ):
-            return True
-    return False
+    return any(name.casefold() in DISCOVERED_LABELS for name in item["ui_names"])
 
 
 def all_model_ids() -> list:
@@ -652,7 +648,7 @@ async def discover_models() -> dict:
                 pass
     labels = [lbl for lbl in labels_order if lbl not in parents]
     leaf_labels = {lbl.casefold() for lbl in labels}
-    global DISCOVERED_LABELS
+    global DISCOVERED_LABELS, DISCOVERY_MATCHED
     DISCOVERED_LABELS = leaf_labels  # 只记叶子：GPT 这类子菜单父项不是可选模型
     added = []
     known_names = {name.casefold() for item in MODELS.values() for name in item["ui_names"]}
@@ -668,8 +664,14 @@ async def discover_models() -> dict:
         }
         known_names.add(label.casefold())
         added.append(model_id)
+    # 命中数决定可用性判定的严格程度：0 命中（菜单整体改名）时放行全部内置模型
+    DISCOVERY_MATCHED = sum(
+        1 for item in MODELS.values()
+        if any(name.casefold() in leaf_labels for name in item["ui_names"])
+    )
     result.update({"added": added, "scanned": True, "labels": labels,
-                   "menu_dump": result_menu_dump, "parents": sorted(parents)})
+                   "menu_dump": result_menu_dump, "parents": sorted(parents),
+                   "matched_builtins": DISCOVERY_MATCHED})
     if not labels:
         result["reason"] = "模型菜单打开了但没有枚举到任何选项（可能是渲染延迟或前端改版）"
         await diagnostics("models_refresh_empty_menu")
