@@ -357,11 +357,4 @@ input,textarea{font:inherit}
    :has(#stepCount) 精确命中时间线那张卡片，不动其它区块。 */
 section.card:has(#stepCount){margin-top:14px}
 .card + .card{margin-top:14px}
-/* 当前执行状态面板：原先只有 .term 的极浅底色，浅色主题下几乎看不出
-   是"一块面板"（白底叠白底、无边框）。改为明确的终端面板：边框 + 圆角 +
-   主题内的终端底色/文字色，深色与浅色主题都有清晰边界。 */
-#activity{display:block;padding:10px 12px;margin:10px 0 0;
- background:var(--term-bg);color:var(--term-text);
- border:1px solid var(--line);border-radius:8px}
-#activity:focus{outline:none}
-
+#activity{padding-bottom:8px;display:block}
