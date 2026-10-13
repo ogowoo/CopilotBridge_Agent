@@ -45,6 +45,12 @@ button,input,textarea,select{font:inherit;color:inherit}
 .smeta{flex:1;min-width:0}
 .smeta b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .smeta small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;font-variant-numeric:tabular-nums}
+/* 会话标识：标题可能相似或被 Copilot 改名，删除前要能对上号 */
+.sid{font-family:Consolas,"Cascadia Mono",monospace;font-size:11px;color:var(--faint);cursor:copy;border-bottom:1px dotted var(--line2)}
+.sid:hover{color:var(--accent2)}
+.sidbig{flex:none;font-family:Consolas,"Cascadia Mono",monospace;font-size:11.5px;color:var(--faint);border:1px solid var(--line2);border-radius:6px;padding:2px 8px;cursor:copy;white-space:nowrap}
+.sidbig:empty{display:none}
+.sidbig:hover{color:var(--accent2);border-color:var(--accent)}
 .stag{flex:none;font-size:10.5px;color:var(--muted);border:1px solid var(--line2);border-radius:20px;padding:2px 8px}
 .sess-empty{color:var(--faint);text-align:center;padding:26px 10px;font-size:12.5px}
 

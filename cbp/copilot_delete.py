@@ -11,7 +11,8 @@ import re
 import time
 
 from . import bridge as _b
-from .bridge import visible, visible_locator, diagnostics, log, CONVERSATION_URL_RE, _agent_chat_marker, wait_copilot_ready
+from .bridge import (visible, visible_locator, diagnostics, log, CONVERSATION_URL_RE,
+                     _agent_chat_marker, wait_copilot_ready, body_text, CFG)
 
 
 def __getattr__(name):
@@ -125,6 +126,25 @@ async def _chat_row_from_link(link):
     return link.locator('xpath=..')
 
 
+async def _conversation_belongs_to_session(url: str, session_prefix: str) -> bool:
+    """打开会话正文，确认标记仍在（标题可能已被 Copilot 自动改名）。
+
+    发送新会话时标记 [CBP-AGENT][sid][Cnnn] 是写进首条消息体的，所以即使
+    侧栏标题被改写，正文里依然能找到；这比标题匹配更可靠，也避免误删他人
+    会话。找不到标记或打不开页面一律返回 False（宁可不删）。
+    """
+    if not url:
+        return False
+    page = _b.page  # 模块级缓存会拿到死引用（浏览器重启会换对象），每函数取值
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=120000)
+        await asyncio.sleep(1.5)
+        body = await body_text()
+    except Exception:
+        return False
+    return session_prefix in (body or "")
+
+
 async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
     page = _b.page  # 模块级缓存会拿到死引用（浏览器重启会换对象），每函数取值
     """Delete a saved Copilot conversation by URL, with a same-session marker guard.
@@ -228,9 +248,24 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
         await row.scroll_into_view_if_needed(timeout=5000)
         row_text = (await row.inner_text()).strip()
         if session_prefix not in row_text:
-            raise RuntimeError(
-                f"URL 对应会话不属于当前 Session，拒绝删除；需要前缀: {session_prefix}"
-            )
+            # Copilot 现在会自动为会话生成标题（例如"OneDrive文件上传SharePoint工具"），
+            # 我们写在首条消息里的 [CBP-AGENT][sid][Cnnn] 会被标题改写掉，标题不再
+            # 可靠。改成打开会话正文确认标记仍在——标记是发送时写进消息体的，
+            # 证据更强，也不会因为改名而误判。
+            if not await _conversation_belongs_to_session(url, session_prefix):
+                raise RuntimeError(
+                    f"URL 对应会话不属于当前 Session（标题与正文均无标记），拒绝删除；"
+                    f"需要前缀: {session_prefix}"
+                )
+            # 验证时导航离开了原页面：重新定位那一行再继续删除
+            await _open_chat_sidebar()
+            link = await _conversation_sidebar_link(url) if has_conv_id else None
+            if not link:
+                link = await _conversation_link_by_title(expected_title)
+            if not link:
+                raise RuntimeError("正文验证通过，但侧栏中找不到该会话行")
+            row = await _chat_row_from_link(link)
+            await row.scroll_into_view_if_needed(timeout=5000)
 
         await row.hover(timeout=5000)
         await asyncio.sleep(.35)

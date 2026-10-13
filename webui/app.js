@@ -115,7 +115,10 @@ function drawSessions(){
  box.innerHTML='';
  if(!list.length){box.innerHTML='<div class="sess-empty">没有匹配的 Session</div>';return}
  list.forEach(s=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');
-  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small>步骤 ${s.total_steps??0} · 会话 ${(s.conversation_index??0)+1} · Token ${s.estimated_tokens??0}</small></div><span class="stag">${esc(STATE_TEXT[s.state]||s.state)}</span>`;
+  // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
+  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>步骤 ${s.total_steps??0} · 会话 ${(s.conversation_index??0)+1} · Token ${s.estimated_tokens??0}</small></div><span class="stag">${esc(STATE_TEXT[s.state]||s.state)}</span>`;
+  let chip=e.querySelector('.sid');
+  if(chip)chip.onclick=ev=>{ev.stopPropagation();try{navigator.clipboard.writeText(s.id);chip.textContent='已复制 ✓';setTimeout(()=>chip.textContent=s.id,900)}catch(_){}};
   e.onclick=()=>load(s.id);box.appendChild(e)})}
 
 /* ── 时间线：增量渲染，不重建已有 DOM，展开状态不丢失 ── */
@@ -187,6 +190,7 @@ function setFollowupMode(m){followupMode=m;
 function resetView(){
  document.getElementById('title').textContent='—';
  document.getElementById('status').textContent='—';
+ let _sc=document.getElementById('sidChip'); if(_sc)_sc.textContent='';
  setPill('');
  setKpis({total_steps:0,conversation_steps:0,conversation_index:0,estimated_tokens:0});
  document.getElementById('steps').innerHTML='';renderedSteps=0;lastStepCount=-1;lastDetail='';
@@ -202,6 +206,8 @@ async function load(id){
  let _ms=document.getElementById('model');
  if(currentModel&&[..._ms.options].some(o=>o.value===currentModel))_ms.value=currentModel;
  document.getElementById('title').textContent=s.title;
+ let _sc=document.getElementById('sidChip');
+ if(_sc){_sc.textContent=s.id;_sc.onclick=()=>{try{navigator.clipboard.writeText(s.id);toast('已复制会话 ID: '+s.id,'ok')}catch(e){toast(s.id)}}}
  document.getElementById('status').textContent=(STATE_TEXT[s.state]||s.state)+' · '+s.workspace;
  setPill(s.state);setKpis(s);
  document.getElementById('steps').innerHTML='';renderedSteps=0;lastDetail='';
@@ -242,7 +248,8 @@ async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sess
 function openCopilot(){if(currentUrl)window.open(currentUrl,'_blank');else toast('该 Session 暂无 Copilot URL','err')}
 async function removeSession(remote){
  if(!current)return;
- let msg=remote?'将删除本地 Session，以及该任务关联的所有 Copilot 网页会话。此操作不可撤销，确定继续？':'仅删除本地 Session，Copilot 网页历史会保留。确定继续？';
+ let extra=remote?'，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）':'';
+ let msg=`即将删除的会话：\n\n  ID: ${current}\n  标题: ${(document.getElementById('title').textContent||'').trim()}\n\n仅删除本地 Session${extra}。此操作不可撤销，确定继续？`;
  if(!await dlgConfirm(msg,'删除确认',true))return;
  try{let url='/v1/agent/sessions/'+encodeURIComponent(current)+(remote?'?delete_remote=true':'');
   let d=await api(url,{method:'DELETE'});
@@ -417,6 +424,8 @@ async function runTask(){
  // 结束才返回，等它的回调会让整个任务期间标题都显示"—"
  let title=(task.split('\n')[0]||'').trim().slice(0,120)||current;
  document.getElementById('title').textContent=title;
+ let _sc=document.getElementById('sidChip');
+ if(_sc){_sc.textContent=current;_sc.onclick=()=>{try{navigator.clipboard.writeText(current);toast('已复制会话 ID: '+current,'ok')}catch(e){toast(current)}}}
  document.getElementById('status').textContent=(taskMode==='agent'?'Agent 执行':'普通对话')
   +' · '+(b.workspace||'默认工作区');
  setPill('running');
