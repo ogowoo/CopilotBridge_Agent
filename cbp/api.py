@@ -45,6 +45,11 @@ async def lifespan(app):
             pass
         raise
     b.log("API 与浏览器已就绪")
+    # 服务真正启动时才归档"上一轮自升级已生效"标记（放这里而非模块导入时：
+    # 测试/脚本 import cbp.bridge 不应误清该标记）
+    applied = b.mark_self_upgrade_applied()
+    if applied:
+        b.log(f"[自升级] 已加载上一轮自升级改动（{len(applied)} 条记录），待重启标记归档")
     # 企业租户重启后 SSO/ADFS 回跳可能耗时几十秒，就绪后再做模型发现
     if await b.wait_copilot_ready():
         try:

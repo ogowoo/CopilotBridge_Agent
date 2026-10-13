@@ -1269,10 +1269,9 @@ def self_upgrade_status() -> dict:
             "whitelist": list(getattr(AGENT_TOOLS, "self_whitelist", ()) or ())}
 
 
-# 上一轮自升级的代码在本次启动时已生效：归档待重启标记
-_self_applied = mark_self_upgrade_applied()
-if _self_applied:
-    print(f"[自升级] 已加载上一轮自升级改动（{len(_self_applied)} 条记录），标记归档")
+# 注意：归档"待重启"标记必须由服务真正启动时执行（api.lifespan 调用
+# mark_self_upgrade_applied()），不能在模块导入时执行——测试、脚本、
+# 任何 import cbp.bridge 的进程都会因此误清掉"服务需重启"的标记。
 
 
 # ── Outlook 网页版（OWA）自动化后端 ─────────────────────────────
