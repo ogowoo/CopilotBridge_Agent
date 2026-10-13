@@ -10,7 +10,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from playwright.async_api import async_playwright
 
 from . import bridge as b
@@ -336,7 +336,22 @@ async def chat(req: Request):
 
 @app.get("/ui", include_in_schema=False)
 async def web_ui():
+    # 目录形式提供服务：页面里 style.css/app.js 用相对路径引用，
+    # 必须以 /ui/ 结尾的基地址解析，否则相对引用会落到站点根路径。
+    return RedirectResponse("/ui/")
+
+
+@app.get("/ui/", include_in_schema=False)
+async def web_ui_index():
     return FileResponse(b.BASE / "webui" / "index.html")
+
+
+@app.get("/ui/{asset}", include_in_schema=False)
+async def web_ui_asset(asset: str):
+    # 静态资产白名单，禁止路径穿越
+    if asset not in ("style.css", "app.js"):
+        raise HTTPException(404, "Not Found")
+    return FileResponse(b.BASE / "webui" / asset)
 
 
 @app.get("/v1/agent/sessions")
