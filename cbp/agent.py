@@ -100,75 +100,96 @@ class AgentRunner:
 只有 validate_python 和 run_unittest 均返回 passed=true 后，才可宣称治理完成或把 TODO 标记为完成。
 你可以按需更新工作区的 AGENT.md 与 skills/*/SKILL.md：把本次任务中验证有效的项目约定、命令、踩坑结论沉淀进去（保持精炼，AGENT.md 控制在 8000 字符内），让后续任务直接受益。禁止删除既有的安全约束与验证闭环规则；这类改动会被标记为"自我指令更新"并可通过回滚撤销，改动前先 read_text 看清原文再替换，不要整篇重写。
 可用工具：
-""" + json.dumps(self.tools.descriptions(), ensure_ascii=False) + self._workspace_context()
+""" + json.dumps(self.tools.descriptions(), ensure_ascii=False) + self._self_upgrade_rules() + self._workspace_context()
+
+    def _self_upgrade_rules(self) -> str:
+        """自升级（修改服务自身代码）的专用规则，仅在 allow_self_upgrade 时注入。"""
+        if not getattr(self.tools, "allow_self_upgrade", False):
+            return ""
+        return """
+
+【自升级模式已开启】你可以修改 CopilotBridge 服务自身的代码（cbp/、webui/、scripts/、tests/、app.py 等白名单路径），用 self_* 系列工具操作；config.json、data/、EdgeProfile/ 禁止触碰。硬性流程：
+1. 先 self_read_text 看清现状，修改优先用 self_replace_text 精确替换；写文件用 self_write_text_b64/self_append_text_b64（Base64、每块≤3000字符、分块续写），一次只做一件相关的改动。
+2. 全部写完后执行 self_validate（全安装目录语法检查）与 self_unittest（服务自身单测），两者 passed=true 前禁止返回 final。
+3. 改坏了（验证不过且修不动）就用 self_rollback 回滚本次自升级，严禁在坏状态上继续叠加修改。
+4. 自升级改动需要人工重启服务才生效，返回 final 时必须明确告知：改了什么、验证结果、需要重启、以及可用什么命令回滚。"""
 
     def _workspace_context(self) -> str:
-        """工作区项目上下文：AGENT.md（全量注入）+ skills 目录（渐进式披露）。
+        """项目上下文：全局 + 项目两级 AGENT.md 全量注入，skills 清单渐进式披露。
 
-        AGENT.md 是项目级约定，直接注入系统提示；skills 只注入名称/简介/路径
-        清单，模型判断相关时用 read_text 读取对应 SKILL.md 获取完整指令，
-        避免多个技能的全文同时挤占上下文。
+        - 全局：服务安装目录的 AGENT.md / skills（对所有工作区生效）
+        - 项目：当前工作区的 AGENT.md / skills（同路径去重，同名技能覆盖全局）
         """
         parts: list[str] = []
-        agent_md = getattr(self, "_agent_md", "") or ""
+        agent_md = getattr(self, "_agent_md", None)
+        skills = getattr(self, "_skills", None)
+        if agent_md is None or skills is None:   # 未经 run() 时按需加载
+            agent_md, skills = self._context_values()
+        agent_md = agent_md or ""
         if agent_md:
-            parts.append("项目约定（来自工作区 AGENT.md，必须遵守）：\n" + agent_md)
-        skills = getattr(self, "_skills", None) or []
+            parts.append("项目约定（全局 + 项目两级 AGENT.md，必须遵守；项目级优先）：\n" + agent_md)
+        skills = skills or []
         if skills:
-            lines = ["工作区可用技能（判断与某技能相关时，先用 read_text 读取其 SKILL.md 获取完整指令再执行）："]
+            lines = ["可用技能（判断相关时用 skill_read 读取全文再执行；[项目] 优先于 [全局]）："]
             for s in skills:
-                lines.append(f"- {s['name']}：{s['description']}（{s['path']}）")
+                scope = "项目" if s.get("scope") == "project" else "全局"
+                lines.append(f"- [{scope}] {s['name']}：{s['description']}（skill_read \"{s['name']}\"）")
             parts.append("\n".join(lines))
         return ("\n\n" + "\n\n".join(parts)) if parts else ""
 
-    def _load_agent_md(self) -> str:
-        """工作区根目录的 AGENT.md / agent.md：项目级指令与约定。"""
-        root = getattr(self.tools, "root", None)
-        if not root:
-            return ""
-        for name in ("AGENT.md", "agent.md"):
-            try:
-                p = Path(root) / name
-                if p.is_file():
-                    text = p.read_text(encoding="utf-8", errors="replace").strip()
-                    if not text:
-                        return ""
-                    cap = int(self.config.get("agent_md_max_chars", 8000))
-                    if len(text) > cap:
-                        text = text[:cap] + f"\n…[AGENT.md 共 {len(text)} 字符，已截断到 {cap}]"
-                    return text
-            except Exception:
-                continue
-        return ""
+    def _context_values(self) -> tuple[str, list[dict[str, Any]]]:
+        """懒加载并缓存工作区上下文（run() 每轮会显式刷新）。"""
+        if getattr(self, "_agent_md", None) is None:
+            self._agent_md = self._load_agent_md()
+        if getattr(self, "_skills", None) is None:
+            self._skills = self._load_skill_catalog()
+        return self._agent_md, self._skills
 
-    def _load_skill_catalog(self) -> list[dict[str, Any]]:
-        """skills/<name>/SKILL.md 目录扫描：只取元数据，不读全文。"""
-        root = getattr(self.tools, "root", None)
-        if not root:
-            return []
-        skills_dir = Path(root) / "skills"
-        try:
-            if not skills_dir.is_dir():
-                return []
-            out = []
-            for d in sorted(skills_dir.iterdir()):
+    def _md_roots(self) -> list[tuple[str, Path]]:
+        """两级 AGENT.md 根目录：全局（服务安装目录）在前，项目（工作区）在后。"""
+        roots: list[tuple[str, Path]] = []
+        g = getattr(self.tools, "global_root", None)
+        if g:
+            roots.append(("全局", Path(g)))
+        ws = getattr(self.tools, "root", None)
+        if ws:
+            roots.append(("项目", Path(ws)))
+        return roots
+
+    def _load_agent_md(self) -> str:
+        """合并注入：全局 AGENT.md + 项目 AGENT.md（同文件去重，各自截断）。"""
+        cap = int(self.config.get("agent_md_max_chars", 8000))
+        parts: list[str] = []
+        seen: set[str] = set()
+        for label, root in self._md_roots():
+            for name in ("AGENT.md", "agent.md"):
+                p = root / name
                 try:
-                    if not d.is_dir():
+                    if not p.is_file():
                         continue
-                    md = d / "SKILL.md"
-                    if not md.is_file():
-                        continue
-                    text = md.read_text(encoding="utf-8", errors="replace")
-                    name, desc = self._parse_skill_md(d.name, text)
-                    out.append({"name": name, "description": desc,
-                                "path": f"skills/{d.name}/SKILL.md"})
+                    rp = str(p.resolve()).lower()
+                    if rp in seen:
+                        break
+                    seen.add(rp)
+                    text = p.read_text(encoding="utf-8", errors="replace").strip()
+                    if text:
+                        if len(text) > cap:
+                            text = text[:cap] + f"\n…[共 {len(text)} 字符，已截断到 {cap}]"
+                        parts.append(f"【{label} AGENT.md】\n{text}")
+                    break
                 except Exception:
                     continue
-                if len(out) >= 20:
-                    break
-            return out
+        return "\n\n".join(parts)
+
+    def _load_skill_catalog(self) -> list[dict[str, Any]]:
+        """技能清单：优先由工具层统一扫描（含全局+项目与去重），失败则本地兜底。"""
+        try:
+            listed = self.tools.skill_list()
+            if listed:
+                return listed
         except Exception:
-            return []
+            pass
+        return []
 
     @staticmethod
     def _is_instruction_path(path: str) -> bool:
@@ -180,28 +201,9 @@ class AgentRunner:
 
     @staticmethod
     def _parse_skill_md(dirname: str, text: str) -> tuple[str, str]:
-        """SKILL.md 元数据：优先 YAML frontmatter 的 name/description，
-        退回第一级标题 + 首个非空段落。description 单行封顶 120 字符。"""
-        name, desc, body = dirname, "", text
-        m = re.match(r"^---\s*\n(.*?)\n---\s*\n?", text, re.S)
-        if m:
-            for line in m.group(1).splitlines():
-                if line.startswith("name:"):
-                    name = line.split(":", 1)[1].strip() or name
-                elif line.startswith("description:"):
-                    desc = line.split(":", 1)[1].strip()
-            body = text[m.end():]
-        if not desc:
-            hm = re.search(r"^#\s+(.+)$", body, re.M)
-            if hm:
-                name = hm.group(1).strip() or name
-                rest = body[hm.end():]
-            else:
-                rest = body
-            para = next((p.strip() for p in rest.split("\n\n")
-                         if p.strip() and not p.strip().startswith("#")), "")
-            desc = " ".join(para.split())[:120]
-        return name, desc[:120]
+        """兼容入口：SKILL.md 元数据解析已统一到 cbp.tools.parse_skill_md。"""
+        from .tools import parse_skill_md
+        return parse_skill_md(dirname, text)
 
     @staticmethod
     def _objects(text: str):
@@ -860,6 +862,12 @@ class AgentRunner:
                     validation_required = True
                     syntax_validated = False
                     tests_passed = False
+                # 自升级（改动服务自身代码）：同样进验证闭环，且必须用
+                # self_validate / self_unittest 证明，不能只跑工作区的验证。
+                if tool in {"self_write_text_b64", "self_append_text_b64", "self_replace_text"}:
+                    validation_required = True
+                    syntax_validated = False
+                    tests_passed = False
                 # 自我指令更新（AGENT.md / skills/*.md）：允许，但必须在时间线里
                 # 显式标记 —— 这类改动会改变后续所有任务的行为，且原像已进快照，
                 # 可用"回滚任务改动"撤销。
@@ -870,6 +878,10 @@ class AgentRunner:
                 if tool == "validate_python" and isinstance(step.get("result"), dict):
                     syntax_validated = bool(step["result"].get("passed"))
                 if tool == "run_unittest" and isinstance(step.get("result"), dict):
+                    tests_passed = bool(step["result"].get("passed"))
+                if tool == "self_validate" and isinstance(step.get("result"), dict):
+                    syntax_validated = bool(step["result"].get("passed"))
+                if tool == "self_unittest" and isinstance(step.get("result"), dict):
                     tests_passed = bool(step["result"].get("passed"))
             history.append(step); all_steps.append(step); self.step_saver(step)
             if event: self.file_event_saver(event)

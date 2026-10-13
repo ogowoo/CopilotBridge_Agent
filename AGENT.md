@@ -1,6 +1,10 @@
-# CopilotBridge Agent 项目约定
+# CopilotBridge Agent 项目约定（全局级）
 
-把本目录作为 workspace 交给 Agent 时，本文件会注入系统提示。约定优先级高于模型默认习惯。
+本文件位于**服务安装目录**，属于**全局 AGENT.md**：对所有工作区生效。
+工作区根目录若也有 `AGENT.md`，两份会合并注入，**项目级优先**。
+技能同理：`<安装目录>/skills/` 是全局技能，`<工作区>/skills/` 是项目技能，同名时项目覆盖全局。
+
+把本目录作为 workspace 交给 Agent 时，本文件同样注入。约定优先级高于模型默认习惯。
 
 ## 项目定位
 
@@ -42,14 +46,29 @@ python start.py                        # 启动服务(默认 127.0.0.1:8765)
 
 ## 自我升级与回滚（改这个项目自身时必读）
 
-允许 Agent 修改本项目的代码与文档实现"自我升级"，但必须遵守：
+**自升级模式**（`config.json` 里 `agent.allow_self_upgrade: true` 才开启，默认关闭）让 Agent 用 `self_*` 工具直接修改**服务自身代码**——即使当前工作区是别的项目也能改安装目录：
 
-1. **改动前有快照**：所有写操作前原像自动存入 `data/snapshots/<sid>/`（同一路径保留最早状态）。整任务回滚入口：WebUI「更多 ▾ → 回滚任务改动…」、`POST /v1/agent/sessions/{sid}/rollback`、或服务起不来时用 `python scripts/rollback.py --last --yes`。
-2. **改完必须验证**：`.py/.json/.html` 改动后 validate_python + run_unittest 双通过才算完成；服务重启后能 `python start.py` 起来才算真升级。
-3. **升级自己要留下可回退点**：涉及 cbp/ 核心（agent/bridge/tools/api）的改动要一次一件事，别把多个不相关重构混在一次任务里——回滚是按任务的，混在一起就得整块回退。
-4. **改坏了的判定**：导入报错/服务起不来/测试不过。此时优先回滚，不要在坏状态上继续叠加修补。
-5. **AGENT.md 与 skills/ 可以由 Agent 自己更新**（把验证有效的结论沉淀下来），但：禁止删除既有安全约束与验证闭环规则；系统会把这类改动标记为"自我指令更新"；AGENT.md 控制在 8000 字符内（超出部分不会注入）。
-6. **快照有上限**：单文件 8MB、单会话 800 条；超限会记入 skipped 且不回滚那些路径（大二进制文件别指望回滚）。
+| 工具 | 用途 |
+|---|---|
+| `self_read_text` | 读服务自身文件（安装目录相对路径） |
+| `self_write_text_b64` / `self_append_text_b64` | 分块写服务代码（Base64，≤3000 字符/块） |
+| `self_replace_text` | 精确替换（改代码优先） |
+| `self_validate` / `self_unittest` | 全安装目录语法检查 / 服务自身单测（**自升级的硬门**） |
+| `self_rollback` | 回滚本次任务对服务代码的改动 |
+
+白名单：`cbp/`、`webui/`、`scripts/`、`docs/`、`tests/`、`app.py`、`start.py`、`install.py`、`requirements.txt`、`AGENT.md`、`README.md`、`config.example.json`。
+**禁止触碰**：`config.json`、`data/`、`EdgeProfile/`、`.git/`、`for debug/`。
+
+硬性规则：
+
+1. **改动前有快照**：工作区改动存 `data/snapshots/<sid>/`，自升级改动存 `data/snapshots/_self_<sid>/`（两个作用域可独立回滚）。同一路径保留最早状态。
+2. **回滚通道三条**：WebUI「更多 ▾ → 回滚任务改动…／回滚服务自升级…」、`POST /v1/agent/sessions/{sid}/rollback` 与 `POST /v1/agent/self/rollback?last=true`、以及**服务起不来时的离线命令** `python scripts/rollback.py --last --yes`（工作区）/ `python scripts/rollback.py --scope self --last --yes`（服务代码）。
+3. **验证门**：自升级写完必须 `self_validate` + `self_unittest` 双通过；提前返回 final 会被 `validation_gate` 拦下。
+4. **一次一件事**：回滚按作用域/任务粒度，多个不相关重构混在一次任务里就只能整块回退。
+5. **生效需要重启**：自升级写盘后会落下 `data/.self_upgrade_pending` 标记，服务启动时自动归档；返回 final 必须告知"需重启 + 回滚命令"。
+6. **改坏了的判定**：导入报错/服务起不来/测试不过 → 优先回滚，不要在坏状态上叠加修补。
+7. **AGENT.md 与 skills/ 允许 Agent 自更新**（沉淀验证有效的结论），但禁止删除既有安全约束与验证闭环规则；这类改动会标记 `instruction_update`；AGENT.md 单份 ≤8000 字符。
+8. **快照上限**：单文件 8MB、单会话 800 条；超限记入 `skipped` 且不回滚那些路径（大二进制别指望回滚）。
 
 ## 安全开关(默认保守)
 

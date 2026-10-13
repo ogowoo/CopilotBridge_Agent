@@ -32,6 +32,7 @@
             <div class="menu"><button class="btn ghost" id="moreBtn" onclick="toggleMore(event)">更多 ▾</button><div class="menuList" id="moreMenu">
               <button onclick="control('archive')">归档</button>
               <button onclick="rollbackSession()">回滚任务改动…</button>
+              <button class="danger" onclick="rollbackSelfUpgrade()">回滚服务自升级…</button>
               <button onclick="removeSession(false)">仅删除本地记录</button>
               <button class="danger" onclick="removeSession(true)">同时删除 Copilot 会话</button>
             </div></div>

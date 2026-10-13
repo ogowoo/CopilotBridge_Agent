@@ -17,9 +17,9 @@
 - **API 提供商接入**：除 Copilot 网页自动化外，可直接接入任何 OpenAI 兼容 HTTP API（内置 OpenAI / DeepSeek / Kimi / Grok 预设，可自定义）。模型 ID 形如 `deepseek/deepseek-chat`，API Key 走环境变量；普通对话和 **Agent 模式（含工具循环）都可用**——JSON 动作协议是纯 prompt 驱动，与提供商无关。
 - **Agent 模式**：Copilot 每回合返回一个 JSON 动作（调用工具或最终答复），本地执行工具后把结果送回，循环直到任务完成。
 - **15+ 个工作区工具**：目录/文件读写（Base64 写入防 JSON 转义损坏）、精确替换、复制/移动/删除、`validate_python`、`run_unittest`、`run_python`，全部限制在工作区根目录内。
-- **项目级约定与技能（AGENT.md / skills）**：工作区根目录的 `AGENT.md`（或 `agent.md`）会**全量注入系统提示**（默认 8000 字符截断，可用 `agent_md_max_chars` 调整），把项目规范、常用命令、禁忌事项直接交给 Agent；`skills/<名字>/SKILL.md` 目录式技能采用**渐进式披露**——提示里只注入技能名/一行简介/文件路径，模型判断与任务相关时再用 `read_text` 读取 SKILL.md 全文，多个技能也不会挤占上下文。SKILL.md 支持 YAML frontmatter（`name`/`description`），缺省时回退"首个一级标题 + 首个段落"。本仓库自身即带 [AGENT.md](AGENT.md) 与示例技能。
-- **改动快照与任务级回滚（自我升级 failback）**：每个写操作（含 b64 写入、替换、复制/移动/删除、Office 写入）**执行前**把目标路径的改动前原像存入 `data/snapshots/<sid>/`，同一路径只保留最早状态。任务把代码改坏时，WebUI「更多 ▾ → 回滚任务改动…」或 `POST /v1/agent/sessions/{sid}/rollback` 可把整个任务改动一次性还原（修改的还原、任务新建的删除）。**服务/WebUI 起不来时还有不依赖服务的 CLI 通道**：`python scripts/rollback.py --last --yes`（`app.py` 导入失败会自动打印这条指引）。
-- **Agent 可自我更新指令**：Agent 被允许按需更新工作区的 `AGENT.md` 与 `skills/*/SKILL.md`（把验证有效的约定、命令、踩坑结论沉淀下来），但这类改动会在步骤时间线里标记为 `instruction_update`（"自我指令更新"），且原像已进快照可随时回滚；系统提示同时禁止删除既有安全约束与验证闭环规则。
+- **两级项目上下文（全局 + 项目）**：`AGENT.md` 与 `skills/` 都有两个作用域——**全局**放在服务安装目录（对所有工作区生效），**项目**放在工作区根目录；两份合并注入，同名技能/约定项目级优先，同一文件自动去重。全局技能位于工作区之外，用 `skill_read` 工具读取（`skill_list` 列清单）。`AGENT.md` 单份默认 8000 字符截断（`agent_md_max_chars`），SKILL.md 支持 YAML frontmatter（`name`/`description`），缺省回退"首个一级标题 + 首个段落"。本仓库自身即带全局 [AGENT.md](AGENT.md) 与示例技能。
+- **服务自升级（可选，默认关闭）**：`agent.allow_self_upgrade: true` 后，Agent 可用 `self_read_text`/`self_write_text_b64`/`self_append_text_b64`/`self_replace_text` 直接修改**服务自身代码**（即使工作区是别的项目），白名单限定 `cbp/`、`webui/`、`scripts/`、`docs/`、`tests/` 与若干顶层文件，`config.json`/`data/`/`EdgeProfile/` 禁止触碰；写完必须 `self_validate` + `self_unittest` 双通过（提前 final 会被 `validation_gate` 拦下），并提供 `self_rollback` 工具回滚本次自升级。
+- **改动快照与两级回滚（自我升级 failback）**：写操作**执行前**把目标原像存入 `data/snapshots/<sid>/`（工作区）与 `data/snapshots/_self_<sid>/`（服务代码），同一路径只保留最早状态，因此回滚恢复的是"任务开始前"。入口：WebUI「更多 ▾ → 回滚任务改动…／回滚服务自升级…」、`POST /v1/agent/sessions/{sid}/rollback`、`POST /v1/agent/self/rollback?last=true`，以及**服务/WebUI 起不来时的离线通道** `python scripts/rollback.py [--scope self] --last --yes`（`app.py` 导入失败会自动打印指引）。自升级写盘会落 `data/.self_upgrade_pending` 标记，服务重启后自动归档。
 - **M365 文件与软件集成**：
   - **Office 文档工具**：`read_excel`/`write_excel`（openpyxl）、`read_docx`/`write_docx`（python-docx）、`read_pptx`（python-pptx）、`read_pdf`（pypdf）——Agent 可直接分析/修改 xlsx、docx、pptx、pdf；
   - **Copilot 文件上传**：`copilot_attach` 工具把工作区文件挂到 Copilot 网页版附件框并取回分析结果，用于图片/扫描件/复杂版式等本地无法解析的文件；
@@ -199,6 +199,9 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | DELETE | `/v1/agent/sessions/{sid}?delete_remote=true&force_local=true` | 删除会话（可选连带删除 Copilot 网页会话） |
 | GET | `/v1/agent/sessions/{sid}/snapshots` | 任务改动快照清单（可回滚的路径与类型） |
 | POST | `/v1/agent/sessions/{sid}/rollback` | 回滚该任务的全部工作区改动（运行中返回 409） |
+| GET | `/v1/agent/self/status` | 自升级状态（是否启用、白名单、待重启标记、快照作用域） |
+| GET | `/v1/agent/self/snapshots?sid=` | 自升级改动快照清单 |
+| POST | `/v1/agent/self/rollback?sid=&last=` | 回滚服务自身代码（`last=true` 取最近一次） |
 | GET/POST | `/v1/agent/workspace` | 查询/切换工具工作区 |
 | GET/POST | `/v1/agent/browser` | 查询/切换浏览器窗口显示（无头 ↔ 有窗口；带登录态重启浏览器上下文，`persist=true` 可写回 config.json） |
 | GET | `/ui` | Web 管理台 |

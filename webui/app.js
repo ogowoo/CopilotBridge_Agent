@@ -260,6 +260,20 @@ async function rollbackSession(){
   toast(`回滚完成：还原 ${d.restored}、删除 ${d.deleted}${tail}`, d.failed?'err':'ok');
   await load(current)
  }catch(e){toast('回滚失败: '+e,'err')}}
+/* ── 回滚服务自升级：还原 CopilotBridge 自身代码（需重启服务生效） ── */
+async function rollbackSelfUpgrade(){
+ try{
+  let st=await api('/v1/agent/self/status');
+  if(!st.snapshot_scopes||!st.snapshot_scopes.length){toast('没有可回滚的自升级记录','err');return}
+  let list=[];
+  for(const scope of st.snapshot_scopes.slice(0,5)){
+   try{let s=await api('/v1/agent/self/snapshots?sid='+encodeURIComponent(scope.replace(/^_self_/,'')));list.push(`${scope}：${(s.files||[]).length} 个文件`)}catch(e){}
+  }
+  let msg=`将把服务自身代码恢复到自升级前的状态（最近一次）：\n\n${list.join('\n')}\n\n回滚后必须重启服务才生效。确定继续？`;
+  if(!await dlgConfirm(msg,'回滚服务自升级',true))return;
+  let d=await api('/v1/agent/self/rollback?last=true',{method:'POST'});
+  toast(`自升级已回滚：还原 ${d.restored||0}、删除 ${d.deleted||0}${d.failed?`，失败 ${d.failed}`:''} · 请重启服务`, d.failed?'err':'ok');
+ }catch(e){toast('自升级回滚失败: '+e,'err')}}
 /* ── 删除结果可视化弹窗 ── */
 let lastDeleteResult=null;
 function showDeleteResult(d){

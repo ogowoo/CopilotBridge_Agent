@@ -883,6 +883,8 @@ async def _start_browser(headless: bool) -> bool:
 AGENT_CFG = CFG.get("agent", {})
 AGENT_WORKSPACE = (BASE / AGENT_CFG.get("workspace", "workspace")).resolve()
 AGENT_TOOLS = ToolRegistry(AGENT_WORKSPACE, AGENT_CFG)
+# 全局作用域：服务安装目录的 AGENT.md / skills 对所有工作区生效
+AGENT_TOOLS.set_global_root(BASE)
 # 新任务缺省工作区：POST /v1/agent/workspace 会更新它
 DEFAULT_WORKSPACE = str(AGENT_WORKSPACE)
 # 与 AgentRunner.__init__ 的默认值保持一致，供 WebUI 显示真实 Token 预算。
@@ -922,6 +924,94 @@ async def rollback_session_changes(sid: str) -> dict:
     AGENT_SESSIONS.add_step(sid, step["step"], int(state.get("conversation_index", 0)), step)
     AGENT_SESSIONS.patch(sid, last_error=None if not result["failed"] else "回滚存在失败项")
     return result
+
+
+# ── 自升级（修改服务自身代码）─────────────────────────────────────
+SELF_UPGRADE_MARKER = BASE / "data" / ".self_upgrade_pending"
+
+
+def self_scope(sid: str) -> str:
+    """自升级改动的快照作用域：与工作区改动分开，可独立回滚。"""
+    return f"_self_{sid}"
+
+
+def mark_self_upgrade_applied() -> list[str]:
+    """服务启动时调用：上一轮自升级的代码已被加载，把待重启标记归档。"""
+    if not SELF_UPGRADE_MARKER.is_file():
+        return []
+    try:
+        lines = [x for x in SELF_UPGRADE_MARKER.read_text(encoding="utf-8").splitlines() if x.strip()]
+    except Exception:
+        lines = []
+    try:
+        SELF_UPGRADE_MARKER.replace(SELF_UPGRADE_MARKER.with_suffix(".applied"))
+    except Exception:
+        pass
+    return lines
+
+
+def self_snapshot_hook(sid: str):
+    """快照钩子：按目标路径自动分派到工作区作用域或自升级作用域。"""
+    def hook(tool: str, rel: str, target: Path) -> None:
+        t = Path(target)
+        try:
+            t.relative_to(AGENT_TOOLS.root)
+            SNAPSHOTS.capture(sid, rel, t, tool)          # 工作区内
+        except ValueError:
+            SNAPSHOTS.capture(self_scope(sid), rel, t, tool)  # 服务代码
+    return hook
+
+
+async def rollback_self_upgrade(sid: str | None = None, use_last: bool = False) -> dict:
+    """回滚服务自身代码的自升级改动（不依赖 WebUI 的离线通道见 scripts/rollback.py）。"""
+    scope = self_scope(sid) if sid else ""
+    if use_last or not scope:
+        # 取最近修改的自升级快照作用域
+        cands = ([d.name for d in SNAPSHOTS.base.iterdir()
+                  if d.is_dir() and d.name.startswith("_self_")]
+                 if SNAPSHOTS.base.is_dir() else [])
+        if not cands:
+            return {"restored": 0, "deleted": 0, "failed": 0, "results": [],
+                    "message": "没有自升级快照记录"}
+        scope = max(cands, key=lambda n: SNAPSHOTS.manifest_path(n).stat().st_mtime)
+    result = SNAPSHOTS.restore(scope, BASE)
+    if sid and AGENT_SESSIONS.get(sid):
+        state = AGENT_SESSIONS.get(sid) or {}
+        step = {"step": int(state.get("total_steps", 0)), "status": "self_rollback",
+                "reason": f"回滚服务自升级：还原 {result['restored']} 个、删除 {result['deleted']} 个"
+                          f"、失败 {result['failed']} 个",
+                "result": {"scope": scope, "restored": result["restored"],
+                           "deleted": result["deleted"], "failed": result["failed"],
+                           "results": result["results"][:50]}}
+        AGENT_SESSIONS.add_step(sid, step["step"], int(state.get("conversation_index", 0)), step)
+    if result.get("restored") or result.get("deleted"):
+        try:
+            SELF_UPGRADE_MARKER.unlink(missing_ok=True)
+        except Exception:
+            pass
+    return result
+
+
+def self_upgrade_status() -> dict:
+    pending = []
+    if SELF_UPGRADE_MARKER.is_file():
+        try:
+            pending = [x for x in SELF_UPGRADE_MARKER.read_text(encoding="utf-8").splitlines() if x.strip()]
+        except Exception:
+            pending = []
+    scopes = ([d.name for d in SNAPSHOTS.base.iterdir()
+               if d.is_dir() and d.name.startswith("_self_")]
+              if SNAPSHOTS.base.is_dir() else [])
+    return {"enabled": bool(getattr(AGENT_TOOLS, "allow_self_upgrade", False)),
+            "base": str(BASE), "restart_pending": bool(pending),
+            "pending_entries": pending[-20:], "snapshot_scopes": scopes,
+            "whitelist": list(getattr(AGENT_TOOLS, "self_whitelist", ()) or ())}
+
+
+# 上一轮自升级的代码在本次启动时已生效：归档待重启标记
+_self_applied = mark_self_upgrade_applied()
+if _self_applied:
+    print(f"[自升级] 已加载上一轮自升级改动（{len(_self_applied)} 条记录），标记归档")
 
 
 # ── Outlook 网页版（OWA）自动化后端 ─────────────────────────────
@@ -1413,9 +1503,9 @@ async def run_agent(req: AgentRequest):
             st=get(); AGENT_SESSIONS.add_step(sid,int(x.get("step",st["total_steps"]+1)),int(st["conversation_index"]),x)
         def add_file(x): AGENT_SESSIONS.add_file_event(sid,x)
         def add_conv_stat(x): AGENT_SESSIONS.add_conv_stat(sid,x)
-        # 写操作前捕获原像：任务结束可整体回滚（自我升级 failback 的安全网）
-        AGENT_TOOLS.set_snapshot_hook(
-            lambda tool, rel, target: SNAPSHOTS.capture(sid, rel, target, tool))
+        # 写操作前捕获原像：工作区改动与自升级改动分作用域，均可整任务回滚
+        AGENT_TOOLS.set_snapshot_hook(self_snapshot_hook(sid))
+        AGENT_TOOLS.self_rollback_fn = lambda: SNAPSHOTS.restore(self_scope(sid), BASE)
         runner=AgentRunner(AGENT_TOOLS,turn,AGENT_CFG,get,save,add_step,add_file,add_conv_stat)
         try:
             result = await runner.run(effective_task,req.model)
@@ -1428,6 +1518,7 @@ async def run_agent(req: AgentRequest):
             raise
         finally:
             AGENT_TOOLS.set_snapshot_hook(None)
+            AGENT_TOOLS.self_rollback_fn = None
             # 恢复进入前的值而非置 None：排队任务接管时不会被误清
             ACTIVE_SESSION_ID = prev_active
 

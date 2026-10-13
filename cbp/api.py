@@ -387,6 +387,32 @@ async def session_rollback(sid: str):
     return result
 
 
+# ── 自升级（修改服务自身代码）───────────────────────────────────
+@app.get("/v1/agent/self/status")
+async def self_status():
+    """自升级状态：是否启用、白名单、待重启标记、自升级快照作用域。"""
+    return b.self_upgrade_status()
+
+
+@app.get("/v1/agent/self/snapshots")
+async def self_snapshots(sid: str | None = None):
+    """自升级改动的快照摘要（不传 sid 时列出所有自升级作用域）。"""
+    if sid:
+        return b.SNAPSHOTS.summary(b.self_scope(sid))
+    scopes = b.self_upgrade_status()["snapshot_scopes"]
+    return {"scopes": [{"scope": s,
+                        "session_id": s[len("_self_"):] if s.startswith("_self_") else s,
+                        "summary": b.SNAPSHOTS.summary(s)} for s in scopes]}
+
+
+@app.post("/v1/agent/self/rollback")
+async def self_rollback(sid: str | None = None, last: bool = False):
+    """回滚服务自身代码的自升级改动（last=true 时取最近一次）。"""
+    async with b.lock:
+        result = await b.rollback_self_upgrade(sid, use_last=last)
+    return result
+
+
 @app.post("/v1/agent/sessions/{sid}/actions/{action}")
 async def control(sid: str, action: str):
     if not b.AGENT_SESSIONS.get(sid):

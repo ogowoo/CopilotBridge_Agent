@@ -5,9 +5,11 @@ import base64
 import hashlib
 import json
 import queue
+import re
 import shutil
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -15,6 +17,31 @@ from typing import Any, Awaitable, Callable
 
 class ToolError(RuntimeError):
     pass
+
+
+def parse_skill_md(dirname: str, text: str) -> tuple[str, str]:
+    """SKILL.md 元数据：优先 YAML frontmatter 的 name/description，
+    退回第一级标题 + 首个非空段落。description 单行封顶 120 字符。"""
+    name, desc, body = dirname, "", text
+    m = re.match(r"^---\s*\n(.*?)\n---\s*\n?", text, re.S)
+    if m:
+        for line in m.group(1).splitlines():
+            if line.startswith("name:"):
+                name = line.split(":", 1)[1].strip() or name
+            elif line.startswith("description:"):
+                desc = line.split(":", 1)[1].strip()
+        body = text[m.end():]
+    if not desc:
+        hm = re.search(r"^#\s+(.+)$", body, re.M)
+        if hm:
+            name = hm.group(1).strip() or name
+            rest = body[hm.end():]
+        else:
+            rest = body
+        para = next((p.strip() for p in rest.split("\n\n")
+                     if p.strip() and not p.strip().startswith("#")), "")
+        desc = " ".join(para.split())[:120]
+    return name, desc[:120]
 
 
 class _ComWorker:
@@ -117,6 +144,20 @@ class ToolRegistry:
         ]
         self._extra_descriptions: list[dict[str, Any]] = []
         self._snapshot_hook: Callable[[str, str, Path], None] | None = None
+        # 自升级回滚通道：由桥接层绑定为"恢复服务自身代码快照"的可调用对象
+        self.self_rollback_fn: Callable[[], Any] | None = None
+        # ── 全局作用域（服务安装目录）与自升级 ───────────────────────────
+        # global_root：服务安装目录，存放全局 AGENT.md / skills（对所有工作区生效）
+        # allow_self_upgrade：允许 Agent 修改服务自身代码（默认关闭）
+        # self_whitelist：自升级可触达的路径前缀（安装目录内相对路径）
+        self.global_root: Path | None = None
+        self.allow_self_upgrade = bool(config.get("allow_self_upgrade", False))
+        self.self_whitelist = tuple(config.get("self_upgrade_paths") or (
+            "cbp/", "webui/", "scripts/", "docs/", "tests/",
+            "app.py", "start.py", "install.py", "requirements.txt",
+            "AGENT.md", "README.md", "config.example.json",
+        )) if self.allow_self_upgrade else ()
+        self.self_denylist = ("config.json", "data/", "EdgeProfile/", "for debug/", ".git/", "__pycache__/")
         self._tools: dict[str, Callable[..., Awaitable[Any]]] = {
             "list_directory": self.list_directory,
             "find_files": self.find_files,
@@ -133,6 +174,8 @@ class ToolRegistry:
             "run_python": self.run_python,
             "validate_python": self.validate_python,
             "run_unittest": self.run_unittest,
+            "skill_list": self.skill_list,
+            "skill_read": self.skill_read,
             "read_excel": self.read_excel,
             "write_excel": self.write_excel,
             "read_docx": self.read_docx,
@@ -144,6 +187,16 @@ class ToolRegistry:
             "outlook_search": self.outlook_search,
             "outlook_send": self.outlook_send,
         }
+        if self.allow_self_upgrade:
+            self._tools.update({
+                "self_read_text": self.self_read_text,
+                "self_write_text_b64": self.self_write_text_b64,
+                "self_append_text_b64": self.self_append_text_b64,
+                "self_replace_text": self.self_replace_text,
+                "self_validate": self.self_validate,
+                "self_unittest": self.self_unittest,
+                "self_rollback": self.self_rollback,
+            })
 
     def register(self, name: str, fn: Callable[..., Awaitable[Any]],
                  description: str, arguments: dict[str, Any]) -> None:
@@ -168,6 +221,215 @@ class ToolRegistry:
             hook(tool, rel, target)
         except Exception:
             pass
+
+    # ── 全局与项目两级 skills ────────────────────────────────────────
+    def set_global_root(self, root: "str | Path | None") -> None:
+        """设置服务安装目录：全局 AGENT.md / skills 所在处，对所有工作区生效。"""
+        self.global_root = Path(root).resolve() if root else None
+
+    def _skill_dirs(self) -> list[tuple[str, Path]]:
+        out = []
+        if self.global_root:
+            d = self.global_root / "skills"
+            if d.is_dir():
+                out.append(("global", d))
+        d = self.root / "skills"
+        if d.is_dir():
+            out.append(("project", d))
+        return out
+
+    def skill_list(self) -> list[dict[str, Any]]:
+        """两级技能清单：项目同名技能覆盖全局。"""
+        merged: dict[str, dict[str, Any]] = {}
+        for scope, d in self._skill_dirs():
+            try:
+                for sub in sorted(d.iterdir()):
+                    if not sub.is_dir():
+                        continue
+                    md = sub / "SKILL.md"
+                    if not md.is_file():
+                        continue
+                    text = md.read_text(encoding="utf-8", errors="replace")
+                    name, desc = parse_skill_md(sub.name, text)
+                    merged[name] = {"name": name, "description": desc, "scope": scope,
+                                    "path": f"skills/{sub.name}/SKILL.md", "abs": str(md)}
+            except Exception:
+                continue
+        return list(merged.values())[:30]
+
+    async def skill_read(self, name: str) -> dict[str, Any]:
+        """读取技能全文。全局技能位于工作区之外，read_text 受沙箱限制读不到，
+        必须用本工具读取。"""
+        if not name:
+            raise ToolError("name 不能为空")
+        key = str(name).strip().lower()
+        for skill in self.skill_list():
+            dirname = Path(skill["path"]).parent.name.lower()
+            if skill["name"].lower() == key or dirname == key:
+                p = Path(skill["abs"])
+                try:
+                    text = p.read_text(encoding="utf-8", errors="replace")
+                except Exception as exc:
+                    raise ToolError(f"读取技能失败: {exc}") from exc
+                cap = 12000
+                return {"name": skill["name"], "scope": skill["scope"], "path": skill["path"],
+                        "content": text if len(text) <= cap
+                        else text[:cap] + f"\n…[共 {len(text)} 字符，已截断]"}
+        raise ToolError(f"未找到技能: {name}（可用 skill_list 查看可用技能）")
+
+    # ── 自升级（修改服务自身代码）────────────────────────────────────
+    def _self_rel(self, candidate: Path) -> str:
+        return candidate.relative_to(self.global_root).as_posix()
+
+    def _self_path(self, value: str = ".") -> Path:
+        if not self.allow_self_upgrade:
+            raise ToolError("自升级已在 config.json 中禁用（allow_self_upgrade=false）")
+        if not self.global_root:
+            raise ToolError("未设置服务安装目录，无法自升级")
+        candidate = (self.global_root / value).resolve()
+        try:
+            rel = self._self_rel(candidate)
+        except ValueError:
+            raise ToolError("拒绝访问服务安装目录之外的路径")
+        for deny in self.self_denylist:
+            if deny.endswith("/"):
+                if rel.startswith(deny) or rel == deny.rstrip("/"):
+                    raise ToolError(f"自升级禁止触碰: {rel}")
+            elif rel == deny:
+                raise ToolError(f"自升级禁止触碰: {rel}")
+        if not any(rel == w.rstrip("/") or rel.startswith(w) for w in self.self_whitelist):
+            raise ToolError(f"路径不在自升级白名单内: {rel}")
+        return candidate
+
+    def _mark_self_upgrade(self, rel: str) -> None:
+        """标记"服务代码已改动，需重启生效"（同时作为自我保护线索）。"""
+        try:
+            marker = self.global_root / "data" / ".self_upgrade_pending"
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            with marker.open("a", encoding="utf-8") as f:
+                f.write(f"{time.time()}\t{rel}\n")
+        except Exception:
+            pass
+
+    async def self_read_text(self, path: str, offset: int = 0, limit: int = 0) -> dict[str, Any]:
+        target = self._self_path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        text = target.read_text(encoding="utf-8", errors="replace")
+        offset = max(0, self._int_arg(offset, 0, "offset"))
+        limit = max(0, self._int_arg(limit, 0, "limit"))
+        total = len(text)
+        cap = min(limit, self.max_read) if limit else self.max_read
+        end = min(total, offset + cap)
+        return {"path": path, "content": text[offset:end], "offset": offset,
+                "total_chars": total, "truncated": end < total,
+                "next_offset": end if end < total else None}
+
+    async def _self_write(self, path: str, content: str, overwrite: bool) -> dict[str, Any]:
+        if len(content) > self.max_write:
+            raise ToolError("写入内容超过限制")
+        target = self._self_path(path)
+        rel = self._self_rel(target)
+        self._snap("self_write_text_b64" if overwrite else "self_append_text_b64", rel, target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = self._hash(target)
+        with target.open("w" if overwrite else "a", encoding="utf-8", newline="") as f:
+            f.write(content)
+        self._mark_self_upgrade(rel)
+        tool = "self_write_text_b64" if overwrite else "self_append_text_b64"
+        return {"path": path, "written_chars": len(content), "tool": tool,
+                "note": "服务自身代码已改动，需重启服务生效；验证通过前请勿宣称完成",
+                "file_event": {"tool": tool, "path": rel, "before_hash": before,
+                               "after_hash": self._hash(target), "result": "ok"}}
+
+    async def self_write_text_b64(self, path: str, content_b64: str) -> dict[str, Any]:
+        return await self._self_write(path, self._decode_b64(content_b64), True)
+
+    async def self_append_text_b64(self, path: str, content_b64: str) -> dict[str, Any]:
+        return await self._self_write(path, self._decode_b64(content_b64), False)
+
+    async def self_replace_text(self, path: str, old: str, new: str, count: int = 1) -> dict[str, Any]:
+        if not old:
+            raise ToolError("old 不能为空")
+        if len(new) > self.max_write:
+            raise ToolError("替换内容超过限制")
+        count = max(1, min(self._int_arg(count, 1, "count"), 100))
+        target = self._self_path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        try:
+            with target.open("r", encoding="utf-8", errors="strict", newline="") as f:
+                text = f.read()
+        except UnicodeDecodeError as exc:
+            raise ToolError(f"文件不是有效的 UTF-8 文本: {exc}")
+        found = text.count(old)
+        if found == 0:
+            raise ToolError("未找到要替换的原文本，请先 self_read_text 确认原文")
+        rel = self._self_rel(target)
+        self._snap("self_replace_text", rel, target)
+        before = self._hash(target)
+        with target.open("w", encoding="utf-8", newline="") as f:
+            f.write(text.replace(old, new, count))
+        self._mark_self_upgrade(rel)
+        return {"path": path, "replaced": min(found, count),
+                "note": "服务自身代码已改动，需重启服务生效",
+                "file_event": {"tool": "self_replace_text", "path": rel, "before_hash": before,
+                               "after_hash": self._hash(target), "result": "ok"}}
+
+    def _self_py_files(self) -> list[Path]:
+        skip = ("data", "EdgeProfile", ".git", "__pycache__", "for debug")
+        out = []
+        for p in self.global_root.rglob("*.py"):
+            rel = p.relative_to(self.global_root)
+            if rel.parts and rel.parts[0] in skip:
+                continue
+            out.append(p)
+        return sorted(out)
+
+    async def self_validate(self) -> dict[str, Any]:
+        """对服务安装目录做全量语法检查（py_compile），是自升级的硬门之一。"""
+        if not self.allow_self_upgrade:
+            raise ToolError("自升级已在 config.json 中禁用")
+        files = self._self_py_files()
+        if not files:
+            raise ToolError("未找到 Python 文件")
+        failures = []
+        for item in files:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, "-m", "py_compile", str(item), cwd=str(self.global_root),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            _, stderr = await proc.communicate()
+            if proc.returncode:
+                failures.append({"path": str(item.relative_to(self.global_root)),
+                                 "error": stderr.decode("utf-8", "replace")[-2000:]})
+        return {"passed": not failures, "checked": len(files), "failures": failures}
+
+    async def self_unittest(self, pattern: str = "test_*.py") -> dict[str, Any]:
+        """在服务安装目录跑单元测试，是自升级的第二个硬门。"""
+        if not self.allow_self_upgrade:
+            raise ToolError("自升级已在 config.json 中禁用")
+        tests_dir = self.global_root / "tests"
+        if not tests_dir.is_dir():
+            raise ToolError("服务安装目录下没有 tests 目录")
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "unittest", "discover", "-s", str(tests_dir), "-p", pattern, "-v",
+            cwd=str(self.global_root),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(),
+                                                    timeout=max(self.python_timeout, 180))
+        except asyncio.TimeoutError:
+            proc.kill(); await proc.wait(); raise ToolError("自升级单元测试超时")
+        output = (stdout + stderr).decode("utf-8", "replace")[-30000:]
+        return {"passed": proc.returncode == 0, "exit_code": proc.returncode, "output": output}
+
+    async def self_rollback(self) -> dict[str, Any]:
+        """回滚本次任务对服务自身代码的改动（原像来自快照）。"""
+        fn = getattr(self, "self_rollback_fn", None)
+        if not fn:
+            raise ToolError("当前没有可用的自升级回滚通道（未绑定快照作用域）")
+        result = fn()
+        return result if isinstance(result, dict) else {"result": result}
 
     def set_root(self, value: str | Path, create: bool = False) -> str:
         target = Path(value).expanduser()
@@ -221,6 +483,21 @@ class ToolRegistry:
             ]
             if self.allow_outlook_send:
                 items.append({"name": "outlook_send", "description": "发送邮件（会真实发出，谨慎）", "arguments": {"to": "收件人", "subject": "主题", "body": "正文", "cc": "抄送，可选"}})
+        if self._skill_dirs():
+            items += [
+                {"name": "skill_list", "description": "列出可用技能（全局 + 项目两级，项目同名覆盖全局）", "arguments": {}},
+                {"name": "skill_read", "description": "读取技能 SKILL.md 全文（全局技能在工作区外，只能用此工具读取）", "arguments": {"name": "技能名"}},
+            ]
+        if self.allow_self_upgrade:
+            items += [
+                {"name": "self_read_text", "description": "【自升级】读取服务自身代码（安装目录相对路径，白名单内）", "arguments": {"path": "如 cbp/agent.py", "offset": "字符偏移，默认0", "limit": "默认全文件"}},
+                {"name": "self_write_text_b64", "description": "【自升级】覆盖写入服务自身文件；代码必须 Base64 分块（每块≤3000字符），全部写完后用 self_validate + self_unittest 验证", "arguments": {"path": "安装目录相对路径", "content_b64": "Base64"}},
+                {"name": "self_append_text_b64", "description": "【自升级】追加写入服务自身文件（分块续写用）", "arguments": {"path": "安装目录相对路径", "content_b64": "Base64"}},
+                {"name": "self_replace_text", "description": "【自升级】修改服务自身代码时优先用精确替换", "arguments": {"path": "安装目录相对路径", "old": "原文本", "new": "新文本", "count": "默认1"}},
+                {"name": "self_validate", "description": "【自升级】对整个服务安装目录做语法检查；自升级必须通过", "arguments": {}},
+                {"name": "self_unittest", "description": "【自升级】在服务安装目录跑单元测试；自升级必须通过", "arguments": {"pattern": "默认 test_*.py"}},
+                {"name": "self_rollback", "description": "【自升级】回滚本次任务对服务自身代码的改动（恢复到任务开始前）", "arguments": {}},
+            ]
         items += self._extra_descriptions
         return items
 
