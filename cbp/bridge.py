@@ -199,10 +199,24 @@ DISCOVERED_LABELS: set | None = None
 
 
 def copilot_model_available(item: dict) -> bool:
-    """内置模型在菜单实况中是否可见；未成功扫描过则默认可用（兜底全显示）。"""
+    """内置模型在菜单实况中是否可见；未成功扫描过则默认可用（兜底全显示）。
+
+    除精确匹配外还做"家族前缀"匹配：菜单里出现二级叶子（如
+    "GPT-5.6 Sol Quick response"）就说明 GPT / GPT-5.6 家族确实存在——
+    只认精确相等会把整个家族误判成"菜单里没有"而从界面隐藏。
+    """
     if DISCOVERED_LABELS is None:
         return True
-    return any(name.casefold() in DISCOVERED_LABELS for name in item["ui_names"])
+    for name in item["ui_names"]:
+        n = name.casefold()
+        if n in DISCOVERED_LABELS:
+            return True
+        if len(n) >= 3 and any(
+            len(lbl) >= 3 and (lbl.startswith(n) or n.startswith(lbl))
+            for lbl in DISCOVERED_LABELS if lbl
+        ):
+            return True
+    return False
 
 
 def all_model_ids() -> list:
@@ -339,28 +353,55 @@ def _menu_target_locators(target):
     ]
 
 
+MENU_ITEM_ROLES = ("option", "menuitemradio", "menuitemcheckbox", "menuitem")
+MENU_CONTAINER_SEL = ('[role="menu"]', '[role="listbox"]', '.fui-MenuList',
+                      '[class*="MenuList" i]', '[data-testid*="menu" i]')
+
+
 async def _visible_menu_items():
-    """All currently visible model menu entries as (locator, label, is_submenu_parent)."""
+    """All currently visible model menu entries as (locator, label, submenu_hinted).
+
+    角色并不统一：一级项多为 menuitemradio/option，二级飞出的子菜单项在不同
+    租户/版本里可能是 menuitemcheckbox，甚至只是菜单容器里的普通子元素。
+    因此先按角色收集，再对可见菜单容器的直接子项做兜底扫描，按标签去重。
+    """
     entries = []
-    for role in ("option", "menuitemradio", "menuitem"):
+    seen: set = set()
+
+    async def add(item):
+        try:
+            if not await item.is_visible():
+                return
+            raw_text = (await item.inner_text() or "")
+            # 先取第一行再规整空白：inner_text 会把 标题/描述/已展开子项
+            # 拼成多行；若先折叠空白，多行会拼成一个不存在的假模型名
+            # （例如 "GPT-5.6 Sol Think deeper"），之后选择必失败。
+            first_line = raw_text.splitlines()[0] if raw_text else ""
+            label = re.sub(r"\s+", " ", first_line).strip()
+            if not label or len(label) > 40 or label in seen:
+                return
+            seen.add(label)
+            entries.append((item, label, await _submenu_hinted(item)))
+        except Exception:
+            pass
+
+    for role in MENU_ITEM_ROLES:
         items = page.get_by_role(role)
         for i in range(await items.count()):
-            item = items.nth(i)
+            await add(items.nth(i))
+    # 兜底：可见菜单容器内的直接子项（role 命名不统一时靠结构识别）
+    for sel in MENU_CONTAINER_SEL:
+        containers = page.locator(sel)
+        for ci in range(min(await containers.count(), 6)):
+            container = containers.nth(ci)
             try:
-                if not await item.is_visible():
+                if not await container.is_visible():
                     continue
-                raw_text = (await item.inner_text() or "")
-                # 先取第一行再规整空白：inner_text 会把 标题/描述/已展开子项
-                # 拼成多行；若先折叠空白，多行会拼成一个不存在的假模型名
-                # （例如 "GPT-5.6 Sol Think deeper"），之后选择必失败。
-                first_line = raw_text.splitlines()[0] if raw_text else ""
-                label = re.sub(r"\s+", " ", first_line).strip()
-                if not label or len(label) > 40:
-                    continue
-                has_popup = ((await item.get_attribute("aria-haspopup")) or "").lower() == "menu"
-                entries.append((item, label, has_popup))
+                kids = container.locator("> *")
+                for ki in range(await kids.count()):
+                    await add(kids.nth(ki))
             except Exception:
-                pass
+                continue
     return entries
 
 
@@ -413,11 +454,50 @@ async def _expand_submenu(parent, allow_click: bool = False, timeout: int = 1200
             pass
 
 
+async def _menu_signature() -> tuple:
+    """轻量菜单签名：可见菜单容器内每个条目的首行标签。
+
+    轮询"菜单是否变多"时不能每轮都跑完整 role 扫描（每次约 0.4s，
+    一次刷新要轮询几十次）。这里一次 evaluate 拿完，开销约几十毫秒。
+    """
+    try:
+        items = await page.evaluate(
+            """() => {
+                const out = [];
+                const sel = '[role="menu"],[role="listbox"],.fui-MenuList,[class*="MenuList" i]';
+                for (const c of document.querySelectorAll(sel)) {
+                    const st = getComputedStyle(c);
+                    if (st.display === 'none' || st.visibility === 'hidden' || !c.offsetParent) continue;
+                    for (const el of c.children) {
+                        const t = (el.innerText || '').split('\\n')[0].trim();
+                        if (t) out.push(t);
+                    }
+                }
+                return out;
+            }"""
+        )
+        return tuple(items or ())
+    except Exception:
+        return ()
+
+
+async def _wait_growth(base_labels: set, tries: int = 6, delay: float = 0.25) -> bool:
+    """等待菜单项变多：Fluent 子菜单有展开动画，展开后立刻查会落空。"""
+    for _ in range(max(1, tries)):
+        if set(await _menu_signature()) - base_labels:
+            return True
+        await asyncio.sleep(delay)
+    return False
+
+
 async def _probe_submenu(item, hinted: bool, base_labels: set) -> bool:
     """尝试展开条目，用"菜单项是否变多"判定它到底是不是父项。
 
-    不依赖 aria 标记：先把每个条目都悬停一遍，只有真的多出菜单项才算父项；
-    有 aria 依据的再补一次点击（叶子绝不点击，避免误切换模型）。
+    分级探测（菜单里叶子占多数，对叶子做全套会白等几十秒）：
+    - 任何条目：悬停 + 短轮询（Fluent 菜单悬停即开子菜单，对叶子无副作用）
+    - 带父项特征（aria-haspopup/aria-expanded/chevron）的条目：再试
+      键盘 → 键（ARIA 菜单模式展开子菜单，对叶子是空操作）
+      以及一次点击（叶子被点击会真的切换模型，所以只对有依据的做）
     """
     try:
         if not await item.is_visible():   # 条目可能已随父菜单收起：直接跳过
@@ -425,13 +505,50 @@ async def _probe_submenu(item, hinted: bool, base_labels: set) -> bool:
     except Exception:
         return False
     await _expand_submenu(item, allow_click=False)
-    if (await _menu_label_set()) - base_labels:
+    if await _wait_growth(base_labels, tries=6 if hinted else 2):
         return True
-    if hinted:
-        await _expand_submenu(item, allow_click=True)
-        if (await _menu_label_set()) - base_labels:
+    if not hinted:
+        return False
+    try:
+        await item.focus(timeout=800)
+        await page.keyboard.press("ArrowRight")
+        if await _wait_growth(base_labels, tries=4):
             return True
-    return False
+    except Exception:
+        pass
+    await _expand_submenu(item, allow_click=True)
+    return await _wait_growth(base_labels)
+
+
+async def dump_menu_diagnostics() -> str:
+    """把当前可见的菜单 DOM/文本落盘（last_menu.html / last_menu.txt）。
+
+    模型菜单扫不到（尤其二级子菜单）时，这两份快照是唯一能看到真实
+    角色与结构的现场：AI/维护者据此改选择器，无需盲猜。
+    """
+    try:
+        parts, texts = [], []
+        for sel in MENU_CONTAINER_SEL:
+            loc = page.locator(sel)
+            for i in range(min(await loc.count(), 5)):
+                el = loc.nth(i)
+                try:
+                    if not await el.is_visible():
+                        continue
+                    parts.append(await el.evaluate("el => el.outerHTML"))
+                    texts.append(await el.inner_text())
+                except Exception:
+                    continue
+            if parts:
+                break
+        if parts:
+            (BASE / "last_menu.html").write_text(
+                "\n\n<!-- ===== menu ===== -->\n\n".join(parts)[:400000], encoding="utf-8")
+            (BASE / "last_menu.txt").write_text("\n\n-----\n\n".join(texts)[:80000], encoding="utf-8")
+            return "last_menu.html"
+    except Exception:
+        pass
+    return ""
 
 
 COPILOT_URL_MARK = re.compile(r"m365\.cloud\.microsoft|/chat|copilot\.microsoft\.com", re.I)
@@ -473,7 +590,8 @@ async def discover_models() -> dict:
     新出现的叶子选项按标签生成 copilot-<slug> 形式的 ID。
     只读操作：结束后 Escape 逐级关闭菜单，不改变当前选中模型。
     """
-    result = {"added": [], "scanned": False, "labels": [], "reason": "", "url": ""}
+    result = {"added": [], "scanned": False, "labels": [], "reason": "", "url": "",
+              "menu_dump": ""}
     try:
         result["url"] = await ensure_copilot_page()
     except Exception as exc:
@@ -489,12 +607,12 @@ async def discover_models() -> dict:
     except Exception:
         await button.click(timeout=3000, force=True)
     await asyncio.sleep(.6)
-    labels: list[str] = []
     labels_order: list[str] = []
     seen_labels: set = set()
     parents: set = set()      # 实测能展开出子菜单的父项（不算模型）
     probed: set = set()       # 已探测过的条目标签，避免重复悬停
     leaf_labels = set()       # 叶子项（真正可选中）；父项只是容器，不算可用模型
+    result_menu_dump = ""
     try:
         # 逐轮探测：每轮把未见过的条目悬停一遍，谁能展开出子菜单谁就是父项。
         # 关键点：**每轮都增量累积可见项**——飞出的子菜单在鼠标移开后就消失，
@@ -519,11 +637,12 @@ async def discover_models() -> dict:
                     break   # 菜单结构已变，重新收集后再继续探测
             if not grew:
                 break
-        # 收尾再累积一次（此刻可能仍开着某个子菜单）
+        # 收尾再累积一次（此刻可能仍开着某个子菜单），并把菜单现场落盘
         for _i, lbl, _h in await _visible_menu_items():
             if lbl not in seen_labels:
                 seen_labels.add(lbl)
                 labels_order.append(lbl)
+        result_menu_dump = await dump_menu_diagnostics()
     finally:
         for _ in range(3):  # 子菜单可能多级展开，多按几次 Escape 确保全部关闭
             try:
@@ -549,10 +668,14 @@ async def discover_models() -> dict:
         }
         known_names.add(label.casefold())
         added.append(model_id)
-    result.update({"added": added, "scanned": True, "labels": labels})
+    result.update({"added": added, "scanned": True, "labels": labels,
+                   "menu_dump": result_menu_dump, "parents": sorted(parents)})
     if not labels:
         result["reason"] = "模型菜单打开了但没有枚举到任何选项（可能是渲染延迟或前端改版）"
         await diagnostics("models_refresh_empty_menu")
+    elif not parents:
+        result["reason"] = ("菜单已枚举但未探测到子菜单父项；若列表缺少二级模型，"
+                            "请把服务目录的 last_menu.html 发给维护者")
     return result
 
 

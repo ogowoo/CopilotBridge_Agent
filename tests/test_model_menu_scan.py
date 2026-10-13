@@ -115,5 +115,37 @@ class ModelMenuScanTests(unittest.TestCase):
                             f"二级菜单模型 {label} 应可用；模型表: {known}")
 
 
+class ModelAvailabilityTests(unittest.TestCase):
+    """菜单实况可见性：二级叶子存在 => 其父家族不算"菜单里没有"。"""
+
+    def test_family_prefix_match(self):
+        from cbp import bridge as b
+        saved = b.DISCOVERED_LABELS
+        try:
+            b.DISCOVERED_LABELS = {"auto", "quick response", "think deeper",
+                                   "gpt-5.6 sol quick response",
+                                   "gpt-5.6 sol think deeper"}
+            self.assertTrue(b.copilot_model_available(b.MODELS["copilot-auto"]))
+            # 二级叶子可见 => GPT 家族（含父项）都不该被隐藏
+            self.assertTrue(b.copilot_model_available(b.MODELS["copilot-gpt"]))
+            self.assertTrue(b.copilot_model_available(b.MODELS["copilot-gpt-5-6"]))
+            self.assertTrue(b.copilot_model_available(
+                b.MODELS["copilot-gpt-5-6-sol-think-deeper"]))
+            # 完全没出现的模型仍应隐藏
+            self.assertFalse(b.copilot_model_available(b.MODELS["copilot-sol"]))
+        finally:
+            b.DISCOVERED_LABELS = saved
+
+    def test_no_scan_means_all_available(self):
+        from cbp import bridge as b
+        saved = b.DISCOVERED_LABELS
+        try:
+            b.DISCOVERED_LABELS = None
+            for item in b.MODELS.values():
+                self.assertTrue(b.copilot_model_available(item))
+        finally:
+            b.DISCOVERED_LABELS = saved
+
+
 if __name__ == "__main__":
     unittest.main()

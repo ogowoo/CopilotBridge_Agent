@@ -312,6 +312,7 @@ python scripts/rollback.py --list            # 查看可回滚的任务与自升
 | 页面找不到输入框/模型按钮 | 登录态失效：停服务后 `python scripts/login.py`（必要时 `--reset`） |
 | 频繁换会话/上下文被压缩 | 跑 `scripts/calibrate.py`，按建议调整 `compact_at_tokens`/`rollover_at_tokens` |
 | Outlook 报「不可用」或 0x8000400x | 跑 `scripts/outlook_selftest.py` 定位；COM 路径必须走专用消息泵线程（`_ComWorker`），OWA 路径看登录态 |
+| 模型列表刷新后看不到某些模型 | 点 ↻ 看提示：`scanned=false` 说明没扫成；扫成了但缺少二级菜单模型时，把服务目录的 `last_menu.html` / `last_menu.txt`（每次扫描自动落盘的菜单现场）发维护者 |
 | 浏览器层异常 | 看服务目录 `last_page.txt`（出错时的整页文本快照），必要时在 `config.json` 的 `markers` 追加界面文案锚点 |
 | 删会话报「部分失败」 | 看结果弹窗的 `verified-absent` 标记；仍失败可点「重试远程并强制清理本地记录」 |
 
