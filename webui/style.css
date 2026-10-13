@@ -357,4 +357,6 @@ input,textarea{font:inherit}
    :has(#stepCount) 精确命中时间线那张卡片，不动其它区块。 */
 section.card:has(#stepCount){margin-top:14px}
 .card + .card{margin-top:14px}
-#activity{padding-bottom:8px;display:block}
+/* 与「步骤时间线」卡片保持同一表面色：.term 默认用终端底色
+   (--term-bg)，这里覆盖为卡片色 (--panel)，文字用 --text。 */
+#activity{padding-bottom:8px;display:block;background:var(--panel);color:var(--text)}
