@@ -625,6 +625,11 @@ async function loadMemory(){
   catch(e){toast('操作失败: '+e,'err')}});
 }
 try{memBtn()}catch(e){}
+try{const _rs=document.getElementById('btnRefreshSess');if(_rs)_rs.onclick=async()=>{
+ _rs.disabled=true;const _t=_rs.textContent;_rs.textContent='刷新中…';
+ try{await refreshModels();refreshSessModelOptions();toast('模型列表已刷新','ok')}
+ catch(e){toast('刷新失败: '+e,'err')}
+ finally{_rs.disabled=false;_rs.textContent=_t}};}catch(e){}
 try{const _rm=document.getElementById('btnRefreshModels');if(_rm)_rm.onclick=async()=>{
  _rm.disabled=true;const _t=_rm.textContent;_rm.textContent='刷新中…';
  try{await refreshModels();if(currentModel)refreshSessModelOptions();toast('模型列表已刷新','ok')}
