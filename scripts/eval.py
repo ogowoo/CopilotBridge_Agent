@@ -74,6 +74,10 @@ def check_task(task: dict, steps: list[dict], answer: str, memory_texts: list[st
         key = a["memory_contains"]
         add("memory_contains", any(key in t for t in memory_texts),
             f"记忆库中未见 {key!r}（现有 {len(memory_texts)} 条）")
+    if "final_matches" in a:
+        import re as _re
+        add("final_matches", bool(_re.search(a["final_matches"], answer or "")),
+            f"最终答复未匹配 {a['final_matches']!r}（实际: {(answer or '')[:80]!r}）")
     if "final_contains" in a:
         add("final_contains", a["final_contains"] in (answer or ""), "最终答复未包含关键字")
     return out
@@ -132,6 +136,11 @@ def main() -> int:
                 c.delete(f"/v1/agent/sessions/{sid}", params={"force_local": "true"}, timeout=20)
             except Exception:
                 pass
+            for old in WS.glob("eval_*"):      # 清掉上一轮产物，避免"文件已存在"式假 PASS
+                try:
+                    old.unlink()
+                except Exception:
+                    pass
             if not wait_idle(args.wait_idle):
                 results.append({"id": t["id"], "ok": False, "seconds": 0, "steps": 0, "tools": [],
                                 "blocked": True, "checks": [
@@ -170,11 +179,18 @@ def main() -> int:
                 ok = False
             results.append({"id": t["id"], "ok": ok, "seconds": round(time.time() - t0, 1),
                             "steps": len(steps), "tools": [s.get("tool") for s in steps if s.get("tool")],
+                            "final": (answer or "")[:400],
+                            "step_log": [{"step": x.get("step"), "tool": x.get("tool") or x.get("status"),
+                                          "args": json.dumps(x.get("arguments") or {}, ensure_ascii=False)[:160],
+                                          "error": (x.get("error") or "")[:160]}
+                                         for x in steps[-12:]],
                             "checks": checks, "error": d.get("_error") or d.get("_blocked")})
             mark = "PASS" if ok else "FAIL"
             bad = [x["name"] for x in checks if not x["ok"]]
-            print(f"[{mark}] {t['id']:<22} {round(time.time()-t0,1):>6}s 步数 {len(steps):<3}"
-                  f"{'  失败断言: ' + ', '.join(bad) if bad else ''}")
+            extra = f"  失败断言: {', '.join(bad)}" if bad else ""
+            if bad and len(steps) == 0:
+                extra += f" | final: {(answer or '')[:110]!r}"
+            print(f"[{mark}] {t['id']:<22} {round(time.time()-t0,1):>6}s 步数 {len(steps):<3}{extra}")
             if not args.keep:
                 try:
                     c.delete(f"/v1/agent/sessions/{sid}", params={"force_local": "true"})

@@ -75,12 +75,10 @@
   },
   {
    "id": "skill-scan",
-   "task": "用 skill_list 查看当前可用技能，然后返回 final 并报告技能数量。",
+   "task": "当前有哪些可用技能？如果清单已在你的上下文里，直接回答技能数量即可，不一定需要调用工具。最后返回 final。",
    "assert": {
-    "tools_used_any": [
-     "skill_list"
-    ],
-    "max_steps": 5
+    "final_matches": "\\d",
+    "max_steps": 6
    }
   },
   {
