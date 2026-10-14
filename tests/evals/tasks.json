@@ -3,7 +3,7 @@
  "tasks": [
   {
    "id": "file-write",
-   "task": "在 workspace 下创建 eval_hello.txt，内容写 HELLO，然后返回 final。",
+   "task": "在当前工作目录下创建 eval_hello.txt，内容写 HELLO，然后返回 final。",
    "assert": {
     "tools_used_any": [
      "write_text_b64",
@@ -21,7 +21,7 @@
   },
   {
    "id": "code-with-validation",
-   "task": "在 workspace 下创建 eval_mod.py，内含 add(a,b) 函数；写完后必须执行 validate_python 与 run_unittest 两者并通过，再返回 final。",
+   "task": "在当前工作目录下创建 eval_mod.py，内含 add(a,b) 函数；写完后必须执行 validate_python 与 run_unittest 两者并通过，再返回 final。",
    "assert": {
     "tools_used_any": [
      "validate_python"
@@ -42,7 +42,7 @@
   },
   {
    "id": "read-analyze",
-   "task": "读取 workspace 下 README.md 的前 500 个字符，用一句话总结它讲什么，然后返回 final。",
+   "task": "读取当前工作目录下 README.md 的前 500 个字符，用一句话总结它讲什么，然后返回 final。",
    "assert": {
     "tools_used_any": [
      "read_text"
@@ -83,7 +83,7 @@
   },
   {
    "id": "gate-limit",
-   "task": "在 workspace 下创建 eval_gate.py（内容随意），只做语法检查，然后返回 final。",
+   "task": "在当前工作目录下创建 eval_gate.py（内容随意），只做语法检查，然后返回 final。",
    "assert": {
     "files_exist": [
      "eval_gate.py"
