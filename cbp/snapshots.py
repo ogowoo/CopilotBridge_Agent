@@ -86,10 +86,24 @@ class SnapshotStore:
             data.setdefault("files", {})
             data.setdefault("skipped", [])
             data.setdefault("history", {})       # 版本历史：rel -> [entry(rev 升序)]
-            data.setdefault("next_rev", 1)
+            data.setdefault("turn", 0)           # 当前 Copilot 回合号（版本 = 回合）
+            data.setdefault("stored_seq", 0)     # 原像文件名的单调序号
+            data.setdefault("next_rev", 1)       # 旧字段，兼容读取
             return data
         except Exception:
             return empty
+
+    def next_turn(self, sid: str) -> int:
+        """回合开始信号：版本号 +1。一次 Copilot complete = 一个版本。
+
+        同回合内的多次写操作共享同一版本号（首写才记版本），因此"回滚到
+        版本 N"= 撤销第 N 回合（及之后）的文件改动，而不是按单次写操作算。
+        """
+        data = self.load(sid)
+        turn = int(data.get("turn", 0)) + 1
+        data["turn"] = turn
+        self._save(sid, data)
+        return turn
 
     def _save(self, sid: str, data: dict[str, Any]) -> None:
         data["updated"] = time.time()
@@ -143,7 +157,14 @@ class SnapshotStore:
         data = self.load(sid)
         rel_norm = str(rel).replace("\\", "/").lstrip("/") or "."
         first_capture = rel_norm not in data["files"]
-        rev = int(data.get("next_rev", 1))
+        rev = max(1, int(data.get("turn", 0)))
+        history = data.setdefault("history", {})
+        if not first_capture:
+            # 同回合首写才记版本：一个 Copilot 回合内对同一路径的多次写只算
+            # 一次（保留该回合开始前的原像），后续写不再新增版本条目。
+            hist = history.get(rel_norm, [])
+            if hist and int(hist[-1].get("rev", 0)) == rev:
+                return
         if first_capture and len(data["files"]) >= self.MAX_FILES:
             data["skipped"].append({"path": rel_norm, "reason": "条目数超限"})
             self._save(sid, data)
@@ -154,6 +175,8 @@ class SnapshotStore:
             self._save(sid, data)
             return
 
+        seq = int(data.get("stored_seq", 0)) + 1
+        data["stored_seq"] = seq
         entry: dict[str, Any] = {"path": rel_norm, "tool": tool, "captured": time.time(),
                                  "rev": rev}
         if root is not None:
@@ -164,7 +187,7 @@ class SnapshotStore:
                 data["skipped"].append({"path": rel_norm, "reason": f"文件 {size} 字节超限"})
                 self._save(sid, data)
                 return
-            stored = f"files/{rev:04d}_{target.name}"
+            stored = f"files/{seq:04d}_{target.name}"
             dest = self._dir(sid) / stored
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(target, dest)
@@ -176,14 +199,13 @@ class SnapshotStore:
                 data["skipped"].append({"path": rel_norm, "reason": f"目录 {size} 字节超限"})
                 self._save(sid, data)
                 return
-            stored = f"files/{rev:04d}_{target.name}.dir"
+            stored = f"files/{seq:04d}_{target.name}.dir"
             dest = self._dir(sid) / stored
             shutil.copytree(target, dest, dirs_exist_ok=True)
             entry.update({"kind": "dir", "stored": stored, "bytes": size})
         else:
             entry.update({"kind": "absent"})
 
-        history = data.setdefault("history", {})
         if first_capture:
             data["files"][rel_norm] = entry          # 最早原像：整任务回滚用
             history[rel_norm] = [entry]
@@ -193,7 +215,6 @@ class SnapshotStore:
                 # 保留最早（hist[0]）与最近几个，丢弃中间最旧的一个
                 hist.pop(1)
             hist.append(entry)
-        data["next_rev"] = rev + 1
         data["created"] = data.get("created") or time.time()
         self._save(sid, data)
 
@@ -301,11 +322,11 @@ class SnapshotStore:
                 "results": results, "root": str(root)}
 
     def restore_rev(self, sid: str, root: Path, rev: int) -> dict[str, Any]:
-        """回滚到指定版本 rev：撤销 rev 之后的写操作。
+        """回滚到指定版本 rev（撤销第 rev 回合之后的改动）。
 
-        语义：对每个路径取 rev ≤ 指定版本的最近一次原像还原；若该路径的首次
-        改动晚于该版本（rev 前还没被本任务碰过），则还原其最早原像（=任务前
-        状态），把之后本任务对它做的改动一并撤销。
+        版本按 Copilot 回合计数：版本 N = 第 N 回合完成后的状态。回滚到版本
+        rev = 恢复每个路径到"第 rev 回合完成后"的原像——即该路径 rev 之后
+        首次被改动的那个原像；若 rev 之后没再被改过，保持现状不动。
         """
         data = self.load(sid)
         hist = data.get("history", {})
@@ -320,9 +341,12 @@ class SnapshotStore:
             if not entries:
                 continue
             ordered = sorted(entries, key=lambda e: e.get("rev") or 0)
-            eligible = [e for e in ordered if (e.get("rev") or 0) <= rev]
-            entry = eligible[-1] if eligible else ordered[0]
-            r = self._apply_entry(root, rel, entry, scope_dir)
+            # 找 rev 之后首次被改动的原像（其内容 = 第 rev 回合完成后的状态）；
+            # 没有则说明该路径在第 rev 回合后没再变过，跳过（保持现状）。
+            after = next((e for e in ordered if (e.get("rev") or 0) > rev), None)
+            if after is None:
+                continue
+            r = self._apply_entry(root, rel, after, scope_dir)
             if r["status"] == "restored":
                 restored += 1
             elif r["status"] == "deleted":

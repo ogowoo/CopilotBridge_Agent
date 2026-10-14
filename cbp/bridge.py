@@ -2148,10 +2148,12 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             # API 提供商：不经过浏览器，无页面导航/会话 URL/标记确认簿记；
             # 换会话只影响本地上下文压缩。
             async def turn(prompt, model, force_new=False):
+                SNAPSHOTS.next_turn(sid)   # 一次 Copilot 回合 = 一个快照版本
                 return await provider_turn(model, prompt)
         else:
             attached = {"done": False}   # 附件只在首个回合附加一次
             async def turn(prompt,model,force_new=False):
+                SNAPSHOTS.next_turn(sid)   # 一次 Copilot 回合 = 一个快照版本
                 st=AGENT_SESSIONS.get(sid)
                 make_new = force_new or not st.get("current_url")
                 if not make_new:

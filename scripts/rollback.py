@@ -7,8 +7,8 @@
     python scripts/rollback.py --last                     # 回滚最近一次有改动的任务
     python scripts/rollback.py --scope self --last        # 回滚最近一次"服务自升级"
     python scripts/rollback.py --scope self --list         # 列出自升级快照
-    python scripts/rollback.py --sid <id> --rev 3          # 回滚到版本 3（撤销其后的写操作）
-    python scripts/rollback.py --sid <id> --versions       # 列出可选的版本点
+    python scripts/rollback.py --sid <id> --rev 3          # 回滚到回合 3（撤销该回合之后的改动）
+    python scripts/rollback.py --sid <id> --versions       # 列出可选的回合版本点
 
 自我升级把代码改坏（导入报错、服务起不来）时，WebUI 往往也打不开，
 这是不依赖服务的最后一道回滚通道。--scope self 回滚的是服务安装目录
@@ -48,8 +48,8 @@ def main():
     ap.add_argument("--scope", choices=["workspace", "self"], default="workspace",
                     help="workspace（默认，工作区文件）或 self（服务自身代码）")
     ap.add_argument("--workspace", help="覆盖工作区路径（默认取 config.json 的 agent.workspace）")
-    ap.add_argument("--versions", action="store_true", help="列出该作用域可选的版本点")
-    ap.add_argument("--rev", type=int, default=None, help="回滚到指定版本（撤销该版本之后的写操作）")
+    ap.add_argument("--versions", action="store_true", help="列出该作用域可选的回合版本点")
+    ap.add_argument("--rev", type=int, default=None, help="回滚到指定回合（撤销该回合之后的改动）")
     ap.add_argument("--yes", action="store_true", help="跳过确认")
     args = ap.parse_args()
 
@@ -98,7 +98,7 @@ def main():
         if not vs:
             print(f"作用域 {sid} 没有版本点。")
             return 0
-        print(f"作用域 {sid} 的版本点（{len(vs)} 个，按时间先后）：")
+        print(f"作用域 {sid} 的回合版本点（{len(vs)} 条，按时间先后；同一回合多文件会分行）：")
         import datetime as _dt
         for v in vs:
             ts = _dt.datetime.fromtimestamp(v.get("captured") or 0).strftime("%H:%M:%S")
@@ -109,7 +109,7 @@ def main():
     print(f"作用域  : {sid}（{label}）")
     print(f"目标根  : {target_root}")
     if args.rev is not None:
-        print(f"将回滚到版本 {args.rev}（撤销该版本之后的写操作）")
+        print(f"将回滚到回合 {args.rev}（撤销该回合之后的改动）")
     else:
         print(f"将回滚 {len(summary['files'])} 个路径（修改还原 / 任务新建的删除）：")
     for f in summary["files"][:40]:

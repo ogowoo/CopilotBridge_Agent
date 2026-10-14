@@ -340,7 +340,7 @@ setInterval(()=>{
  box.querySelector('.rc-count').textContent=fmtCountdown(ms);
 },1000);
 
-/* ── 回滚任务改动：按写操作前捕获的原像还原工作区（可选版本） ── */
+/* ── 回滚任务改动：按 Copilot 回合的版本回滚工作区 ── */
 async function rollbackSession(){
  if(!current){toast('请先选择 Session','err');return}
  try{
@@ -350,9 +350,17 @@ async function rollbackSession(){
   let versions=s.versions||[];
   let version=null;
   if(versions.length>1){
-   // 有多个版本点：让用户选"整任务回滚"还是"回滚到某个版本"
-   let lines=versions.map(v=>`  · 版本 ${v.rev}：${v.path}（${v.kind||'file'}，${new Date((v.captured||0)*1000).toLocaleTimeString('zh-CN',{hour12:false})}）`).join('\n');
-   let input=await dlgPrompt(`该任务共有 ${versions.length} 个版本点（按时间先后）：\n\n${lines}\n\n输入「0」或留空 = 整任务回滚到开始前；输入版本号 = 撤销该版本之后的改动。`,`0`,'回滚到哪个版本？');
+   // 版本按 Copilot 回合计：一个版本 = 一个回合。把同一版本的路径合并成一行。
+   let byRev={};
+   versions.forEach(v=>{(byRev[v.rev]=byRev[v.rev]||[]).push(v)});
+   let revs=Object.keys(byRev).map(Number).sort((a,b)=>a-b);
+   let lines=revs.map(r=>{
+    let vv=byRev[r];
+    let t=new Date((vv[0].captured||0)*1000).toLocaleTimeString('zh-CN',{hour12:false});
+    let paths=vv.map(x=>x.path).slice(0,5).join('、')+(vv.length>5?`…共 ${vv.length} 个`:'');
+    return `  · 回合 ${r}（${t}）：${paths}`;
+   }).join('\n');
+   let input=await dlgPrompt(`该任务共 ${revs.length} 个回合版本（按时间先后）：\n\n${lines}\n\n输入「0」或留空 = 整任务回滚到开始前；输入版本号 = 撤销该回合之后的改动。`,`0`,'回滚到哪个版本？');
    if(input===null)return;
    version=parseInt(input,10);
    if(isNaN(version))version=0;
@@ -360,7 +368,7 @@ async function rollbackSession(){
   }
   let preview=files.slice(0,12).map(f=>`· [${f.kind}] ${f.path}`).join('\n');
   let more=files.length>12?`\n… 另有 ${files.length-12} 个`:'';
-  let target=version?`回滚到版本 ${version}（撤销该版本之后的改动）`:`整任务回滚到开始前`;
+  let target=version?`回滚到版本 ${version}（撤销该回合之后的改动）`:`整任务回滚到开始前`;
   let msg=`${target}：${files.length} 个路径。\n修改过的还原、任务新建的删除。\n\n${preview}${more}\n\n此操作不可撤销，确定继续？`;
   if(!await dlgConfirm(msg,'回滚任务改动',true))return;
   let body=version?{version}:{};

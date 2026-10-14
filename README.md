@@ -22,7 +22,7 @@
 - **Copilot 直接生成文件（`copilot_file`）**：让 Copilot 把结果生成为**可下载文件**，桥接再把文件下载进工作区——内容**不经过聊天消息**，因此完全绕开 Copilot 单条输出上限，一个大文件一个回合就能拿到，不再需要 b64 分块。支持 `blob:`/`data:` 链接与"下载"按钮（点击并用浏览器下载事件接住），落盘前照样存原像（可回滚）、写 `.py/.json/.html` 仍进验证闭环。开关：`agent.allow_copilot_file`（默认开）。找不到下载入口时会保存 `last_answer.html` 供排查，并提示改回分块写入。
 - **两级项目上下文（全局 + 项目）**：`AGENT.md` 与 `skills/` 都有两个作用域——**全局**放在服务安装目录（对所有工作区生效），**项目**放在工作区根目录；两份合并注入，同名技能/约定项目级优先，同一文件自动去重。全局技能位于工作区之外，用 `skill_read` 工具读取（`skill_list` 列清单）。`AGENT.md` 单份默认 8000 字符截断（`agent_md_max_chars`），SKILL.md 支持 YAML frontmatter（`name`/`description`），缺省回退"首个一级标题 + 首个段落"。本仓库自身即带全局 [AGENT.md](AGENT.md) 与示例技能。
 - **服务自升级（可选，默认关闭）**：`agent.allow_self_upgrade: true` 后，Agent 可用 `self_read_text`/`self_write_text_b64`/`self_append_text_b64`/`self_replace_text` 直接修改**服务自身代码**（即使工作区是别的项目），白名单限定 `cbp/`、`webui/`、`scripts/`、`docs/`、`tests/` 与若干顶层文件，`config.json`/`data/`/`EdgeProfile/` 禁止触碰；写完必须 `self_validate` + `self_unittest` 双通过（提前 final 会被 `validation_gate` 拦下），并提供 `self_rollback` 工具回滚本次自升级。
-- **改动快照与两级回滚（自我升级 failback）**：写操作**执行前**把目标原像存入 `data/snapshots/<sid>/`（工作区）与 `data/snapshots/_self_<sid>/`（服务代码），同一路径保留最早状态**并记录每个写操作的版本点**，因此可整任务回滚到"任务开始前"，也可按版本号回滚。入口：WebUI「更多 ▾ → 回滚任务改动…／回滚服务自升级…」、`POST /v1/agent/sessions/{sid}/rollback`（可带 `{version}`）、`POST /v1/agent/self/rollback?last=true`，以及**服务/WebUI 起不来时的离线通道** `python scripts/rollback.py [--scope self] --last --yes [--rev N]`（`app.py` 导入失败会自动打印指引）。自升级写盘会落 `data/.self_upgrade_pending` 标记，服务重启后自动归档。
+- **改动快照与两级回滚（自我升级 failback）**：写操作**执行前**把目标原像存入 `data/snapshots/<sid>/`（工作区）与 `data/snapshots/_self_<sid>/`（服务代码），同一路径保留最早状态**并按 Copilot 回合计版本（一次 complete = 一个版本）**，因此可整任务回滚到"任务开始前"，也可按回合回滚。入口：WebUI「更多 ▾ → 回滚任务改动…／回滚服务自升级…」、`POST /v1/agent/sessions/{sid}/rollback`（可带 `{version}`）、`POST /v1/agent/self/rollback?last=true`，以及**服务/WebUI 起不来时的离线通道** `python scripts/rollback.py [--scope self] --last --yes [--rev N]`（`app.py` 导入失败会自动打印指引）。自升级写盘会落 `data/.self_upgrade_pending` 标记，服务重启后自动归档。
 - **M365 文件与软件集成**：
   - **Office 文档工具**：`read_excel`/`write_excel`（openpyxl）、`read_docx`/`write_docx`（python-docx）、`read_pptx`（python-pptx）、`read_pdf`（pypdf）——Agent 可直接分析/修改 xlsx、docx、pptx、pdf；
   - **Copilot 文件上传**：`copilot_attach` 工具把工作区文件挂到 Copilot 网页版附件框并取回分析结果，用于图片/扫描件/复杂版式等本地无法解析的文件；
@@ -214,8 +214,8 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | POST | `/v1/agent/sessions/{sid}/activate` | 把自动化浏览器切到该会话页面 |
 | DELETE | `/v1/agent/sessions/{sid}?delete_remote=true&force_local=true` | 删除会话（可选连带删除 Copilot 网页会话） |
 | POST | `/v1/agent/sessions/{sid}/model` | 切换该会话使用的模型（落库，下一回合生效，服务重启后仍沿用） |
-| GET | `/v1/agent/sessions/{sid}/snapshots` | 任务改动快照清单（可回滚的路径/类型 + 版本点列表 `versions`） |
-| POST | `/v1/agent/sessions/{sid}/rollback` | 回滚该任务的工作区改动；可选 body `{version:N}` 撤销该版本之后的写操作（运行中返回 409） |
+| GET | `/v1/agent/sessions/{sid}/snapshots` | 任务改动快照清单（可回滚的路径/类型 + 回合版本列表 `versions`） |
+| POST | `/v1/agent/sessions/{sid}/rollback` | 回滚该任务的工作区改动；可选 body `{version:N}` 撤销第 N 回合之后的改动（运行中返回 409） |
 | GET | `/v1/agent/self/status` | 自升级状态（是否启用、白名单、待重启标记、快照作用域） |
 | GET | `/v1/agent/self/snapshots?sid=` | 自升级改动快照清单 |
 | POST | `/v1/agent/self/rollback?sid=&last=` | 回滚服务自身代码（`last=true` 取最近一次） |
@@ -282,11 +282,11 @@ description: 修改 WebUI 时的结构规范与验证清单
 
 ### 3. 回滚（改了东西想还原）
 
-写操作**执行前**会自动把目标文件原像存入 `data/snapshots/`。每个写操作都记录一个**版本点**（带时间戳与 rev 序号），因此既能把整任务**回滚到开始前**，也能**回滚到某个版本**（撤销该版本之后的写操作）。三个通道：
+写操作**执行前**会自动把目标文件原像存入 `data/snapshots/`。版本按 **Copilot 回合**计数——一次 complete 产生一个版本（同回合内的多次写算同一个版本），因此既能把整任务**回滚到开始前**，也能**回滚到某个回合**（撤销该回合之后的改动）。三个通道：
 
 ```powershell
-# ① WebUI：会话「更多 ▾ → 回滚任务改动…」（有多个版本时会列出可选版本点，
-#    输入 0/留空 = 整任务回滚；输入版本号 = 回滚到该版本；运行中会拒绝，先暂停）
+# ① WebUI：会话「更多 ▾ → 回滚任务改动…」（有多个回合版本时会分组列出，
+#    输入 0/留空 = 整任务回滚；输入版本号 = 回滚到该回合；运行中会拒绝，先暂停）
 
 # ② HTTP API
 curl -X POST http://127.0.0.1:8765/v1/agent/sessions/<sid>/rollback -H "Content-Type: application/json" -d '{"version":3}'
@@ -295,12 +295,12 @@ curl -X POST http://127.0.0.1:8765/v1/agent/sessions/<sid>/rollback -H "Content-
 # ③ 离线 CLI（服务/WebUI 起不来时也能用）
 python scripts/rollback.py --list                      # 看有哪些可回滚
 python scripts/rollback.py --last --yes                # 回滚最近一次任务的工作区改动
-python scripts/rollback.py --sid <id> --versions        # 列出可选的版本点
-python scripts/rollback.py --sid <id> --rev 3 --yes     # 回滚到版本 3
+python scripts/rollback.py --sid <id> --versions        # 列出可选的回合版本点
+python scripts/rollback.py --sid <id> --rev 3 --yes     # 回滚到回合 3
 python scripts/rollback.py --scope self --last --yes   # 回滚最近一次「服务自升级」
 ```
 
-规则：修改过的文件还原内容、任务新建的文件被删除；单路径保留版本数上限 6（最早 + 最近几个），单文件 8MB、单会话 800 条（超限记入 `skipped`，那些路径不回滚）。
+规则：修改过的文件还原内容、任务新建的文件被删除；单路径保留的**回合版本**上限 6（最早 + 最近几个），单文件 8MB、单会话 800 条（超限记入 `skipped`，那些路径不回滚）。
 
 ### 4. 服务自升级（默认关闭）
 
