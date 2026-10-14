@@ -86,6 +86,20 @@ class SessionStore:
                 con.execute("ALTER TABLE sessions ADD COLUMN gate_state TEXT")
             except Exception:
                 pass  # 列已存在
+            # 迁移：服务限流退避的倒计时信息——resume_at 供前端右上角浮窗倒数；
+            # rate_limited_since 记录首次限流起点，窗口期内重试都锚定同一终点。
+            try:
+                con.execute("ALTER TABLE sessions ADD COLUMN retry_resume_at REAL")
+            except Exception:
+                pass  # 列已存在
+            try:
+                con.execute("ALTER TABLE sessions ADD COLUMN retry_attempt INTEGER NOT NULL DEFAULT 0")
+            except Exception:
+                pass  # 列已存在
+            try:
+                con.execute("ALTER TABLE sessions ADD COLUMN rate_limited_since REAL")
+            except Exception:
+                pass  # 列已存在
 
     @staticmethod
     def _decode(row):
@@ -121,7 +135,8 @@ class SessionStore:
         allowed = {"title","state","workspace","model","current_url","conversation_index","conversation_urls",
                    "total_steps","conversation_steps","estimated_tokens","estimated_chars","summary","recent_steps",
                    "modified_files","pending","last_error","cancel_requested","archived","compact_requested",
-                   "rollover_requested","conv_tokens","conv_chars","gate_state"}
+                   "rollover_requested","conv_tokens","conv_chars","gate_state",
+                   "retry_resume_at","retry_attempt","rate_limited_since"}
         values = {k:v for k,v in values.items() if k in allowed}
         if "state" in values and values["state"] not in self.STATES: raise ValueError("invalid state")
         for key in ("conversation_urls","summary","recent_steps","modified_files","pending"):

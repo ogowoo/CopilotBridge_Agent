@@ -289,6 +289,7 @@ async function runtime(){
   if(_ans!==lastAns){lastAns=_ans;if(liveTabName!=='answer')document.getElementById('tabAnswer').classList.add('new')}
   document.getElementById('prompt').textContent=r.prompt_preview||'';
   setPill(r.session_state);setKpis(r);
+  updateRetryCountdown(r);
   if(r.total_steps!==lastTotal||(r.detail||'')!==lastDetail){
    lastDetail=r.detail||'';
    lastTotal=r.total_steps??lastTotal;
@@ -314,6 +315,31 @@ async function removeSession(remote){
   document.getElementById('sessionView').style.display='none';
   document.getElementById('emptyState').style.display='flex';
   await refreshSessions()}catch(e){toast('删除失败: '+e,'err')}}
+/* ── Copilot 限流倒计时浮窗 ── */
+function fmtCountdown(total){
+ total=Math.max(0,Math.ceil(total/1000));
+ let h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;
+ return h>0?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+            :`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`}
+function updateRetryCountdown(r){
+ let box=document.getElementById('retryCountdown');if(!box)return;
+ let resumeAt=r&&r.retry_resume_at;
+ if(!resumeAt||resumeAt*1000<=Date.now()){box.style.display='none';box.removeAttribute('data-resume');return}
+ box.style.display='block';
+ box.dataset.resume=resumeAt;
+ box.querySelector('.rc-count').textContent=fmtCountdown(resumeAt*1000-Date.now());
+ let sub=box.querySelector('.rc-sub');
+ sub.textContent=`第 ${r.retry_attempt||1} 次 · 自动重试中，可点「暂停」稍后继续`;
+}
+/* 每秒把浮窗倒数刷新一次（与 runtime 轮询解耦，数字平滑跳动） */
+setInterval(()=>{
+ let box=document.getElementById('retryCountdown');
+ if(!box||box.style.display==='none'||!box.dataset.resume)return;
+ let ms=parseFloat(box.dataset.resume)*1000-Date.now();
+ if(ms<=0){box.style.display='none';box.removeAttribute('data-resume');return}
+ box.querySelector('.rc-count').textContent=fmtCountdown(ms);
+},1000);
+
 /* ── 回滚任务改动：按写操作前捕获的原像还原工作区（可选版本） ── */
 async function rollbackSession(){
  if(!current){toast('请先选择 Session','err');return}

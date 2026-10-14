@@ -639,6 +639,9 @@ async def session_runtime(sid: str):
         "token_budget": b.TOKEN_BUDGET,
         "busy": b.lock.locked() and b.ACTIVE_SESSION_ID == sid,
         "queue_pending": b.queue_depth(sid),
+        "retry_resume_at": state.get("retry_resume_at"),
+        "retry_attempt": state.get("retry_attempt", 0),
+        "rate_limited_since": state.get("rate_limited_since"),
     })
     return runtime
 

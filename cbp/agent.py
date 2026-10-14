@@ -688,6 +688,11 @@ class AgentRunner:
         self.max_service_unavailable = max(3, int(config.get("max_service_unavailable", 30)))
         self.service_retry_base_seconds = max(5.0, float(config.get("service_retry_base_seconds", 30)))
         self.service_retry_max_seconds = max(60.0, float(config.get("service_retry_max_seconds", 600)))
+        # Copilot 限流窗口：首次超限后到可再次使用大致要等这么久（实测约 1 小时）。
+        # 倒计时浮窗锚定"首次超限时间 + 该窗口"，而不是每次退避时长，否则用户
+        # 会看到每 10 分钟跳一次的假倒数。Copilot 不会在文案里写明时长，所以
+        # 这里用配置项，可按实际观测调整。
+        self.service_retry_window_seconds = max(60.0, float(config.get("service_retry_window_seconds", 3600)))
 
     def _deterministic_summary(self, task: str, history: list[dict[str, Any]], state: dict) -> dict[str, Any]:
         completed, errors, modified, findings = [], [], dict(state.get("modified_files") or {}), []
@@ -947,14 +952,23 @@ class AgentRunner:
                 _updates = {"recent_steps": history[-self.keep_recent:], "last_error": step["error"]}
                 if (self.state_getter() or {}).get("state") == "running":
                     _updates["state"] = "waiting"
+                # 限流窗口：首次超限记起点，之后重试都锚定同一终点（=起点 + 窗口），
+                # 前端浮窗按它倒数到"Copilot 预计恢复可用"。
+                limited_since = (self.state_getter() or {}).get("rate_limited_since") or time.time()
+                resume_at = limited_since + self.service_retry_window_seconds
+                _updates.update({"rate_limited_since": limited_since,
+                                 "retry_resume_at": resume_at,
+                                 "retry_attempt": service_failures})
                 self.state_saver(**_updates)
                 if service_failures >= self.max_service_unavailable:
                     # 用户已请求暂停时不覆盖 paused，只记录原因。
                     if (self.state_getter() or {}).get("state") == "paused":
-                        self.state_saver(last_error="Copilot 服务持续不可用，已停止自动重试；恢复后可点击继续")
+                        self.state_saver(last_error="Copilot 服务持续不可用，已停止自动重试；恢复后可点击继续",
+                                         retry_resume_at=None, retry_attempt=0, rate_limited_since=None)
                     else:
                         self.state_saver(state="waiting",
-                                         last_error="Copilot 服务持续不可用，已停止自动重试；服务恢复后请点击继续")
+                                         last_error="Copilot 服务持续不可用，已停止自动重试；服务恢复后请点击继续",
+                                         retry_resume_at=None, retry_attempt=0, rate_limited_since=None)
                     return AgentResult("Copilot 服务持续不可用，任务已安全暂停，可稍后继续。", all_steps)
                 delay = min(self.service_retry_base_seconds * (2 ** min(service_failures - 1, 4)),
                             self.service_retry_max_seconds)
@@ -962,9 +976,12 @@ class AgentRunner:
                 while time.monotonic() < deadline:
                     state = self.state_getter()
                     if state.get("cancel_requested"):
-                        self.state_saver(state="cancelled")
+                        self.state_saver(state="cancelled", retry_resume_at=None, retry_attempt=0,
+                                         rate_limited_since=None)
                         return AgentResult("任务已取消。", all_steps)
                     if state.get("state") == "paused":
+                        # 暂停即停止倒数：恢复后重新走退避，不必保留过期 resume_at
+                        self.state_saver(retry_resume_at=None, retry_attempt=0, rate_limited_since=None)
                         break  # 回到循环顶部停放
                     await asyncio.sleep(1)
                 continue
@@ -977,9 +994,13 @@ class AgentRunner:
                 action = self._parse(raw)
                 parse_failures = 0
                 service_failures = 0
-                # 服务恢复：waiting 状态回到 running（paused 状态不受影响）。
+                # 服务恢复：waiting 状态回到 running（paused 状态不受影响），
+                # 并清掉退避倒计时（浮窗消失）。
                 if (self.state_getter() or {}).get("state") == "waiting":
-                    self.state_saver(state="running")
+                    self.state_saver(state="running", retry_resume_at=None, retry_attempt=0,
+                                     rate_limited_since=None)
+                elif (self.state_getter() or {}).get("retry_resume_at"):
+                    self.state_saver(retry_resume_at=None, retry_attempt=0, rate_limited_since=None)
             except Exception as exc:
                 parse_failures += 1
                 step = {"step": total + 1, "status": "invalid_action", "error": str(exc), "raw_tail": (raw or "")[-2000:]}
