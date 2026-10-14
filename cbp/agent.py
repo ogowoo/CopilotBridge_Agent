@@ -810,6 +810,8 @@ class AgentRunner:
         syntax_validated = bool(gate.get("syntax_validated"))
         tests_passed = bool(gate.get("tests_passed"))
 
+        gate_strikes = 0   # 连续被验证门拒绝的次数：超限即失败收尾，防无限重试烧 token
+
         def _save_gate() -> None:
             self.state_saver(gate_state=json.dumps({
                 "validation_required": validation_required,
@@ -1052,8 +1054,23 @@ class AgentRunner:
             for idx, sub in enumerate(todo):
                 if str(sub.get("type")) == "final":
                     if validation_required and not (syntax_validated and tests_passed):
+                        gate_strikes += 1
                         step = {"step": total + 1, "status": "validation_gate",
-                                "error": "代码已修改但尚未通过语法检查和单元测试，拒绝提前完成"}
+                                "error": "代码已修改但尚未通过语法检查和单元测试，拒绝提前完成"
+                                         f"（第 {gate_strikes} 次）"}
+                        if gate_strikes >= 3:
+                            # 实测：任务只要求 validate_python 时，模型会陷入
+                            # 「final→被拒→再 final」的无限重试（每轮一次模型调用，
+                            # 300 秒上百轮、零工具步骤、纯烧 token）。超限即停。
+                            step["status"] = "gate_blocked"
+                            step["error"] = ("验证门连续 3 次未通过，已停止任务以避免无限重试。"
+                                             "缺少的通常是 run_unittest（或 validate_python）；"
+                                             "请明确要求两者通过，或放宽该任务的验证要求。")
+                            history.append(step); all_steps.append(step); self.step_saver(step)
+                            self.state_saver(state="failed", total_steps=total + 1,
+                                             recent_steps=history[-self.keep_recent:],
+                                             last_error=step["error"])
+                            return AgentResult(step["error"], all_steps)
                         history.append(step); all_steps.append(step); self.step_saver(step)
                         self.state_saver(total_steps=total + 1, conversation_steps=conv_steps + 1,
                                          recent_steps=history[-self.keep_recent:], last_error=step["error"])
@@ -1161,6 +1178,8 @@ class AgentRunner:
                         syntax_validated = bool(step["result"].get("passed"))
                     if tool == "self_unittest" and isinstance(step.get("result"), dict):
                         tests_passed = bool(step["result"].get("passed"))
+                    if syntax_validated and tests_passed:
+                        gate_strikes = 0   # 真正通过验证后重置，允许后续文件再改动
                     _save_gate()   # 旗一变就落库：暂停/重启后仍记得"改了还没验证"
                 if step.get("status") == "ok":
                     batch_ok += 1

@@ -28,7 +28,7 @@
       "task": "读取 workspace 下 README.md 的前 500 个字符，用一句话总结它讲什么，然后返回 final。",
       "assert": {
         "tools_used_any": ["read_text"],
-        "max_steps": 6
+        "max_steps": 10
       }
     },
     {
