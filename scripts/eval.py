@@ -85,6 +85,10 @@ def main() -> int:
     ap.add_argument("--only", default="", help="逗号分隔的任务 id")
     ap.add_argument("--keep", action="store_true", help="保留评测会话")
     ap.add_argument("--timeout", type=float, default=1800)
+    ap.add_argument("--task-timeout", type=float, default=300,
+                    help="单条任务上限秒数，超时即取消该会话（默认 300）")
+    ap.add_argument("--wait-idle", type=float, default=120,
+                    help="每条任务前等待服务空闲的上限秒数")
     args = ap.parse_args()
 
     spec = json.loads(TASKS.read_text(encoding="utf-8"))
@@ -106,16 +110,44 @@ def main() -> int:
         model = args.model or health.get("default_model") or "copilot-auto"
         print(f"评测模型: {model}  页面: {str(health.get('page_url'))[:60]}\n")
 
+        def wait_idle(limit: float) -> bool:
+            """等上一条任务释放全局锁，避免把后续任务打成 0 步假失败。"""
+            end = time.time() + limit
+            while time.time() < end:
+                try:
+                    if not c.get("/health", timeout=10).json().get("busy"):
+                        return True
+                except Exception:
+                    pass
+                time.sleep(3)
+            return False
+
         for t in tasks:
             sid = f"eval-{t['id']}"
             t0 = time.time()
+            if not wait_idle(args.wait_idle):
+                results.append({"id": t["id"], "ok": False, "seconds": 0, "steps": 0, "tools": [],
+                                "blocked": True, "checks": [
+                                    {"name": "service_idle", "ok": False,
+                                     "detail": "等待服务空闲超时，上一条任务未释放锁"}], "error": None})
+                print(f"[BLOCK] {t['id']:<22} 服务忙，跳过")
+                failed += 1
+                continue
             try:
                 r = c.post("/v1/agent/completions", json={
                     "model": model, "session_id": sid, "stream": False,
-                    "messages": [{"role": "user", "content": t["task"]}]})
+                    "messages": [{"role": "user", "content": t["task"]}]},
+                    timeout=args.task_timeout)
                 d = r.json() if r.status_code == 200 else {}
+                if r.status_code in (409, 503):
+                    d["_blocked"] = f"HTTP {r.status_code}: {r.text[:120]}"
             except Exception as exc:
                 d = {"_error": str(exc)}
+                # 超时/异常：主动取消该会话，避免继续占用全局锁
+                try:
+                    c.post(f"/v1/agent/sessions/{sid}/actions/cancel", timeout=20)
+                except Exception:
+                    pass
             steps = d.get("agent_steps") or []
             answer = ((d.get("choices") or [{}])[0].get("message", {}) or {}).get("content", "")
             try:
@@ -126,9 +158,12 @@ def main() -> int:
             checks = check_task(t, steps, answer, mem_texts)
             ok = all(x["ok"] for x in checks)
             failed += 0 if ok else 1
+            if d.get("_blocked"):
+                checks.insert(0, {"name": "service_idle", "ok": False, "detail": d["_blocked"]})
+                ok = False
             results.append({"id": t["id"], "ok": ok, "seconds": round(time.time() - t0, 1),
                             "steps": len(steps), "tools": [s.get("tool") for s in steps if s.get("tool")],
-                            "checks": checks, "error": d.get("_error")})
+                            "checks": checks, "error": d.get("_error") or d.get("_blocked")})
             mark = "PASS" if ok else "FAIL"
             bad = [x["name"] for x in checks if not x["ok"]]
             print(f"[{mark}] {t['id']:<22} {round(time.time()-t0,1):>6}s 步数 {len(steps):<3}"

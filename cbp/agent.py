@@ -1079,6 +1079,35 @@ class AgentRunner:
                 # 幂等保护：换会话接力时摘要若没让模型明确感知"上一动作已完成"，
                 # 或回合重发，同一动作可能连续到达。对非幂等工具（append 会重复
                 # 追加、move/copy 会重复搬运），与上一成功动作完全相同时跳过执行。
+                # ── 无进展循环检测（合法 JSON 也可能在策略上打转）──
+                # 实测：提供商模型会在"写码→验证→再验证"间无限循环，601 步仍未 final。
+                # 判据：最近 12 步内出现过同一 (tool, arguments) 签名 ≥2 次。
+                _sig = tool + "|" + json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+                _recent = [_s for _s in history[-12:] if _s.get("status") == "ok"]
+                _seen = sum(1 for _s in _recent
+                            if (_s.get("tool") or "") + "|" + json.dumps(
+                                _s.get("arguments") or {}, sort_keys=True, ensure_ascii=False) == _sig)
+                if _seen >= 3:
+                    step = {"step": total + 1, "status": "no_progress",
+                            "error": f"检测到无进展循环：动作 {tool} 已重复 {_seen + 1} 次仍无进展，任务停止",
+                            "tool": tool, "arguments": arguments}
+                    history.append(step); all_steps.append(step); self.step_saver(step)
+                    self.state_saver(state="failed", total_steps=total + 1,
+                                     recent_steps=history[-self.keep_recent:],
+                                     last_error=step["error"])
+                    return AgentResult(
+                        f"任务因无进展循环被停止：{tool} 重复 {_seen + 1} 次。"
+                        f"建议改用更强的模型或把任务拆小。", all_steps)
+                if _seen == 2:
+                    # 第一次只警告（给模型换策略的机会），并把提示塞进上下文
+                    warn = {"step": total + 1, "status": "no_progress_warning",
+                            "error": f"动作 {tool} 已重复 {_seen} 次且无进展：请立刻改变策略，"
+                                     f"不要重复同一动作；若已无法推进就返回 final 说明卡点"}
+                    history.append(warn); all_steps.append(warn); self.step_saver(warn)
+                    total += 1
+                    self.state_saver(total_steps=total, recent_steps=history[-self.keep_recent:],
+                                     last_error=warn["error"])
+                    continue
                 duplicate = False
                 if tool in NON_IDEMPOTENT_TOOLS and history:
                     # 只看 history[-1] 会被"中间夹一个其它成功动作"击穿：模型重放
