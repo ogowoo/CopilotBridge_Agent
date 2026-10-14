@@ -1013,6 +1013,10 @@ async def click_send_button():
 
 
 async def send(prompt, make_new, model_id):
+    if not await ensure_browser_ready():
+        raise CopilotServiceUnavailable(
+            "Copilot 浏览器未就绪（未登录或启动失败）：可改用提供商模型，"
+            "或在界面点『重试浏览器』后重试")
     await wait_copilot_ready(90)  # 若恰逢重启后的 SSO/ADFS 回跳，先等它就绪
     await dismiss()
     if make_new:
@@ -1588,6 +1592,23 @@ async def periodic_session_cleanup():
         except Exception as exc:
             log(f"会话维护失败: {exc}")
         await asyncio.sleep(3600)
+
+
+# 由 api 层注册：按需启动浏览器（lazy 模式下首个 Copilot 请求会触发）。
+# 用钩子而不是直接 import，避免 api ↔ bridge 循环导入。
+ENSURE_BROWSER = None
+
+
+async def ensure_browser_ready() -> bool:
+    """确保浏览器可用（未注册钩子时视为已就绪，保持测试与无浏览器场景可用）。"""
+    fn = ENSURE_BROWSER
+    if fn is None:
+        return True
+    try:
+        return bool(await fn())
+    except Exception as exc:
+        log(f"浏览器按需启动失败: {exc}")
+        return False
 
 
 _RESUMING: set = set()

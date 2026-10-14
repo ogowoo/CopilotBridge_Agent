@@ -34,57 +34,132 @@ if _SERVER_HOST not in ("127.0.0.1", "localhost", "::1") and not API_TOKEN:
     )
 
 
-@asynccontextmanager
-async def lifespan(app):
-    b.PROFILE.mkdir(exist_ok=True)
-    b.pw = await async_playwright().start()
+# 浏览器启动状态：API 不再等浏览器就绪才监听端口——没有 Copilot（未登录/
+# 租户不可用/浏览器坏）时，WebUI 与提供商模型（DeepSeek/Kimi/OpenAI）必须照常可用。
+BOOT: dict = {"browser_state": "idle", "browser_error": None, "copilot_ready": False,
+              "task": None, "generation": 0, "lock": asyncio.Lock()}
+
+
+async def boot_browser() -> None:
+    """后台拉起浏览器 → 等 Copilot 就绪 → 模型发现 → 续跑中断会话。
+
+    任何失败都只记状态与日志，不抛出：API 与提供商路径不受影响。
+    """
+    BOOT["generation"] += 1
+    gen = BOOT["generation"]
+    BOOT["browser_state"] = "starting"
+    BOOT["browser_error"] = None
+    BOOT["copilot_ready"] = False
     try:
+        b.PROFILE.mkdir(exist_ok=True)
+        if b.pw is None:
+            b.pw = await async_playwright().start()
         await b._start_browser(bool(b.CFG.get("headless", False)))
-    except Exception:
-        # 浏览器启动失败时回收 Playwright 进程，不留孤儿
+        if gen != BOOT["generation"]:
+            return                      # 已被更新的启动请求取代
+        BOOT["browser_state"] = "browser_up"
+        applied = b.mark_self_upgrade_applied()
+        if applied:
+            b.log(f"[自升级] 已加载上一轮自升级改动（{len(applied)} 条记录），待重启标记归档")
+        if await b.wait_copilot_ready():
+            BOOT["copilot_ready"] = True
+            BOOT["browser_state"] = "ready"
+            b.log("API 与浏览器已就绪")
+            try:
+                disc = await b.discover_models()
+                added = disc.get("added") or []
+                if added:
+                    b.log(f"从 Copilot 菜单自动发现新模型: {', '.join(added)}")
+                elif disc.get("scanned"):
+                    b.log("模型菜单未发现新模型")
+                else:
+                    b.log(f"模型菜单扫描未完成（不影响已有模型）: {disc.get('reason') or '未知原因'}")
+            except Exception as exc:
+                b.log(f"模型菜单自动发现失败（不影响已有模型）: {exc}")
+            if bool(b.AGENT_CFG.get("auto_resume", False)):
+                try:
+                    await b.auto_resume_interrupted()
+                except Exception as exc:
+                    b.log(f"自动恢复会话失败: {exc}")
+        else:
+            BOOT["browser_state"] = "needs_login"
+            b.log("Copilot 未就绪（可能需要在自动化窗口完成登录）——"
+                  "服务与提供商模型照常可用，可稍后点『重试浏览器』")
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        BOOT["browser_state"] = "failed"
+        BOOT["browser_error"] = str(exc)
+        b.log(f"浏览器启动失败（不影响 API 与提供商模型）: {exc}")
         try:
-            await b.pw.stop()
-            b.pw = None
+            if b.pw is not None:
+                await b.pw.stop()
         except Exception:
             pass
-        raise
-    b.log("API 与浏览器已就绪")
-    # 服务真正启动时才归档"上一轮自升级已生效"标记（放这里而非模块导入时：
-    # 测试/脚本 import cbp.bridge 不应误清该标记）
-    applied = b.mark_self_upgrade_applied()
-    if applied:
-        b.log(f"[自升级] 已加载上一轮自升级改动（{len(applied)} 条记录），待重启标记归档")
-    # 企业租户重启后 SSO/ADFS 回跳可能耗时几十秒，就绪后再做模型发现
-    if await b.wait_copilot_ready():
+        b.pw = None
+
+
+async def ensure_browser(wait_seconds: float = 240) -> bool:
+    """按需启动浏览器：真正要用 Copilot 时才拉起，提供商路径永不触发。
+
+    并发请求只会启动一次（同一把锁 + 复用进行中的任务）；浏览器本来就绪则
+    直接返回。返回 copilot_ready（False 表示需要登录或启动失败）。
+    """
+    try:
+        if BOOT["copilot_ready"] and b.page is not None and not b.page.is_closed():
+            return True
+    except Exception:
+        pass
+    async with BOOT["lock"]:
         try:
-            disc = await b.discover_models()
-            added = disc.get("added") or []
-            if added:
-                b.log(f"从 Copilot 菜单自动发现新模型: {', '.join(added)}")
-            elif disc.get("scanned"):
-                b.log("模型菜单未发现新模型")
-            else:
-                b.log(f"模型菜单扫描未完成（不影响已有模型）: {disc.get('reason') or '未知原因'}")
-        except Exception as exc:
-            b.log(f"模型菜单自动发现失败（不影响已有模型）: {exc}")
+            if BOOT["copilot_ready"] and b.page is not None and not b.page.is_closed():
+                return True
+        except Exception:
+            pass
+        task = BOOT.get("task")
+        if task is None or task.done():
+            task = asyncio.create_task(boot_browser())
+            BOOT["task"] = task
+    try:
+        # shield：等待超时不要取消后台启动，让它继续跑完（SSO 可能很久）
+        await asyncio.wait_for(asyncio.shield(task), timeout=wait_seconds)
+    except asyncio.TimeoutError:
+        b.log(f"浏览器启动仍在进行（已等 {wait_seconds:.0f} 秒），本次请求先按未就绪处理")
+    except Exception:
+        pass
+    return bool(BOOT["copilot_ready"])
+
+
+@asynccontextmanager
+async def lifespan(app):
+    # 按需启动（默认）：启动时不碰浏览器——没有 Copilot 也能用 WebUI 与提供商模型。
+    # 需要热启动（例如常驻自用）就把 config.json 的 browser_startup 设为 "eager"。
+    boot = None
+    mode = str(b.CFG.get("browser_startup", "lazy")).lower()
+    if mode == "eager":
+        boot = asyncio.create_task(boot_browser())
+        BOOT["task"] = boot
+        b.log("API 已启动（browser_startup=eager：浏览器在后台预热）")
+    else:
+        b.log("API 已启动（browser_startup=lazy：首次使用 Copilot 时才启动浏览器）")
     cleanup_task = asyncio.create_task(b.periodic_session_cleanup())
-    resume_task = (asyncio.create_task(b.auto_resume_interrupted())
-                   if bool(b.AGENT_CFG.get("auto_resume", False)) else None)
     try:
         yield
     finally:
-        cleanup_task.cancel()
-        if resume_task:
-            resume_task.cancel()
-        for task in (cleanup_task, resume_task):
-            if task is None:
-                continue
+        pending = [t for t in (boot, cleanup_task, BOOT.get("task")) if t is not None]
+        for task in pending:
+            task.cancel()
+        for task in pending:
             try:
                 await task
             except asyncio.CancelledError:
                 pass
+            except Exception:
+                pass
         await b.shutdown_browser()
 
+
+b.ENSURE_BROWSER = ensure_browser   # 桥接层按需拉起浏览器的入口
 
 app = FastAPI(title="Copilot Local Bridge Agent", version="10.2.1", lifespan=lifespan)
 
@@ -234,8 +309,13 @@ async def health():
         page_url = b.page.url if b.page else None
     except Exception:
         page_url = None  # 浏览器异常时健康检查不应自己 500
+    # 起始状态与"页面是否可用"分开表达：没有 Copilot 时服务仍是 ok（提供商可用），
+    # 只是 copilot_ready=false，WebUI 据此显示提示与「重试浏览器」。
     return {
-        "status": "ok" if page_url else "degraded",
+        "status": "ok",
+        "copilot_ready": bool(BOOT.get("copilot_ready")),
+        "browser_state": BOOT.get("browser_state"),
+        "browser_error": BOOT.get("browser_error"),
         "busy": b.lock.locked(),
         "page_url": page_url,
         "default_model": b.DEFAULT_MODEL,
@@ -251,6 +331,7 @@ async def browser_state():
 
 @app.post("/v1/agent/browser")
 async def set_browser_mode(payload: dict):
+    await ensure_browser()   # 按需启动：走到 Copilot 路径才拉起浏览器
     """切换自动化浏览器窗口的显示/隐藏。
 
     headless 是启动参数，切换必然重建浏览器上下文（EdgeProfile 保留，
@@ -311,6 +392,7 @@ async def models():
 
 @app.post("/v1/models/refresh")
 async def refresh_models():
+    await ensure_browser()   # 按需启动：走到 Copilot 路径才拉起浏览器
     """重新打开 Copilot 模型菜单枚举选项，把新出现的模型并入列表。
 
     返回结构化结果：scanned=false 时 reason 说明为什么没扫成（浏览器不在
@@ -715,6 +797,17 @@ async def set_workspace(payload: dict):
     new_root = b.AGENT_TOOLS.set_root(str(payload.get("path", "")), bool(payload.get("create", False)))
     b.DEFAULT_WORKSPACE = new_root  # 作为之后新任务的默认工作区
     return {"workspace": new_root}
+
+
+@app.post("/v1/agent/browser/retry")
+async def browser_retry():
+    """重新初始化浏览器（登录完成后、或上次启动失败时用），不必重启服务。"""
+    old = BOOT.get("task")
+    if old and not old.done():
+        old.cancel()
+    task = asyncio.create_task(boot_browser())
+    BOOT["task"] = task
+    return {"started": True, "state": BOOT["browser_state"]}
 
 
 @app.get("/v1/agent/tools")

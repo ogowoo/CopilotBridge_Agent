@@ -2,6 +2,7 @@
   "copilot_url": "https://m365.cloud.microsoft/chat/",
   "browser_channel": "msedge",
   "headless": false,
+  "browser_startup": "lazy",
   "reply_timeout_seconds": 180,
   "reply_hard_timeout_seconds": 1200,
   "stable_seconds": 3,
