@@ -50,6 +50,7 @@
     "allow_outlook": false,
     "allow_outlook_send": false,
     "allow_skill_write": true,
+    "allow_memory_write": true,
     "outlook_url": "https://outlook.office.com/mail/",
     "python_timeout_seconds": 20,
     "snapshot_retention": 50,

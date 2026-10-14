@@ -477,7 +477,7 @@ const MANUAL_HTML=`<h3>快速上手</h3>
 
 <h3>限流倒计时</h3>
 <p>Copilot 返回限流时，界面会弹出<b>倒计时浮窗</b>：锚定首次超限时刻、按固定窗口计算剩余等待时间
-（默认窗口 3660 秒 = 1 小时 + 1 分钟余量，可用配置调整），避免反复手动重试。</p>
+（默认窗口 <code>service_retry_window_seconds</code> = 3660 秒 = 1 小时 + 1 分钟余量），避免反复手动重试。</p>
 <p>倒计时结束后服务会自动继续；你也可以在此期间暂停或取消任务。</p>
 
 <h3>长任务机制</h3>
@@ -488,7 +488,7 @@ const MANUAL_HTML=`<h3>快速上手</h3>
 </ul>
 <h3>批量动作（省 Copilot 回合）</h3>
 <p>模型可一次返回多个动作：<code>{"type":"actions","actions":[动作1,动作2,...]}</code>，本地按顺序执行，每个动作仍单独记一步。</p>
-<ul><li>上限由 <code>max_actions_per_turn</code> 控制（默认 4，硬顶 12）。</li>
+<ul><li>上限由 <code>max_actions_per_turn</code> 控制；解析层另有硬上限 <code>MAX_BATCH_ACTIONS</code>（当前 4），超出部分会被截断并标记 <code>_batch_truncated</code>。</li>
 <li>批内某动作失败不影响后续；批内 final 会被延后，由<b>验证门</b>裁决能否完成。</li></ul>
 
 <h3>长期记忆（跨会话）</h3>
@@ -503,6 +503,7 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <li><b>管理面板</b>：点顶部工具栏的<b>记忆图标</b> → 按作用域筛选、关键词检索、查看统计
 （总数 / 置顶 / <b>从未命中</b>，用来发现该清理的条目）、逐条<b>置顶</b>或<b>删除</b>。</li>
 <li><b>置顶</b>：置顶的记忆每次检索都注入，只留给极重要的约定；再点一次取消。</li>
+<li><b>开关</b>：<code>allow_memory_write</code>（默认 true）可整体关闭记忆写入。</li>
 <li><b>接口</b>：<code>GET /v1/agent/memory?query=&amp;scope=</code>、
 <code>POST /v1/agent/memory/{id}/pin</code>、<code>DELETE /v1/agent/memory/{id}</code>；
 存储为独立库 <code>data/memory.db</code>，上限 500 条/作用域，超出自动淘汰低价值条目。</li>
