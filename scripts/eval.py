@@ -104,6 +104,7 @@ def main() -> int:
     WS.mkdir(exist_ok=True)
     results = []
     failed = 0
+    stamp = time.strftime("%Y%m%d-%H%M%S")
 
     with httpx.Client(base_url=API, timeout=args.timeout) as c:
         health = c.get("/health").json()
@@ -123,8 +124,14 @@ def main() -> int:
             return False
 
         for t in tasks:
-            sid = f"eval-{t['id']}"
+            # 会话 ID 带运行戳：固定 ID 会复用到历史会话的 cancelled/archived 状态，
+            # 导致 runner 看到取消标志直接退出（200 + 0 步的假失败）。
+            sid = f"eval-{t['id']}-{stamp}"
             t0 = time.time()
+            try:
+                c.delete(f"/v1/agent/sessions/{sid}", params={"force_local": "true"}, timeout=20)
+            except Exception:
+                pass
             if not wait_idle(args.wait_idle):
                 results.append({"id": t["id"], "ok": False, "seconds": 0, "steps": 0, "tools": [],
                                 "blocked": True, "checks": [
