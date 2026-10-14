@@ -811,6 +811,13 @@ class AgentRunner:
         tests_passed = bool(gate.get("tests_passed"))
 
         gate_strikes = 0   # 连续被验证门拒绝的次数：超限即失败收尾，防无限重试烧 token
+        # no-op 完成守卫：任务明显要求动手（创建/修改/运行…）却零工具调用就 final，
+        # 实测模型会幻觉式宣称"已记录/已完成"（评测抓到的真实缺陷）。先拒绝一次。
+        noop_guard_used = False
+        _action_words = ("创建", "新建", "写", "修改", "改", "删除", "运行", "执行", "生成",
+                         "保存", "记录", "记到", "整理", "转换",
+                         "create", "write", "modify", "delete", "run", "save")
+        _needs_action = any(w in (task or "") for w in _action_words)
 
         def _save_gate() -> None:
             self.state_saver(gate_state=json.dumps({
@@ -1053,6 +1060,17 @@ class AgentRunner:
             usage_counted = False
             for idx, sub in enumerate(todo):
                 if str(sub.get("type")) == "final":
+                    if _needs_action and total == 0 and not noop_guard_used:
+                        noop_guard_used = True
+                        warn = {"step": total + 1, "status": "noop_guard",
+                                "error": "任务要求实际动手，但你还没有执行任何工具动作就宣布完成。"
+                                         "如果确实需要创建/修改/运行，请先调用工具；"
+                                         "确实无需动作就直接 final。"}
+                        history.append(warn); all_steps.append(warn); self.step_saver(warn)
+                        total += 1
+                        self.state_saver(total_steps=total, recent_steps=history[-self.keep_recent:],
+                                         last_error=warn["error"])
+                        continue
                     if validation_required and not (syntax_validated and tests_passed):
                         gate_strikes += 1
                         step = {"step": total + 1, "status": "validation_gate",

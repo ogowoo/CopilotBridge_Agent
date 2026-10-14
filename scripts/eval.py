@@ -32,7 +32,8 @@ REPORT_DIR = BASE / "data" / "evals"
 API = os.environ.get("CBP_API", "http://127.0.0.1:8765")
 
 
-def check_task(task: dict, steps: list[dict], answer: str, memory_texts: list[str]) -> list[dict]:
+def check_task(task: dict, steps: list[dict], answer: str, memory_items: list[dict],
+               sid: str = "") -> list[dict]:
     """逐条断言；返回 [{name, ok, detail}]。断言全部是确定性的，不引入 LLM judge。"""
     a = task.get("assert") or {}
     out: list[dict] = []
@@ -72,8 +73,11 @@ def check_task(task: dict, steps: list[dict], answer: str, memory_texts: list[st
         add(f"file_contains:{name}", ok, f"需包含 {needle!r}")
     if "memory_contains" in a:
         key = a["memory_contains"]
-        add("memory_contains", any(key in t for t in memory_texts),
-            f"记忆库中未见 {key!r}（现有 {len(memory_texts)} 条）")
+        # 必须由本会话写入：否则历史同名条目会让"幻觉式完成"蒙混过关
+        mine = [m for m in memory_items
+                if key in (m.get("text") or "") and (not sid or m.get("source_session") == sid)]
+        add("memory_contains", bool(mine),
+            f"本会话({sid or '-'})未写入含 {key!r} 的记忆（本次可见 {len(memory_items)} 条）")
     if "final_matches" in a:
         import re as _re
         add("final_matches", bool(_re.search(a["final_matches"], answer or "")),
@@ -168,10 +172,10 @@ def main() -> int:
             answer = ((d.get("choices") or [{}])[0].get("message", {}) or {}).get("content", "")
             try:
                 mem = c.get("/v1/agent/memory", params={"scope": "all", "limit": 200}).json()
-                mem_texts = [m.get("text", "") for m in mem.get("items", [])]
+                mem_items = mem.get("items", [])
             except Exception:
-                mem_texts = []
-            checks = check_task(t, steps, answer, mem_texts)
+                mem_items = []
+            checks = check_task(t, steps, answer, mem_items, sid)
             ok = all(x["ok"] for x in checks)
             failed += 0 if ok else 1
             if d.get("_blocked"):
