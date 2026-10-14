@@ -1217,6 +1217,18 @@ SNAPSHOTS = SnapshotStore(SNAPSHOT_DIR, int(AGENT_CFG.get("snapshot_retention", 
 from .memory import MemoryStore  # noqa: E402
 
 MEMORY = MemoryStore(BASE / "data" / "memory.db")
+
+# ── 本地 span：回合/工具调用写成 JSONL（字段对齐 OTel GenAI 语义约定）──
+from .spans import SpanRecorder, set_recorder  # noqa: E402
+
+# 单测/脚本导入 bridge 时不要写生产遥测：unittest 进程里自动关闭
+import sys as _sys  # noqa: E402
+
+_spans_on = bool(AGENT_CFG.get("spans_enabled", True)) and ("unittest" not in _sys.modules)
+SPANS = SpanRecorder(BASE / "data" / "spans.jsonl",
+                     enabled=_spans_on,
+                     max_lines=int(AGENT_CFG.get("spans_max_lines", 20000)))
+set_recorder(SPANS)
 AGENT_TOOLS.memory = MEMORY
 
 

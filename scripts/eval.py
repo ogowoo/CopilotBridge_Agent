@@ -97,6 +97,9 @@ def main() -> int:
                     help="单条任务上限秒数，超时即取消该会话（默认 300）")
     ap.add_argument("--wait-idle", type=float, default=120,
                     help="每条任务前等待服务空闲的上限秒数")
+    ap.add_argument("--warmup-timeout", type=float, default=600,
+                    help="首个 Copilot 任务前等待浏览器/Copilot 就绪的上限秒数（按需启动的首次代价，"
+                         "不计入单任务超时）")
     args = ap.parse_args()
 
     spec = json.loads(TASKS.read_text(encoding="utf-8"))
@@ -130,6 +133,26 @@ def main() -> int:
                     pass
                 time.sleep(3)
             return False
+
+        # 预热：lazy 模式下浏览器按需启动 + 企业租户 SSO 可能需要数分钟；
+        # 这段时间不应算进某一条任务的超时（否则首条任务无谓失败）。
+        if not c.get("/health", timeout=10).json().get("copilot_ready"):
+            print(f"预热中：等待 Copilot 就绪（最多 {args.warmup_timeout:.0f} 秒）…")
+            try:
+                c.post("/v1/agent/browser/retry", timeout=30)
+            except Exception:
+                pass
+            end = time.time() + args.warmup_timeout
+            while time.time() < end:
+                try:
+                    if c.get("/health", timeout=10).json().get("copilot_ready"):
+                        print("Copilot 已就绪，开始评测\n")
+                        break
+                except Exception:
+                    pass
+                time.sleep(5)
+            else:
+                print("预热超时（可能需要人工在自动化窗口登录）；仍继续，首条任务可能失败\n")
 
         for t in tasks:
             # 会话 ID 带运行戳：固定 ID 会复用到历史会话的 cancelled/archived 状态，

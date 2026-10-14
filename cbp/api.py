@@ -810,6 +810,17 @@ async def browser_retry():
     return {"started": True, "state": BOOT["browser_state"]}
 
 
+@app.get("/v1/agent/spans")
+async def list_spans(limit: int = 200, session_id: str | None = None):
+    """最近的操作 span（JSONL 尾部）：回合/工具调用，字段对齐 OTel GenAI 语义约定。"""
+    items = b.SPANS.tail(limit=limit)
+    if session_id:
+        items = [x for x in items
+                 if (x.get("attributes") or {}).get("cbp.session_id") == session_id]
+    return {"count": len(items), "enabled": b.SPANS.enabled, "path": str(b.SPANS.path),
+            "items": items}
+
+
 @app.get("/v1/agent/tools")
 async def agent_tools():
     return {"workspace": str(b.AGENT_TOOLS.root), "tools": b.AGENT_TOOLS.descriptions()}

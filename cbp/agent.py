@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from .spans import set_recorder, span
 from .tools import ToolRegistry
 
 ChatFunction = Callable[[str, str, bool], Awaitable[str]]
@@ -845,6 +846,7 @@ class AgentRunner:
             }, ensure_ascii=False))
         # 工作区项目上下文：AGENT.md 全量注入 + skills 清单。每次 run 重新读取，
         # 恢复运行/换工作区后总能拿到最新版本。
+        self._session_id = str(state.get("id") or state.get("session_id") or "")
         self._task_text = task
         self._agent_md = self._load_agent_md()
         self._skills = self._load_skill_catalog()
@@ -967,8 +969,18 @@ class AgentRunner:
                 if state.get("cancel_requested"):
                     self.state_saver(state="cancelled")
                     return AgentResult("任务已取消。", all_steps)
+            _turn_span = span("agent.turn", "invoke_agent",
+                              **{"gen_ai.request.model": model,
+                                 "gen_ai.provider.name": ("copilot-web" if "/" not in str(model)
+                                                          else str(model).split("/", 1)[0]),
+                                 "cbp.session_id": str(getattr(self, "_session_id", "") or ""),
+                                 "cbp.step": total,
+                                 "cbp.prompt_chars": len(prompt or "")})
             try:
-                raw = await self.chat(prompt, model, force_new)
+                with _turn_span:
+                    raw = await self.chat(prompt, model, force_new)
+                    _turn_span.set(**{"cbp.answer_chars": len(raw or "")})
+                chat_active = True
                 chat_active = True
             except CopilotConversationFull as exc:
                 # Copilot 提示对话达到长度上限：本回合未生效，不算失败。
@@ -1177,7 +1189,22 @@ class AgentRunner:
                                  "detail": "与上一成功动作完全相同，幂等保护已跳过重复执行"}})
                 else:
                     try:
-                        result = await self.tools.execute(tool, arguments)
+                        _tspan = span("tool." + str(tool), "execute_tool",
+                                      **{"gen_ai.tool.name": str(tool),
+                                         "gen_ai.tool.call.id": f"{getattr(self, '_session_id', '') or 's'}-{total + 1}",
+                                         "cbp.session_id": str(getattr(self, "_session_id", "") or ""),
+                                         "cbp.step": total + 1,
+                                         "cbp.args_chars": len(json.dumps(arguments, ensure_ascii=False))})
+                        try:
+                            with _tspan:
+                                result = await self.tools.execute(tool, arguments)
+                                try:
+                                    _tspan.set(**{"cbp.result_chars": len(json.dumps(result, ensure_ascii=False))})
+                                except Exception:
+                                    pass
+                        except Exception as _exc:
+                            _tspan.fail(_exc)
+                            raise
                         step.update({"status": "ok", "result": result})
                         event = result.get("file_event") if isinstance(result, dict) else None
                     except Exception as exc:
