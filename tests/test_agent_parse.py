@@ -274,7 +274,8 @@ class RepairPromptTests(unittest.TestCase):
 
     def test_unknown_shape_asks_for_single_small_action(self):
         prompt = AgentRunner._repair_prompt(self._record("乱七八糟"), "乱七八糟")
-        self.assertIn("只返回**一个**短小完整的 JSON 动作", prompt)
+        self.assertIn("短小完整的 JSON 动作", prompt)
+        self.assertIn("批量格式", prompt)   # 不再禁止批量
 
 
 if __name__ == "__main__":

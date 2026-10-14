@@ -86,7 +86,7 @@ class AgentRunner:
 
     def _system_prompt(self) -> str:
         return """你是本地任务 Agent，可以通过工具处理当前工作目录中的文件。
-每次只返回一个 JSON 对象。不得使用 Markdown 代码块，不得在 JSON 前后添加解释。
+每次返回一个 JSON 动作；若下一步是几个**互不依赖**的小动作（多处替换、写多个短文件、读几个小文件），用下方"批量"格式一次返回。不得使用 Markdown 代码块，不得在 JSON 前后添加解释。
 格式只有两种：
 {"type":"tool","tool":"工具名","arguments":{},"reason":"原因"}
 {"type":"final","content":"最终答复"}
@@ -98,7 +98,7 @@ class AgentRunner:
 创建或追加代码、JSON、HTML、Markdown 时必须使用 write_text_b64 或 append_text_b64，禁止把源码直接放入普通 JSON content。每次解码后内容不超过 3000 字符；大文件必须分多次 append_text_b64 追加，宁可多回合也不要让单个 JSON 动作过长（过长会被截断导致整个动作作废）。如果上一回合因过长被截断，下一回合只输出未写入的剩余分块。文件写完后用 read_text 验证。
 写大文件的标准流程：write_text_b64 写第一块 → append_text_b64 逐块追加直到全部内容写完（每一块都不要重复之前已写的内容）→ read_text 抽查 → 最后才执行 validate_python 和 run_unittest。
 文件没有写完之前禁止执行 validate_python 或 run_unittest：只写了一半的文件必然语法检查失败，这不是需要修复的缺陷。若验证失败且原因是文件不完整，正确做法是继续 append_text_b64 补全剩余内容，而不是重写整个文件或对残缺文件反复打补丁。
-单个 JSON 动作必须尽量短，禁止一次返回两个 JSON 对象。
+单个 JSON 动作必须尽量短；互不依赖的小动作按下方批量规则合并，不要一次只做一个、也不要为了凑批量把连续的大分块塞进同一个动作。
 少量互相独立的小动作可以合并成一次批量，省掉来回回合（每个分块一个回合很浪费）：格式为 {"type":"actions","actions":[动作1,动作2,...]}，数组里只能是工具动作（不能含 final），最多 4 个，每个动作仍满足上面的分块上限。适合批量的是：多处小替换、多个短文件写入、读几个小文件后统一决策。**大内容的连续分块不要塞进一个批量**（输出越长越容易被截断，一批失败反而更贵），这类仍按"每回合一块"的节奏追加。
 治理或代码修改任务必须形成验证闭环：文件全部写完后执行 validate_python，再执行 run_unittest；真实验证失败必须继续修复，不得返回 final（文件未写完时的验证不通过不算失败，按上面的分块流程继续追加即可）。
 只有 validate_python 和 run_unittest 均返回 passed=true 后，才可宣称治理完成或把 TODO 标记为完成。
@@ -239,8 +239,8 @@ class AgentRunner:
                     "单次解码后不超过 3000 字符），只返回下一个 JSON 动作，"
                     "已完成的分块不要重复写。"
                     "上一回合记录（含被截断的输出尾部）：\n" + last_json)
-        return (head + "请只返回**一个**短小完整的 JSON 动作（内容长就分块），"
-                "不要在 JSON 前后添加解释，也不要一次返回多个动作。"
+        return (head + "请返回一个短小完整的 JSON 动作（内容长就分块；互不依赖的"
+                "几个小动作可用批量格式一次返回），不要在 JSON 前后添加解释。"
                 "上一回合记录（含被截断的输出尾部）：\n" + last_json)
 
     @staticmethod
@@ -740,7 +740,7 @@ class AgentRunner:
         }
         return (self._system_prompt() + "\n\n这是长期任务的继续执行，不要重新开始。\n"
                 + json.dumps(payload, ensure_ascii=False)
-                + "\n从待完成事项继续，不要重复已完成的读取。只返回一个 Agent JSON 动作。")
+                + "\n从待完成事项继续，不要重复已完成的读取。返回下一个 JSON 动作（互不依赖的小动作可批量）。")
 
     def _record_conv_stat(self, state: dict, conv_steps: int, tokens: int, chars: int,
                           ended_by: str, model: str) -> None:
@@ -905,7 +905,7 @@ class AgentRunner:
                         prompt = "继续同一任务。上一动作实际结果：\n" + last_json
                     force_new = False
 
-            prompt += f"\n\n当前总步骤 {total + 1}/{self.max_total_steps}。只返回下一个 JSON 动作。"
+            prompt += f"\n\n当前总步骤 {total + 1}/{self.max_total_steps}。返回下一个 JSON 动作（互不依赖的小动作可批量）。"
             # 发送前最后确认暂停/取消，避免暂停生效后仍向 Copilot 发起新回合。
             state = self.state_getter()
             if state.get("cancel_requested"):
