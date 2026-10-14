@@ -102,15 +102,18 @@ class MemoryStore:
         norm = _norm(text)
         now = time.time()
         with self._connect() as con:
-            row = con.execute("SELECT id, use_count, kind FROM memories WHERE scope=? AND norm=?",
+            row = con.execute("SELECT id, use_count, kind, source_session FROM memories WHERE scope=? AND norm=?",
                               (scope, norm)).fetchone()
             if row:
                 # 重复写入视为更新：默认 kind=fact 不应把已标注的 preference/pitfall 覆盖掉
                 keep_kind = kind if kind != "fact" else row["kind"]
+                # 去重时一并更新 source_session：记录"最后写入者"，便于溯源与
+                # 断言归属（否则旧条目仍指向很久以前的会话）
+                _prev_sid = row["source_session"] if "source_session" in row.keys() else None
                 con.execute("UPDATE memories SET text=?, kind=?, tags=?, updated=?, "
-                            "pinned=MAX(pinned, ?) WHERE id=?",
+                            "pinned=MAX(pinned, ?), source_session=? WHERE id=?",
                             (text, keep_kind, json.dumps(tags or [], ensure_ascii=False), now,
-                             1 if pinned else 0, row["id"]))
+                             1 if pinned else 0, source_session or _prev_sid, row["id"]))
                 mid, created, updated = row["id"], False, True
                 kind = keep_kind
             else:
