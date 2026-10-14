@@ -163,6 +163,16 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .thumb .rm{position:absolute;top:2px;right:2px;width:18px;height:18px;border:0;border-radius:50%;background:var(--danger-bg);color:var(--danger-text);font-size:12px;line-height:1;cursor:pointer;display:grid;place-items:center}
 .thumb .rm:hover{background:var(--red);color:#fff}
+/* 跟进消息队列：排队中的消息可编辑/删除 */
+.queuebox{display:flex;flex-direction:column;gap:6px;padding:8px 12px 0;border-top:1px solid var(--line)}
+.queuebox:empty{display:none}
+.qitem{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.qitem .qpos{flex:none;font-family:Consolas,"Cascadia Mono",monospace;color:var(--accent2);font-weight:600}
+.qitem .qtext{flex:1;min-width:0;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qitem .qmode{flex:none;color:var(--faint);font-size:11px}
+.qitem button{flex:none;border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 6px;border-radius:5px}
+.qitem button:hover{color:var(--text);background:var(--menu-hover)}
+.qitem button.qdel:hover{color:var(--danger-text);background:var(--danger-bg)}
 .chatlog .meta{color:var(--faint);font-size:12.5px}
 .msg{max-width:78%;margin:5px 0;padding:9px 13px;border-radius:13px;white-space:pre-wrap;word-break:break-word;font-size:13.5px;line-height:1.6}
 .msg.user{align-self:flex-end;background:var(--msg-user-bg);border:1px solid var(--msg-user-border)}

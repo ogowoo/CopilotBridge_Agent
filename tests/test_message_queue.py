@@ -118,11 +118,86 @@ class MessageQueueTests(unittest.TestCase):
         d = r.json()
         self.assertTrue(d.get("queued"))
         self.assertIn("position", d)
+        self.assertIn("id", d)
         # 用户消息已先落库，历史里立即可见
         msgs = b.AGENT_SESSIONS.messages("s1")
         self.assertTrue(any(m["role"] == "user" and m["content"] == "帮我继续" for m in msgs))
         gate.set()
         asyncio.run(drain_until_empty())
+
+
+class QueueEditDeleteTests(unittest.TestCase):
+    """排队消息的查看/修改/删除 + 消息表同步。"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="cbp_mq_edit_"))
+        self.ws = self.tmp / "ws"
+        self.ws.mkdir()
+        self.saved = (b.AGENT_SESSIONS, b.SNAPSHOTS, b.AGENT_TOOLS.root,
+                      b._process_queued_message, b._message_worker)
+        b.AGENT_SESSIONS = SessionStore(self.tmp / "agent.db")
+        b.SNAPSHOTS = SnapshotStore(self.tmp / "snaps")
+        b.AGENT_TOOLS.root = self.ws
+        b._MSG_QUEUES.clear(); b._MSG_WAKE.clear(); b._MSG_WORKERS.clear(); b._MSG_INFLIGHT.clear()
+        b.AGENT_SESSIONS.create("s1", "任务", str(self.ws), "copilot-auto")
+        # 不消费的 worker：条目停在"等待"态，便于测编辑/删除
+        async def noop_worker(sid):
+            await asyncio.Event().wait()
+        b._message_worker = noop_worker
+        b._process_queued_message = make_stub([])
+
+    def tearDown(self):
+        for t in list(b._MSG_WORKERS.values()):
+            t.cancel()
+        b.AGENT_SESSIONS, b.SNAPSHOTS, b.AGENT_TOOLS.root, b._process_queued_message, b._message_worker = self.saved
+        b._MSG_QUEUES.clear(); b._MSG_WAKE.clear(); b._MSG_WORKERS.clear(); b._MSG_INFLIGHT.clear()
+
+    def _enqueue(self, content):
+        msg_id = b.AGENT_SESSIONS.add_message("s1", "user", content, 0)
+        return asyncio.run(b.enqueue_session_message("s1", content, "copilot-auto", False, None, msg_id))
+
+    def test_list_queue(self):
+        self._enqueue("第一条")
+        self._enqueue("第二条")
+        from cbp.api import app
+        c = TestClient(app)
+        d = c.get("/v1/agent/sessions/s1/queue").json()
+        self.assertEqual(d["depth"], 2)
+        self.assertEqual([x["content"] for x in d["pending"]], ["第一条", "第二条"])
+        self.assertEqual([x["position"] for x in d["pending"]], [1, 2])
+        self.assertFalse(any(x.get("processing") for x in d["pending"]))
+
+    def test_delete_queue_item_syncs_message(self):
+        r1 = self._enqueue("要删的")
+        self._enqueue("保留的")
+        from cbp.api import app
+        c = TestClient(app)
+        res = c.delete(f"/v1/agent/sessions/s1/queue/{r1['id']}")
+        self.assertEqual(res.status_code, 200)
+        d = c.get("/v1/agent/sessions/s1/queue").json()
+        self.assertEqual([x["content"] for x in d["pending"]], ["保留的"])
+        # 落库的 user 消息也被删
+        msgs = b.AGENT_SESSIONS.messages("s1")
+        self.assertTrue(all(m["content"] != "要删的" for m in msgs))
+
+    def test_edit_queue_item_syncs_message(self):
+        r1 = self._enqueue("原文")
+        from cbp.api import app
+        c = TestClient(app)
+        res = c.post(f"/v1/agent/sessions/s1/queue/{r1['id']}", json={"content": "改后"})
+        self.assertEqual(res.status_code, 200)
+        d = c.get("/v1/agent/sessions/s1/queue").json()
+        self.assertEqual(d["pending"][0]["content"], "改后")
+        # 落库的 user 消息同步更新
+        msgs = b.AGENT_SESSIONS.messages("s1")
+        self.assertTrue(any(m["content"] == "改后" for m in msgs))
+
+    def test_delete_missing_item_404(self):
+        from cbp.api import app
+        c = TestClient(app)
+        self.assertEqual(c.delete("/v1/agent/sessions/s1/queue/nonexistent").status_code, 404)
+        self.assertEqual(c.post("/v1/agent/sessions/s1/queue/nonexistent",
+                                json={"content": "x"}).status_code, 404)
 
 
 if __name__ == "__main__":

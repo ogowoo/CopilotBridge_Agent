@@ -269,7 +269,7 @@ async function load(id){
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
  if(current!==id)return;   // 等待期间已切换会话：丢弃迟到的详情
- await runtime();await refreshSessions()}
+ await runtime();await refreshSessions();refreshQueue()}
 
 /* 轮询在飞保护 + 会话切换竞态防护：
    延迟>1s 时不再堆叠请求；await 返回时若已切到别的会话，丢弃迟到数据 */
@@ -518,6 +518,7 @@ async function sendFollowup(){
    note.className='msg assistant';
    note.innerHTML=`<b>队列</b>${esc(d.position>1?`已排队（前面还有 ${d.position-1} 条）`:'已排队，等待处理…')}`;
    log.appendChild(note);log.scrollTop=log.scrollHeight;
+   refreshQueue();
    awaitFollowupReply(current,baseAssistants);
   }else{
    // 兜底：兼容某些直接返回内容的后端
@@ -539,6 +540,34 @@ async function awaitFollowupReply(sid,baseAssistants){
    if(as.length>baseAssistants){renderMessages(d.messages);return}
   }catch(e){}
  }}
+
+/* ── 排队消息：查看 / 编辑 / 删除 ── */
+async function refreshQueue(){
+ let box=document.getElementById('queueBox');if(!box)return;
+ if(!current){box.innerHTML='';return}
+ try{
+  let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/queue');
+  let items=d.pending||[];
+  if(!items.length){box.innerHTML='';return}
+  box.innerHTML=items.map(it=>`<div class="qitem"><span class="qpos">#${it.position}</span><span class="qtext" title="${esc(it.content)}">${esc(it.content)}</span><span class="qmode">${it.mode==='agent'?'Agent':'对话'}</span><button title="编辑" onclick="editQueueItem('${it.id}')">✎</button><button class="qdel" title="删除" onclick="removeQueueItem('${it.id}')">×</button></div>`).join('');
+ }catch(e){box.innerHTML=''}}
+
+async function editQueueItem(itemId){
+ if(!current)return;
+ let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/queue');
+ let it=(d.pending||[]).find(x=>x.id===itemId);if(!it)return;
+ let content=await dlgPrompt('修改排队消息','',it.content,'保存');
+ if(content===null)return;
+ try{
+  await api(`/v1/agent/sessions/${encodeURIComponent(current)}/queue/${itemId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+  toast('已更新排队消息','ok');refreshQueue()}catch(e){toast('更新失败: '+e,'err')}}
+
+async function removeQueueItem(itemId){
+ if(!current)return;
+ if(!await dlgConfirm('删除这条排队中的消息？此操作不可撤销。','删除排队消息',true))return;
+ try{
+  await api(`/v1/agent/sessions/${encodeURIComponent(current)}/queue/${itemId}`,{method:'DELETE'});
+  toast('已删除排队消息','ok');refreshQueue();load(current)}catch(e){toast('删除失败: '+e,'err')}}
 /* ── 粘贴图片/截图附件 ── */
 const IMG_STORES={task:[],follow:[]};
 
@@ -767,4 +796,4 @@ attachPasteHandler('followup','follow');
   }}
  loadModels();browserState();
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
- setInterval(()=>{refreshSessions();runtime()},1000)})();
+ setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();

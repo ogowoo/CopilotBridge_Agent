@@ -3,7 +3,7 @@
 HTTP 路由在 api.py；本模块不定义任何 FastAPI 端点。
 """
 
-import asyncio, base64, json, re, time, uuid
+import asyncio, base64, collections, json, re, time, uuid
 from os.path import commonprefix
 from datetime import datetime
 from pathlib import Path
@@ -1663,32 +1663,66 @@ async def auto_resume_interrupted():
 # 用户发跟进消息会一直卡"发送中"。改为每会话一个 FIFO 队列，入队立即响应，
 # 由后台 worker 逐条取用；run_agent/plain_chat_turn 内部仍抢全局锁，
 # 因此跨会话也天然串行。
-_MSG_QUEUES: dict[str, "asyncio.Queue"] = {}
+_MSG_QUEUES: dict[str, "collections.deque"] = {}
+_MSG_WAKE: dict[str, asyncio.Event] = {}
 _MSG_WORKERS: dict[str, asyncio.Task] = {}
+_MSG_INFLIGHT: dict[str, dict] = {}
 
 
 def queue_depth(sid: str) -> int:
-    q = _MSG_QUEUES.get(sid)
-    return q.qsize() if q else 0
+    dq = _MSG_QUEUES.get(sid)
+    return len(dq) if dq else 0
+
+
+def queue_items(sid: str) -> list[dict]:
+    """队列条目（含正在处理的那条）：处理中的标 processing 且位置 0，其余按 FIFO。
+
+    只有"等待中"的条目（deque 内）可编辑/删除；处理中的只展示。
+    """
+    out = []
+    inflight = _MSG_INFLIGHT.get(sid)
+    if inflight:
+        out.append({"id": inflight["id"], "position": 0, "processing": True,
+                    "content": inflight["content"],
+                    "mode": "agent" if inflight.get("agent_mode") else "chat",
+                    "model_id": inflight.get("model_id")})
+    dq = _MSG_QUEUES.get(sid)
+    if dq:
+        for i, item in enumerate(dq):
+            out.append({"id": item["id"], "position": i + 1, "content": item["content"],
+                        "mode": "agent" if item.get("agent_mode") else "chat",
+                        "model_id": item.get("model_id")})
+    return out
 
 
 async def _message_worker(sid: str):
-    q = _MSG_QUEUES[sid]
+    dq = _MSG_QUEUES[sid]
+    wake = _MSG_WAKE[sid]
     while True:
+        while dq:
+            item = dq.popleft()
+            _MSG_INFLIGHT[sid] = item
+            try:
+                await _process_queued_message(sid, item)
+            except Exception as exc:  # 单条失败不影响队列继续
+                log(f"会话 {sid} 队列消息处理失败: {exc}")
+            finally:
+                _MSG_INFLIGHT.pop(sid, None)
+        wake.clear()
         try:
-            item = await q.get()
+            await wake.wait()        # 无待处理任务时挂起，等 enqueue 唤醒
         except asyncio.CancelledError:
             raise
-        try:
-            await _process_queued_message(sid, item)
-        except Exception as exc:  # 单条失败不影响队列继续
-            log(f"会话 {sid} 队列消息处理失败: {exc}")
-        finally:
-            q.task_done()
-        if q.empty():
-            break
-    _MSG_WORKERS.pop(sid, None)
+
+
+def cancel_message_queue(sid: str) -> None:
+    """删除会话时清理其队列与 worker（避免等待中的 worker 永久挂起）。"""
+    task = _MSG_WORKERS.pop(sid, None)
+    if task and not task.done():
+        task.cancel()
     _MSG_QUEUES.pop(sid, None)
+    _MSG_WAKE.pop(sid, None)
+    _MSG_INFLIGHT.pop(sid, None)
 
 
 async def _process_queued_message(sid: str, item: dict):
@@ -1723,19 +1757,62 @@ async def _process_queued_message(sid: str, item: dict):
 
 
 async def enqueue_session_message(sid: str, content: str, model_id: str,
-                                  agent_mode: bool, attach_paths: list | None = None) -> dict:
+                                  agent_mode: bool, attach_paths: list | None = None,
+                                  message_id: int | None = None) -> dict:
     """把跟进消息入队并确保 worker 在跑。返回排队位置（1 表示马上处理）。"""
-    q = _MSG_QUEUES.get(sid)
-    if q is None:
-        q = asyncio.Queue()
-        _MSG_QUEUES[sid] = q
-    ahead = q.qsize()          # put 前取值：位置稳定，不受 worker 是否已消费影响
-    await q.put({"content": content, "model_id": model_id, "agent_mode": agent_mode,
-                 "attach_paths": attach_paths or []})
-    if sid not in _MSG_WORKERS or _MSG_WORKERS[sid].done():
+    dq = _MSG_QUEUES.get(sid)
+    if dq is None:
+        dq = collections.deque()
+        _MSG_QUEUES[sid] = dq
+        _MSG_WAKE[sid] = asyncio.Event()
         _MSG_WORKERS[sid] = asyncio.create_task(_message_worker(sid))
-    return {"session_id": sid, "queued": True, "position": ahead + 1,
+    ahead = len(dq)
+    item_id = uuid.uuid4().hex[:12]
+    dq.append({"id": item_id, "content": content, "model_id": model_id,
+               "agent_mode": agent_mode, "attach_paths": attach_paths or [],
+               "message_id": message_id})
+    _MSG_WAKE[sid].set()
+    return {"session_id": sid, "queued": True, "id": item_id, "position": ahead + 1,
             "mode": "agent" if agent_mode else "chat"}
+
+
+def find_queue_item(sid: str, item_id: str) -> dict | None:
+    dq = _MSG_QUEUES.get(sid)
+    if not dq:
+        return None
+    for item in dq:
+        if item.get("id") == item_id:
+            return item
+    return None
+
+
+def remove_queue_item(sid: str, item_id: str) -> bool:
+    """从等待队列移除一条；同步删除其已落库的 user 消息。返回是否移除。"""
+    dq = _MSG_QUEUES.get(sid)
+    if not dq:
+        return False
+    for i, item in enumerate(list(dq)):
+        if item.get("id") == item_id:
+            del dq[i]
+            if item.get("message_id"):
+                AGENT_SESSIONS.delete_message(sid, item["message_id"])
+            return True
+    return False
+
+
+def update_queue_item(sid: str, item_id: str, content: str | None = None,
+                      model_id: str | None = None) -> bool:
+    """修改等待队列里的一条；同步更新其已落库的 user 消息。返回是否更新。"""
+    item = find_queue_item(sid, item_id)
+    if not item:
+        return False
+    if content is not None and content.strip():
+        item["content"] = content.strip()
+        if item.get("message_id"):
+            AGENT_SESSIONS.update_message(sid, item["message_id"], content.strip())
+    if model_id:
+        item["model_id"] = normalize_model_soft(model_id)
+    return True
 
 
 def _has_complete_agent_action(text: str) -> bool:

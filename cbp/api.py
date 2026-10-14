@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
+from pydantic import BaseModel
 from playwright.async_api import async_playwright
 
 from . import bridge as b
@@ -567,6 +568,7 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
 
     local_deleted = b.AGENT_SESSIONS.delete(sid)
     b.RUNTIME.pop(sid, None)
+    b.cancel_message_queue(sid)   # 清理该会话的排队消息与 worker
     if local_deleted:
         # 会话记录已删除，其快照不再可回滚（回滚端点要求会话存在）：回收磁盘。
         # 自升级作用域 _self_<sid> 同样要清——否则孤儿作用域会被"回滚最近一次
@@ -598,10 +600,10 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
     if model_id != (req.model or state.get("model")):
         b.AGENT_SESSIONS.patch(sid, model=model_id)  # 清理会话里遗留的失效模型
     # 先把用户消息落库（历史里立即可见），再入队异步处理，避免阻塞 HTTP 响应。
-    b.AGENT_SESSIONS.add_message(sid, "user", content, int(state.get("conversation_index", 0)))
+    message_id = b.AGENT_SESSIONS.add_message(sid, "user", content, int(state.get("conversation_index", 0)))
     b.runtime_update(sid, phase="followup_queued", detail=f"跟进消息已排队：{content[:80]}")
     return await b.enqueue_session_message(sid, content, model_id,
-                                           bool(req.agent_mode), attach_paths)
+                                           bool(req.agent_mode), attach_paths, message_id)
 
 
 @app.post("/v1/agent/sessions/{sid}/continue")
@@ -629,6 +631,41 @@ async def session_runtime(sid: str):
         "queue_pending": b.queue_depth(sid),
     })
     return runtime
+
+
+# ── 跟进消息队列：查看 / 修改 / 删除排队中的消息 ──────────────────────
+@app.get("/v1/agent/sessions/{sid}/queue")
+async def list_queue(sid: str):
+    if not b.AGENT_SESSIONS.get(sid):
+        raise HTTPException(404, "Session 不存在")
+    return {"session_id": sid, "pending": b.queue_items(sid), "depth": b.queue_depth(sid)}
+
+
+@app.delete("/v1/agent/sessions/{sid}/queue/{item_id}")
+async def delete_queue_item(sid: str, item_id: str):
+    if not b.AGENT_SESSIONS.get(sid):
+        raise HTTPException(404, "Session 不存在")
+    if not b.remove_queue_item(sid, item_id):
+        raise HTTPException(404, "队列条目不存在（可能已被处理）")
+    return {"session_id": sid, "removed": True, "depth": b.queue_depth(sid)}
+
+
+class QueueEditRequest(BaseModel):
+    content: str | None = None
+    model: str | None = None
+
+
+@app.post("/v1/agent/sessions/{sid}/queue/{item_id}")
+async def edit_queue_item(sid: str, item_id: str, req: QueueEditRequest):
+    if not b.AGENT_SESSIONS.get(sid):
+        raise HTTPException(404, "Session 不存在")
+    if not req.content and not req.model:
+        raise HTTPException(400, "content 或 model 至少提供一个")
+    if not b.update_queue_item(sid, item_id, req.content, req.model):
+        raise HTTPException(404, "队列条目不存在（可能已被处理）")
+    item = b.find_queue_item(sid, item_id)
+    return {"session_id": sid, "updated": True,
+            "item": {"id": item["id"], "content": item["content"], "model_id": item["model_id"]} if item else None}
 
 
 @app.post("/v1/agent/sessions/{sid}/activate")

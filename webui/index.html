@@ -63,6 +63,7 @@
           <div class="chatbar"><span class="meta">继续当前 Session 对话</span><span style="display:flex;gap:6px"><button id="modeAgent" class="btn seg on" onclick="setFollowupMode('agent')">Agent 继续执行</button><button id="modeChat" class="btn seg" onclick="setFollowupMode('chat')">普通对话</button></span></div>
           <div id="chatlog" class="chatlog"><div class="meta">选择 Session 后，可以在这里继续对话。</div></div>
           <div id="followThumbs" class="thumbs"></div>
+          <div id="queueBox" class="queuebox"></div>
           <div class="composer">
             <textarea id="followup" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行；可直接粘贴截图"></textarea>
             <button id="sendFollowup" class="btn accent" onclick="sendFollowup()">发送</button>

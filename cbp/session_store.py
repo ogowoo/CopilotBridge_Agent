@@ -153,8 +153,23 @@ class SessionStore:
         if role not in {"user", "assistant", "system"}:
             raise ValueError("invalid role")
         with self.lock, self._connect() as con:
-            con.execute("INSERT INTO messages(session_id,created,role,content,conversation_index) VALUES(?,?,?,?,?)",
-                        (sid,time.time(),role,content,int(conversation_index)))
+            cur = con.execute("INSERT INTO messages(session_id,created,role,content,conversation_index) VALUES(?,?,?,?,?)",
+                              (sid, time.time(), role, content, int(conversation_index)))
+            return cur.lastrowid
+
+    def update_message(self, sid: str, message_id: int, content: str) -> bool:
+        """更新一条消息内容（供队列中待处理消息的编辑）。"""
+        with self.lock, self._connect() as con:
+            cur = con.execute("UPDATE messages SET content=? WHERE id=? AND session_id=?",
+                              (content, int(message_id), sid))
+            return cur.rowcount > 0
+
+    def delete_message(self, sid: str, message_id: int) -> bool:
+        """删除一条消息（供队列中待处理消息的删除）。"""
+        with self.lock, self._connect() as con:
+            cur = con.execute("DELETE FROM messages WHERE id=? AND session_id=?",
+                              (int(message_id), sid))
+            return cur.rowcount > 0
 
     def messages(self, sid: str, limit: int = 500):
         with self.lock, self._connect() as con:
