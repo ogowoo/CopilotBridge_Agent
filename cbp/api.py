@@ -419,17 +419,27 @@ async def session(sid: str):
 
 @app.get("/v1/agent/sessions/{sid}/snapshots")
 async def session_snapshots(sid: str):
-    """任务改动快照摘要：可回滚的文件清单。"""
+    """任务改动快照摘要：可回滚的文件清单 + 版本点列表。"""
     if not b.AGENT_SESSIONS.get(sid):
         raise HTTPException(404, "Session 不存在")
-    return b.SNAPSHOTS.summary(sid)
+    summary = b.SNAPSHOTS.summary(sid)
+    summary["versions"] = b.SNAPSHOTS.versions(sid)
+    return summary
+
+
+class RollbackRequest(BaseModel):
+    version: int | None = None
 
 
 @app.post("/v1/agent/sessions/{sid}/rollback")
-async def session_rollback(sid: str):
-    """回滚该 Session 期间的全部工作区改动（修改还原、新建删除）。"""
+async def session_rollback(sid: str, req: RollbackRequest | None = None):
+    """回滚该 Session 的工作区改动。
+
+    不带 version：整任务回滚到开始前；带 version：撤销该版本之后的写操作。
+    """
+    version = req.version if req else None
     async with b.lock:
-        result = await b.rollback_session_changes(sid)
+        result = await b.rollback_session_changes(sid, version=version)
     return result
 
 

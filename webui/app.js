@@ -314,18 +314,31 @@ async function removeSession(remote){
   document.getElementById('sessionView').style.display='none';
   document.getElementById('emptyState').style.display='flex';
   await refreshSessions()}catch(e){toast('删除失败: '+e,'err')}}
-/* ── 回滚任务改动：按写操作前捕获的原像还原工作区 ── */
+/* ── 回滚任务改动：按写操作前捕获的原像还原工作区（可选版本） ── */
 async function rollbackSession(){
  if(!current){toast('请先选择 Session','err');return}
  try{
   let s=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/snapshots');
   let files=s.files||[];
   if(!files.length){toast('该任务没有可回滚的文件改动','err');return}
+  let versions=s.versions||[];
+  let version=null;
+  if(versions.length>1){
+   // 有多个版本点：让用户选"整任务回滚"还是"回滚到某个版本"
+   let lines=versions.map(v=>`  · 版本 ${v.rev}：${v.path}（${v.kind||'file'}，${new Date((v.captured||0)*1000).toLocaleTimeString('zh-CN',{hour12:false})}）`).join('\n');
+   let input=await dlgPrompt(`该任务共有 ${versions.length} 个版本点（按时间先后）：\n\n${lines}\n\n输入「0」或留空 = 整任务回滚到开始前；输入版本号 = 撤销该版本之后的改动。`,`0`,'回滚到哪个版本？');
+   if(input===null)return;
+   version=parseInt(input,10);
+   if(isNaN(version))version=0;
+   version=version>0?version:null;
+  }
   let preview=files.slice(0,12).map(f=>`· [${f.kind}] ${f.path}`).join('\n');
   let more=files.length>12?`\n… 另有 ${files.length-12} 个`:'';
-  let msg=`将把该任务改动过的 ${files.length} 个路径恢复到任务开始前：\n修改过的还原、任务新建的删除。\n\n${preview}${more}\n\n此操作不可撤销，确定继续？`;
+  let target=version?`回滚到版本 ${version}（撤销该版本之后的改动）`:`整任务回滚到开始前`;
+  let msg=`${target}：${files.length} 个路径。\n修改过的还原、任务新建的删除。\n\n${preview}${more}\n\n此操作不可撤销，确定继续？`;
   if(!await dlgConfirm(msg,'回滚任务改动',true))return;
-  let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/rollback`,{method:'POST'});
+  let body=version?{version}:{};
+  let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/rollback`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   let tail=d.failed?`，失败 ${d.failed}`:'';
   toast(`回滚完成：还原 ${d.restored}、删除 ${d.deleted}${tail}`, d.failed?'err':'ok');
   await load(current)

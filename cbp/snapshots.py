@@ -27,6 +27,7 @@ class SnapshotStore:
     MAX_FILES = 800                      # 单会话快照条目上限
     MAX_FILE_BYTES = 8 * 1024 * 1024     # 单文件原像上限
     MAX_TOTAL_BYTES = 256 * 1024 * 1024  # 单会话原像总量上限（防止把大工程整体拷走）
+    MAX_REVS_PER_PATH = 6                # 单路径保留的版本数（最早 + 最近几个，防膨胀）
 
     def __init__(self, base: Path, retention: int = 50):
         self.base = Path(base).resolve()
@@ -84,6 +85,8 @@ class SnapshotStore:
             data = json.loads(p.read_text(encoding="utf-8"))
             data.setdefault("files", {})
             data.setdefault("skipped", [])
+            data.setdefault("history", {})       # 版本历史：rel -> [entry(rev 升序)]
+            data.setdefault("next_rev", 1)
             return data
         except Exception:
             return empty
@@ -139,9 +142,9 @@ class SnapshotStore:
             pass
         data = self.load(sid)
         rel_norm = str(rel).replace("\\", "/").lstrip("/") or "."
-        if rel_norm in data["files"]:
-            return  # 已有原像：保留最早状态
-        if len(data["files"]) >= self.MAX_FILES:
+        first_capture = rel_norm not in data["files"]
+        rev = int(data.get("next_rev", 1))
+        if first_capture and len(data["files"]) >= self.MAX_FILES:
             data["skipped"].append({"path": rel_norm, "reason": "条目数超限"})
             self._save(sid, data)
             return
@@ -151,7 +154,8 @@ class SnapshotStore:
             self._save(sid, data)
             return
 
-        entry: dict[str, Any] = {"path": rel_norm, "tool": tool, "captured": time.time()}
+        entry: dict[str, Any] = {"path": rel_norm, "tool": tool, "captured": time.time(),
+                                 "rev": rev}
         if root is not None:
             entry["root"] = str(root)
         if target.is_file():
@@ -160,7 +164,7 @@ class SnapshotStore:
                 data["skipped"].append({"path": rel_norm, "reason": f"文件 {size} 字节超限"})
                 self._save(sid, data)
                 return
-            stored = f"files/{len(data['files']):04d}_{target.name}"
+            stored = f"files/{rev:04d}_{target.name}"
             dest = self._dir(sid) / stored
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(target, dest)
@@ -172,13 +176,24 @@ class SnapshotStore:
                 data["skipped"].append({"path": rel_norm, "reason": f"目录 {size} 字节超限"})
                 self._save(sid, data)
                 return
-            stored = f"files/{len(data['files']):04d}_{target.name}.dir"
+            stored = f"files/{rev:04d}_{target.name}.dir"
             dest = self._dir(sid) / stored
             shutil.copytree(target, dest, dirs_exist_ok=True)
             entry.update({"kind": "dir", "stored": stored, "bytes": size})
         else:
             entry.update({"kind": "absent"})
-        data["files"][rel_norm] = entry
+
+        history = data.setdefault("history", {})
+        if first_capture:
+            data["files"][rel_norm] = entry          # 最早原像：整任务回滚用
+            history[rel_norm] = [entry]
+        else:
+            hist = history.setdefault(rel_norm, [])
+            if len(hist) >= self.MAX_REVS_PER_PATH:
+                # 保留最早（hist[0]）与最近几个，丢弃中间最旧的一个
+                hist.pop(1)
+            hist.append(entry)
+        data["next_rev"] = rev + 1
         data["created"] = data.get("created") or time.time()
         self._save(sid, data)
 
@@ -196,6 +211,69 @@ class SnapshotStore:
                 "skipped": data.get("skipped", [])}
 
     # ── 回滚 ──────────────────────────────────────────────────────
+    def versions(self, sid: str) -> list[dict[str, Any]]:
+        """版本点列表：按 rev 升序，每个版本标明它即将改动的路径与时间。"""
+        data = self.load(sid)
+        hist = data.get("history", {})
+        out = []
+        for entries in hist.values():
+            for e in entries:
+                out.append({"rev": e.get("rev"), "captured": e.get("captured"),
+                            "path": e.get("path"), "tool": e.get("tool"),
+                            "kind": e.get("kind")})
+        out.sort(key=lambda x: (x["rev"] or 0, x["path"] or ""))
+        return out
+
+    # ── 回滚 ──────────────────────────────────────────────────────
+    def _apply_entry(self, root: Path, rel: str, entry: dict[str, Any],
+                     scope_dir: Path) -> dict[str, Any]:
+        """把单个原像条目回滚到 root。返回状态明细，供 restore / restore_rev 复用。"""
+        # 根维度校验：原像来自另一个根（会话中途换过工作区）时不动它。
+        stored_root = entry.get("root")
+        if stored_root and Path(stored_root) != Path(root):
+            return {"path": rel, "status": "skipped",
+                    "detail": f"原像属于其它根目录 {stored_root}，未回滚"}
+        target = (root / rel).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError:
+            return {"path": rel, "status": "refused", "error": "工作区外路径"}
+        kind = entry.get("kind")
+        tmp: Path | None = None
+        try:
+            if kind == "absent":
+                if target.is_dir():
+                    shutil.rmtree(target)
+                elif target.exists():
+                    target.unlink()
+                return {"path": rel, "status": "deleted",
+                        "detail": "任务期间新建，回滚已删除"}
+            src = (scope_dir / str(entry.get("stored") or "")).resolve()
+            try:
+                src.relative_to(scope_dir)
+            except ValueError:
+                raise RuntimeError("快照原像路径非法")
+            if not src.exists():
+                raise RuntimeError("快照原像缺失")
+            if kind == "dir":
+                if target.exists():
+                    shutil.rmtree(target)
+                shutil.copytree(src, target, dirs_exist_ok=True)
+            else:
+                # 原子还原：先写临时文件再替换，避免失败留下被截断的文件。
+                target.parent.mkdir(parents=True, exist_ok=True)
+                tmp = target.with_name(target.name + ".cbp-restore-tmp")
+                shutil.copy2(src, tmp)
+                os.replace(tmp, target)
+            return {"path": rel, "status": "restored", "bytes": entry.get("bytes", 0)}
+        except Exception as exc:
+            try:
+                if tmp is not None and tmp.exists():
+                    tmp.unlink()
+            except Exception:
+                pass
+            return {"path": rel, "status": "failed", "error": str(exc)}
+
     def restore(self, sid: str, root: Path, only: list[str] | None = None) -> dict[str, Any]:
         """按原像回滚：file/dir 还原内容，absent 删除；返回逐条明细。"""
         data = self.load(sid)
@@ -211,65 +289,49 @@ class SnapshotStore:
         for rel, entry in files.items():
             if want is not None and rel not in want:
                 continue
-            # 根维度校验：原像来自另一个根（会话中途换过工作区）时不动它，
-            # 否则会把 A 根的内容写回 B 根的同名路径。
-            stored_root = entry.get("root")
-            if stored_root and Path(stored_root) != Path(root):
-                results.append({"path": rel, "status": "skipped",
-                                "detail": f"原像属于其它根目录 {stored_root}，未回滚"})
-                continue
-            target = (root / rel).resolve()
-            # 沙箱：只允许在工作区根内回滚
-            try:
-                target.relative_to(root)
-            except ValueError:
-                results.append({"path": rel, "status": "refused", "error": "工作区外路径"})
-                failed += 1
-                continue
-            kind = entry.get("kind")
-            tmp: Path | None = None
-            try:
-                if kind == "absent":
-                    if target.is_dir():
-                        shutil.rmtree(target)
-                    elif target.exists():
-                        target.unlink()
-                    results.append({"path": rel, "status": "deleted",
-                                    "detail": "任务期间新建，回滚已删除"})
-                    deleted += 1
-                    continue
-                # 原像路径校验：清单里的 stored 不能被构造成 ../../ 逃出快照目录
-                src = (scope_dir / str(entry.get("stored") or "")).resolve()
-                try:
-                    src.relative_to(scope_dir)
-                except ValueError:
-                    raise RuntimeError("快照原像路径非法")
-                if not src.exists():
-                    raise RuntimeError("快照原像缺失")
-                if kind == "dir":
-                    if target.exists():
-                        shutil.rmtree(target)
-                    shutil.copytree(src, target, dirs_exist_ok=True)
-                else:
-                    # 原子还原：直接 copy2 到目标会在失败时留下被截断的文件
-                    # （回滚反而把工作区改坏），先写临时文件再替换。
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    tmp = target.with_name(target.name + ".cbp-restore-tmp")
-                    shutil.copy2(src, tmp)
-                    os.replace(tmp, target)
-                results.append({"path": rel, "status": "restored",
-                                "bytes": entry.get("bytes", 0)})
+            r = self._apply_entry(root, rel, entry, scope_dir)
+            if r["status"] == "restored":
                 restored += 1
-            except Exception as exc:
-                try:
-                    if tmp is not None and tmp.exists():
-                        tmp.unlink()
-                except Exception:
-                    pass
-                results.append({"path": rel, "status": "failed", "error": str(exc)})
+            elif r["status"] == "deleted":
+                deleted += 1
+            elif r["status"] in {"refused", "failed"}:
                 failed += 1
+            results.append(r)
         return {"restored": restored, "deleted": deleted, "failed": failed,
                 "results": results, "root": str(root)}
+
+    def restore_rev(self, sid: str, root: Path, rev: int) -> dict[str, Any]:
+        """回滚到指定版本 rev：撤销 rev 之后的写操作。
+
+        语义：对每个路径取 rev ≤ 指定版本的最近一次原像还原；若该路径的首次
+        改动晚于该版本（rev 前还没被本任务碰过），则还原其最早原像（=任务前
+        状态），把之后本任务对它做的改动一并撤销。
+        """
+        data = self.load(sid)
+        hist = data.get("history", {})
+        if not hist:
+            return {"restored": 0, "deleted": 0, "failed": 0, "results": [],
+                    "message": "没有该 Session 的快照记录"}
+        root = Path(root).resolve()
+        scope_dir = self._dir(sid).resolve()
+        results = []
+        restored = deleted = failed = 0
+        for rel, entries in hist.items():
+            if not entries:
+                continue
+            ordered = sorted(entries, key=lambda e: e.get("rev") or 0)
+            eligible = [e for e in ordered if (e.get("rev") or 0) <= rev]
+            entry = eligible[-1] if eligible else ordered[0]
+            r = self._apply_entry(root, rel, entry, scope_dir)
+            if r["status"] == "restored":
+                restored += 1
+            elif r["status"] == "deleted":
+                deleted += 1
+            elif r["status"] in {"refused", "failed"}:
+                failed += 1
+            results.append(r)
+        return {"restored": restored, "deleted": deleted, "failed": failed,
+                "results": results, "root": str(root), "rev": rev}
 
     def clear(self, sid: str) -> bool:
         d = self._dir(sid)

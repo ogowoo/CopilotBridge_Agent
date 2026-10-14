@@ -1234,12 +1234,12 @@ def memory_scope_for(root: Path) -> str:
     return "ws:" + hashlib.sha1(key).hexdigest()[:12]
 
 
-async def rollback_session_changes(sid: str) -> dict:
-    """把某个 Session 期间改过的工作区文件恢复到任务开始前的状态。
+async def rollback_session_changes(sid: str, version: int | None = None) -> dict:
+    """把某个 Session 期间改过的工作区文件恢复到任务开始前（或指定版本）。
 
-    快照在写操作前捕获（同一路径保留最早状态），因此这是"任务级回滚"：
-    修改过的文件还原、任务新建的文件删除。会话处于运行/等待状态时拒绝，
-    避免和正在进行的写操作打架。
+    快照在写操作前捕获（同一路径保留最早状态 + 每个写操作追加一个版本），
+    因此不带 version 是"任务级回滚"；带 version 则撤销该版本之后的写操作。
+    会话处于运行/等待状态时拒绝，避免和正在进行的写操作打架。
     """
     state = AGENT_SESSIONS.get(sid)
     if not state:
@@ -1249,13 +1249,17 @@ async def rollback_session_changes(sid: str) -> dict:
     root = Path(state.get("workspace") or AGENT_TOOLS.root)
     if not root.is_dir():
         raise HTTPException(400, f"工作区不存在: {root}")
-    result = SNAPSHOTS.restore(sid, root)
+    if version is not None:
+        result = SNAPSHOTS.restore_rev(sid, root, int(version))
+        why = f"回滚到版本 {version}：还原 {result['restored']} 个、删除 {result['deleted']} 个、失败 {result['failed']} 个"
+    else:
+        result = SNAPSHOTS.restore(sid, root)
+        why = f"回滚任务改动：还原 {result['restored']} 个、删除 {result['deleted']} 个、失败 {result['failed']} 个"
     step = {"step": int(state.get("total_steps", 0)), "status": "rollback",
-            "reason": f"回滚任务改动：还原 {result['restored']} 个、删除 {result['deleted']} 个"
-                      f"、失败 {result['failed']} 个",
+            "reason": why,
             "result": {"restored": result["restored"], "deleted": result["deleted"],
                        "failed": result["failed"], "root": result.get("root"),
-                       "results": result["results"][:50]}}
+                       "rev": result.get("rev"), "results": result["results"][:50]}}
     AGENT_SESSIONS.add_step(sid, step["step"], int(state.get("conversation_index", 0)), step)
     AGENT_SESSIONS.patch(sid, last_error=None if not result["failed"] else "回滚存在失败项")
     return result
