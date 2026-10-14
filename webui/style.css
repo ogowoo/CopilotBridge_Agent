@@ -156,6 +156,13 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 /* 对话区（作为实时面板的"继续对话"选项卡） */
 .chatlog{min-height:120px;overflow:auto;padding:14px 15px;display:flex;flex-direction:column;flex:1}
 .chatwrap>.composer{flex:none}
+/* 粘贴图片/截图附件：缩略图条 */
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;padding:8px 12px 0}
+.thumbs:empty{display:none}
+.thumb{position:relative;width:74px;height:74px;border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:var(--panel2)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .rm{position:absolute;top:2px;right:2px;width:18px;height:18px;border:0;border-radius:50%;background:var(--danger-bg);color:var(--danger-text);font-size:12px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.thumb .rm:hover{background:var(--red);color:#fff}
 .chatlog .meta{color:var(--faint);font-size:12.5px}
 .msg{max-width:78%;margin:5px 0;padding:9px 13px;border-radius:13px;white-space:pre-wrap;word-break:break-word;font-size:13.5px;line-height:1.6}
 .msg.user{align-self:flex-end;background:var(--msg-user-bg);border:1px solid var(--msg-user-border)}

@@ -192,7 +192,7 @@ async def nonstream(req, prompt):
 
 async def stream_agent(req: AgentRequest):
     try:
-        result, sid = await b.run_agent(req)
+        result, sid = await b.run_agent(req, attach_paths=b.save_image_attachments(req.attachments))
         yield sse({"session_id": sid, "agent_steps": result.steps,
                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": result.content}, "finish_reason": "stop"}]})
     except Exception as exc:
@@ -589,8 +589,11 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
     if state.get("state") in {"cancelled", "archived"}:
         raise HTTPException(409, f"Session 状态为 {state.get('state')}，不能继续")
     content = req.content.strip()
-    if not content:
+    attach_paths = b.save_image_attachments(req.attachments)
+    if not content and not attach_paths:
         raise HTTPException(400, "消息不能为空")
+    if not content:
+        content = "请分析我附上的图片。"
     model_id = b.normalize_model_soft(req.model or state.get("model") or b.DEFAULT_MODEL)
     if model_id != (req.model or state.get("model")):
         b.AGENT_SESSIONS.patch(sid, model=model_id)  # 清理会话里遗留的失效模型
@@ -608,7 +611,7 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
             workspace=state.get("workspace"),
         )
         try:
-            result, _ = await b.run_agent(agent_req)
+            result, _ = await b.run_agent(agent_req, attach_paths=attach_paths)
         except Exception as exc:
             raise _map_agent_error(exc)
         answer = result.content
@@ -622,7 +625,7 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
     pm = b.providers_mod.split_provider_model(model_id)
     if pm and pm[0] in b.PROVIDERS:
         return await b.provider_session_chat(sid, content, model_id)
-    return await b.plain_chat_turn(sid, content, model_id)
+    return await b.plain_chat_turn(sid, content, model_id, attach_paths=attach_paths)
 
 
 @app.post("/v1/agent/sessions/{sid}/continue")
@@ -713,7 +716,7 @@ async def agent_completions(req: AgentRequest):
     if req.stream:
         return StreamingResponse(stream_agent(req), media_type="text/event-stream")
     try:
-        result, sid = await b.run_agent(req)
+        result, sid = await b.run_agent(req, attach_paths=b.save_image_attachments(req.attachments))
     except Exception as exc:
         raise _map_agent_error(exc)
     return {"id": "agent-" + uuid.uuid4().hex, "object": "chat.completion",

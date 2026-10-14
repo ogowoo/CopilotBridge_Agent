@@ -268,7 +268,7 @@ async function load(id){
  renderSteps(d.steps);lastStepCount=d.steps.length;
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
- if(current!==myId)return;   // 等待期间已切换会话：丢弃迟到的详情
+ if(current!==id)return;   // 等待期间已切换会话：丢弃迟到的详情
  await runtime();await refreshSessions()}
 
 /* 轮询在飞保护 + 会话切换竞态防护：
@@ -501,19 +501,51 @@ async function continueAgent(){
 async function sendFollowup(){
  if(!current){toast('请先选择 Session','err');return}
  let box=document.getElementById('followup'),content=box.value.trim();
- if(!content)return;
+ if(!content&&!IMG_STORES.follow.length){toast('消息不能为空','err');return}
+ let atts=IMG_STORES.follow.map(a=>a.dataUrl);
  let btn=document.getElementById('sendFollowup');btn.disabled=true;btn.textContent='发送中';
  liveTab('chat');  // 发送后确保停留在对话页看回复
  let log=document.getElementById('chatlog'),mine=document.createElement('div');
- mine.className='msg user';mine.innerHTML=`<b>你</b>${esc(content)}`;
+ let label=content+(atts.length?`\n（附 ${atts.length} 张图片）`:'');
+ mine.className='msg user';mine.innerHTML=`<b>你</b>${esc(label)}`;
  log.appendChild(mine);log.scrollTop=log.scrollHeight;box.value='';
- try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,model:currentModel||document.getElementById('model').value,agent_mode:followupMode==='agent'})});
+ IMG_STORES.follow=[];renderThumbs();
+ try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,attachments:atts,model:currentModel||document.getElementById('model').value,agent_mode:followupMode==='agent'})});
   let reply=document.createElement('div');reply.className='msg assistant';
   reply.innerHTML=`<b>Copilot</b>${esc(d.content)}`;
   log.appendChild(reply);log.scrollTop=log.scrollHeight;
   currentUrl=d.url||currentUrl;await load(current)}
  catch(e){let er=document.createElement('div');er.className='msg assistant';er.textContent='发送失败: '+e;log.appendChild(er)}
  finally{btn.disabled=false;btn.textContent='发送'}}
+/* ── 粘贴图片/截图附件 ── */
+const IMG_STORES={task:[],follow:[]};
+
+function thumbsHtml(arr,store){
+ return arr.map((a,i)=>`<span class="thumb"><img src="${a.dataUrl}" alt=""><button class="rm" title="移除" onclick="removeAttachment('${store}',${i})">×</button></span>`).join('')}
+function renderThumbs(){
+ let tb=document.getElementById('taskThumbs'),fb=document.getElementById('followThumbs');
+ if(tb)tb.innerHTML=thumbsHtml(IMG_STORES.task,'task');
+ if(fb)fb.innerHTML=thumbsHtml(IMG_STORES.follow,'follow')}
+function removeAttachment(store,i){IMG_STORES[store].splice(i,1);renderThumbs()}
+
+function attachPasteHandler(taId,store){
+ let ta=document.getElementById(taId);if(!ta)return;
+ ta.addEventListener('paste',e=>{
+  let items=(e.clipboardData&&e.clipboardData.items)||[];
+  for(let i=0;i<items.length;i++){
+   let it=items[i];
+   if(it.kind==='file'&&it.type&&it.type.startsWith('image/')){
+    e.preventDefault();
+    let f=it.getAsFile();if(!f)continue;
+    if(f.size>8*1024*1024){toast('图片超过 8MB，已忽略','err');continue}
+    if(IMG_STORES[store].length>=4){toast('最多附加 4 张图片','err');continue}
+    let r=new FileReader();
+    r.onload=()=>{IMG_STORES[store].push({dataUrl:r.result});renderThumbs()};
+    r.readAsDataURL(f);
+   }
+  }
+ })}
+
 document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();sendFollowup()}});
 /* ── 新任务模式：Agent 执行 / 普通对话 ── */
 let taskMode='agent';
@@ -523,9 +555,11 @@ function setTaskMode(m){taskMode=m;
 
 async function runTask(){
  let task=document.getElementById('task').value.trim();if(!task)return;
- let b={model:document.getElementById('model').value,messages:[{role:'user',content:task}],stream:false,session_id:document.getElementById('sid').value.trim()||('task-'+Date.now().toString(36)),workspace:document.getElementById('workspace').value.trim()||null,reuse_session:true,agent_mode:taskMode==='agent'};
+ let atts=IMG_STORES.task.map(a=>a.dataUrl);
+ let b={model:document.getElementById('model').value,messages:[{role:'user',content:task}],stream:false,session_id:document.getElementById('sid').value.trim()||('task-'+Date.now().toString(36)),workspace:document.getElementById('workspace').value.trim()||null,reuse_session:true,agent_mode:taskMode==='agent',attachments:atts};
  current=b.session_id;
  currentModel=b.model;      // 会话页模型选择器随即显示本次任务用的模型
+ IMG_STORES.task=[];renderThumbs();
  closeTask();
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
@@ -697,6 +731,8 @@ try{const _rs=document.getElementById('btnRefreshSess');if(_rs)_rs.onclick=async
 try{let cur=document.documentElement.dataset.theme||'',i=THEMES.findIndex(x=>x[0]===cur);document.getElementById('themeBtn').title='主题：'+THEMES[i<0?0:i][1]+'（点击切换）'}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
 document.getElementById('sessModel').onchange=e=>setSessionModel(e.target.value);
+attachPasteHandler('task','task');
+attachPasteHandler('followup','follow');
 (async()=>{try{await api('/v1/agent/sessions')}
  catch(e){let msg=String(e&&e.message||e);
   if(msg.includes('401')){

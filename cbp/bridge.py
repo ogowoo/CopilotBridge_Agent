@@ -144,9 +144,11 @@ class Request(BaseModel):
     new_conversation: bool = True
 
 class SessionMessageRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=120000)
+    content: str = Field(default="", max_length=120000)
     model: str | None = None
     agent_mode: bool = True
+    # 粘贴的图片/截图附件（data URL），仅 Copilot 网页会话支持
+    attachments: list[str] | None = None
 
 class SessionModelRequest(BaseModel):
     """切换某个会话使用的模型（下一回合生效，服务重启后仍沿用）。"""
@@ -163,6 +165,8 @@ class AgentRequest(BaseModel):
     # False 时为普通对话模式：只在该 Session 绑定的 Copilot 会话里问答，
     # 不启动 Agent 工具循环。
     agent_mode: bool = True
+    # 粘贴的图片/截图附件（data URL），仅 Copilot 网页会话支持
+    attachments: list[str] | None = None
 
 
 def log(s):
@@ -813,6 +817,48 @@ async def attach_file_to_copilot(file_path: Path) -> None:
         raise RuntimeError("找不到 Copilot 文件上传控件")
     await file_input.first.set_input_files(str(file_path))
     await asyncio.sleep(2)  # 等待上传与解析（附件卡片渲染）
+
+
+MAX_IMAGE_ATTACHMENTS = 4
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+
+def save_image_attachments(images) -> list[Path]:
+    """把前端粘贴的图片/截图（data URL）落盘，返回文件路径列表。
+
+    前端在"继续对话 / 新任务"里粘贴截图时，把剪贴板图片读成 data URL 随消息
+    一起 POST 过来；这里解码落盘到 data/uploads，之后由 attach_file_to_copilot
+    附加到 Copilot 输入框。上限 4 张、单张 8MB，超限或解码失败静默跳过。
+    """
+    if not images:
+        return []
+    upload_dir = BASE / "data" / "uploads"
+    try:
+        upload_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return []
+    paths: list[Path] = []
+    for i, item in enumerate(list(images)[:MAX_IMAGE_ATTACHMENTS]):
+        if not item or not isinstance(item, str):
+            continue
+        m = re.match(r"^data:image/([A-Za-z0-9+.-]+);base64,(.*)$", item, re.S)
+        ext, b64 = "png", item
+        if m:
+            ext = (m.group(1).lower().replace("jpeg", "jpg") or "png")
+            b64 = m.group(2)
+        try:
+            data = base64.b64decode(b64, validate=False)
+        except Exception:
+            continue
+        if not data or len(data) > MAX_IMAGE_BYTES:
+            continue
+        p = upload_dir / f"{uuid.uuid4().hex[:12]}_{i}.{ext}"
+        try:
+            p.write_bytes(data)
+            paths.append(p)
+        except Exception:
+            continue
+    return paths
 
 
 async def input_box():
@@ -1894,7 +1940,7 @@ async def provider_session_chat(sid: str, content: str, model_id: str) -> dict:
                 "url": None, "mode": "chat", "provider": pm[0]}
 
 
-async def run_agent(req: AgentRequest):
+async def run_agent(req: AgentRequest, attach_paths: list | None = None):
     global ACTIVE_SESSION_ID
     if not AGENT_CFG.get("enabled", True): raise HTTPException(503, "Agent 功能已禁用")
     # 软归一：历史会话可能保存了已失效的模型 ID，回退默认模型而非 400
@@ -1942,6 +1988,7 @@ async def run_agent(req: AgentRequest):
             async def turn(prompt, model, force_new=False):
                 return await provider_turn(model, prompt)
         else:
+            attached = {"done": False}   # 附件只在首个回合附加一次
             async def turn(prompt,model,force_new=False):
                 st=AGENT_SESSIONS.get(sid)
                 make_new = force_new or not st.get("current_url")
@@ -1955,6 +2002,13 @@ async def run_agent(req: AgentRequest):
                         await page.goto(expected, wait_until="domcontentloaded", timeout=120000)
                         await asyncio.sleep(1)
                         _forget_selected_model()
+                if attach_paths and not attached["done"]:
+                    for p in attach_paths:
+                        try:
+                            await attach_file_to_copilot(p)
+                        except Exception as exc:
+                            log(f"附件 {p.name} 上传失败: {exc}")
+                    attached["done"] = True
                 marker = _agent_chat_marker(sid, int(st.get("conversation_index", 0)))
                 # Copilot derives the sidebar title from the beginning of the first
                 # message. This is more stable than automating the Rename editor.
@@ -2065,11 +2119,12 @@ async def stable_conversation_url(timeout: float = 12.0) -> str:
 
 
 
-async def plain_chat_turn(sid: str, content: str, model_id: str) -> dict:
+async def plain_chat_turn(sid: str, content: str, model_id: str, attach_paths: list | None = None) -> dict:
     """普通对话回合：在 Session 绑定的 Copilot 会话里问答，不跑工具循环。
 
     由 continue_session_message（跟进）和 plain_completions（新任务）共用。
     调用方负责写入 user 消息；本函数写入 assistant 回复并维护会话 URL。
+    attach_paths 为已落盘的图片/截图附件，发送前附加到 Copilot 输入框。
     """
     global ACTIVE_SESSION_ID
     state = AGENT_SESSIONS.get(sid)
@@ -2090,6 +2145,12 @@ async def plain_chat_turn(sid: str, content: str, model_id: str) -> dict:
                 make_new = True
         previous = "" if make_new else (await current_answer()).strip()
         try:
+            # 粘贴的图片/截图附件：发送前附加到 Copilot 输入框（失败不阻断文本发送）
+            for p in (attach_paths or []):
+                try:
+                    await attach_file_to_copilot(p)
+                except Exception as exc:
+                    log(f"附件 {p.name} 上传失败: {exc}")
             # 新会话把 CBP-AGENT 标记放进首条消息：Copilot 用它做侧栏标题，
             # 也是日后远程删除时的同属校验依据（与 Agent 模式一致）。
             marker = _agent_chat_marker(sid, int(state.get("conversation_index", 0)))
@@ -2126,6 +2187,7 @@ async def plain_completions(req: AgentRequest):
     contents = [m.content.strip() for m in req.messages if m.role == "user" and m.content.strip()]
     if not contents: raise HTTPException(400, "至少需要一条 user 消息")
     content = contents[-1]
+    attach_paths = save_image_attachments(req.attachments)
     sid = req.session_id or ("task-" + uuid.uuid4().hex[:12])
     if not AGENT_SESSIONS.get(sid):
         workspace = (req.workspace.strip() if req.workspace else None) or str(AGENT_WORKSPACE)
@@ -2135,7 +2197,7 @@ async def plain_completions(req: AgentRequest):
     if pm and pm[0] in PROVIDERS:
         result = await provider_session_chat(sid, content, model_id)
     else:
-        result = await plain_chat_turn(sid, content, model_id)
+        result = await plain_chat_turn(sid, content, model_id, attach_paths=attach_paths)
     return {"id": "chat-" + uuid.uuid4().hex, "object": "chat.completion",
             "created": int(time.time()), "model": model_id,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": result["content"]},
