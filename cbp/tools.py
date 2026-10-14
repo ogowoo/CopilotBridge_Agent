@@ -45,6 +45,40 @@ def parse_skill_md(dirname: str, text: str) -> tuple[str, str]:
     return name, desc[:120]
 
 
+
+# ── 工具分组：按任务裁剪注入的工具清单（P0-1）─────────────────────
+# 30 个工具的 schema 每回合全量注入纯属烧 token；单条任务通常只用少数几组。
+TOOL_GROUPS: dict[str, tuple[str, ...]] = {
+    "core": ("list_directory", "find_files", "read_text", "write_text", "append_text",
+             "write_text_b64", "append_text_b64", "replace_text", "make_directory",
+             "copy_path", "move_path", "validate_python", "run_unittest",
+             "skill_list", "skill_read", "skill_create",
+             "memory_write", "memory_search", "memory_forget", "tool_list"),
+    "delete": ("delete_path",),
+    "python": ("run_python",),
+    "office": ("read_excel", "write_excel", "read_docx", "write_docx", "read_pptx", "read_pdf"),
+    "outlook": ("outlook_unread", "outlook_read", "outlook_search", "outlook_send"),
+    "copilot": ("copilot_attach", "copilot_file"),
+    "self": ("self_read_text", "self_write_text_b64", "self_append_text_b64",
+             "self_replace_text", "self_validate", "self_unittest", "self_rollback"),
+}
+
+GROUP_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "office": ("excel", "xlsx", "表格", "word", "docx", "文档", "ppt", "pptx", "幻灯片", "pdf", "报表"),
+    "outlook": ("邮件", "outlook", "收件箱", "未读", "发信", "mail"),
+    "copilot": ("图片", "截图", "扫描件", "附件", "上传给 copilot", "由 copilot", "copilot 生成"),
+    "delete": ("删除", "清理", "移除"),
+    "python": ("python 脚本", "脚本处理", "批量处理", "计算"),
+}
+
+
+def tool_group(name: str) -> str:
+    """工具所属分组；未登记的（含外部注册工具）归入 core，保证不会被裁掉。"""
+    for group, members in TOOL_GROUPS.items():
+        if name in members:
+            return group
+    return "core"
+
 class _ComWorker:
     """专用 COM 线程：常驻 + Windows 消息泵，Outlook COM 调用全部串行在它上面执行。
 
@@ -184,6 +218,7 @@ class ToolRegistry:
             "skill_list": self.skill_list,
             "skill_read": self.skill_read,
             "skill_create": self.skill_create,
+            "tool_list": self.tool_list,
             "memory_write": self.memory_write,
             "memory_search": self.memory_search,
             "memory_forget": self.memory_forget,
@@ -198,6 +233,9 @@ class ToolRegistry:
             "outlook_search": self.outlook_search,
             "outlook_send": self.outlook_send,
         }
+        self._extra_descriptions.append({
+            "name": "tool_list", "arguments": {},
+            "description": "列出全部可用工具与分组（提示词里只列了与当前任务相关的工具，需要其它工具时可直接调用）"})
         if self.allow_self_upgrade:
             self._tools.update({
                 "self_read_text": self.self_read_text,
@@ -248,6 +286,15 @@ class ToolRegistry:
         if d.is_dir():
             out.append(("project", d))
         return out
+
+    def tool_list(self) -> dict[str, Any]:
+        """列出全部可用工具（含当前未在提示词中列出的组），供按需发现。"""
+        allitems = self._descriptions_all()
+        buckets: dict[str, list[str]] = {}
+        for x in sorted(allitems, key=lambda y: y["name"]):
+            buckets.setdefault(tool_group(x["name"]), []).append(x["name"])
+        return {"total": len(allitems), "groups": buckets,
+                "note": "提示词里只列了与当前任务相关的工具；需要其它工具时直接调用即可。"}
 
     def skill_list(self) -> list[dict[str, Any]]:
         """两级技能清单：项目同名技能覆盖全局。"""
@@ -595,7 +642,18 @@ class ToolRegistry:
         self.root = target
         return str(self.root)
 
-    def descriptions(self) -> list[dict[str, Any]]:
+    def descriptions(self, only: "set[str] | None" = None) -> list[dict[str, Any]]:
+        """工具清单；only 非空时只返回其中的工具（按任务裁剪，省提示词 token）。
+
+        裁剪只影响"列出来给模型看什么"：执行时不校验 only，模型凭记忆调用未列出的
+        工具依旧可用（隐藏≠禁用），避免裁剪把能力砍掉。
+        """
+        items = self._descriptions_all()
+        if only:
+            items = [x for x in items if x.get("name") in only]
+        return items
+
+    def _descriptions_all(self) -> list[dict[str, Any]]:
         items = [
             {"name": "list_directory", "description": "列出工作区目录", "arguments": {"path": "相对路径，默认 ."}},
             {"name": "find_files", "description": "按 glob 查找文件", "arguments": {"pattern": "如 **/*.log"}},

@@ -128,7 +128,25 @@ class AgentRunner:
 记忆沉淀（任务收尾同样要做一次判断）：本次任务若产生了**跨任务仍有价值的事实**（用户偏好、环境特征、某接口的坑、已验证的结论），用 memory_write 记一条——写"自足"的陈述句（"X 环境的 Y 需要 Z"），不要写"本次任务做了…"这类只对当下有意义的流水账；琐碎过程不要记。pinned 只留给必须每回合遵守的极重要约定（其余交给检索）。
 技能沉淀（任务收尾必做的一次判断）：完成任务前先 skill_list 看有没有相关技能；如果这次任务暴露了「可复用的方法/命令/坑」且没有对应技能，用 skill_create 新建一个（scope 默认 project 写入当前工作区 skills/，只有确实对所有工作区都通用、且已开启自升级时才用 scope=global）。技能内容写清楚：什么时候用、关键步骤、踩过的坑与验证方式，控制在 8000 字符内；不要为了记录而记录，琐碎或一次性的过程不要沉淀。
 可用工具：
-""" + json.dumps(self.tools.descriptions(), ensure_ascii=False) + self._self_upgrade_rules() + self._workspace_context()
+""" + json.dumps(self.tools.descriptions(only=self._active_tool_names()), ensure_ascii=False) + self._self_upgrade_rules() + self._workspace_context()
+
+    def _active_tool_names(self) -> set[str] | None:
+        """按任务文本裁剪工具面（P0-1）；None 表示不裁剪。
+
+        core 组始终包含；其它组按关键词命中展开；allow_self_upgrade 时带上 self 组。
+        config 的 tool_visibility="all" 可整体关闭裁剪（排障用）。
+        """
+        if str(self.config.get("tool_visibility", "auto")).lower() == "all":
+            return None
+        from .tools import GROUP_KEYWORDS, TOOL_GROUPS
+        task = (getattr(self, "_task_text", "") or "").lower()
+        names: set[str] = set(TOOL_GROUPS.get("core", ()))
+        for group, words in GROUP_KEYWORDS.items():
+            if any(w in task for w in words):
+                names.update(TOOL_GROUPS.get(group, ()))
+        if getattr(self.tools, "allow_self_upgrade", False):
+            names.update(TOOL_GROUPS.get("self", ()))
+        return names
 
     def _self_upgrade_rules(self) -> str:
         """自升级（修改服务自身代码）的专用规则，仅在 allow_self_upgrade 时注入。"""

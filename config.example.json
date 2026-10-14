@@ -38,6 +38,7 @@
     "max_sessions": 100,
     "max_parse_failures": 5,
     "max_actions_per_turn": 4,
+    "tool_visibility": "auto",
     "allow_copilot_file": true,
     "max_service_unavailable": 30,
     "service_retry_base_seconds": 30,
