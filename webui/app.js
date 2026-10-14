@@ -594,7 +594,9 @@ async function refreshQueue(){
  if(!current){box.innerHTML='';return}
  try{
   let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/queue');
-  let items=d.pending||[];
+  // 正在处理的那条不算"排队"：它已经在跑，进度由运行状态面板显示，而且
+  // 后端只允许改删"等待中"的条目（处理中的会 404）。这里只列等待项。
+  let items=(d.pending||[]).filter(it=>!it.processing);
   if(!items.length){box.innerHTML='';return}
   box.innerHTML=items.map(it=>`<div class="qitem"><span class="qpos">#${it.position}</span><span class="qtext" title="${esc(it.content)}">${esc(it.content)}</span><span class="qmode">${it.mode==='agent'?'Agent':'对话'}</span><button title="编辑" onclick="editQueueItem('${it.id}')">✎</button><button class="qdel" title="删除" onclick="removeQueueItem('${it.id}')">×</button></div>`).join('');
  }catch(e){box.innerHTML=''}}
