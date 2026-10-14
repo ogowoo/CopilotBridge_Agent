@@ -1657,6 +1657,87 @@ async def auto_resume_interrupted():
         except Exception as exc:
             log(f"会话 {sid} 自动恢复失败: {exc}")
 
+
+# ── 跟进消息队列：入队即返回，后台按序消费（DSH 式串行队列）──────────
+# 此前 continue_session_message 同步阻塞到整轮跑完才返回：任务正在跑时，
+# 用户发跟进消息会一直卡"发送中"。改为每会话一个 FIFO 队列，入队立即响应，
+# 由后台 worker 逐条取用；run_agent/plain_chat_turn 内部仍抢全局锁，
+# 因此跨会话也天然串行。
+_MSG_QUEUES: dict[str, "asyncio.Queue"] = {}
+_MSG_WORKERS: dict[str, asyncio.Task] = {}
+
+
+def queue_depth(sid: str) -> int:
+    q = _MSG_QUEUES.get(sid)
+    return q.qsize() if q else 0
+
+
+async def _message_worker(sid: str):
+    q = _MSG_QUEUES[sid]
+    while True:
+        try:
+            item = await q.get()
+        except asyncio.CancelledError:
+            raise
+        try:
+            await _process_queued_message(sid, item)
+        except Exception as exc:  # 单条失败不影响队列继续
+            log(f"会话 {sid} 队列消息处理失败: {exc}")
+        finally:
+            q.task_done()
+        if q.empty():
+            break
+    _MSG_WORKERS.pop(sid, None)
+    _MSG_QUEUES.pop(sid, None)
+
+
+async def _process_queued_message(sid: str, item: dict):
+    content, model_id = item["content"], item["model_id"]
+    attach_paths = item.get("attach_paths") or []
+    state = AGENT_SESSIONS.get(sid)
+    conv_idx = int(state.get("conversation_index", 0)) if state else 0
+    runtime_update(sid, phase="followup_processing", detail=f"正在处理跟进消息：{content[:80]}")
+    if item.get("agent_mode"):
+        req = AgentRequest(
+            model=model_id,
+            messages=[Message(role="user", content=content)],
+            stream=False, session_id=sid, reuse_session=True,
+            workspace=state.get("workspace") if state else None)
+        try:
+            result, _ = await run_agent(req, attach_paths=attach_paths)
+            answer = result.content
+        except Exception as exc:
+            answer = f"[错误] {exc}"
+    else:
+        pm = providers_mod.split_provider_model(model_id)
+        try:
+            if pm and pm[0] in PROVIDERS:
+                answer = (await provider_session_chat(sid, content, model_id))["content"]
+            else:
+                answer = (await plain_chat_turn(sid, content, model_id, attach_paths=attach_paths))["content"]
+        except Exception as exc:
+            answer = f"[错误] {exc}"
+    AGENT_SESSIONS.add_message(sid, "assistant", answer, conv_idx)
+    runtime_update(sid, phase="followup_completed", answer_preview=answer[-12000:],
+                   detail="跟进消息处理完成")
+
+
+async def enqueue_session_message(sid: str, content: str, model_id: str,
+                                  agent_mode: bool, attach_paths: list | None = None) -> dict:
+    """把跟进消息入队并确保 worker 在跑。返回排队位置（1 表示马上处理）。"""
+    q = _MSG_QUEUES.get(sid)
+    if q is None:
+        q = asyncio.Queue()
+        _MSG_QUEUES[sid] = q
+    ahead = q.qsize()          # put 前取值：位置稳定，不受 worker 是否已消费影响
+    await q.put({"content": content, "model_id": model_id, "agent_mode": agent_mode,
+                 "attach_paths": attach_paths or []})
+    if sid not in _MSG_WORKERS or _MSG_WORKERS[sid].done():
+        _MSG_WORKERS[sid] = asyncio.create_task(_message_worker(sid))
+    return {"session_id": sid, "queued": True, "position": ahead + 1,
+            "mode": "agent" if agent_mode else "chat"}
+
+
 def _has_complete_agent_action(text: str) -> bool:
     try:
         # 用模块级已导入的 AgentRunner：函数体内 `from agent import ...`

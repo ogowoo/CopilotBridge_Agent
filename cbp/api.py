@@ -597,35 +597,11 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
     model_id = b.normalize_model_soft(req.model or state.get("model") or b.DEFAULT_MODEL)
     if model_id != (req.model or state.get("model")):
         b.AGENT_SESSIONS.patch(sid, model=model_id)  # 清理会话里遗留的失效模型
+    # 先把用户消息落库（历史里立即可见），再入队异步处理，避免阻塞 HTTP 响应。
     b.AGENT_SESSIONS.add_message(sid, "user", content, int(state.get("conversation_index", 0)))
-
-    if req.agent_mode:
-        # Continue as an Agent task. This executes returned tool actions instead
-        # of showing the raw {type:tool,...} JSON as a chat answer.
-        agent_req = AgentRequest(
-            model=model_id,
-            messages=[Message(role="user", content=content)],
-            stream=False,
-            session_id=sid,
-            reuse_session=True,
-            workspace=state.get("workspace"),
-        )
-        try:
-            result, _ = await b.run_agent(agent_req, attach_paths=attach_paths)
-        except Exception as exc:
-            raise _map_agent_error(exc)
-        answer = result.content
-        current = b.AGENT_SESSIONS.get(sid)
-        b.AGENT_SESSIONS.add_message(sid, "assistant", answer, int(current.get("conversation_index", 0)))
-        return {"session_id": sid, "role": "assistant", "content": answer,
-                "url": current.get("current_url"), "agent_steps": result.steps,
-                "mode": "agent"}
-
-    # Plain chat mode keeps the same Copilot web conversation and does not run tools.
-    pm = b.providers_mod.split_provider_model(model_id)
-    if pm and pm[0] in b.PROVIDERS:
-        return await b.provider_session_chat(sid, content, model_id)
-    return await b.plain_chat_turn(sid, content, model_id, attach_paths=attach_paths)
+    b.runtime_update(sid, phase="followup_queued", detail=f"跟进消息已排队：{content[:80]}")
+    return await b.enqueue_session_message(sid, content, model_id,
+                                           bool(req.agent_mode), attach_paths)
 
 
 @app.post("/v1/agent/sessions/{sid}/continue")
@@ -650,6 +626,7 @@ async def session_runtime(sid: str):
         "current_url": state.get("current_url"),
         "token_budget": b.TOKEN_BUDGET,
         "busy": b.lock.locked() and b.ACTIVE_SESSION_ID == sid,
+        "queue_pending": b.queue_depth(sid),
     })
     return runtime
 

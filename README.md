@@ -205,7 +205,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | GET | `/v1/agent/sessions` | 会话列表 |
 | GET | `/v1/agent/sessions/{sid}` | 会话详情（步骤/文件事件/消息） |
 | GET | `/v1/agent/sessions/{sid}/runtime` | 实时运行状态 |
-| POST | `/v1/agent/sessions/{sid}/messages` | 在会话中追加消息（Agent 或普通对话模式） |
+| POST | `/v1/agent/sessions/{sid}/messages` | 在会话中追加消息（Agent 或普通对话模式）；**入队即返回** `queued/position`，后台按序处理 |
 | POST | `/v1/agent/sessions/{sid}/actions/{pause\|resume\|cancel\|compact\|rollover\|archive}` | 会话控制 |
 | POST | `/v1/agent/sessions/{sid}/activate` | 把自动化浏览器切到该会话页面 |
 | DELETE | `/v1/agent/sessions/{sid}?delete_remote=true&force_local=true` | 删除会话（可选连带删除 Copilot 网页会话） |
@@ -235,6 +235,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | 顶栏 ID 芯片 | 显示当前会话 ID，点击复制（删除前对号用） |
 | KPI 条 | 状态、总步骤、当前会话步骤、会话切换次数、TOKEN 估算（带预算进度条） |
 | 实时面板（四选项卡） | **当前执行状态**（阶段/等待详情/计数）、**Copilot 当前回答**（有更新时页签出现绿点）、**最近发送内容**（发给 Copilot 的原文尾部）、**继续对话**（模式切换 + 聊天记录 + 输入框，Enter 发送／Shift+Enter 换行）；右上 ⤢ 放大 看全文 |
+| 消息队列 | 继续对话发送的消息**入队即返回**，不阻塞界面；任务正在跑时再发消息会排队显示"已排队（前面还有 N 条）"，处理完自动把回复刷进聊天区。运行状态面板显示"队列: N 条待处理"。支持粘贴图片（截图）随消息一起发送 |
 | 步骤时间线 | 每步带时间与状态；「查看结果」展开完整参数/结果 JSON；右上「⬇ 导出」下载完整时间线 JSON（排查问题首选） |
 
 ### 长期记忆（跨会话）
@@ -315,7 +316,6 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 > ⚠️ 自升级等于把服务代码交给模型改。建议：先确保 `tests/` 能跑；一次只让 Agent 做一件事；升级后先重启看能否正常启动与跑测试，确认无误再继续下一个改动。
 
 ### 5. 大文件：让 Copilot 直接生成再下载
-
 写大文件的传统路径是 b64 分块（每块 ≤3000 字符，受 Copilot 单条输出上限约束）。更省事的是让 Copilot 自己生成文件、桥接下载：
 
 ```json

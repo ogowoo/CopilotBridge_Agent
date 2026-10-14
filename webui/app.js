@@ -282,7 +282,7 @@ async function runtime(){
   if(current!==myId)return;  // 等待期间用户已切换会话
   currentUrl=r.current_url||currentUrl;
   document.getElementById('pulse').className=r.busy?'pulse':'dot-off';
-  document.getElementById('activity').textContent=`阶段: ${r.phase||r.session_state}\n${r.detail||''}\n总步骤: ${r.total_steps}\n当前会话步骤: ${r.conversation_steps}\nToken估算: ${r.estimated_tokens}\n会话序号: ${(r.conversation_index??0)+1}\n最后更新: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():''}${r.model_warning?`\n\n⚠ ${r.model_warning}`:''}`;
+  document.getElementById('activity').textContent=`阶段: ${r.phase||r.session_state}\n${r.detail||''}\n总步骤: ${r.total_steps}\n当前会话步骤: ${r.conversation_steps}\nToken估算: ${r.estimated_tokens}\n会话序号: ${(r.conversation_index??0)+1}\n${r.queue_pending?`队列: ${r.queue_pending} 条待处理\n`:''}最后更新: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():''}${r.model_warning?`\n\n⚠ ${r.model_warning}`:''}`;
   let _ans=r.answer_preview||'等待 Copilot 回答…',_ae=document.getElementById('answer'),_pj=null;
   try{_pj=JSON.parse(_ans)}catch(e){}
   if(_pj&&typeof _pj==='object'){_ae.innerHTML='<div class="jsonview">'+jv(_pj)+'</div>'}else{_ae.textContent=_ans}
@@ -510,13 +510,35 @@ async function sendFollowup(){
  mine.className='msg user';mine.innerHTML=`<b>你</b>${esc(label)}`;
  log.appendChild(mine);log.scrollTop=log.scrollHeight;box.value='';
  IMG_STORES.follow=[];renderThumbs();
+ let baseAssistants=0;
+ try{let dd=await api('/v1/agent/sessions/'+encodeURIComponent(current));baseAssistants=dd.messages.filter(m=>m.role==='assistant').length}catch(e){}
  try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,attachments:atts,model:currentModel||document.getElementById('model').value,agent_mode:followupMode==='agent'})});
-  let reply=document.createElement('div');reply.className='msg assistant';
-  reply.innerHTML=`<b>Copilot</b>${esc(d.content)}`;
-  log.appendChild(reply);log.scrollTop=log.scrollHeight;
-  currentUrl=d.url||currentUrl;await load(current)}
- catch(e){let er=document.createElement('div');er.className='msg assistant';er.textContent='发送失败: '+e;log.appendChild(er)}
+  if(d&&d.queued){
+   let note=document.createElement('div');
+   note.className='msg assistant';
+   note.innerHTML=`<b>队列</b>${esc(d.position>1?`已排队（前面还有 ${d.position-1} 条）`:'已排队，等待处理…')}`;
+   log.appendChild(note);log.scrollTop=log.scrollHeight;
+   awaitFollowupReply(current,baseAssistants);
+  }else{
+   // 兜底：兼容某些直接返回内容的后端
+   let reply=document.createElement('div');reply.className='msg assistant';
+   reply.innerHTML=`<b>Copilot</b>${esc(d.content)}`;
+   log.appendChild(reply);log.scrollTop=log.scrollHeight;
+   currentUrl=d.url||currentUrl;await load(current)}
+ }catch(e){let er=document.createElement('div');er.className='msg assistant';er.textContent='发送失败: '+e;log.appendChild(er)}
  finally{btn.disabled=false;btn.textContent='发送'}}
+
+/* 队列模式：跟进消息入队后轮询会话消息，助理回复一出现就刷新聊天区 */
+async function awaitFollowupReply(sid,baseAssistants){
+ for(let i=0;i<300;i++){
+  await new Promise(r=>setTimeout(r,1000));
+  if(current!==sid)return;                     // 用户切走了就停
+  try{
+   let d=await api('/v1/agent/sessions/'+encodeURIComponent(sid));
+   let as=d.messages.filter(m=>m.role==='assistant');
+   if(as.length>baseAssistants){renderMessages(d.messages);return}
+  }catch(e){}
+ }}
 /* ── 粘贴图片/截图附件 ── */
 const IMG_STORES={task:[],follow:[]};
 
