@@ -358,3 +358,6 @@ input,textarea{font:inherit}
 section.card:has(#stepCount){margin-top:14px}
 .card + .card{margin-top:14px}
 #activity{padding-bottom:8px;display:block}
+
+/* 图标按钮内的 SVG 统一尺寸，避免无固有尺寸被拉伸 */
+.iconbtn svg{width:16px;height:16px;display:block}
