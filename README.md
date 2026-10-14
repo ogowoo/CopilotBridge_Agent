@@ -1,5 +1,7 @@
 # CopilotBridge Agent
 
+> **无 Copilot 也能用**：浏览器按需启动——服务启动不碰浏览器，WebUI 与提供商模型（DeepSeek/Kimi/OpenAI 等）立即可用；只有用到 Copilot 时才拉起它，界面顶部会显示状态并提供「重试浏览器」。
+
 把 **Microsoft 365 Copilot 网页版** 包装成本地服务的桥接器：对外提供 **OpenAI 兼容的 Chat API**，并内置一个能读写本地文件、执行验证闭环的 **长期任务 Agent**。模型调用不经过任何官方 API——由 Playwright 自动化你本机的 Edge 浏览器，直接使用你已登录的 Copilot 网页会话。
 
 ```
@@ -184,6 +186,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `allow_python` | `false` | 是否开放 `run_python` 工具（**可执行任意代码，谨慎开启**） |
 | `allow_office` | `true` | 是否开放 Office 文档工具（Excel/Word/PPT/PDF） |
 | `allow_memory_write` | `true` | 是否允许 Agent 用 `memory_write` 沉淀**长期记忆**（跨会话事实/偏好/结论，自动按相关性检索注入；`memory_forget` 可删除） |
+| `browser_startup` | `lazy` | 浏览器启动策略：`lazy`=按需启动（没有 Copilot 也能用 WebUI 与提供商模型）；`eager`=服务启动即预热 |
 | `allow_skill_write` | `true` | 是否允许 `skill_create` 沉淀技能（项目级写入工作区 `skills/`；全局级还需 `allow_self_upgrade`） |
 | `allow_outlook` | `false` | 是否开放 Outlook 读取工具（未读/正文/搜索） |
 | `allow_outlook_send` | `false` | 是否开放 `outlook_send`（会真实发出邮件，**谨慎开启**） |

@@ -392,3 +392,10 @@ section.card:has(#stepCount){margin-top:14px}
 #manualBody details{border:1px solid var(--line);border-radius:9px;padding:8px 12px;margin:10px 0;background:var(--panel2)}
 #manualBody summary{cursor:pointer;font-weight:600;font-size:13.5px}
 #manualBody summary::marker{color:var(--muted)}
+
+/* ── Copilot 未就绪提示条 ───────────────────────────────────────── */
+#bootBar{position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:55;display:none;
+ align-items:center;gap:10px;max-width:min(760px,92vw);padding:7px 12px;border-radius:9px;
+ background:var(--panel2);color:var(--text);border:1px solid var(--amber);
+ box-shadow:0 6px 20px var(--menu-shadow);font-size:12.5px}
+#bootBar span{line-height:1.4}

@@ -424,6 +424,16 @@ const MANUAL_HTML=`<h3>快速上手</h3>
 <li>每个任务对应一个 Session，背后是一个独立的 Copilot 网页会话；左侧列表点选查看。</li>
 <li>自动化浏览器窗口可用 <b>▣</b> 按钮显示/隐藏（无头切换会重启浏览器但保留登录态）。</li>
 </ul>
+<h3>浏览器按需启动（无 Copilot 也能用）</h3>
+<p>服务启动时<b>不会</b>去拉浏览器：API 与 WebUI 立刻可用，提供商模型（DeepSeek/Kimi/OpenAI 等）
+可直接使用。只有真正用到 Copilot（copilot 模型的对话/任务、模型列表刷新）时才会按需启动浏览器。</p>
+<ul>
+<li>界面顶部会显示状态：未启动 / 启动中 / 等待登录 / 失败，并带<b>重试浏览器</b>按钮（登录完成后点它即可，无需重启服务）。</li>
+<li>提供商模型路径<b>永远不触发</b>浏览器；Copilot 未就绪时相关请求会返回明确提示而不是含混报错。</li>
+<li>想改成启动即预热：把 <code>config.json</code> 的 <code>browser_startup</code> 设为 <code>eager</code>。</li>
+<li>排障：<code>GET /health</code> 里的 <code>copilot_ready</code> / <code>browser_state</code> / <code>browser_error</code>。</li>
+</ul>
+
 <h3>会话控制</h3>
 <ul>
 <li><b>暂停 / 恢复</b>：暂停在当前回合结束后停放；恢复直接从检查点续跑。</li>
@@ -877,6 +887,40 @@ async function loadMemory(){
   catch(e){toast('操作失败: '+e,'err')}});
 }
 try{memBtn()}catch(e){}
+/* ── Copilot 未就绪提示条（按需启动后：没有 Copilot 也能用提供商模型）── */
+let bootStateSeen=null;
+function bootBanner(){
+ let el=document.getElementById('bootBar');
+ if(!el){
+  el=document.createElement('div');el.id='bootBar';
+  el.innerHTML='<span id="bootText"></span><button class="btn ghost" id="bootRetry" style="padding:2px 10px;font-size:12px">重试浏览器</button>';
+  document.body.appendChild(el);
+  el.querySelector('#bootRetry').onclick=async()=>{
+   const b=el.querySelector('#bootRetry');b.disabled=true;b.textContent='启动中…';
+   try{await api('/v1/agent/browser/retry',{method:'POST'});toast('已请求启动浏览器，稍后自动复查','ok')}
+   catch(e){toast('请求失败: '+e,'err')}
+   finally{b.disabled=false;b.textContent='重试浏览器'}};
+ }
+ return el;
+}
+function showBoot(state,ready,err){
+ const el=bootBanner();
+ if(ready){el.style.display='none';return}
+ el.style.display='flex';
+ const map={idle:'浏览器未启动（首次使用 Copilot 时自动启动）',
+            starting:'浏览器启动中…',
+            browser_up:'浏览器已启动，等待 Copilot 就绪（可能需要在自动化窗口登录）',
+            needs_login:'需要在自动化窗口完成 Microsoft 登录',
+            failed:'浏览器启动失败'};
+ const txt='Copilot 未就绪：'+(map[state]||state||'未知')+(err?('（'+(err+'').slice(0,120)+'）'):'')+'　提供商模型不受影响，可直接使用。';
+ document.getElementById('bootText').textContent=txt;
+}
+async function pollBoot(){
+ try{const h=await api('/health');showBoot(h.browser_state,h.copilot_ready,h.browser_error)}
+ catch(e){showBoot('failed',false,'健康检查失败')}
+}
+try{setInterval(pollBoot,8000);setTimeout(pollBoot,1200)}catch(e){}
+
 try{const _rs=document.getElementById('btnRefreshSess');if(_rs)_rs.onclick=async()=>{
  if(_rs.disabled)return;_rs.disabled=true;_rs.style.opacity=.5;
  try{await refreshModels();refreshSessModelOptions();toast('模型列表已刷新','ok')}
