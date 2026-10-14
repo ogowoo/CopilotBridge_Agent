@@ -688,11 +688,12 @@ class AgentRunner:
         self.max_service_unavailable = max(3, int(config.get("max_service_unavailable", 30)))
         self.service_retry_base_seconds = max(5.0, float(config.get("service_retry_base_seconds", 30)))
         self.service_retry_max_seconds = max(60.0, float(config.get("service_retry_max_seconds", 600)))
-        # Copilot 限流窗口：首次超限后到可再次使用大致要等这么久（实测约 1 小时）。
-        # 倒计时浮窗锚定"首次超限时间 + 该窗口"，而不是每次退避时长，否则用户
-        # 会看到每 10 分钟跳一次的假倒数。Copilot 不会在文案里写明时长，所以
-        # 这里用配置项，可按实际观测调整。
-        self.service_retry_window_seconds = max(60.0, float(config.get("service_retry_window_seconds", 3600)))
+        # Copilot 限流窗口：首次超限后到可再次使用大致要等这么久（实测约 1 小时，
+        # 多加 1 分钟余量避免卡在临界点又撞一次限流）。倒计时浮窗锚定
+        # "首次超限时间 + 该窗口"，而不是每次退避时长，否则用户会看到每 10 分钟
+        # 跳一次的假倒数。Copilot 不会在文案里写明时长，所以这里用配置项，可按
+        # 实际观测调整。
+        self.service_retry_window_seconds = max(60.0, float(config.get("service_retry_window_seconds", 3660)))
 
     def _deterministic_summary(self, task: str, history: list[dict[str, Any]], state: dict) -> dict[str, Any]:
         completed, errors, modified, findings = [], [], dict(state.get("modified_files") or {}), []

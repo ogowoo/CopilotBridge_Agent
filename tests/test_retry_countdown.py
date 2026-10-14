@@ -47,14 +47,14 @@ class RetryWindowAnchorTests(unittest.TestCase):
 
     def test_window_anchor(self):
         from cbp.agent import AgentRunner
-        r = AgentRunner(None, None, {"service_retry_window_seconds": 3600}, None, None, None, None)
+        r = AgentRunner(None, None, {"service_retry_window_seconds": 3660}, None, None, None, None)
         since = 1_700_000_000.0
-        self.assertEqual(since + 3600, since + r.service_retry_window_seconds)
+        self.assertEqual(since + 3660, since + r.service_retry_window_seconds)
 
-    def test_window_defaults_to_one_hour(self):
+    def test_window_defaults_to_one_hour_plus_one_minute(self):
         from cbp.agent import AgentRunner
         r = AgentRunner(None, None, {}, None, None, None, None)
-        self.assertEqual(r.service_retry_window_seconds, 3600)
+        self.assertEqual(r.service_retry_window_seconds, 3660)
 
 
 if __name__ == "__main__":
