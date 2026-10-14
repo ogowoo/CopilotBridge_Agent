@@ -590,10 +590,7 @@ const MEM_ICON='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stro
  +'<path d="M12 5a3 3 0 0 0-3 3v1a2.5 2.5 0 0 0 0 5v1a3 3 0 0 0 6 0v-1a2.5 2.5 0 0 0 0-5V8a3 3 0 0 0-3-3z"/>'
  +'<path d="M9 9H7.5a2 2 0 0 0 0 4H9M15 9h1.5a2 2 0 0 1 0 4H15"/></svg>';
 const MEM_CSS=`
-#memBtn{display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;box-shadow:none;padding:2px;margin-left:2px;cursor:pointer;color:var(--muted);vertical-align:middle}
-#memBtn svg{width:17px;height:17px}
-#memBtn:hover{color:var(--text);background:transparent}
-#memBtn:focus-visible{outline:1px solid var(--accent);border-radius:6px}
+#memBtn svg{width:16px;height:16px;display:block}
 #memStats{color:var(--muted);font-size:12px;margin:6px 0;font-variant-numeric:tabular-nums}
 #memList{overflow:auto;flex:1;min-height:120px}
 .mem-row{border-top:1px solid var(--line);padding:9px 2px}
@@ -614,7 +611,7 @@ function memBtn(){
  let b=document.getElementById('memBtn');
  if(b)return b;
  b=document.createElement('button');
- b.id='memBtn';b.type='button';b.className='memicon';b.innerHTML=MEM_ICON;
+ b.id='memBtn';b.type='button';b.className='iconbtn';b.innerHTML=MEM_ICON;
  b.title='长期记忆：查看 / 检索 / 置顶 / 删除（点击打开面板）';
  // 放到顶部工具栏：优先贴着手册按钮，其次常见工具栏容器，最后才退回 body
  // 与「使用手册 / 主题」按钮同一行：左侧栏 .listhead 内（排在手册按钮后面）
