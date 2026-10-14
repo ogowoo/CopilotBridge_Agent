@@ -540,7 +540,37 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <li><b>提示找不到输入框/模型按钮</b>：登录态失效，运行 <code>python login.py</code> 重新登录（或在有窗口模式下直接登录）。</li>
 <li><b>任务显示等待服务</b>：Copilot 在限流，等它自动恢复；持续不可用会安全暂停，恢复后点「恢复」。</li>
 </ul>`;
-function openManual(){document.getElementById('manualBody').innerHTML=MANUAL_HTML;document.getElementById('manualMask').classList.add('open')}
+/* ── 手册增强：自动目录 + 低频章节折叠（运行时处理，不改模板）── */
+const MANUAL_COLLAPSE=['服务自升级','常见问题'];
+function enhanceManual(){
+ const body=document.getElementById('manualBody');
+ if(!body)return;
+ body.querySelectorAll('.mtoc').forEach(x=>x.remove());
+ const hs=[...body.querySelectorAll('h3')];
+ hs.forEach((h,i)=>h.id='mh'+i);
+ let toc=document.createElement('nav');
+ toc.className='mtoc';
+ toc.innerHTML='<b>目录</b>'+hs.map((h,i)=>`<a href="#mh${i}">${esc(h.textContent)}</a>`).join('');
+ body.insertBefore(toc, body.firstChild);
+ toc.querySelectorAll('a').forEach(a=>a.onclick=e=>{
+  e.preventDefault();
+  const t=document.getElementById(a.getAttribute('href').slice(1));
+  if(t)t.scrollIntoView({behavior:'smooth',block:'start'});});
+ hs.forEach(h=>{
+  if(!MANUAL_COLLAPSE.some(k=>h.textContent.includes(k)))return;
+  const d=document.createElement('details');
+  d.id=h.id;
+  const sum=document.createElement('summary');sum.textContent=h.textContent;
+  h.parentNode.insertBefore(d,h);
+  d.appendChild(sum);
+  let n=h.nextSibling;const move=[];
+  while(n&&!(n.nodeType===1&&n.tagName==='H3')){const nx=n.nextSibling;move.push(n);n=nx}
+  move.forEach(x=>d.appendChild(x));
+  h.remove();
+ });
+}
+
+function openManual(){document.getElementById('manualBody').innerHTML=MANUAL_HTML;enhanceManual();document.getElementById('manualMask').classList.add('open')}
 function closeManual(){document.getElementById('manualMask').classList.remove('open')}
 function openTask(){document.getElementById('taskMask').classList.add('open');setTimeout(()=>document.getElementById('task').focus(),60)}
 function closeTask(){document.getElementById('taskMask').classList.remove('open')}

@@ -383,3 +383,12 @@ section.card:has(#stepCount){margin-top:14px}
 
 /* 图标按钮内的 SVG 统一尺寸，避免无固有尺寸被拉伸 */
 .iconbtn svg{width:16px;height:16px;display:block}
+
+/* ── 使用手册：目录与折叠章节 ───────────────────────────────────── */
+.mtoc{display:flex;flex-wrap:wrap;gap:6px 12px;padding:6px 0 12px;margin-bottom:10px;border-bottom:1px solid var(--line)}
+.mtoc b{width:100%;color:var(--muted);font-size:12px;font-weight:600}
+.mtoc a{color:var(--accent);text-decoration:none;font-size:12.5px}
+.mtoc a:hover{text-decoration:underline}
+#manualBody details{border:1px solid var(--line);border-radius:9px;padding:8px 12px;margin:10px 0;background:var(--panel2)}
+#manualBody summary{cursor:pointer;font-weight:600;font-size:13.5px}
+#manualBody summary::marker{color:var(--muted)}
