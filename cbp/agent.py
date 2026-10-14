@@ -44,6 +44,28 @@ def validate_token_budget(config: dict[str, Any]) -> None:
   )
 
 
+
+# 动作协议的 JSON Schema：给"能约束解码"的提供商（OpenAI json_schema /
+# DeepSeek·Kimi json_object）用，把协议违规从提示层降到协议层。
+# 刻意扁平（type 用 enum + 可选字段），因为多数 strict 模式对顶层 oneOf 支持差。
+AGENT_ACTION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "type": {"type": "string", "enum": ["tool", "final", "actions"]},
+        "tool": {"type": "string", "description": "type=tool 时的工具名，必须来自可用工具清单"},
+        "arguments": {"type": "object", "description": "工具参数对象"},
+        "reason": {"type": "string", "description": "为什么执行这个动作，简短中文"},
+        "content": {"type": "string", "description": "type=final 时的最终答复"},
+        "actions": {
+            "type": "array",
+            "description": "type=actions 时的动作数组（批量），元素为 tool 动作",
+            "items": {"type": "object"},
+        },
+    },
+    "required": ["type"],
+    "additionalProperties": True,
+}
+
 class AgentPaused(Exception):
     """回合等待期间用户请求暂停，由桥接层抛出，用于立即中断并停放。"""
 

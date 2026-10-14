@@ -1,0 +1,151 @@
+# -*- coding: utf-8 -*-
+"""轨迹级回归评测：把"Agent 该怎么做"固化成可重跑的断言。
+
+与单元测试的分工：单测验函数与解析逻辑；本脚本验**真实模型跑真实任务**时
+的行为——工具序列、步骤数、文件结果、是否触发验证门、是否用了批量/记忆。
+线上真实失败应固化成这里的一条 case（incident-to-eval）。
+
+用法:
+    python scripts/eval.py                          # 用 config 的默认模型（Copilot 网页）
+    python scripts/eval.py --model deepseek/deepseek-chat   # 换成 API 提供商（更快）
+    python scripts/eval.py --only file-write,memory-write   # 只跑指定任务
+    python scripts/eval.py --keep                   # 保留评测会话，便于回看时间线
+
+输出: data/evals/report-<时间戳>.json（逐条断言结果）+ 终端汇总表。
+退出码: 任一条失败即 1（可直接进 CI）。
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+import httpx
+
+BASE = Path(__file__).resolve().parent.parent
+WS = BASE / "workspace"
+TASKS = BASE / "tests" / "evals" / "tasks.json"
+REPORT_DIR = BASE / "data" / "evals"
+API = os.environ.get("CBP_API", "http://127.0.0.1:8765")
+
+
+def check_task(task: dict, steps: list[dict], answer: str, memory_texts: list[str]) -> list[dict]:
+    """逐条断言；返回 [{name, ok, detail}]。断言全部是确定性的，不引入 LLM judge。"""
+    a = task.get("assert") or {}
+    out: list[dict] = []
+    tools = [s.get("tool") for s in steps if s.get("tool")]
+    statuses = [s.get("status") for s in steps]
+
+    def add(name: str, ok: bool, detail: str = ""):
+        out.append({"name": name, "ok": bool(ok), "detail": detail})
+
+    if "tools_used_any" in a:
+        want = a["tools_used_any"]
+        hit = [t for t in tools if t in want]
+        add("tools_used_any", bool(hit), f"期望其一 {want}，实际 {tools}")
+    if "tools_used_all" in a:
+        missing = [t for t in a["tools_used_all"] if t not in tools]
+        add("tools_used_all", not missing, f"缺失 {missing}")
+    if "tools_forbidden" in a:
+        bad = [t for t in a["tools_forbidden"] if t in tools]
+        add("tools_forbidden", not bad, f"出现了禁止工具 {bad}")
+    if "max_steps" in a:
+        add("max_steps", len(steps) <= a["max_steps"], f"步数 {len(steps)} > {a['max_steps']}")
+    if a.get("no_validation_gate"):
+        n = sum(1 for s in statuses if s == "validation_gate")
+        add("no_validation_gate", n == 0, f"验证门拦截 {n} 次（说明提前 final）")
+    if a.get("batch_used"):
+        b = [s.get("batch_of") for s in steps if s.get("batch_of")]
+        add("batch_used", bool(b), "没有出现批量动作")
+    for name in a.get("files_exist", []):
+        p = WS / name
+        add(f"file_exists:{name}", p.is_file(), str(p))
+    for name in a.get("files_absent", []):
+        p = WS / name
+        add(f"file_absent:{name}", not p.exists(), str(p))
+    for name, needle in (a.get("file_contains") or {}).items():
+        p = WS / name
+        ok = p.is_file() and needle in p.read_text(encoding="utf-8", errors="replace")
+        add(f"file_contains:{name}", ok, f"需包含 {needle!r}")
+    if "memory_contains" in a:
+        key = a["memory_contains"]
+        add("memory_contains", any(key in t for t in memory_texts),
+            f"记忆库中未见 {key!r}（现有 {len(memory_texts)} 条）")
+    if "final_contains" in a:
+        add("final_contains", a["final_contains"] in (answer or ""), "最终答复未包含关键字")
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", default=None, help="默认用服务端 config 的 default_model")
+    ap.add_argument("--only", default="", help="逗号分隔的任务 id")
+    ap.add_argument("--keep", action="store_true", help="保留评测会话")
+    ap.add_argument("--timeout", type=float, default=1800)
+    args = ap.parse_args()
+
+    spec = json.loads(TASKS.read_text(encoding="utf-8"))
+    tasks = spec["tasks"]
+    if args.only:
+        want = {x.strip() for x in args.only.split(",") if x.strip()}
+        tasks = [t for t in tasks if t["id"] in want]
+    if not tasks:
+        print("没有匹配的任务")
+        return 1
+
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    WS.mkdir(exist_ok=True)
+    results = []
+    failed = 0
+
+    with httpx.Client(base_url=API, timeout=args.timeout) as c:
+        health = c.get("/health").json()
+        model = args.model or health.get("default_model") or "copilot-auto"
+        print(f"评测模型: {model}  页面: {str(health.get('page_url'))[:60]}\n")
+
+        for t in tasks:
+            sid = f"eval-{t['id']}"
+            t0 = time.time()
+            try:
+                r = c.post("/v1/agent/completions", json={
+                    "model": model, "session_id": sid, "stream": False,
+                    "messages": [{"role": "user", "content": t["task"]}]})
+                d = r.json() if r.status_code == 200 else {}
+            except Exception as exc:
+                d = {"_error": str(exc)}
+            steps = d.get("agent_steps") or []
+            answer = ((d.get("choices") or [{}])[0].get("message", {}) or {}).get("content", "")
+            try:
+                mem = c.get("/v1/agent/memory", params={"scope": "all", "limit": 200}).json()
+                mem_texts = [m.get("text", "") for m in mem.get("items", [])]
+            except Exception:
+                mem_texts = []
+            checks = check_task(t, steps, answer, mem_texts)
+            ok = all(x["ok"] for x in checks)
+            failed += 0 if ok else 1
+            results.append({"id": t["id"], "ok": ok, "seconds": round(time.time() - t0, 1),
+                            "steps": len(steps), "tools": [s.get("tool") for s in steps if s.get("tool")],
+                            "checks": checks, "error": d.get("_error")})
+            mark = "PASS" if ok else "FAIL"
+            bad = [x["name"] for x in checks if not x["ok"]]
+            print(f"[{mark}] {t['id']:<22} {round(time.time()-t0,1):>6}s 步数 {len(steps):<3}"
+                  f"{'  失败断言: ' + ', '.join(bad) if bad else ''}")
+            if not args.keep:
+                try:
+                    c.delete(f"/v1/agent/sessions/{sid}", params={"force_local": "true"})
+                except Exception:
+                    pass
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    out = REPORT_DIR / f"report-{stamp}.json"
+    out.write_text(json.dumps({"model": model, "when": stamp, "results": results},
+                              ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"\n汇总: {len(results) - failed}/{len(results)} 通过   报告: {out}")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

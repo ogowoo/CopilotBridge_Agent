@@ -1,0 +1,61 @@
+{
+  "_comment": "轨迹级回归集：每条任务声明确定性断言（工具序列/参数/步骤数/文件结果/记忆/批量/验证门）。运行时用 scripts/eval.py。",
+  "tasks": [
+    {
+      "id": "file-write",
+      "task": "在 workspace 下创建 eval_hello.txt，内容写 HELLO，然后返回 final。",
+      "assert": {
+        "tools_used_any": ["write_text_b64", "write_text"],
+        "files_exist": ["eval_hello.txt"],
+        "file_contains": {"eval_hello.txt": "HELLO"},
+        "max_steps": 8,
+        "no_validation_gate": true
+      }
+    },
+    {
+      "id": "code-with-validation",
+      "task": "在 workspace 下创建 eval_mod.py，内含 add(a,b) 函数；写完后必须用 validate_python 验证通过，再返回 final。",
+      "assert": {
+        "tools_used_any": ["validate_python"],
+        "files_exist": ["eval_mod.py"],
+        "file_contains": {"eval_mod.py": "def add"},
+        "max_steps": 12,
+        "no_validation_gate": true
+      }
+    },
+    {
+      "id": "read-analyze",
+      "task": "读取 workspace 下 README.md 的前 500 个字符，用一句话总结它讲什么，然后返回 final。",
+      "assert": {
+        "tools_used_any": ["read_text"],
+        "max_steps": 6
+      }
+    },
+    {
+      "id": "memory-write",
+      "task": "把这条事实记到长期记忆（scope=global, kind=fact）：「评测基线：本机 Copilot 桥接服务端口 8765」，然后返回 final。",
+      "assert": {
+        "tools_used_any": ["memory_write"],
+        "memory_contains": "评测基线",
+        "max_steps": 8
+      }
+    },
+    {
+      "id": "batch-write",
+      "task": "用一次批量动作创建两个文件：eval_a.txt 内容 A、eval_b.txt 内容 B，然后返回 final。",
+      "assert": {
+        "files_exist": ["eval_a.txt", "eval_b.txt"],
+        "batch_used": true,
+        "max_steps": 8
+      }
+    },
+    {
+      "id": "skill-scan",
+      "task": "用 skill_list 查看当前可用技能，然后返回 final 并报告技能数量。",
+      "assert": {
+        "tools_used_any": ["skill_list"],
+        "max_steps": 5
+      }
+    }
+  ]
+}

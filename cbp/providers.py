@@ -106,6 +106,9 @@ class ApiProvider:
         self.models = [str(m) for m in (cfg.get("models") or [])]
         self.description = str(cfg.get("description") or name)
         self.timeout = float(cfg.get("timeout_seconds", 300))
+        # 结构化输出模式：auto（默认，先试 json_object）/ json_schema /
+        # json_object / off。不支持的服务会在 4xx 时自动降级重试一次。
+        self.json_mode = str(cfg.get("json_mode", "auto")).lower()
 
     @property
     def configured(self) -> bool:
@@ -136,13 +139,28 @@ class ApiProvider:
             raise ProviderUnavailable(f"HTTP {resp.status_code}: {body}")
         raise ProviderError(f"HTTP {resp.status_code}: {body}")
 
-    async def complete(self, model: str, messages: list[dict[str, str]]) -> str:
+    def _json_hint(self, schema: dict[str, Any] | None) -> dict[str, Any]:
+        """按能力生成 response_format；拿不准就退回 json_object（兼容最广）。"""
+        if not schema or self.json_mode == "off":
+            return {}
+        if self.json_mode in ("json_schema", "schema"):
+            return {"response_format": {"type": "json_schema", "json_schema": {
+                "name": "agent_action", "strict": False, "schema": schema}}}
+        return {"response_format": {"type": "json_object"}}
+
+    async def complete(self, model: str, messages: list[dict[str, str]],
+                       response_schema: dict[str, Any] | None = None) -> str:
         self.require_ready()
         try:
             async with self._client() as client:
-                resp = await client.post("/chat/completions", json={
-                    "model": model, "messages": messages, "stream": False,
-                })
+                payload: dict[str, Any] = {
+                    "model": model, "messages": messages, "stream": False}
+                payload.update(self._json_hint(response_schema))
+                resp = await client.post("/chat/completions", json=payload)
+                if resp.status_code >= 400 and "response_format" in payload:
+                    # 服务不支持该参数：去掉后重试一次（能力探测，不报错给用户）
+                    payload.pop("response_format", None)
+                    resp = await client.post("/chat/completions", json=payload)
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             raise ProviderUnavailable(str(exc)) from exc
         self._check_status(resp)

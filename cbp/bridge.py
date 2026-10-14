@@ -11,7 +11,7 @@ from typing import Literal
 from fastapi import HTTPException
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
-from .agent import AgentRunner, AgentPaused, CopilotServiceUnavailable, CopilotConversationFull, validate_token_budget
+from .agent import AGENT_ACTION_SCHEMA, AgentRunner, AgentPaused, CopilotServiceUnavailable, CopilotConversationFull, validate_token_budget
 from .tools import ToolRegistry, ToolError
 from .session_store import SessionStore
 from .snapshots import SnapshotStore
@@ -2065,7 +2065,8 @@ async def provider_turn(model_id: str, prompt: str) -> str:
     messages = [{"role": "system", "content": _PROVIDER_PROTOCOL},
                 {"role": "user", "content": prompt}]
     try:
-        return await provider.complete(pm[1], messages)
+        return await provider.complete(pm[1], messages,
+                                       response_schema=AGENT_ACTION_SCHEMA)
     except providers_mod.ProviderUnavailable as exc:
         raise CopilotServiceUnavailable(str(exc)) from exc
 
