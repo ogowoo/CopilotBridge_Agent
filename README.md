@@ -556,3 +556,26 @@ $env:CBP_EVENT_SOURCE = "projection"
 ⚠️ 不要用普通 GET 调 `/v1/agent/sessions/{sid}/events`——那是 **SSE 长连接**（前端
 EventSource 用），普通请求会一直挂着直到断开，这是设计如此；要历史事件请用上面的
 `event-log`。
+
+## 程序化工具调用 `run_code`（默认关闭）
+
+让模型写一段代码，在**独立子进程**里批量调用**只读**工具（`read_text` / `list_directory` /
+`find_files` / `skill_list` / `memory_search` / `tool_list`），最后用 `final(值)` 回传结果。
+适合「读很多文件再汇总」这类分析任务：工具循环要 N 个远端回合，`run_code` 只要 1 个。
+
+**实测（同一任务、deepseek/deepseek-chat）**
+
+| 文件数 | 关闭 run_code | 开启 run_code |
+|---|---|---|
+| 4 | 5 步 / 4.3s | 5 步（**模型未采纳**，仍走工具循环） |
+| 12 | **17 步** / 10.2s | **7 步**（find_files → run_code ×2 → read_text ×3）/ 8.9s |
+
+即：小规模不划算（模型自己不会用），规模上来后回合数减少约 59%。
+
+**安全边界（v1 刻意保守）**：只暴露只读工具（**无任何写入/删除/发信**）；子进程隔离；
+硬限额——超时 `run_code_timeout_seconds`（默认 30s）、工具调用次数 `run_code_max_calls`
+（默认 50）、回传上限 `run_code_max_output_chars`（默认 20000）；工具侧路径沙箱照旧生效。
+子进程内的工具错误是**具名异常 ToolError**，模型代码可捕获后优雅收尾。
+
+开启方式：`config.json` 的 `agent.allow_run_code: true`（默认 false）。建议同时把 `run_code`
+加进 `approval_required_tools`，让它像 `run_python` 一样逐次授权。

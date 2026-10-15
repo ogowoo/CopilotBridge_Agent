@@ -175,6 +175,19 @@ class AgentRunner:
         from .tools import GROUP_KEYWORDS, TOOL_GROUPS
         task = (getattr(self, "_task_text", "") or "").lower()
         names: set[str] = set(TOOL_GROUPS.get("core", ()))
+        # **未登记任何分组的工具一律视为 core**：否则新加的工具（例如 run_code）会被
+        # 裁剪从提示词里静默滤掉——模型看不到就不可能调用（本轮真机验证抓到的缺陷）。
+        # 这也与 tool_group() 的口径一致（未登记→core）。
+        _grouped: set[str] = set()
+        for _members in TOOL_GROUPS.values():
+            _grouped.update(_members)
+        try:
+            for _item in self.tools.descriptions():
+                _n = _item.get("name")
+                if _n and _n not in _grouped:
+                    names.add(_n)
+        except Exception:
+            pass
         for group, words in GROUP_KEYWORDS.items():
             if any(w in task for w in words):
                 names.update(TOOL_GROUPS.get(group, ()))

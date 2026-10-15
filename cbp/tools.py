@@ -184,6 +184,11 @@ class ToolRegistry:
         self.approval_required_tools = tuple(
             config.get("approval_required_tools") or APPROVAL_REQUIRED_TOOLS)
         self.allow_python = bool(config.get("allow_python", False))
+        # 程序化工具调用（P2-13）：在子进程里批量调用**只读**工具，默认关闭。
+        self.allow_run_code = bool(config.get("allow_run_code", False))
+        self.run_code_timeout = float(config.get("run_code_timeout_seconds", 30))
+        self.run_code_max_calls = int(config.get("run_code_max_calls", 50))
+        self.run_code_max_output = int(config.get("run_code_max_output_chars", 20000))
         self.allow_office = bool(config.get("allow_office", True))
         self.allow_outlook = bool(config.get("allow_outlook", False))
         self.allow_outlook_send = bool(config.get("allow_outlook_send", False))
@@ -239,6 +244,7 @@ class ToolRegistry:
             "move_path": self.move_path,
             "delete_path": self.delete_path,
             "run_python": self.run_python,
+            "run_code": self.run_code,
             "validate_python": self.validate_python,
             "run_unittest": self.run_unittest,
             "skill_list": self.skill_list,
@@ -707,6 +713,14 @@ class ToolRegistry:
         ]
         if self.allow_delete:
             items.append({"name": "delete_path", "description": "删除路径", "arguments": {"path": "相对路径"}})
+        if self.allow_run_code:
+            items.append({"name": "run_code",
+                          "description": "在子进程里跑一段 Python，可批量调用只读工具"
+                                         "（read_text/list_directory/find_files/skill_list/"
+                                         "memory_search/tool_list），最后用 final(值) 回传结果。"
+                                         "适合“读多个文件再汇总”：工具循环要 N 个回合，这里 1 个回合。"
+                                         "只读、无写入；有超时与调用次数上限",
+                          "arguments": {"code": "Python 代码；用 final(结果) 结束"}})
         if self.allow_python:
             items.append({"name": "run_python", "description": "运行短 Python 计算；禁止用于修改项目文件", "arguments": {"code": "短 Python 代码"}})
         if self.allow_office:
@@ -1158,6 +1172,25 @@ class ToolRegistry:
             proc.kill(); await proc.wait(); raise ToolError("单元测试执行超时")
         output = (stdout + stderr).decode("utf-8", "replace")[-30000:]
         return {"passed": proc.returncode == 0, "exit_code": proc.returncode, "output": output}
+
+    async def run_code(self, code: str) -> dict[str, Any]:
+        """在一段代码里批量调用**只读**工具（P2-13）。
+
+        适合"读多个文件再汇总"这类分析任务：工具循环要 N 个远端回合，这里 1 个回合即可。
+        白名单只含只读工具；超时/调用次数/回传大小均有硬限额（见 config）。
+        """
+        if not self.allow_run_code:
+            raise ToolError("run_code 已在 config.json 中禁用（allow_run_code=false）")
+        from .run_code import run_code as _impl
+
+        out = await _impl(self, code, timeout=self.run_code_timeout,
+                          max_calls=self.run_code_max_calls,
+                          max_output_chars=self.run_code_max_output)
+        if not out.get("ok"):
+            raise ToolError(f"run_code 失败：{out.get('error')}")
+        out["note"] = (f"本次共代理 {out.get('executed', 0)} 次只读工具调用"
+                       f"（尝试 {out.get('calls', 0)} 次）")
+        return out
 
     async def run_python(self, code: str) -> dict[str, Any]:
         if not self.allow_python:

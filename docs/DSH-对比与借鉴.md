@@ -204,7 +204,7 @@ profile = bundle 顺序叠层。slot = 浏览器 UI 插槽；inspect provider = 
 | P2-10 | 事件溯源化（日志即唯一真相，状态可重建） | 🟢 **一、二、三期均已落地**（第三期＝小步切换：`event_source=projection` 时"结果未知步骤"改读投影，不一致自动回退到列；默认仍 columns。实测投影模式评测 7/7 与列模式一致） | `events` 表、`append_event()/events()`、检查点+文件改动+队列+消息+审批共 **13 个发点**、`tests/test_event_log.py`、巡检脚本 `scripts/health.py`（一致/不一致/覆盖告警/遗留四类）；评测器每条任务自动做一次事件核对（`scripts/eval.py`） |
 | P2-11 | 对话/提示词结构契约 | ✅ 已落地（按真实 API 契约自愈：system 首位、不以 assistant 打头、连续 user 合法、连续 assistant 合并保留较新） | `_repair_provider_history()`、`tests/test_provider_history.py`；提示词稳定由 `tests/test_prompt_stability.py` 守 |
 | P2-12 | 工具结果 spill 落盘（替代纯截断） | ✅ 已落地 | `_spill_result()`、工作区 `.spill/`、`tests/test_spill.py` |
-| P2-13 | `run_code` 式程序化工具调用（白名单 + 进程隔离） | ⛔ 暂缓（需进程隔离 + 冻结注入 + 限额，属新子系统；现有 run_python 是无工具访问的弱版本且默认关闭） | — |
+| P2-13 | `run_code` 式程序化工具调用（白名单 + 进程隔离） | ✅ 已落地（默认关闭；12 文件场景实测 17→7 步，4 文件场景模型不采纳） | `cbp/run_code.py`、`tests/test_run_code.py`；顺带修掉「未分组工具被裁剪滤掉」的缺陷 |
 
 **顺带修掉的真缺陷**（不在原计划内，由真实任务/评测暴露）：
 参数错误不可行动（`tests/test_tool_arg_errors.py`）、恢复后 `pending_steps` 逻辑、

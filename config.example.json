@@ -61,6 +61,10 @@
       "run_python"
     ],
     "allow_python": false,
+    "allow_run_code": false,
+    "run_code_timeout_seconds": 30,
+    "run_code_max_calls": 50,
+    "run_code_max_output_chars": 20000,
     "allow_office": true,
     "allow_outlook": false,
     "allow_outlook_send": false,

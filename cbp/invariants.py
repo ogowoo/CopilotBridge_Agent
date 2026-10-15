@@ -334,3 +334,39 @@ def _events_reconstruct_checkpoints() -> None:
         import shutil
 
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+@invariant("未分组工具不得被裁剪滤掉")
+def _ungrouped_tools_stay_visible() -> None:
+    """新增工具若忘了登记分组，也必须留在提示词里（否则模型看不到、永远不会调用）。
+
+    本轮真机验证抓到的缺陷：`run_code` 没进 TOOL_GROUPS，于是被 P0-1 裁剪静默滤掉，
+    模型照旧用 4 次 read_text 而不是 1 次 run_code。工具"存在但不可见"比没有更糟——
+    文档里还写着"未登记工具归入 core"，口径与实际不一致。
+    """
+    from .agent import AgentRunner
+    from .tools import ToolRegistry
+
+    tmp = Path(tempfile.mkdtemp(prefix="cbp_inv_vis_"))
+    try:
+        all_caps = {"allow_delete": True, "allow_python": True, "allow_outlook": True,
+                    "allow_outlook_send": True, "allow_office": True, "allow_run_code": True}
+        tools = ToolRegistry(tmp, all_caps)
+        runner = AgentRunner(tools, lambda *a, **k: None, dict(all_caps, max_total_steps=3),
+                             state_getter=lambda: {"state": "ready"},
+                             state_saver=lambda **k: None, step_saver=lambda s: None,
+                             file_event_saver=lambda e: None)
+        runner._task_text = "随便做点事"
+        visible = {x["name"] for x in tools.descriptions(only=runner._active_tool_names())}
+        from .tools import TOOL_GROUPS
+
+        grouped = set().union(*TOOL_GROUPS.values()) if TOOL_GROUPS else set()
+        registered = {x["name"] for x in tools.descriptions()}
+        ungrouped = registered - grouped
+        missing = sorted(ungrouped - visible)
+        if missing:
+            raise InvariantError(f"未分组工具被裁剪滤掉: {missing}（应归入 core 保持可见）")
+    finally:
+        import shutil
+
+        shutil.rmtree(tmp, ignore_errors=True)
