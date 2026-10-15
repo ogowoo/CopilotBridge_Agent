@@ -185,11 +185,16 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .btn.seg.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 
 .demo{position:fixed;left:16px;bottom:14px;z-index:99;background:#3d2b10;border:1px solid #9e6a03;color:#e8b339;font-size:12px;padding:6px 13px;border-radius:20px}
-/* Copilot 限流倒计时浮窗：右上角，低于 toast（z 更高） */
-.retry-fab{position:fixed;top:16px;right:18px;z-index:80;min-width:200px;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:12px;padding:12px 16px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
+/* 限流倒计时：居中卡片（可收起为右下角小标——原先贴右上角会挡住模型选择器） */
+.retry-fab{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:80;min-width:250px;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:12px;padding:14px 20px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
+.retry-fab .rc-x{position:absolute;top:5px;right:7px;border:0;background:transparent;color:var(--muted);font-size:17px;line-height:1;cursor:pointer;padding:2px 7px;border-radius:6px}
+.retry-fab .rc-x:hover{color:var(--text);background:var(--menu-hover)}
 .retry-fab .rc-title{font-size:12.5px;color:var(--muted);margin-bottom:4px}
 .retry-fab .rc-count{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent2);line-height:1.1;font-family:Consolas,"Cascadia Mono",monospace}
 .retry-fab .rc-sub{font-size:11.5px;color:var(--faint);margin-top:6px}
+/* 收起后的小标（右下角，不挡顶部控件） */
+.retry-chip{position:fixed;right:18px;bottom:14px;z-index:80;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;font-family:Consolas,"Cascadia Mono",monospace;color:var(--accent2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+.retry-chip:hover{border-color:var(--accent2)}
 
 /* ── 删除结果弹窗 ── */
 .mask{position:fixed;inset:0;background:var(--mask-bg);display:none;align-items:center;justify-content:center;z-index:60;padding:22px}

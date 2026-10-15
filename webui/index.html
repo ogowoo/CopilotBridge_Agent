@@ -89,10 +89,12 @@
 </div>
 <div id="demoBadge" class="demo" style="display:none">演示模式 · API 未连接</div>
 <div id="retryCountdown" class="retry-fab" style="display:none">
+  <button id="retryMin" class="rc-x" title="收起（右下角小标可再展开）">×</button>
   <div class="rc-title">⏳ 服务限流/不可用，预计恢复</div>
   <div class="rc-count">--:--</div>
   <div class="rc-sub">第 1 次 · 自动重试中，可点「暂停」稍后继续</div>
 </div>
+<div id="retryChip" class="retry-chip" style="display:none" title="限流中：点击展开倒计时">⏳ --:--</div>
 <!-- 使用手册 -->
 <div class="mask" id="manualMask" onclick="if(event.target===this)closeManual()">
   <div class="dlg" style="width:min(760px,94vw)">

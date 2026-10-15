@@ -315,35 +315,59 @@ async function removeSession(remote){
   document.getElementById('sessionView').style.display='none';
   document.getElementById('emptyState').style.display='flex';
   await refreshSessions()}catch(e){toast('删除失败: '+e,'err')}}
-/* ── Copilot 限流倒计时浮窗 ── */
+/* ── 限流倒计时：居中卡片，可收起为右下角小标 ── */
+let retryDismissedAt=null;   // 用户已收起的那个终点时间戳（新一轮限流会自动再展开）
+let lastRuntime=null;        // 最近一次 runtime 响应，供小标展开时立即重绘
 function fmtCountdown(total){
  total=Math.max(0,Math.ceil(total/1000));
  let h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;
  return h>0?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
             :`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`}
+function hideRetryUI(){
+ let box=document.getElementById('retryCountdown'),chip=document.getElementById('retryChip');
+ if(box){box.style.display='none';box.removeAttribute('data-resume')}
+ if(chip){chip.style.display='none';chip.removeAttribute('data-resume')}}
 function updateRetryCountdown(r){
- let box=document.getElementById('retryCountdown');if(!box)return;
- let resumeAt=r&&r.retry_resume_at;
- if(!resumeAt||resumeAt*1000<=Date.now()){box.style.display='none';box.removeAttribute('data-resume');return}
- box.style.display='block';
+ let box=document.getElementById('retryCountdown'),chip=document.getElementById('retryChip');
+ if(!box)return;
+ lastRuntime=r||lastRuntime;
+ let resumeAt=lastRuntime&&lastRuntime.retry_resume_at;
+ if(!resumeAt||resumeAt*1000<=Date.now()){retryDismissedAt=null;hideRetryUI();return}
+ // 换了新的限流终点（新一轮）→ 重新展开卡片
+ if(retryDismissedAt!==null&&retryDismissedAt!==resumeAt)retryDismissedAt=null;
+ let showCard=retryDismissedAt!==resumeAt;
+ let text=fmtCountdown(resumeAt*1000-Date.now());
  box.dataset.resume=resumeAt;
+ if(chip){chip.dataset.resume=resumeAt;chip.textContent='⏳ '+text}
+ if(!showCard){box.style.display='none';if(chip)chip.style.display='block';return}
+ box.style.display='block';if(chip)chip.style.display='none';
  // 标题按实际通道措辞：API 提供商（模型 ID 含 /，如 deepseek/deepseek-chat）
  // 的 5xx/超时也走同一个窗口，写成"Copilot 限流"不准确。
  let isProvider=!!(currentModel&&currentModel.indexOf('/')>=0);
  let title=box.querySelector('.rc-title');
  if(title)title.textContent=isProvider?'⏳ API 服务限流/不可用，预计恢复'
                                      :'⏳ Copilot 限流/不可用，预计恢复';
- box.querySelector('.rc-count').textContent=fmtCountdown(resumeAt*1000-Date.now());
+ box.querySelector('.rc-count').textContent=text;
  let sub=box.querySelector('.rc-sub');
- sub.textContent=`第 ${r.retry_attempt||1} 次 · 自动重试中，可点「暂停」稍后继续`;
+ sub.textContent=`第 ${lastRuntime.retry_attempt||1} 次 · 自动重试中，可点「暂停」稍后继续`;
 }
-/* 每秒把浮窗倒数刷新一次（与 runtime 轮询解耦，数字平滑跳动） */
-setInterval(()=>{
+/* 收起（×）与展开（点小标） */
+document.getElementById('retryMin').onclick=e=>{
+ e.stopPropagation();
  let box=document.getElementById('retryCountdown');
- if(!box||box.style.display==='none'||!box.dataset.resume)return;
- let ms=parseFloat(box.dataset.resume)*1000-Date.now();
- if(ms<=0){box.style.display='none';box.removeAttribute('data-resume');return}
- box.querySelector('.rc-count').textContent=fmtCountdown(ms);
+ retryDismissedAt=parseFloat(box.dataset.resume)||null;
+ updateRetryCountdown(lastRuntime)};
+document.getElementById('retryChip').onclick=()=>{retryDismissedAt=null;updateRetryCountdown(lastRuntime)};
+/* 每秒把倒数刷新一次（与 runtime 轮询解耦，数字平滑跳动） */
+setInterval(()=>{
+ let box=document.getElementById('retryCountdown'),chip=document.getElementById('retryChip');
+ let src=(box&&box.dataset.resume)||(chip&&chip.dataset.resume);
+ if(!src)return;
+ let ms=parseFloat(src)*1000-Date.now();
+ if(ms<=0){retryDismissedAt=null;hideRetryUI();return}
+ let text=fmtCountdown(ms);
+ if(box&&box.style.display!=='none')box.querySelector('.rc-count').textContent=text;
+ if(chip&&chip.style.display!=='none')chip.textContent='⏳ '+text;
 },1000);
 
 /* ── 回滚任务改动：按 Copilot 回合的版本回滚工作区 ── */
