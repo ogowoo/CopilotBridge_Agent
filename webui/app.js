@@ -56,6 +56,26 @@ async function api(u,o={}){
   }
   let t=await r.text();if(!r.ok)throw Error(t);return t?JSON.parse(t):{}}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+/* ── 通道无关的显示名 ──────────────────────────────────────────────
+   服务现在既支持 Copilot 网页，也支持 API 提供商（deepseek/… 等），
+   界面文案不该再写死 "Copilot"。 */
+const BRAND={deepseek:'DeepSeek',kimi:'Kimi',openai:'OpenAI',grok:'Grok',moonshot:'Kimi',
+             anthropic:'Claude',google:'Gemini',qwen:'Qwen',zhipu:'智谱',myapi:'API'};
+function isProviderModel(m){return String(m||'').indexOf('/')>=0}
+function assistantLabel(model){
+ const m=String(model==null?(currentModel||''):model);
+ if(!m)return '助手';
+ if(isProviderModel(m)){
+  const p=m.split('/')[0].toLowerCase();
+  return BRAND[p]||(p.charAt(0).toUpperCase()+p.slice(1))}
+ return 'Copilot'}
+/* 消息时间：今天只显示时分秒，跨天补上日期 */
+function fmtStamp(ts){
+ if(!ts)return '';
+ const d=new Date(ts*1000),now=new Date();
+ const hm=d.toLocaleTimeString('zh-CN',{hour12:false});
+ return d.toDateString()===now.toDateString()?hm
+   :`${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${hm}`}
 function jv(v,key){
  if(v===null||v===undefined)return '<span class="nl">null</span>';
  if(typeof v==='boolean')return '<span class="bl">'+v+'</span>';
@@ -189,28 +209,31 @@ function renderSteps(steps){
 
 function renderMessages(messages){
  let box=document.getElementById('chatlog');box.innerHTML='';
- if(!messages.length){box.innerHTML='<div class="meta">当前没有人工续聊记录。下面发送的消息会进入该 Session 对应的 Copilot 会话。</div>';return}
- messages.forEach(m=>{
-  let e=document.createElement('div');e.className='msg '+m.role;
-  let who=m.role==='user'?'你':'Copilot';
-  let t=m.created?new Date(m.created*1000).toLocaleTimeString('zh-CN',{hour12:false}):'';
-  // 助手消息按 Markdown 渲染（代码块/列表/表格/链接），用户消息保持原样换行：
-  // 用户输入的是指令，任何"格式"都可能是有意为之，不要自作主张改写。
-  let body=m.role==='user'?`<div class="md-body plain">${esc(m.content)}</div>`
-                          :`<div class="md-body">${mdToHtml(m.content)}</div>`;
-  e.innerHTML=`<div class="msg-av">${m.role==='user'?'你':'C'}</div>`+
-   `<div class="msg-main"><div class="msg-head"><span class="msg-role">${who}</span>`+
-   (t?`<span class="msg-time">${t}</span>`:'')+
-   `<button class="msg-copy" title="复制这条消息" onclick="copyMsg(this)">复制</button></div>`+
-   body+`</div>`;
-  e.dataset.raw=m.content||'';
-  box.appendChild(e)});
+ if(!messages.length){box.innerHTML='<div class="meta">当前没有人工续聊记录。下面发送的消息会发给该 Session 正在使用的模型。</div>';return}
+ messages.forEach(m=>{box.appendChild(msgEl(m.role,m.content,m.created))});
  box.scrollTop=box.scrollHeight}
 /* 复制整条消息 / 复制代码块 */
 function copyMsg(btn){let m=btn.closest('.msg');if(!m)return;
  try{navigator.clipboard.writeText(m.dataset.raw||'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
 function copyCode(btn){let w=btn.closest('.md-codewrap');if(!w)return;let c=w.querySelector('code');
  try{navigator.clipboard.writeText(c?c.textContent:'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
+/* 统一的消息构造器：服务器消息、乐观显示、队列提示、错误提示都走这里，
+   保证样式与"时间戳"一致（时间缺失时用当前时间）。 */
+function msgEl(role,content,ts,opts){
+ opts=opts||{};
+ let who=opts.who||(role==='user'?'你':assistantLabel());
+ let t=fmtStamp(ts||Math.floor(Date.now()/1000));
+ let plain=(opts.plain||role==='user');   // 用户/提示类消息不做 Markdown
+ let body=plain?`<div class="md-body plain">${esc(content)}</div>`
+               :`<div class="md-body">${mdToHtml(content)}</div>`;
+ let e=document.createElement('div');e.className='msg '+role;
+ e.innerHTML=`<div class="msg-av">${esc(String(who).charAt(0))}</div>`+
+  `<div class="msg-main"><div class="msg-head"><span class="msg-role">${esc(who)}</span>`+
+  (t?`<span class="msg-time">${t}</span>`:'')+
+  `<button class="msg-copy" title="复制这条消息" onclick="copyMsg(this)">复制</button></div>`+
+  body+`</div>`;
+ e.dataset.raw=content||'';
+ return e}
 
 /* ── 轻量 Markdown 渲染（零依赖、离线可用）─────────────────────────
    安全前提：**先整体转义**再插入我们自己的标签；链接只允许 http(s)，
@@ -344,6 +367,7 @@ async function load(id){
  let _ms=document.getElementById('model');
  if(currentModel&&[..._ms.options].some(o=>o.value===currentModel))_ms.value=currentModel;
  refreshSessModelOptions();   // 会话页选择器显示该会话自己的模型
+ updateChannelUI();           // 按通道显示/隐藏"网页对话"专用按钮与文案
  document.getElementById('title').textContent=s.title;
  let _sc=document.getElementById('sidChip');
  if(_sc){_sc.textContent=s.id;_sc.onclick=()=>{try{navigator.clipboard.writeText(s.id);toast('已复制会话 ID: '+s.id,'ok')}catch(e){toast(s.id)}}}
@@ -368,7 +392,7 @@ async function runtime(){
   currentUrl=r.current_url||currentUrl;
   document.getElementById('pulse').className=r.busy?'pulse':'dot-off';
   document.getElementById('activity').textContent=`阶段: ${r.phase||r.session_state}\n${r.detail||''}\n总步骤: ${r.total_steps}\n当前会话步骤: ${r.conversation_steps}\nToken估算: ${r.estimated_tokens}\n会话序号: ${(r.conversation_index??0)+1}\n${r.queue_pending?`队列: ${r.queue_pending} 条待处理\n`:''}最后更新: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():''}${r.model_warning?`\n\n⚠ ${r.model_warning}`:''}`;
-  let _ans=r.answer_preview||'等待 Copilot 回答…',_ae=document.getElementById('answer'),_pj=null;
+  let _ans=r.answer_preview||'等待模型回答…',_ae=document.getElementById('answer'),_pj=null;
   try{_pj=JSON.parse(_ans)}catch(e){}
   // 结构化动作走 JSON 视图；普通回答按 Markdown 渲染（`.term` 面板里 code 块仍可读）
   if(_pj&&typeof _pj==='object'){_ae.innerHTML='<div class="jsonview">'+jv(_pj)+'</div>'}
@@ -389,7 +413,8 @@ async function runtime(){
 /* ── 操作 ── */
 async function control(a){if(!current)return;try{let r=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/${a}`,{method:'POST'});if(a==='resume')toast(r.note||(r.runner_started?'已恢复，正在续跑任务':'已恢复'), r.note_kind==='err'?'err':'ok');await load(current)}catch(e){toast('操作失败: '+e,'err')}}
 async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;toast('已将自动化 Edge 切换到该会话','ok')}catch(e){toast('操作失败: '+e,'err')}}
-function openCopilot(){if(currentUrl)window.open(currentUrl,'_blank');else toast('该 Session 暂无 Copilot URL','err')}
+function openCopilot(){if(currentUrl)window.open(currentUrl,'_blank');
+ else toast(isProviderModel(currentModel)?'该会话用的是 API 提供商模型，没有可打开的网页对话':'该 Session 暂无网页会话地址','err')}
 async function removeSession(remote){
  if(!current)return;
  let extra=remote?'，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）':'';
@@ -706,7 +731,7 @@ function closeTask(){document.getElementById('taskMask').classList.remove('open'
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closeTask()}});
 
 /* ── 实时面板选项卡 + 放大查看 ── */
-const LIVE_NAMES={activity:'当前执行状态',answer:'Copilot 当前回答',prompt:'最近发送给 Copilot 的内容',chat:'继续对话'};
+const LIVE_NAMES={activity:'当前执行状态',answer:'当前回答',prompt:'最近发送的内容',chat:'继续对话'};
 const LIVE_TAB={activity:'tabActivity',answer:'tabAnswer',prompt:'tabPrompt',chat:'tabChat'};
 let liveTabName='activity';
 let lastAns='';
@@ -751,28 +776,26 @@ async function sendFollowup(){
  let atts=IMG_STORES.follow.map(a=>a.dataUrl);
  let btn=document.getElementById('sendFollowup');btn.disabled=true;btn.textContent='发送中';
  liveTab('chat');  // 发送后确保停留在对话页看回复
- let log=document.getElementById('chatlog'),mine=document.createElement('div');
+ let log=document.getElementById('chatlog');
  let label=content+(atts.length?`\n（附 ${atts.length} 张图片）`:'');
- mine.className='msg user';mine.innerHTML=`<b>你</b>${esc(label)}`;
- log.appendChild(mine);log.scrollTop=log.scrollHeight;box.value='';
+ log.appendChild(msgEl('user',label));log.scrollTop=log.scrollHeight;box.value='';
  IMG_STORES.follow=[];renderThumbs();
  let baseAssistants=0;
  try{let dd=await api('/v1/agent/sessions/'+encodeURIComponent(current));baseAssistants=dd.messages.filter(m=>m.role==='assistant').length}catch(e){}
  try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,attachments:atts,model:currentModel||document.getElementById('model').value,agent_mode:followupMode==='agent'})});
   if(d&&d.queued){
-   let note=document.createElement('div');
-   note.className='msg assistant';
-   note.innerHTML=`<b>队列</b>${esc(d.position>1?`已排队（前面还有 ${d.position-1} 条）`:'已排队，等待处理…')}`;
+   let note=msgEl('assistant',
+     d.position>1?`已排队（前面还有 ${d.position-1} 条）`:'已排队，等待处理…',
+     null,{plain:true,who:'队列'});
    log.appendChild(note);log.scrollTop=log.scrollHeight;
    refreshQueue();
    awaitFollowupReply(current,baseAssistants);
   }else{
    // 兜底：兼容某些直接返回内容的后端
-   let reply=document.createElement('div');reply.className='msg assistant';
-   reply.innerHTML=`<b>Copilot</b>${esc(d.content)}`;
+   let reply=msgEl('assistant',d.content||'',null);
    log.appendChild(reply);log.scrollTop=log.scrollHeight;
    currentUrl=d.url||currentUrl;await load(current)}
- }catch(e){let er=document.createElement('div');er.className='msg assistant';er.textContent='发送失败: '+e;log.appendChild(er)}
+ }catch(e){log.appendChild(msgEl('assistant','发送失败: '+e,null,{plain:true,who:'错误'}))}
  finally{btn.disabled=false;btn.textContent='发送'}}
 
 /* 队列模式：跟进消息入队后轮询会话消息，助理回复一出现就刷新聊天区 */
@@ -786,6 +809,15 @@ async function awaitFollowupReply(sid,baseAssistants){
    if(as.length>baseAssistants){renderMessages(d.messages);return}
   }catch(e){}
  }}
+
+/* 按当前会话通道调整界面：API 提供商会话没有"自动化 Edge 页面/网页对话"，
+   隐藏"切换到页面""打开会话",避免点了必然失败。 */
+function updateChannelUI(){
+ let prov=isProviderModel(currentModel);
+ ['btnActivate','btnOpenChat'].forEach(id=>{
+  let el=document.getElementById(id);if(el)el.style.display=prov?'none':''});
+ let meta=document.querySelector('#chat .chatbar .meta');
+ if(meta)meta.innerHTML=`与 <b>${esc(assistantLabel())}</b> 继续 · <b>Ctrl+J</b> 强行插入指令（运行中即时生效）`}
 
 /* ── 排队消息：查看 / 编辑 / 删除 ── */
 async function refreshQueue(){
@@ -861,10 +893,10 @@ async function injectMessage(){
                   {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
   toast(d.note||'已插入', d.running?'ok':'');
   liveTab('chat');
-  // 让聊天区尽快看到这条指令
-  let log=document.getElementById('chatlog'),mine=document.createElement('div');
-  mine.className='msg user';mine.innerHTML=`<b>你</b>（插入）${esc(content)}`;
-  log.appendChild(mine);log.scrollTop=log.scrollHeight;
+  // 让聊天区尽快看到这条指令（标"插入",与普通发送区分）
+  let log=document.getElementById('chatlog');
+  log.appendChild(msgEl('user',content,null,{who:'你（插入）'}));
+  log.scrollTop=log.scrollHeight;
   refreshSessions();
  }catch(e){toast('插入失败: '+e,'err')}}
 document.addEventListener('keydown',e=>{

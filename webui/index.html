@@ -22,10 +22,10 @@
             <button class="btn" onclick="control('resume')">恢复</button>
             <button class="btn" onclick="control('compact')">压缩上下文</button>
           </div>
-          <div class="grp">
+          <div class="grp" id="webGrp">
             <button class="btn" onclick="continueAgent()">继续执行</button>
-            <button class="btn" onclick="activate()">切换到页面</button>
-            <button class="btn" onclick="openCopilot()">打开会话 ↗</button>
+            <button class="btn" id="btnActivate" onclick="activate()">切换到页面</button>
+            <button class="btn" id="btnOpenChat" onclick="openCopilot()">打开会话 ↗</button>
           </div>
           <div class="grp">
             <button class="btn danger" onclick="control('cancel')">取消任务</button>
@@ -50,7 +50,7 @@
         <div class="chead"><span id="pulse" class="dot-off"></span>
           <div class="tabs">
             <button class="tab on" id="tabActivity" onclick="liveTab('activity')">当前执行状态</button>
-            <button class="tab" id="tabAnswer" onclick="liveTab('answer')">Copilot 当前回答</button>
+            <button class="tab" id="tabAnswer" onclick="liveTab('answer')">当前回答</button>
             <button class="tab" id="tabPrompt" onclick="liveTab('prompt')">最近发送内容</button>
             <button class="tab" id="tabChat" onclick="liveTab('chat')">继续对话</button>
           </div>
