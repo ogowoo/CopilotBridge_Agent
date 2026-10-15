@@ -3,7 +3,7 @@
 HTTP 路由在 api.py；本模块不定义任何 FastAPI 端点。
 """
 
-import asyncio, base64, collections, json, re, time, uuid
+import asyncio, base64, collections, json, os, re, time, uuid
 from os.path import commonprefix
 from datetime import datetime
 from pathlib import Path
@@ -2535,6 +2535,54 @@ def _conv_index(sid: str) -> int:
         return 0
 
 
+def event_source() -> str:
+    """读取路径来源（P2-10 第三期开关）：columns（默认，读数据库列）/ projection（读事件投影）。
+
+    优先级：config.json 的 agent.event_source → 环境变量 CBP_EVENT_SOURCE → columns。
+    默认必须是 columns：投影虽已被测试与巡检证明一致，但"切换读取路径"应当是显式动作，
+    且任何时候都能一条命令回退（这也是分期推进第三期的前提）。
+    """
+    try:
+        val = str(AGENT_CFG.get("event_source") or "").strip().lower()
+    except Exception:
+        val = ""
+    if not val:
+        val = (os.environ.get("CBP_EVENT_SOURCE") or "").strip().lower()
+    return val if val in ("columns", "projection") else "columns"
+
+
+def pending_steps_via(sid: str, source: str | None = None) -> list[dict]:
+    """"结果未知"的步骤（未收尾）——可按 columns 或 projection 读取。
+
+    第三期的做法是**同一份事实两条读取路径**：默认读列，切到投影后若两者不一致，
+    记一条告警并**回退到列**（安全优先）。这样切换可以小步进行、随时可回退。
+    """
+    src = source or event_source()
+    try:
+        via_columns = AGENT_SESSIONS.pending_steps(sid)
+    except Exception:
+        via_columns = []
+    if src != "projection":
+        return via_columns
+    try:
+        from .projection import project
+
+        proj = project(AGENT_SESSIONS.events(sid))
+        via_proj = [{"step_no": s.get("step_no"), "tool": s.get("tool"),
+                     "conversation_index": s.get("conversation_index")}
+                    for s in proj.get("steps") or [] if s.get("status") == "inflight"]
+    except Exception as exc:
+        log(f"投影读取失败，回退到列：{exc}")
+        return via_columns
+    key = lambda xs: sorted((int(x.get("conversation_index") or 0), int(x.get("step_no") or 0),
+                             str(x.get("tool") or "")) for x in xs)
+    if key(via_proj) != key(via_columns):
+        log(f"事件投影与数据库列不一致（会话 {sid}）：投影 {key(via_proj)} vs 列 {key(via_columns)}；"
+            f"本次回退到列，请用 scripts/health.py 排查")
+        return via_columns
+    return via_proj
+
+
 async def run_agent(req: AgentRequest, attach_paths: list | None = None):
     global ACTIVE_SESSION_ID
     if not AGENT_CFG.get("enabled", True): raise HTTPException(503, "Agent 功能已禁用")
@@ -2590,7 +2638,7 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 # 先让模型只读核对现状；随后把这些步骤标为 unknown，保证只提示一次。
                 _pend = []
                 try:
-                    _pend = AGENT_SESSIONS.pending_steps(sid)
+                    _pend = pending_steps_via(sid)
                 except Exception:
                     _pend = []
                 if _pend:
@@ -2645,7 +2693,7 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 # 先让模型只读核对现状；随后把这些步骤标为 unknown，保证只提示一次。
                 _pend = []
                 try:
-                    _pend = AGENT_SESSIONS.pending_steps(sid)
+                    _pend = pending_steps_via(sid)
                 except Exception:
                     _pend = []
                 if _pend:

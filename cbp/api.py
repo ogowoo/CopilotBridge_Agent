@@ -312,6 +312,7 @@ async def health():
     # 起始状态与"页面是否可用"分开表达：没有 Copilot 时服务仍是 ok（提供商可用），
     # 只是 copilot_ready=false，WebUI 据此显示提示与「重试浏览器」。
     return {
+        "event_source": b.event_source(),   # P2-10 第三期：当前读取路径（columns/projection）
         "status": "ok",
         "copilot_ready": bool(BOOT.get("copilot_ready")),
         "browser_state": BOOT.get("browser_state"),

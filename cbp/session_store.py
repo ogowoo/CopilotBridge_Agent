@@ -469,13 +469,15 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 "status='inflight', created=excluded.created",
                 (sid, int(conv_index), int(step_no), tool, args_hash, time.time()))
             self.append_event(sid, "step_begin", {"step_no": int(step_no), "tool": tool,
-                                                  "args_hash": args_hash}, con=con)
+                                                  "args_hash": args_hash,
+                                                  "conversation_index": int(conv_index)}, con=con)
 
     def finish_step(self, sid: str, conv_index: int, step_no: int, status: str = "done") -> None:
         with self.lock, self._connect() as con:
             con.execute("UPDATE step_dispatch SET status=? WHERE session_id=? AND conversation_index=? AND step_no=?",
                         (status, sid, int(conv_index), int(step_no)))
-            self.append_event(sid, "step_done", {"step_no": int(step_no), "status": status}, con=con)
+            self.append_event(sid, "step_done", {"step_no": int(step_no), "status": status,
+                                                 "conversation_index": int(conv_index)}, con=con)
 
     def pending_steps(self, sid: str) -> list[dict[str, Any]]:
         """未收尾（结果未知）的工具步骤：恢复时用它决定"能不能重放"。"""

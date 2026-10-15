@@ -48,12 +48,16 @@ def project(events: list[dict[str, Any]]) -> dict[str, Any]:
             item.update({"steps_after": payload.get("steps_after"),
                          "answer_chars": payload.get("answer_chars"), "done": True})
         elif kind == "step_begin":
-            steps[(int(payload.get("step_no") or 0), str(payload.get("tool") or ""))] = {
+            # key 用 (对话序号, 步骤号, 工具)：step_no 在换会话后会复用，必须分代。
+            steps[(int(payload.get("conversation_index") or 0), int(payload.get("step_no") or 0),
+                   str(payload.get("tool") or ""))] = {
                 "step_no": payload.get("step_no"), "tool": payload.get("tool"),
+                "conversation_index": payload.get("conversation_index"),
                 "args_hash": payload.get("args_hash"), "status": "inflight"}
         elif kind == "step_done":
-            for (no, tool), item in steps.items():
-                if no == int(payload.get("step_no") or 0) and item["status"] == "inflight":
+            for (ci, no, _tool), item in steps.items():
+                if (no == int(payload.get("step_no") or 0) and item["status"] == "inflight"
+                        and ci == int(payload.get("conversation_index") or ci)):
                     item["status"] = payload.get("status") or "done"
                     break
         elif kind == "step_recorded":
@@ -121,10 +125,11 @@ def compare_with_columns(projection: dict[str, Any], turns_rows: list[dict[str, 
             problems.append(f"回合 {key[:8]} steps_after 不一致："
                             f"事件 {item.get('steps_after')} vs 列 {row.get('steps_after')}")
 
-    proj_steps = {(int(s.get("step_no") or 0), str(s.get("tool") or "")): s
-                  for s in projection.get("steps") or []}
+    proj_steps = {(int(s.get("conversation_index") or 0), int(s.get("step_no") or 0),
+                   str(s.get("tool") or "")): s for s in projection.get("steps") or []}
     for row in steps_rows:
-        key = (int(row.get("step_no") or 0), str(row.get("tool") or ""))
+        key = (int(row.get("conversation_index") or 0), int(row.get("step_no") or 0),
+               str(row.get("tool") or ""))
         item = proj_steps.get(key)
         if item is None:
             problems.append(f"事件里缺少步骤 {key}")
