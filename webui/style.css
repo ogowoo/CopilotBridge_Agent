@@ -467,3 +467,9 @@ section.card:has(#stepCount){margin-top:14px}
  background:var(--panel2);color:var(--text);border:1px solid var(--amber);
  box-shadow:0 6px 20px var(--menu-shadow);font-size:12.5px}
 #bootBar span{line-height:1.4}
+
+/* ── 连接/鉴权横幅（替代"每秒弹模态框"；网络故障不再伪装成演示模式）── */
+.connbanner{position:fixed;left:0;right:0;top:0;z-index:80;display:none;
+  padding:8px 14px;font-size:13px;text-align:center;
+  background:var(--warn,#8a6d1f);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.connbanner[data-retry="1"]{background:var(--accent,#2f6f4f)}

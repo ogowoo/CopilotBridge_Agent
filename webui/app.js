@@ -33,7 +33,25 @@ function demoApi(u,o={}){
 }
 
 function apiToken(){try{return localStorage.getItem('cbp-token')||''}catch(e){return ''}}
+let lastMessages=[];        // 最近一次渲染的消息（对话搜索基于它重渲染；曾漏声明导致搜索抛异常）
 let tokenPrompting=null;   // 并发 401 只弹一次：每秒轮询可能同时发起多个请求
+let tokenPromptCancelled=false;  // 用户取消过令牌输入 → 不再每秒弹窗，改用常驻横幅
+/* 结构化错误：以前抛原始响应体字符串，调用侧只能靠 msg.includes('401') 嗅探状态码——
+   而错误体里并没有 "401" 这三个字符，所以那个分支从未命中，401 被当成网络故障进了
+   演示模式（界面显示假数据、点"启动任务"不发任何真实请求）。现在带上 status。 */
+class ApiError extends Error{
+ constructor(status,body,url){super(body||('HTTP '+status));this.name='ApiError';this.status=status;
+  this.body=body;this.url=url;
+  try{const j=JSON.parse(body);if(j&&j.detail)this.detail=String(j.detail)}catch(e){}}
+ get text(){return this.detail||this.body||('HTTP '+this.status)}}
+function showConnBanner(msg,clickable){
+ let el=document.getElementById('connBanner');
+ if(!el){el=document.createElement('div');el.id='connBanner';el.className='connbanner';
+  document.body.appendChild(el);
+  el.onclick=()=>{if(el.dataset.retry==='1'){tokenPromptCancelled=false;el.style.display='none';location.reload()}}}
+ el.textContent=msg;el.dataset.retry=clickable?'1':'0';el.style.display='block';
+ el.style.cursor=clickable?'pointer':'default'}
+function hideConnBanner(){const el=document.getElementById('connBanner');if(el)el.style.display='none'}
 async function api(u,o={}){
   if(DEMO)return demoApi(u,o);
   const call=tk=>{const opt=Object.assign({},o);opt.headers=Object.assign({},o.headers||{});
@@ -42,11 +60,13 @@ async function api(u,o={}){
   if(r.status===401){
     // 服务端配置了 api_token：就地询问一次并记住（仅本机浏览器 localStorage）。
     // 复用同一个 promise，避免轮询期间连弹多次、把用户正在看的确认框顶掉。
+    if(tokenPromptCancelled){throw new ApiError(401,'已取消令牌输入','');}
     if(!tokenPrompting){
       tokenPrompting=(async()=>{
         try{
-          const tk=await dlgPrompt('本服务启用了 api_token，请输入访问令牌（只保存在本机浏览器）',apiToken(),'需要访问令牌');
-          if(tk){try{localStorage.setItem('cbp-token',tk)}catch(e){}}
+          const tk=await dlgPrompt('本服务启用了 api_token，请输入访问令牌（只保存在本机浏览器）',apiToken(),'','需要访问令牌');
+          if(tk){try{localStorage.setItem('cbp-token',tk);tokenPromptCancelled=false}catch(e){}}
+          else{tokenPromptCancelled=true;showConnBanner('未授权：已取消令牌输入（点此重新输入）',true)}
           return tk;
         }finally{tokenPrompting=null}
       })();
@@ -54,7 +74,7 @@ async function api(u,o={}){
     const tk=await tokenPrompting;
     if(tk)r=await call(tk);
   }
-  let t=await r.text();if(!r.ok)throw Error(t);return t?JSON.parse(t):{}}
+  let t=await r.text();if(!r.ok)throw new ApiError(r.status,t,u);return t?JSON.parse(t):{}}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 /* ── 通道无关的显示名 ──────────────────────────────────────────────
    服务现在既支持 Copilot 网页，也支持 API 提供商（deepseek/… 等），
@@ -147,7 +167,7 @@ async function setSessionModel(model){
                   {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model})});
   currentModel=d.model||model;
   toast('会话模型已切换为 '+(d.model||model)+(d.note?'（'+d.note+'）':'')+'，下一回合生效', d.note?'':'ok')
- }catch(e){toast('切换模型失败: '+e,'err');refreshSessModelOptions()}}
+ }catch(e){toast('切换模型失败: '+(e.text||e),'err');refreshSessModelOptions()}}
 async function refreshModels(){
  if(DEMO){toast('演示模式（API 未连接）：无法刷新模型列表','err');return}
  let btn=document.getElementById('refreshModelsBtn');
@@ -182,17 +202,21 @@ function drawSessions(){
  let q=(document.getElementById('sessFilter').value||'').toLowerCase();
  let box=document.getElementById('sessions');
  let list=sessCache.filter(s=>!q||(s.title||'').toLowerCase().includes(q)||(s.id||'').toLowerCase().includes(q)||(s.state||'').includes(q));
- let sig=q+'|'+list.map(s=>s.id+s.state+s.total_steps+s.estimated_tokens).join('|')+'|'+current;
+ let sig=q+'|'+list.map(s=>s.id+s.state+s.total_steps+s.estimated_tokens+(s.conversation_index??'')+(s.title||'')).join('|')+'|'+current;
  if(sig===sessSig)return;
  sessSig=sig;
  box.innerHTML='';
  if(!list.length){box.innerHTML='<div class="sess-empty">没有匹配的 Session</div>';return}
- list.forEach(s=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');
+ list.forEach(s=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
-  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>步骤 ${s.total_steps??0} · 会话 ${(s.conversation_index??0)+1} · Token ${s.estimated_tokens??0}</small></div><span class="stag">${esc(STATE_TEXT[s.state]||s.state)}</span>`;
+  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>步骤 ${esc(s.total_steps??0)} · 会话 ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(STATE_TEXT[s.state]||s.state)}</span>`;
   let chip=e.querySelector('.sid');
   if(chip)chip.onclick=ev=>{ev.stopPropagation();try{navigator.clipboard.writeText(s.id);chip.textContent='已复制 ✓';setTimeout(()=>chip.textContent=s.id,900)}catch(_){}};
-  e.onclick=()=>load(s.id);box.appendChild(e)})}
+  e.onclick=()=>load(s.id);
+  // 键盘可达：会话切换是主入口，纯 div+onclick 对键盘用户等于不可用
+  e.tabIndex=0;
+  e.onkeydown=ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();load(s.id)}};
+  box.appendChild(e)})}
 
 /* ── 时间线：增量渲染，不重建已有 DOM，展开状态不丢失 ── */
 function renderSteps(steps){
@@ -480,7 +504,7 @@ document.getElementById('gmCancel').onclick=()=>gmClose(null);
 document.getElementById('gmInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('gmOk').click()}});
 const dlgAlert=(msg,title='提示')=>gmShow({title,msg,cancelText:null});
 const dlgConfirm=(msg,title='确认',danger=false)=>gmShow({title,msg,danger}).then(v=>v===true);
-const dlgPrompt=(msg,def='',title='输入')=>gmShow({title,msg,input:def});
+const dlgPrompt=(msg,def='',okText='',title='输入')=>gmShow({title,msg,input:def,okText:okText||undefined});
 
 /* ── 跟进消息模式切换（卡片头部按钮，不再占用输入区） ── */
 let followupMode='agent';
@@ -502,6 +526,9 @@ function resetView(){
 
 async function load(id){
  current=id;let d=await api('/v1/agent/sessions/'+encodeURIComponent(id)),s=d.session;
+ // 守卫紧跟 await：原实现写在全部 DOM 写入之后，迟到响应会把旧会话的标题/KPI/时间线
+ // 写到用户已切过去的新会话界面上（经典 stale-response）。
+ if(current!==id)return;
  if(d.token_budget)setKpis({token_budget:d.token_budget,estimated_tokens:s.estimated_tokens??0});
  currentModel=s.model||null;currentUrl=s.current_url;renderMessages(d.messages||[]);
  // 跟进消息应跟随 Session 自己的模型，而不是左侧新任务表单的选择
@@ -518,10 +545,10 @@ async function load(id){
  renderSteps(d.steps);lastStepCount=d.steps.length;
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
- if(current!==id)return;   // 等待期间已切换会话：丢弃迟到的详情
+ // 守卫已前移到 await 之后（见函数开头）
  // 记住助手消息数（SSE 新消息通知据此决定是否播渐显动画）
  lastAssistantCount=(d.messages||[]).filter(m=>m.role==='assistant').length;
- startEvents(id);          // 切会话即重连 SSE（有推送时就不再依赖轮询）
+ startEvents(current);     // 用 current 而非入参：等待期间可能已切到别的会话
  await runtime();await refreshSessions();refreshQueue()}
 
 /* 轮询在飞保护 + 会话切换竞态防护：
@@ -540,6 +567,10 @@ async function runtime(){
 async function applyRuntime(r){
  if(!r)return;
  const myId=current;
+ // SSE 推送与 1s/350ms 轮询可能并发到达同一函数：统一以"当前会话"为准，
+ // 迟到的或属于别的会话的快照直接丢弃（否则会把 A 的步骤渲染进 C 的时间线）。
+ if(!myId)return;
+ if(r.session_id&&r.session_id!==myId)return;
  lastRuntime=r;
  currentUrl=r.current_url||currentUrl;
   document.getElementById('pulse').className=r.busy?'pulse':'dot-off';
@@ -556,9 +587,12 @@ async function applyRuntime(r){
   if(r.total_steps!==lastTotal||(r.detail||'')!==lastDetail){
    lastDetail=r.detail||'';
    lastTotal=r.total_steps??lastTotal;
-   let d=await api('/v1/agent/sessions/'+encodeURIComponent(myId));
-   if(current!==myId)return;
-   renderSteps(d.steps);lastStepCount=d.steps.length}}
+   // 详情请求失败不能变成 unhandled rejection（此前会让时间线永久停在旧数据且无提示）
+   try{
+    let d=await api('/v1/agent/sessions/'+encodeURIComponent(myId));
+    if(current!==myId)return;
+    renderSteps(d.steps);lastStepCount=d.steps.length
+   }catch(e){console.warn('时间线刷新失败:',(e&&e.text)||e)}}}
 
 /* ── SSE 实时推送（EventSource）────────────────────────────────────
    有 SSE 时不再依赖轮询：runtime 快照直接推送 → 提供商流式输出就是真·逐字。
@@ -572,7 +606,7 @@ function startEvents(sid){
  stopEvents();
  if(!sid||!window.EventSource)return;
  let url=`/v1/agent/sessions/${encodeURIComponent(sid)}/events`;
- if(typeof API_TOKEN!=='undefined'&&API_TOKEN)url+=`?token=${encodeURIComponent(API_TOKEN)}`;
+ const _tk=apiToken();if(_tk)url+=`?token=${encodeURIComponent(_tk)}`;   // token 在 localStorage(cbp-token)，API_TOKEN 是服务端变量
  try{evtSrc=new EventSource(url)}catch(e){evtSrc=null;return}
  evtSid=sid;
  evtSrc.onopen=()=>{evtFails=0};
@@ -601,7 +635,7 @@ async function refreshChat(){
 /* ── 操作 ── */
 async function control(a){if(!current)return;try{let r=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/${a}`,{method:'POST'});if(a==='resume')toast(r.note||(r.runner_started?'已恢复，正在续跑任务':'已恢复'), r.note_kind==='err'?'err':'ok');await load(current)}catch(e){toast('操作失败: '+e,'err')}}
 async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;toast('已将自动化 Edge 切换到该会话','ok')}catch(e){toast('操作失败: '+e,'err')}}
-function openCopilot(){if(currentUrl)window.open(currentUrl,'_blank');
+function openCopilot(){if(currentUrl){if(!/^https?:\/\//i.test(currentUrl)){toast('地址不是 http(s)，已拒绝打开','err');return}window.open(currentUrl,'_blank','noopener,noreferrer')}
  else toast(isProviderModel(currentModel)?'该会话用的是 API 提供商模型，没有可打开的网页对话':'该 Session 暂无网页会话地址','err')}
 async function removeSession(remote){
  if(!current)return;
@@ -611,10 +645,11 @@ async function removeSession(remote){
  try{let url='/v1/agent/sessions/'+encodeURIComponent(current)+(remote?'?delete_remote=true':'');
   let d=await api(url,{method:'DELETE'});
   if(!d.deleted){showDeleteResult(d);return}
+   stopEvents();          // 删掉当前会话必须停 SSE，否则重连定时器会一直敲已删除的会话
   current=null;
   document.getElementById('sessionView').style.display='none';
   document.getElementById('emptyState').style.display='flex';
-  await refreshSessions()}catch(e){toast('删除失败: '+e,'err')}}
+  await refreshSessions()}catch(e){toast('删除失败: '+(e.text||e),'err')}}
 /* ── 限流倒计时：居中卡片，可收起为右下角小标 ── */
 let retryDismissedAt=null;   // 用户已收起的那个终点时间戳（新一轮限流会自动再展开）
 let lastRuntime=null;        // 最近一次 runtime 响应，供小标展开时立即重绘
@@ -690,7 +725,7 @@ async function rollbackSession(){
     let paths=vv.map(x=>x.path).slice(0,5).join('、')+(vv.length>5?`…共 ${vv.length} 个`:'');
     return `  · 回合 ${r}（${t}）：${paths}`;
    }).join('\n');
-   let input=await dlgPrompt(`该任务共 ${revs.length} 个回合版本（按时间先后）：\n\n${lines}\n\n输入「0」或留空 = 整任务回滚到开始前；输入版本号 = 撤销该回合之后的改动。`,`0`,'回滚到哪个版本？');
+   let input=await dlgPrompt(`该任务共 ${revs.length} 个回合版本（按时间先后）：\n\n${lines}\n\n输入「0」或留空 = 整任务回滚到开始前；输入版本号 = 撤销该回合之后的改动。`,'0','','回滚到哪个版本？');
    if(input===null)return;
    version=parseInt(input,10);
    if(isNaN(version))version=0;
@@ -706,7 +741,7 @@ async function rollbackSession(){
   let tail=d.failed?`，失败 ${d.failed}`:'';
   toast(`回滚完成：还原 ${d.restored}、删除 ${d.deleted}${tail}`, d.failed?'err':'ok');
   await load(current)
- }catch(e){toast('回滚失败: '+e,'err')}}
+ }catch(e){toast('回滚失败: '+(e.text||e),'err')}}
 /* ── 回滚服务自升级：还原 CopilotBridge 自身代码（需重启服务生效） ── */
 async function rollbackSelfUpgrade(){
  try{
@@ -949,10 +984,10 @@ async function showPromptView(){
   body.textContent=t;
   if(d.rebuild_error)body.textContent=t+'\n\n(重建失败: '+d.rebuild_error+')';
   document.getElementById('liveMask').classList.add('open')
- }catch(e){toast('读取初始提示词失败: '+e,'err')}}
+ }catch(e){toast('读取初始提示词失败: '+(e.text||e),'err')}}
 async function continueAgent(){
  if(!current){toast('请先选择 Session','err');return}
- let instruction=await dlgPrompt('请输入要继续执行的任务','继续执行当前任务，从未完成事项开始','继续执行');
+ let instruction=await dlgPrompt('请输入要继续执行的任务','继续执行当前任务，从未完成事项开始','继续执行','继续执行');
  if(!instruction)return;
  document.getElementById('followup').value=instruction;
  setFollowupMode('agent');
@@ -978,11 +1013,11 @@ async function sendFollowup(){
    log.appendChild(note);log.scrollTop=log.scrollHeight;
    refreshQueue();
    awaitFollowupReply(current,baseAssistants);
-  }else{
-   // 兜底：兼容某些直接返回内容的后端
-   let reply=msgEl('assistant',d.content||'',null);
-   log.appendChild(reply);log.scrollTop=log.scrollHeight;
-   currentUrl=d.url||currentUrl;await load(current)}
+   }else{
+    // 后端对 /messages 只返回排队/接收元信息（session_id/queued/id/position/mode），
+    // 从不返回 content/url —— 原实现在这里读不存在的字段，会渲染一个空气泡。
+    // 正确做法：重载会话，把刚落库的新消息渲染出来。
+    await load(current)}
  }catch(e){log.appendChild(msgEl('assistant','发送失败: '+e,null,{plain:true,who:'错误'}))}
  finally{btn.disabled=false;btn.textContent='发送'}}
 
@@ -1017,18 +1052,21 @@ async function refreshQueue(){
   // 后端只允许改删"等待中"的条目（处理中的会 404）。这里只列等待项。
   let items=(d.pending||[]).filter(it=>!it.processing);
   if(!items.length){box.innerHTML='';return}
-  box.innerHTML=items.map(it=>`<div class="qitem"><span class="qpos">#${it.position}</span><span class="qtext" title="${esc(it.content)}">${esc(it.content)}</span><span class="qmode">${it.mode==='agent'?'Agent':'对话'}</span><button title="编辑" onclick="editQueueItem('${it.id}')">✎</button><button class="qdel" title="删除" onclick="removeQueueItem('${it.id}')">×</button></div>`).join('');
+  box.innerHTML=items.map(it=>`<div class="qitem"><span class="qpos">#${it.position}</span><span class="qtext" title="${esc(it.content)}">${esc(it.content)}</span><span class="qmode">${it.mode==='agent'?'Agent':'对话'}</span><button title="编辑" data-edit="${esc(it.id)}">✎</button><button class="qdel" title="删除" data-del="${esc(it.id)}">×</button></div>`).join('');
+   // 不再把 id 拼进内联 onclick（id 含引号即可突破 JS 字符串 → XSS）；与 loadMemory 同一范式
+   box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editQueueItem(b.dataset.edit));
+   box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>removeQueueItem(b.dataset.del));
  }catch(e){box.innerHTML=''}}
 
 async function editQueueItem(itemId){
  if(!current)return;
  let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/queue');
  let it=(d.pending||[]).find(x=>x.id===itemId);if(!it)return;
- let content=await dlgPrompt('修改排队消息','',it.content,'保存');
+ let content=await dlgPrompt('修改排队消息',it.content,'保存');
  if(content===null)return;
  try{
   await api(`/v1/agent/sessions/${encodeURIComponent(current)}/queue/${itemId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
-  toast('已更新排队消息','ok');refreshQueue()}catch(e){toast('更新失败: '+e,'err')}}
+  toast('已更新排队消息','ok');refreshQueue()}catch(e){toast('更新失败: '+(e.text||e),'err')}}
 
 async function removeQueueItem(itemId){
  if(!current)return;
@@ -1072,7 +1110,7 @@ async function injectMessage(){
  if(!current){toast('请先选择 Session','err');return}
  let content=await dlgPrompt(
   '插入指令（运行中即时生效：会立即中断当前回合——提供商直接取消请求；网页版若回答尚未开始生成也会立即停下——然后按新指令继续）',
-  '', '强行插入对话');
+  '', '强行插入','插入指令');
  if(content===null)return;
  content=String(content).trim();
  if(!content)return;
@@ -1086,7 +1124,7 @@ async function injectMessage(){
   log.appendChild(msgEl('user',content,null,{who:'你（插入）'}));
   log.scrollTop=log.scrollHeight;
   refreshSessions();
- }catch(e){toast('插入失败: '+e,'err')}}
+ }catch(e){toast('插入失败: '+(e.text||e),'err')}}
 document.addEventListener('keydown',e=>{
  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='j'||e.key==='J')){e.preventDefault();injectMessage()}});
 /* ── 新任务模式：Agent 执行 / 普通对话 ── */
@@ -1125,7 +1163,7 @@ async function runTask(){
     if(!d)throw Error('HTTP 响应为空');
     current=d.session_id;await load(current)})
    .catch(e=>{current=null;document.getElementById('sessionView').style.display='none';
-    document.getElementById('emptyState').style.display='flex';toast('任务启动失败: '+e,'err')});
+    document.getElementById('emptyState').style.display='flex';toast('任务启动失败: '+(e.text||e),'err')});
  waitSessionReady(current);
  setTimeout(refreshSessions,700)}
 
@@ -1250,7 +1288,7 @@ async function loadMemory(){
    </div>
    <div class="mem-text">${esc(m.text)}</div>
   </div>`).join('');
- box.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
   if(!await dlgConfirm('删除这条长期记忆？删除后不再参与检索。','删除记忆',true))return;
   try{await api('/v1/agent/memory/'+b.dataset.del+'?scope='+encodeURIComponent(memScope),{method:'DELETE'});
    toast('已删除记忆 #'+b.dataset.del,'ok');loadMemory()}
@@ -1309,16 +1347,20 @@ try{let cur=document.documentElement.dataset.theme||'',i=THEMES.findIndex(x=>x[0
 document.getElementById('sessModel').onchange=e=>setSessionModel(e.target.value);
 attachPasteHandler('task','task');
 attachPasteHandler('followup','follow');
-(async()=>{try{await api('/v1/agent/sessions')}
- catch(e){let msg=String(e&&e.message||e);
-  if(msg.includes('401')){
-   // 配置了 api_token：先让 api() 的令牌输入框有机会弹出，再继续加载，
-   // 不要在这里 return（否则界面永久空白、连输入令牌的入口都没有）。
+(async()=>{try{await api('/v1/agent/sessions');hideConnBanner()}
+ catch(e){
+  // 以前 fetch 网络失败与 401 落进同一个 catch，一律 DEMO=true → 界面显示硬编码假数据，
+  // 用户点"启动任务"其实不发任何请求却看到"任务已建立"（最严重的误导性成功）。
+  // 现在按类型分流，且**只有显式 ?demo=1 才允许进演示模式**。
+  const isAuth=(e&&e.status===401);
+  const isNet=(e instanceof TypeError)||!/\b\d{3}\b/.test(String(e&&e.message||e));
+  if(isAuth){showConnBanner('需要 api_token：'+(e.detail||'请输入访问令牌'),false)}
+  else if(isNet){showConnBanner('无法连接本地服务（127.0.0.1:8765 是否在运行？）',false)}
+  else{showConnBanner('加载会话失败：'+(e.text||e),false)}
+  if(location.search.includes('demo=1')){DEMO=true;
    document.getElementById('demoBadge').style.display='block';
-   document.getElementById('demoBadge').textContent='需要 api_token，请输入后重试';
-  }else{
-   DEMO=true;document.getElementById('demoBadge').style.display='block';
-  }}
+   document.getElementById('demoBadge').textContent='演示模式（?demo=1）——数据为本地假数据'}
+  }
  loadModels();browserState();
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();

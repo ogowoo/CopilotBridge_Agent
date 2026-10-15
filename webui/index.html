@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CopilotBridge Agent</title><script>try{let t=localStorage.getItem("cbp-theme");if(t&&t!=="dark")document.documentElement.dataset.theme=t;if(localStorage.getItem("cbp-rail")==="closed")document.documentElement.dataset.rail="closed"}catch(e){}</script><link rel="stylesheet" href="style.css"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b7a5a'/%3E%3Cpath d='M8 21h16M11 21v-7a5 5 0 0 1 10 0v7' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"><title>CopilotBridge Agent</title><script>try{let t=localStorage.getItem("cbp-theme");if(t&&t!=="dark")document.documentElement.dataset.theme=t;if(localStorage.getItem("cbp-rail")==="closed")document.documentElement.dataset.rail="closed"}catch(e){}</script><link rel="stylesheet" href="style.css"></head><body>
 <div class="app">
   <aside class="rail">
     <button id="railBtn" title="收起/展开侧栏" onclick="toggleRail()">‹</button>
@@ -82,7 +82,7 @@
     </div>
   </main>
 </div>
-<div class="mask" id="dlgMask" onclick="if(event.target===this)closeDlg()">
+<div class="mask" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" id="dlgMask" onclick="if(event.target===this)closeDlg()">
   <div class="dlg" role="dialog" aria-modal="true">
     <div class="dhead"><span id="dlgTitle">删除结果</span><span class="hint" id="dlgHint"></span></div>
     <div class="dbody"><div class="dmsg" id="dlgMsg"></div><div id="dlgList" style="display:flex;flex-direction:column;gap:10px"></div></div>
@@ -102,7 +102,7 @@
 </div>
 <div id="retryChip" class="retry-chip" style="display:none" title="限流中：点击展开倒计时">⏳ --:--</div>
 <!-- 使用手册 -->
-<div class="mask" id="manualMask" onclick="if(event.target===this)closeManual()">
+<div class="mask" role="dialog" aria-modal="true" id="manualMask" onclick="if(event.target===this)closeManual()">
   <div class="dlg" style="width:min(760px,94vw)">
     <div class="dhead"><span>📖 使用手册</span><span class="hint">Esc 关闭</span></div>
     <div class="dbody manual" id="manualBody"></div>
@@ -111,7 +111,7 @@
 </div>
 <div class="toasts" id="toasts"></div>
 <!-- 通用模态层：通知确认 / 危险确认 / 文本输入 -->
-<div class="mask" id="gmMask" onclick="if(event.target===this)gmClose(null)">
+<div class="mask" role="dialog" aria-modal="true" aria-labelledby="gmTitle" id="gmMask" onclick="if(event.target===this)gmClose(null)">
   <div class="dlg" style="width:min(480px,94vw)">
     <div class="dhead"><span id="gmTitle">提示</span></div>
     <div class="dbody"><div class="dmsg" id="gmMsg"></div><input id="gmInput" style="display:none"></div>
@@ -122,7 +122,7 @@
   </div>
 </div>
 <!-- 实时面板放大查看弹窗 -->
-<div class="mask" id="liveMask" onclick="if(event.target===this)closeLive()">
+<div class="mask" role="dialog" aria-modal="true" aria-labelledby="liveTitle" id="liveMask" onclick="if(event.target===this)closeLive()">
   <div class="dlg" style="width:min(1100px,94vw)">
     <div class="dhead"><span id="liveTitle">查看</span><span class="hint">Esc 关闭</span></div>
     <div class="dbody"><pre id="liveBody" class="term" style="max-height:72vh;border-radius:9px;font-size:13px;line-height:1.75"></pre></div>
@@ -133,7 +133,7 @@
   </div>
 </div>
 <!-- 新任务弹窗：表单字段与元素 ID 保持与旧内嵌版一致，JS 无需改动 -->
-<div class="mask" id="taskMask" onclick="if(event.target===this)closeTask()">
+<div class="mask" role="dialog" aria-modal="true" id="taskMask" onclick="if(event.target===this)closeTask()">
   <div class="dlg" style="width:min(560px,94vw)">
     <div class="dhead"><span>发起新任务</span><span class="hint">Esc 关闭</span></div>
     <div class="dbody">
