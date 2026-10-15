@@ -184,3 +184,28 @@ profile = bundle 顺序叠层。slot = 浏览器 UI 插槽；inspect provider = 
 - **局限**：① 读的是 **npm 发布树**而非源码仓库，测试/CI 不在其中（第 8 节已标注）；
   ② 每包 `README.md` 实为**双语一致性哈希记录**（i18n 校验），不是功能文档——凡引用
   README 的结论已改为引用代码；③ 子代理无法再下派（depth 限制），未覆盖的领域标注为"未找到"。
+
+---
+
+## 12. 落地状态（随代码更新，勿凭记忆）
+
+| 编号 | 项目 | 状态 | 证据 |
+|---|---|---|---|
+| P0-1 | 发请求前 flush（回合检查点）+ 结果未知只读核对 | ✅ 已落地 | `turn_results.status`、`begin_turn/save_turn`、`turn_cache_decision()`、`tests/test_turn_cache.py` |
+| P0-1b | **工具派发前**检查点（DSH `checkpoint-before-dispatch`） | ✅ 已落地 | `step_dispatch` 表、`begin_step/finish_step/pending_steps`、`AgentRunner(step_begin/step_finish)`、`tests/test_step_checkpoint_wiring.py`；**真机验证**：一次提供商任务落 5 条（含 error/done） |
+| P0-2 | 工具结果保头保尾（替代只保头） | ✅ 已落地 | `AgentRunner.retain_text()`、`tests/test_result_retention.py` |
+| P0-3 | "结果未知"诚实语义 | ✅ 已落地 | 见 P0-1/P0-1b：`pending_steps` → 只读核对不重放 |
+| P0-4 | AGENT.md 预算（丢宽泛优先）+ 闭合标签转义 | ✅ 已落地 | `_load_agent_md()`、`escape_instruction_text()`、`tests/test_instruction_budget.py` |
+| P1-5 | 沙箱拒绝结构化（`FS_SANDBOX_*`） | ✅ 已落地 | `_sandbox_denied()`、`tests/test_sandbox_errors.py` |
+| P1-6 | 破坏性工具一次性审批（fail-closed、allowed-once） | ✅ 已落地 | `approvals` 表、`requires_approval()`、`approval_check` 回调、`/approvals` 路由、`tests/test_approval.py`（真机端到端未做：三类开关默认全关，需用户决策） |
+| P1-7 | 运行时不变量注册表 | ✅ 已落地 | `cbp/invariants.py`（9 条）、`scripts/invariants.py`、`tests/test_invariants.py` |
+| P1-8 | next-turn / next-step 队列分离 | ⬜ 待办 | — |
+| P2-9 | 提示词分段注册表（拆 `_system_prompt`） | ⬜ 待办 | — |
+| P2-10 | 事件溯源化（日志即唯一真相，状态可重建） | ⬜ 待办 | — |
+| P2-11 | 压缩配对校验 + 摘要复用热前缀 | ⬜ 待办 | — |
+| P2-12 | 工具结果 spill 落盘（替代纯截断） | ⬜ 待办 | — |
+| P2-13 | `run_code` 式程序化工具调用（白名单 + 进程隔离） | ⬜ 待办 | — |
+
+**顺带修掉的真缺陷**（不在原计划内，由真实任务/评测暴露）：
+参数错误不可行动（`tests/test_tool_arg_errors.py`）、恢复后 `pending_steps` 逻辑、
+`step_begin/step_finish` 在生产环境从未接线、验证门比例原则（`tests/test_gate_proportional.py`）。
