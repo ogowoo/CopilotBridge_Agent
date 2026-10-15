@@ -65,6 +65,14 @@ CREATE TABLE IF NOT EXISTS approvals (
   consumed INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (session_id, tool, args_hash)
 );
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  created REAL NOT NULL,
+  FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS messages (
               id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
               created REAL NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
@@ -264,6 +272,48 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         with self.lock, self._connect() as con:
             return [dict(x) for x in con.execute("SELECT * FROM conv_stats WHERE session_id=? ORDER BY id", (sid,))]
 
+    def append_event(self, sid: str, kind: str, payload: dict[str, Any] | None = None,
+                     con: sqlite3.Connection | None = None) -> None:
+        """追加一条**事件**（P2-10 第一期：与现有列并行写，读取路径暂不改变）。
+
+        目的：为"日志即唯一真相、状态可由日志重建"铺路。现在两边都写，任何一方出问题
+        都不会影响现有行为；等事件覆盖足够全面后，再考虑把读取路径切到投影上。
+        失败绝不影响主流程（事件是旁路，不是前置条件）。
+        """
+        if not sid or not kind:
+            return
+        row = (sid, str(kind)[:60], json.dumps(payload or {}, ensure_ascii=False, default=str)[:20000],
+               time.time())
+        try:
+            if con is not None:
+                # 复用调用方连接：**必须**这样做——调用方通常已持有写事务，另开连接会
+                # 因 SQLite 写锁互斥而阻塞到超时（实测每条事件等 30 秒且最终丢失）。
+                con.execute("INSERT INTO events(session_id,kind,payload,created) VALUES(?,?,?,?)", row)
+            else:
+                with self.lock, self._connect() as own:
+                    own.execute("INSERT INTO events(session_id,kind,payload,created) VALUES(?,?,?,?)", row)
+        except Exception:
+            pass
+
+    def events(self, sid: str, limit: int = 500, kinds: tuple[str, ...] | None = None) -> list[dict[str, Any]]:
+        with self.lock, self._connect() as con:
+            if kinds:
+                marks = ",".join("?" for _ in kinds)
+                rows = con.execute(f"SELECT * FROM events WHERE session_id=? AND kind IN ({marks}) "
+                                   f"ORDER BY id LIMIT ?", (sid, *kinds, int(limit))).fetchall()
+            else:
+                rows = con.execute("SELECT * FROM events WHERE session_id=? ORDER BY id LIMIT ?",
+                                   (sid, int(limit))).fetchall()
+            out = []
+            for row in rows:
+                item = dict(row)
+                try:
+                    item["payload"] = json.loads(item.get("payload") or "{}")
+                except Exception:
+                    item["payload"] = {}
+                out.append(item)
+            return out
+
     def begin_turn(self, sid: str, conv_index: int, prompt_hash: str, steps_before: int) -> None:
         """**发请求之前**登记"这一回合即将派发"（DSH 的 checkpoint-before-dispatch 思路）。
 
@@ -277,6 +327,8 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 "VALUES(?,?,?,'',?,'inflight',?) ON CONFLICT(session_id,conversation_index,prompt_hash) "
                 "DO UPDATE SET steps_after=excluded.steps_after, status='inflight', created=excluded.created",
                 (sid, int(conv_index), prompt_hash, int(steps_before), time.time()))
+            self.append_event(sid, "turn_begin", {"prompt_hash": prompt_hash, "steps_before": int(steps_before),
+                                                  "conversation_index": int(conv_index)}, con=con)
 
     def grant_approval(self, sid: str, tool: str, args_hash: str) -> None:
         """用户下达一次性授权（allowed-once）。没有 allow-always、也没有撤销存储。"""
@@ -285,6 +337,7 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                         "VALUES(?,?,?,?,0) ON CONFLICT(session_id,tool,args_hash) "
                         "DO UPDATE SET created=excluded.created, consumed=0",
                         (sid, tool, args_hash, time.time()))
+            self.append_event(sid, "approval_granted", {"tool": tool, "args_hash": args_hash}, con=con)
 
     def take_approval(self, sid: str, tool: str, args_hash: str) -> bool:
         """消费式取用：命中且未消费 → 标记已消费并返回 True；否则 False（fail-closed）。"""
@@ -292,9 +345,11 @@ CREATE TABLE IF NOT EXISTS conv_stats (
             row = con.execute("SELECT consumed FROM approvals WHERE session_id=? AND tool=? AND args_hash=?",
                               (sid, tool, args_hash)).fetchone()
             if not row or int(row["consumed"] or 0) == 1:
+                self.append_event(sid, "approval_denied", {"tool": tool, "args_hash": args_hash}, con=con)
                 return False
             con.execute("UPDATE approvals SET consumed=1 WHERE session_id=? AND tool=? AND args_hash=?",
                         (sid, tool, args_hash))
+            self.append_event(sid, "approval_taken", {"tool": tool, "args_hash": args_hash}, con=con)
             return True
 
     def pending_approvals(self, sid: str) -> list[dict[str, Any]]:
@@ -319,11 +374,14 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 "DO UPDATE SET tool=excluded.tool, args_hash=excluded.args_hash, "
                 "status='inflight', created=excluded.created",
                 (sid, int(conv_index), int(step_no), tool, args_hash, time.time()))
+            self.append_event(sid, "step_begin", {"step_no": int(step_no), "tool": tool,
+                                                  "args_hash": args_hash}, con=con)
 
     def finish_step(self, sid: str, conv_index: int, step_no: int, status: str = "done") -> None:
         with self.lock, self._connect() as con:
             con.execute("UPDATE step_dispatch SET status=? WHERE session_id=? AND conversation_index=? AND step_no=?",
                         (status, sid, int(conv_index), int(step_no)))
+            self.append_event(sid, "step_done", {"step_no": int(step_no), "status": status}, con=con)
 
     def pending_steps(self, sid: str) -> list[dict[str, Any]]:
         """未收尾（结果未知）的工具步骤：恢复时用它决定"能不能重放"。"""
@@ -343,6 +401,8 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 "DO UPDATE SET answer=excluded.answer, steps_after=excluded.steps_after, "
                 "status='done', created=excluded.created",
                 (sid, int(conv_index), prompt_hash, (answer or "")[:4000], int(steps_after), time.time()))
+            self.append_event(sid, "turn_done", {"prompt_hash": prompt_hash, "steps_after": int(steps_after),
+                                                 "answer_chars": len(answer or "")}, con=con)
 
     def get_turn(self, sid: str, conv_index: int, prompt_hash: str) -> dict[str, Any] | None:
         with self.lock, self._connect() as con:
@@ -359,7 +419,7 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         """
         with self.lock, self._connect() as con:
             existed = con.execute("DELETE FROM sessions WHERE id=?", (sid,)).rowcount > 0
-            for table in ("messages", "steps", "file_events", "conv_stats", "turn_results", "step_dispatch", "approvals"):
+            for table in ("messages", "steps", "file_events", "conv_stats", "turn_results", "step_dispatch", "approvals", "events"):
                 try:
                     con.execute(f"DELETE FROM {table} WHERE session_id=?", (sid,))
                 except Exception:

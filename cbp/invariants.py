@@ -168,7 +168,13 @@ def _checkpoint_tables_work() -> None:
         con = sqlite3.connect(tmp / "a.db")
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         con.close()
-        for t in ("turn_results", "step_dispatch", "steps", "sessions"):
+        if not st.events("s1"):
+            raise InvariantError("检查点动作没有写出任何事件（P2-10 第一期的接线断了）")
+        kinds = {e["kind"] for e in st.events("s1")}
+        for want in ("turn_begin", "turn_done", "step_begin", "step_done"):
+            if want not in kinds:
+                raise InvariantError(f"缺少事件 {want}（事件=状态重建的依据）")
+        for t in ("turn_results", "step_dispatch", "steps", "sessions", "events", "approvals"):
             if t not in tables:
                 raise InvariantError(f"缺少表 {t}")
     finally:
