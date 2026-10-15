@@ -11,6 +11,8 @@
   "diagnostic_html": false,
   "default_model": "copilot-auto",
   "api_token": "",
+  "csrf_protect": true,
+  "csrf_allowed_origins": [],
   "server": {
     "host": "127.0.0.1",
     "port": 8765

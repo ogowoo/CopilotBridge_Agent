@@ -26,6 +26,10 @@ from .bridge import Message, Request, SessionMessageRequest, AgentRequest
 # 非回环地址监听（0.0.0.0/局域网）且未配置 token 时拒绝启动——该服务能读写
 # 文件、操作浏览器，裸奔到公网/内网是不可接受的风险。
 API_TOKEN = str(b.CFG.get("api_token") or "")
+# 同源/CSRF 防护（默认开启）：拦"会改状态"的跨站请求。非浏览器客户端（curl/评测脚本）
+# 不带 Origin/Sec-Fetch-*，因此照常可用。可用 csrf_protect=false 关闭（不推荐）。
+CSRF_PROTECT = bool(b.CFG.get("csrf_protect", True))
+CSRF_ALLOWED_ORIGINS = b.CFG.get("csrf_allowed_origins") or []
 _SERVER_HOST = str(b.CFG.get("server", {}).get("host", "127.0.0.1"))
 if _SERVER_HOST not in ("127.0.0.1", "localhost", "::1") and not API_TOKEN:
     raise SystemExit(
@@ -164,9 +168,73 @@ b.ENSURE_BROWSER = ensure_browser   # 桥接层按需拉起浏览器的入口
 app = FastAPI(title="Copilot Local Bridge Agent", version="10.2.1", lifespan=lifespan)
 
 
+# ── 同源/CSRF 防护（仅拦"会改状态"的方法）──────────────────────────────
+# 威胁模型：服务默认无 token，任意网页都能用 no-cors 简单请求向 127.0.0.1 发 POST
+# （不触发 CORS 预检），从而取消/归档任务、回滚服务代码、删会话。仅靠"读不到响应"
+# 挡不住副作用。这里按浏览器会发的三个信号判断：Origin / Referer / Sec-Fetch-Site。
+_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _is_local_origin(value: str) -> bool:
+    """origin/referer 是否属于本机回环（含端口比较由调用方完成）。"""
+    try:
+        from urllib.parse import urlsplit
+        parts = urlsplit(value)
+        host = (parts.hostname or "").lower()
+        if host not in ("127.0.0.1", "localhost", "::1", "[::1]"):
+            return False
+        # 端口必须与请求一致（同源）；未写端口时按同主机放行
+        return True
+    except Exception:
+        return False
+
+
+@app.middleware("http")
+async def origin_guard(request, call_next):
+    """阻断跨站写入。非浏览器客户端（无 Origin/Sec-Fetch-*）一律放行。"""
+    if CSRF_PROTECT and request.method.upper() in _WRITE_METHODS:
+        from fastapi.responses import JSONResponse
+
+        site = (request.headers.get("sec-fetch-site") or "").lower()
+        origin = request.headers.get("origin") or ""
+        referer = request.headers.get("referer") or ""
+        allow_extra = tuple(CSRF_ALLOWED_ORIGINS or ())
+        if site in ("cross-site", "same-site"):
+            return JSONResponse({"detail": "拒绝跨站写入请求（Sec-Fetch-Site）"}, status_code=403)
+        if origin:
+            if origin in allow_extra:
+                pass
+            elif _is_local_origin(origin):
+                want = request.url.port or (443 if request.url.scheme == "https" else 80)
+                from urllib.parse import urlsplit
+                got = urlsplit(origin).port
+                if got and int(got) != int(want):
+                    return JSONResponse({"detail": "拒绝来自其它端口的写入请求（跨源）"},
+                                        status_code=403)
+            else:
+                return JSONResponse({"detail": "拒绝跨站写入请求（Origin 非本机）"}, status_code=403)
+        elif referer and not _is_local_origin(referer) and referer not in allow_extra:
+            return JSONResponse({"detail": "拒绝跨站写入请求（Referer 非本机）"}, status_code=403)
+    resp = await call_next(request)
+    # 安全响应头：CSP 里保留 'unsafe-inline' 是因为 UI 目前用了内联 onclick，
+    # 去掉会直接让界面失效（已记为后续重构项）；其余指令仍然收紧可加载源。
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; "
+        "form-action 'self'; frame-ancestors 'none'")
+    return resp
+
+
 @app.middleware("http")
 async def token_auth(request, call_next):
-    if API_TOKEN and request.url.path.startswith("/v1/"):
+    # 配置了 token 时，接口与文档（/docs、/openapi.json）都要鉴权：
+    # 否则任何能访问 loopback 的页面都能读到全部路由与参数 schema。
+    guarded = ("/v1/", "/docs", "/redoc", "/openapi.json")
+    if API_TOKEN and request.url.path.startswith(guarded):
         from fastapi.responses import JSONResponse
         auth = request.headers.get("authorization", "")
         header_token = request.headers.get("x-cbp-token", "")
@@ -187,18 +255,24 @@ class _RedactTokenFilter(logging.Filter):
     _RE = re.compile(r"(token=)[^&\s\"]+", re.I)
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """按**最终文本**脱敏：uvicorn 的 args 既可能是 tuple、也可能是 dict，
+        只处理 tuple 会漏（dict 形式的访问日志会把 ?token= 原样写盘）。"""
         try:
-            if isinstance(record.args, tuple):
-                record.args = tuple(self._RE.sub(r"\1***", a) if isinstance(a, str) else a
-                                    for a in record.args)
-            elif isinstance(record.msg, str):
-                record.msg = self._RE.sub(r"\1***", record.msg)
+            text = record.getMessage()
+            if "token=" in text.lower():
+                record.msg = self._RE.sub(r"\1***", text)
+                record.args = ()          # 已合并进 msg，避免二次格式化
         except Exception:
             pass
         return True
 
 
-logging.getLogger("uvicorn.access").addFilter(_RedactTokenFilter())
+_redact = _RedactTokenFilter()
+for _name in ("uvicorn.access", "uvicorn.error", "cbp", ""):
+    try:
+        logging.getLogger(_name).addFilter(_redact)
+    except Exception:
+        pass
 
 
 def sse(data):
@@ -781,6 +855,32 @@ async def inject_session_message(sid: str, req: InjectRequest):
             "note": "会话当前空闲，已按跟进排队执行（运行中插入才会即时生效）"}
 
 
+def _runtime_snapshot(sid: str, state: dict) -> dict:
+    """运行时快照的**唯一**构造点：HTTP `/runtime` 与 SSE 都调它。
+
+    教训：SSE 之前只推 `RUNTIME` 原始内容，缺 session_state/total_steps/queue_pending/
+    retry_resume_at/token_budget 等字段，前端收到后把状态置成「—」、KPI 清零、限流倒计时
+    隐藏，下一秒 1 秒轮询又改回来——任务运行中界面每秒抖动。两条读取路径必须给出同一份事实。
+    """
+    runtime = dict(b.RUNTIME.get(sid) or {})
+    runtime.update({
+        "session_id": sid,
+        "session_state": (state or {}).get("state"),
+        "total_steps": (state or {}).get("total_steps", 0),
+        "conversation_steps": (state or {}).get("conversation_steps", 0),
+        "estimated_tokens": (state or {}).get("estimated_tokens", 0),
+        "conversation_index": (state or {}).get("conversation_index", 0),
+        "current_url": (state or {}).get("current_url"),
+        "token_budget": b.TOKEN_BUDGET,
+        "busy": b.lock.locked() and b.ACTIVE_SESSION_ID == sid,
+        "queue_pending": b.queue_depth(sid),
+        "retry_resume_at": (state or {}).get("retry_resume_at"),
+        "retry_attempt": (state or {}).get("retry_attempt", 0),
+        "rate_limited_since": (state or {}).get("rate_limited_since"),
+    })
+    return runtime
+
+
 @app.get("/v1/agent/sessions/{sid}/events")
 async def session_events(sid: str):
     """SSE 实时推送：runtime 快照 / 队列变化 / 新消息 / 会话列表变化。
@@ -796,8 +896,7 @@ async def session_events(sid: str):
     async def gen():
         try:
             # 先送一份当前快照，客户端连上即有内容，不必等第一次变化
-            snap = dict(b.RUNTIME.get(sid) or {})
-            snap.update({"session_id": sid, "type": "runtime"})
+            snap = _runtime_snapshot(sid, b.AGENT_SESSIONS.get(sid) or {})
             yield f"data: {json.dumps({'type': 'runtime', 'data': snap}, ensure_ascii=False)}\n\n"
             while True:
                 try:
@@ -822,23 +921,7 @@ async def session_runtime(sid: str):
     state = b.AGENT_SESSIONS.get(sid)
     if not state:
         raise HTTPException(404, "Session 不存在")
-    runtime = dict(b.RUNTIME.get(sid) or {})
-    runtime.update({
-        "session_id": sid,
-        "session_state": state.get("state"),
-        "total_steps": state.get("total_steps", 0),
-        "conversation_steps": state.get("conversation_steps", 0),
-        "estimated_tokens": state.get("estimated_tokens", 0),
-        "conversation_index": state.get("conversation_index", 0),
-        "current_url": state.get("current_url"),
-        "token_budget": b.TOKEN_BUDGET,
-        "busy": b.lock.locked() and b.ACTIVE_SESSION_ID == sid,
-        "queue_pending": b.queue_depth(sid),
-        "retry_resume_at": state.get("retry_resume_at"),
-        "retry_attempt": state.get("retry_attempt", 0),
-        "rate_limited_since": state.get("rate_limited_since"),
-    })
-    return runtime
+    return _runtime_snapshot(sid, state)
 
 
 @app.get("/v1/agent/sessions/{sid}/prompt")
