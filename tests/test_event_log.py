@@ -79,6 +79,15 @@ class EventLogTests(unittest.TestCase):
         self.assertEqual(len(self.store.events("s1", kinds=("files_modified",))), n,
                          "文件集合没变就不该再发事件")
 
+    def test_file_event_path_emits_event(self):
+        """Agent 任务的文件改动走 add_file_event（真机验证抓到的真路径）。"""
+        self.store.add_file_event("s1", {"tool": "write_text", "path": "a.txt",
+                                        "result": "ok", "after_hash": "abc123def456"})
+        ev = self.store.events("s1", kinds=("file_event",))[0]
+        self.assertEqual(ev["payload"]["path"], "a.txt")
+        self.assertEqual(ev["payload"]["tool"], "write_text")
+        self.assertEqual(ev["payload"]["after_hash"][:6], "abc123")
+
     def test_cascade_delete(self):
         self.store.begin_turn("s1", 0, "ph", 0)
         self.assertTrue(self.store.delete("s1"))

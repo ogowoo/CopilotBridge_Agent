@@ -47,6 +47,20 @@ def check_session(con: sqlite3.Connection, sid: str) -> dict:
         "SELECT prompt_hash,status,steps_after FROM turn_results WHERE session_id=?", (sid,))]
     steps = [dict(r) for r in con.execute(
         "SELECT step_no,tool,status FROM step_dispatch WHERE session_id=?", (sid,))]
+    # 覆盖检查：**表里有记录却没有对应事件**＝事件覆盖有缺口（真机验证时才发现的类别：
+    # 我一度把事件挂在 patch(modified_files=)，而 Agent 流程写的是 file_events 表）。
+    coverage: list[str] = []
+    ev_kinds = {e.get("kind") for e in events}
+    counts = {}
+    for table, kind in (("steps", "step_recorded"), ("file_events", "file_event")):
+        try:
+            n = con.execute(f"SELECT COUNT(*) FROM {table} WHERE session_id=?", (sid,)).fetchone()[0]
+        except Exception:
+            n = 0
+        counts[table] = n
+        if n and kind not in ev_kinds and events:
+            coverage.append(f"{table} 有 {n} 条记录，但没有 {kind} 事件（事件覆盖缺口）")
+
     proj = project(events)
     problems = compare_with_columns(proj, turns, steps)
     # 归类：**早于事件功能上线**的老会话（有检查点列但 0 事件）不算不一致——
@@ -57,7 +71,8 @@ def check_session(con: sqlite3.Connection, sid: str) -> dict:
     return {"session_id": sid, "events": len(events), "turns": len(turns), "steps": len(steps),
             "current_state": proj.get("current_state"),
             "unknown_kinds": proj.get("unknown_kinds") or {},
-            "legacy": legacy, "problems": problems}
+            "legacy": legacy, "problems": problems, "coverage_gaps": coverage,
+            "table_counts": counts}
 
 
 def main() -> int:
@@ -66,6 +81,8 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--session", default="")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--strict", action="store_true",
+                    help="把事件覆盖缺口也算失败（等事件成为唯一真相后再启用）")
     args = ap.parse_args()
 
     db = Path(args.db)
@@ -79,6 +96,7 @@ def main() -> int:
     con.close()
 
     bad = [r for r in reports if r["problems"]]
+    warned = [r for r in reports if r.get("coverage_gaps")]
     legacy = [r for r in reports if r["legacy"]]
     unknown = {}
     for r in reports:
@@ -87,6 +105,7 @@ def main() -> int:
 
     if args.json:
         print(json.dumps({"checked": len(reports), "mismatched": len(bad),
+                          "coverage_warnings": len(warned),
                           "legacy_without_events": len(legacy),
                           "unknown_kinds": unknown, "reports": reports},
                          ensure_ascii=False, indent=1))
@@ -99,11 +118,17 @@ def main() -> int:
         if unknown:
             print(f"⚠ 出现未识别事件类型（投影会忽略，但应确认是否漏实现）：{unknown}")
         for r in bad[:10]:
-            print(f"  ✗ {r['session_id']}（事件 {r['events']}）: " + "; ".join(r["problems"][:3]))
+            detail = list(r["problems"]) + list(r.get("coverage_gaps") or [])
+            print(f"  ✗ {r['session_id']}（事件 {r['events']}）: " + "; ".join(detail[:3]))
+        if warned:
+            print(f"\n⚠ 事件覆盖告警 {len(warned)} 个会话（多为事件功能上线前的历史会话；"
+                  f"用 --strict 可视为失败）")
+            for r in warned[:5]:
+                print(f"  · {r['session_id']}: " + "; ".join(r["coverage_gaps"][:2]))
         if bad:
-            print("提示：不一致说明事件覆盖有缺口（或历史会话早于事件功能上线）——"
-                  "前者要补事件发点，后者可忽略。")
-    return 1 if bad else 0
+            print("\n提示：不一致＝事件流无法重建列里的事实，属**真缺口**，必须补事件发点。")
+    failed = bool(bad) or (args.strict and bool(warned))
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

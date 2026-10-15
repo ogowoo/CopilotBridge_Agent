@@ -57,6 +57,32 @@ class HealthScriptTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("不一致 1", r.stdout)
 
+    def test_coverage_gap_is_warning_not_failure(self):
+        """表里有记录却没有对应事件＝覆盖告警；默认不致命，--strict 才致命。"""
+        self.store.create("s-gap", "任务", str(self.tmp), "m")
+        self.store.begin_turn("s-gap", 0, "ph", 0)          # 有事件
+        con = sqlite3.connect(self.db)
+        con.execute("INSERT INTO file_events(session_id,created,tool,path,result) "
+                    "VALUES('s-gap',0,'write_text','a.txt','ok')")   # 但没有 file_event 事件
+        con.commit()
+        con.close()
+        r = self._run("--session", "s-gap")
+        self.assertEqual(r.returncode, 0, "覆盖告警默认不该让巡检失败")
+        self.assertIn("事件覆盖告警", r.stdout)
+        r2 = self._run("--session", "s-gap", "--strict")
+        self.assertEqual(r2.returncode, 1, "--strict 下覆盖缺口应致命")
+
+    def test_legacy_session_has_no_coverage_warning(self):
+        self.store.create("s-legacy", "任务", str(self.tmp), "m")
+        con = sqlite3.connect(self.db)
+        con.execute("INSERT INTO file_events(session_id,created,tool,path,result) "
+                    "VALUES('s-legacy',0,'write_text','a.txt','ok')")
+        con.commit()
+        con.close()
+        r = self._run("--session", "s-legacy")
+        self.assertEqual(r.returncode, 0)
+        self.assertNotIn("事件覆盖告警", r.stdout, "0 事件的历史会话不该报覆盖缺口")
+
     def test_json_output_shape(self):
         self.store.create("s1", "任务", str(self.tmp), "m")
         self.store.begin_turn("s1", 0, "ph", 0)

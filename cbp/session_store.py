@@ -288,6 +288,13 @@ CREATE TABLE IF NOT EXISTS conv_stats (
             return [dict(x) for x in rows]
 
     def add_file_event(self, sid: str, event: dict[str, Any]):
+        # 这才是 Agent 任务里文件改动的**真实写路径**（messages 表只服务 WebUI 对话，
+        # Agent 的对话在 steps 表；之前我把事件挂在 patch(modified_files=) 上，
+        # 而那条路径在 Agent 流程里根本不会被写到——真机验证才发现）。
+        self.append_event(sid, "file_event",
+                          {"tool": event.get("tool", ""), "path": event.get("path", ""),
+                           "result": event.get("result", ""),
+                           "after_hash": str(event.get("after_hash") or "")[:12]})
         with self.lock, self._connect() as con:
             con.execute("INSERT INTO file_events(session_id,created,tool,path,before_hash,after_hash,result) VALUES(?,?,?,?,?,?,?)",
                         (sid,time.time(),event.get("tool",""),event.get("path",""),event.get("before_hash"),event.get("after_hash"),event.get("result","unknown")))

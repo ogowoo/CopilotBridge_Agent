@@ -16,7 +16,7 @@ from typing import Any
 KNOWN_KINDS = (
     "turn_begin", "turn_done", "step_begin", "step_done", "step_recorded",
     "approval_granted", "approval_taken", "approval_denied", "state",
-    "message", "files_modified",
+    "message", "files_modified", "file_event",
 )
 
 
@@ -70,6 +70,10 @@ def project(events: list[dict[str, Any]]) -> dict[str, Any]:
             messages.append({"role": payload.get("role"), "chars": payload.get("chars"),
                              "conversation_index": payload.get("conversation_index"),
                              "message_id": payload.get("message_id")})
+        elif kind == "file_event":
+            path = str(payload.get("path") or "")
+            if path and path not in changed_files:
+                changed_files.append(path)
         elif kind == "files_modified":
             for path in (payload.get("added") or []):
                 if path not in changed_files:
