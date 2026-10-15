@@ -35,7 +35,9 @@ MEASURE_JS = r"""
   // 1) 横向溢出：右边界超出视口或左边界为负
   document.querySelectorAll('body *').forEach(el => {
     const cs = getComputedStyle(el);
-    if (cs.display === 'none' || cs.visibility === 'hidden' || cs.position === 'fixed') return;
+    if (cs.display === 'none' || cs.visibility === 'hidden') return;   // 固定元素也要查：
+    // 实测教训：`#bootBar` 因 CSS 选择器写错（逗号后直接跟 @media，整块被吞）
+    // 在窄屏跑到视口右侧 28px 外，而我把 fixed 排除后审计完全看不见。
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) return;
     if (r.right > vw + 1 || r.left < -1) {

@@ -1,9 +1,9 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b7a5a'/%3E%3Cpath d='M8 21h16M11 21v-7a5 5 0 0 1 10 0v7' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"><title>CopilotBridge Agent</title><script>try{let t=localStorage.getItem("cbp-theme");if(t&&t!=="dark")document.documentElement.dataset.theme=t;if(localStorage.getItem("cbp-rail")==="closed")document.documentElement.dataset.rail="closed"}catch(e){}</script><link rel="stylesheet" href="style.css"></head><body>
 <div class="app">
   <aside class="rail">
-    <button id="railBtn" title="收起/展开侧栏" onclick="toggleRail()">‹</button>
-    <div class="railtop"><button class="btn accent block" onclick="openTask()">＋ 新任务</button></div>
-    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" placeholder="筛选…" oninput="drawSessions()"><button class="iconbtn" title="使用手册" onclick="openManual()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5A2.5 2.5 0 0 1 4 20.5z"/></svg></button><button id="browserBtn" class="iconbtn" title="切换自动化浏览器窗口的显示/隐藏" onclick="toggleBrowser()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><circle cx="6.2" cy="6.8" r=".6" fill="currentColor" stroke="none"/><circle cx="8.4" cy="6.8" r=".6" fill="currentColor" stroke="none"/></svg></button><button id="themeBtn" class="iconbtn" title="主题：深色（点击切换）" onclick="toggleTheme()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></svg></button></div>
+    <button type="button" id="railBtn" title="收起/展开侧栏" onclick="toggleRail()">‹</button>
+    <div class="railtop"><button type="button" class="btn accent block" onclick="openTask()">＋ 新任务</button></div>
+    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" aria-label="筛选会话" placeholder="筛选…" oninput="drawSessions()"><button type="button" class="iconbtn" title="使用手册" onclick="openManual()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5A2.5 2.5 0 0 1 4 20.5z"/></svg></button><button type="button" id="browserBtn" class="iconbtn" title="切换自动化浏览器窗口的显示/隐藏" onclick="toggleBrowser()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><circle cx="6.2" cy="6.8" r=".6" fill="currentColor" stroke="none"/><circle cx="8.4" cy="6.8" r=".6" fill="currentColor" stroke="none"/></svg></button><button type="button" id="themeBtn" class="iconbtn" title="主题：深色（点击切换）" onclick="toggleTheme()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></svg></button></div>
     <div id="sessions" class="sesslist"></div>
   </aside>
   <main class="main">
@@ -14,27 +14,27 @@
     </div>
     <div id="sessionView" style="display:none">
       <header class="topbar">
-        <div class="trow"><h1 id="title">—</h1><code id="sidChip" class="sidbig" title="点击复制会话 ID"></code><span id="statepill" class="pill">—</span><select id="sessModel" class="sessmodel" title="当前会话使用的模型（下一回合生效，服务重启后仍沿用）"></select><button id="btnRefreshSess" class="iconbtn" title="刷新模型列表（重新扫描 Copilot 菜单）">↻</button></div>
+        <div class="trow"><h1 id="title">—</h1><code id="sidChip" class="sidbig" title="点击复制会话 ID"></code><span id="statepill" class="pill">—</span><select id="sessModel" aria-label="本会话使用的模型" class="sessmodel" title="当前会话使用的模型（下一回合生效，服务重启后仍沿用）"></select><button type="button" id="btnRefreshSess" class="iconbtn" title="刷新模型列表（重新扫描 Copilot 菜单）">↻</button></div>
         <div id="status" class="sub">—</div>
         <div class="actions">
           <div class="grp">
-            <button class="btn" onclick="control('pause')">暂停</button>
-            <button class="btn" onclick="control('resume')">恢复</button>
-            <button class="btn" onclick="control('compact')">压缩上下文</button>
+            <button type="button" class="btn" onclick="control('pause')">暂停</button>
+            <button type="button" class="btn" onclick="control('resume')">恢复</button>
+            <button type="button" class="btn" onclick="control('compact')">压缩上下文</button>
           </div>
           <div class="grp" id="webGrp">
-            <button class="btn" onclick="continueAgent()">继续执行</button>
-            <button class="btn" id="btnActivate" onclick="activate()">切换到页面</button>
-            <button class="btn" id="btnOpenChat" onclick="openCopilot()">打开会话 ↗</button>
+            <button type="button" class="btn" onclick="continueAgent()">继续执行</button>
+            <button type="button" class="btn" id="btnActivate" onclick="activate()">切换到页面</button>
+            <button type="button" class="btn" id="btnOpenChat" onclick="openCopilot()">打开会话 ↗</button>
           </div>
           <div class="grp">
-            <button class="btn danger" onclick="control('cancel')">取消任务</button>
-            <div class="menu"><button class="btn ghost" id="moreBtn" onclick="toggleMore(event)">更多 ▾</button><div class="menuList" id="moreMenu">
-              <button onclick="control('archive')">归档</button>
-              <button onclick="rollbackSession()">回滚任务改动…</button>
-              <button class="danger" onclick="rollbackSelfUpgrade()">回滚服务自升级…</button>
-              <button onclick="removeSession(false)">仅删除本地记录</button>
-              <button class="danger" onclick="removeSession(true)">同时删除 Copilot 会话</button>
+            <button type="button" class="btn danger" onclick="control('cancel')">取消任务</button>
+            <div class="menu"><button type="button" class="btn ghost" id="moreBtn" onclick="toggleMore(event)">更多 ▾</button><div class="menuList" id="moreMenu">
+              <button type="button" onclick="control('archive')">归档</button>
+              <button type="button" onclick="rollbackSession()">回滚任务改动…</button>
+              <button type="button" class="danger" onclick="rollbackSelfUpgrade()">回滚服务自升级…</button>
+              <button type="button" onclick="removeSession(false)">仅删除本地记录</button>
+              <button type="button" class="danger" onclick="removeSession(true)">同时删除 Copilot 会话</button>
             </div></div>
           </div>
         </div>
@@ -49,64 +49,64 @@
       <section class="card">
         <div class="chead"><span id="pulse" class="dot-off"></span>
           <div class="tabs">
-            <button class="tab on" id="tabActivity" onclick="liveTab('activity')">当前执行状态</button>
-            <button class="tab" id="tabAnswer" onclick="liveTab('answer')">当前回答</button>
-            <button class="tab" id="tabPrompt" onclick="liveTab('prompt')">最近发送内容</button>
-            <button class="tab" id="tabChat" onclick="liveTab('chat')">继续对话</button>
+            <button type="button" class="tab on" id="tabActivity" onclick="liveTab('activity')">当前执行状态</button>
+            <button type="button" class="tab" id="tabAnswer" onclick="liveTab('answer')">当前回答</button>
+            <button type="button" class="tab" id="tabPrompt" onclick="liveTab('prompt')">最近发送内容</button>
+            <button type="button" class="tab" id="tabChat" onclick="liveTab('chat')">继续对话</button>
           </div>
-          <span class="hint"><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="查看该会话首回合发给模型的完整提示词（含系统提示词、工具清单、项目约定）" onclick="showPromptView()">📄 初始提示词</button><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="放大查看当前面板" onclick="expandLive()">⤢ 放大</button></span>
+          <span class="hint"><button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px" title="查看该会话首回合发给模型的完整提示词（含系统提示词、工具清单、项目约定）" onclick="showPromptView()">📄 初始提示词</button><button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px" title="放大查看当前面板" onclick="expandLive()">⤢ 放大</button></span>
         </div>
         <pre id="activity" class="term livepane">—</pre>
         <pre id="answer" class="term livepane" style="display:none">等待回答…</pre>
         <pre id="prompt" class="term livepane" style="display:none">—</pre>
         <div id="chat" class="livepane chatwrap" style="display:none">
-          <div class="chatbar"><span class="meta">继续当前 Session 对话 · <b>Ctrl+J</b> 强行插入指令（运行中即时生效）</span><span style="display:flex;gap:6px"><button class="btn seg" id="chatFindToggle" title="在对话里搜索（高亮命中，Enter 跳转下一条）" onclick="toggleChatFind()">🔍 搜索</button><button id="injectBtn" class="btn seg" title="运行中插入指令：Agent 下一回合读取并优先执行，不必等这轮跑完（快捷键 Ctrl+J）" onclick="injectMessage()">⚡ 强行插入</button><button id="modeAgent" class="btn seg on" onclick="setFollowupMode('agent')">Agent 继续执行</button><button id="modeChat" class="btn seg" onclick="setFollowupMode('chat')">普通对话</button></span></div>
+          <div class="chatbar"><span class="meta">继续当前 Session 对话 · <b>Ctrl+J</b> 强行插入指令（运行中即时生效）</span><span style="display:flex;gap:6px"><button type="button" class="btn seg" id="chatFindToggle" title="在对话里搜索（高亮命中，Enter 跳转下一条）" onclick="toggleChatFind()">🔍 搜索</button><button type="button" id="injectBtn" class="btn seg" title="运行中插入指令：Agent 下一回合读取并优先执行，不必等这轮跑完（快捷键 Ctrl+J）" onclick="injectMessage()">⚡ 强行插入</button><button type="button" id="modeAgent" class="btn seg on" onclick="setFollowupMode('agent')">Agent 继续执行</button><button type="button" id="modeChat" class="btn seg" onclick="setFollowupMode('chat')">普通对话</button></span></div>
           <div id="chatFindBar" class="findbar" style="display:none">
-            <input id="chatFind" placeholder="搜素对话内容…（Enter 下一条，Shift+Enter 上一条）" oninput="chatFindInput()" onkeydown="if(event.key==='Enter'){event.preventDefault();findStep(event.shiftKey?-1:1)}">
+            <input id="chatFind" aria-label="在对话中查找" placeholder="搜索对话内容…（Enter 下一条，Shift+Enter 上一条）" oninput="chatFindInput()" onkeydown="if(event.key==='Enter'){event.preventDefault();findStep(event.shiftKey?-1:1)}">
             <span id="findCount" class="findcount"></span>
-            <button class="btn ghost" onclick="findStep(-1)" title="上一条">↑</button>
-            <button class="btn ghost" onclick="findStep(1)" title="下一条">↓</button>
-            <button class="btn ghost" onclick="toggleChatFind()" title="关闭搜索">✕</button>
+            <button type="button" class="btn ghost" onclick="findStep(-1)" title="上一条">↑</button>
+            <button type="button" class="btn ghost" onclick="findStep(1)" title="下一条">↓</button>
+            <button type="button" class="btn ghost" onclick="toggleChatFind()" title="关闭搜索">✕</button>
           </div>
           <div id="chatlog" class="chatlog"><div class="meta">选择 Session 后，可以在这里继续对话。</div></div>
           <div id="followThumbs" class="thumbs"></div>
           <div id="queueBox" class="queuebox"></div>
           <div class="composer">
-            <textarea id="followup" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行；可直接粘贴截图。Ctrl+J = 运行中强行插入指令"></textarea>            <button id="sendFollowup" class="btn accent" onclick="sendFollowup()">发送</button>
+            <textarea id="followup" aria-label="跟进消息" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行；可直接粘贴截图。Ctrl+J = 运行中强行插入指令"></textarea>            <button type="button" id="sendFollowup" class="btn accent" onclick="sendFollowup()">发送</button>
           </div>
         </div>
       </section>
       <div class="content">
-        <section class="card"><div class="chead">步骤时间线<span class="hint"><span id="stepCount" style="margin-right:8px"></span><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="导出完整时间线 JSON（含每步参数、结果与错误现场），便于调试" onclick="exportTimeline()">⬇ 导出</button></span></div><div id="steps" class="steps"></div></section>
+        <section class="card"><div class="chead">步骤时间线<span class="hint"><span id="stepCount" style="margin-right:8px"></span><button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px" title="导出完整时间线 JSON（含每步参数、结果与错误现场），便于调试" onclick="exportTimeline()">⬇ 导出</button></span></div><div id="steps" class="steps"></div></section>
       </div>
     </div>
   </main>
 </div>
 <div class="mask" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" id="dlgMask" onclick="if(event.target===this)closeDlg()">
-  <div class="dlg" role="dialog" aria-modal="true">
+  <div class="dlg">
     <div class="dhead"><span id="dlgTitle">删除结果</span><span class="hint" id="dlgHint"></span></div>
     <div class="dbody"><div class="dmsg" id="dlgMsg"></div><div id="dlgList" style="display:flex;flex-direction:column;gap:10px"></div></div>
     <div class="dfoot">
-      <button class="btn ghost" id="dlgCopy">复制结果 JSON</button>
-      <button class="btn danger" id="dlgForce">重试远程并强制清理本地记录</button>
-      <button class="btn accent" onclick="closeDlg()">关闭</button>
+      <button type="button" class="btn ghost" id="dlgCopy">复制结果 JSON</button>
+      <button type="button" class="btn danger" id="dlgForce">重试远程并强制清理本地记录</button>
+      <button type="button" class="btn accent" onclick="closeDlg()">关闭</button>
     </div>
   </div>
 </div>
 <div id="demoBadge" class="demo" style="display:none">演示模式 · API 未连接</div>
 <div id="retryCountdown" class="retry-fab" style="display:none">
-  <button id="retryMin" class="rc-x" title="收起（右下角小标可再展开）">×</button>
+  <button type="button" id="retryMin" class="rc-x" title="收起（右下角小标可再展开）">×</button>
   <div class="rc-title">⏳ 服务限流/不可用，预计恢复</div>
   <div class="rc-count">--:--</div>
   <div class="rc-sub">第 1 次 · 自动重试中，可点「暂停」稍后继续</div>
 </div>
 <div id="retryChip" class="retry-chip" style="display:none" title="限流中：点击展开倒计时">⏳ --:--</div>
 <!-- 使用手册 -->
-<div class="mask" role="dialog" aria-modal="true" id="manualMask" onclick="if(event.target===this)closeManual()">
+<div class="mask" role="dialog" aria-modal="true" aria-label="使用手册" id="manualMask" onclick="if(event.target===this)closeManual()">
   <div class="dlg" style="width:min(760px,94vw)">
     <div class="dhead"><span>📖 使用手册</span><span class="hint">Esc 关闭</span></div>
     <div class="dbody manual" id="manualBody"></div>
-    <div class="dfoot"><button class="btn accent" onclick="closeManual()">关闭</button></div>
+    <div class="dfoot"><button type="button" class="btn accent" onclick="closeManual()">关闭</button></div>
   </div>
 </div>
 <div class="toasts" id="toasts"></div>
@@ -114,10 +114,10 @@
 <div class="mask" role="dialog" aria-modal="true" aria-labelledby="gmTitle" id="gmMask" onclick="if(event.target===this)gmClose(null)">
   <div class="dlg" style="width:min(480px,94vw)">
     <div class="dhead"><span id="gmTitle">提示</span></div>
-    <div class="dbody"><div class="dmsg" id="gmMsg"></div><input id="gmInput" style="display:none"></div>
+    <div class="dbody"><div class="dmsg" id="gmMsg"></div><input id="gmInput" aria-label="输入" style="display:none"></div>
     <div class="dfoot">
-      <button class="btn ghost" id="gmCancel">取消</button>
-      <button class="btn accent" id="gmOk">确定</button>
+      <button type="button" class="btn ghost" id="gmCancel">取消</button>
+      <button type="button" class="btn accent" id="gmOk">确定</button>
     </div>
   </div>
 </div>
@@ -127,26 +127,26 @@
     <div class="dhead"><span id="liveTitle">查看</span><span class="hint">Esc 关闭</span></div>
     <div class="dbody"><pre id="liveBody" class="term" style="max-height:72vh;border-radius:9px;font-size:13px;line-height:1.75"></pre></div>
     <div class="dfoot">
-      <button class="btn ghost" id="liveCopy">复制内容</button>
-      <button class="btn accent" onclick="closeLive()">关闭</button>
+      <button type="button" class="btn ghost" id="liveCopy">复制内容</button>
+      <button type="button" class="btn accent" onclick="closeLive()">关闭</button>
     </div>
   </div>
 </div>
 <!-- 新任务弹窗：表单字段与元素 ID 保持与旧内嵌版一致，JS 无需改动 -->
-<div class="mask" role="dialog" aria-modal="true" id="taskMask" onclick="if(event.target===this)closeTask()">
+<div class="mask" role="dialog" aria-modal="true" aria-label="新建任务" id="taskMask" onclick="if(event.target===this)closeTask()">
   <div class="dlg" style="width:min(560px,94vw)">
     <div class="dhead"><span>发起新任务</span><span class="hint">Esc 关闭</span></div>
     <div class="dbody">
-      <input id="sid" placeholder="Session ID（可留空）">
-      <input id="workspace" placeholder="工作目录（可留空）">
-      <div style="display:flex;gap:6px"><select id="model"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select><button id="refreshModelsBtn" class="btn" style="flex:none;padding:5px 10px" title="重新读取 Copilot 模型菜单" onclick="refreshModels()">↻</button></div>
-      <textarea id="task" rows="6" placeholder="任务内容，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图"></textarea>
+      <input id="sid" aria-label="Session ID" placeholder="Session ID（可留空）">
+      <input id="workspace" aria-label="工作目录" placeholder="工作目录（可留空）">
+      <div style="display:flex;gap:6px"><select id="model" aria-label="新任务使用的模型"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select><button type="button" id="refreshModelsBtn" class="btn" style="flex:none;padding:5px 10px" title="重新读取 Copilot 模型菜单" onclick="refreshModels()">↻</button></div>
+      <textarea id="task" aria-label="任务内容" rows="6" placeholder="任务内容，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图"></textarea>
       <div id="taskThumbs" class="thumbs"></div>
-      <div style="display:flex;gap:6px"><button id="ntAgent" class="btn seg on" style="flex:1" onclick="setTaskMode('agent')">Agent 执行</button><button id="ntChat" class="btn seg" style="flex:1" onclick="setTaskMode('chat')">普通对话</button></div>
+      <div style="display:flex;gap:6px"><button type="button" id="ntAgent" class="btn seg on" style="flex:1" onclick="setTaskMode('agent')">Agent 执行</button><button type="button" id="ntChat" class="btn seg" style="flex:1" onclick="setTaskMode('chat')">普通对话</button></div>
     </div>
     <div class="dfoot">
-      <button class="btn ghost" onclick="closeTask()">取消</button>
-      <button class="btn accent" onclick="runTask()">启动任务</button>
+      <button type="button" class="btn ghost" onclick="closeTask()">取消</button>
+      <button type="button" class="btn accent" onclick="runTask()">启动任务</button>
     </div>
   </div>
 </div>

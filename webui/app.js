@@ -54,8 +54,8 @@ function syncFixedLanes(){
   const rs=document.documentElement.style;
   rs.setProperty('--banner-h', h('connBanner')+'px');
   rs.setProperty('--boot-h', h('bootBar')+'px');
-  rs.setProperty('--approval-h', h('approvalBar')+'px');
   // 限流卡与小标是同一位置的两种形态（展开/收起），取当前可见那个的高度
+  // （授权横幅已改为流内元素，不再需要 --approval-h）
   rs.setProperty('--retry-h', Math.max(h('retryCountdown'), h('retryChip'))+'px');
   rs.setProperty('--toast-h', h('toasts')+'px');
  }catch(e){}}
@@ -549,9 +549,35 @@ function gmShow(o){if(_gmResolve){const prev=_gmResolve;_gmResolve=null;prev(nul
  if(o.input!==undefined&&o.input!==null){inp.style.display='';inp.value=o.input}else{inp.style.display='none'}
  let c=document.getElementById('gmCancel');c.style.display=o.cancelText===null?'none':'';c.textContent=o.cancelText||'取消';
  let ok=document.getElementById('gmOk');ok.textContent=o.okText||'确定';ok.className='btn '+(o.danger?'danger':'accent');
- document.getElementById('gmMask').classList.add('open');
+ openMask('gmMask');
  if(inp.style.display!=='none')setTimeout(()=>{inp.focus();inp.select()},60)})}
-function gmClose(v){document.getElementById('gmMask').classList.remove('open');if(_gmResolve){_gmResolve(v);_gmResolve=null}}
+/* ── 弹窗焦点管理（无障碍）────────────────────────────────────────────
+   实测问题：打开任一弹窗后 document.activeElement 仍是 BODY，Tab 会走到背景元素，
+   关闭后焦点丢失。这里统一处理：记录打开前焦点 → 聚焦首个可聚焦控件 → Tab 循环 →
+   关闭时还焦。 */
+let _focusBeforeMask=null;
+function _maskFocusables(root){
+ return [...root.querySelectorAll('button,input,textarea,select,a[href],[tabindex]:not([tabindex="-1"])')]
+  .filter(e=>!e.disabled&&e.getAttribute('aria-hidden')!=='true'&&e.offsetParent!==null)}
+function openMask(id){
+ const m=document.getElementById(id);if(!m)return;
+ _focusBeforeMask=document.activeElement;
+ m.classList.add('open');
+ const f=_maskFocusables(m);if(f.length)setTimeout(()=>{try{f[0].focus()}catch(e){}},60)}
+function closeMask(id){
+ const m=document.getElementById(id);if(m)m.classList.remove('open');
+ const p=_focusBeforeMask;if(p&&p.focus){try{p.focus()}catch(e){}}
+ _focusBeforeMask=null}
+document.addEventListener('keydown',e=>{
+ if(e.key!=='Tab')return;
+ const opens=[...document.querySelectorAll('.mask.open')];
+ const m=opens[opens.length-1];if(!m)return;
+ const f=_maskFocusables(m);if(!f.length)return;
+ const first=f[0],last=f[f.length-1];
+ if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
+ else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}});
+
+function gmClose(v){closeMask('gmMask');if(_gmResolve){_gmResolve(v);_gmResolve=null}}
 document.getElementById('gmOk').onclick=()=>{let inp=document.getElementById('gmInput');gmClose(inp.style.display==='none'?true:inp.value)};
 document.getElementById('gmCancel').onclick=()=>gmClose(null);
 document.getElementById('gmInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('gmOk').click()}});
@@ -829,8 +855,8 @@ function showDeleteResult(d){
   if(r.url)e.querySelector('.url').onclick=ev=>{try{navigator.clipboard.writeText(r.url);ev.target.textContent='已复制 ✓  '+r.url}catch(_){dlgAlert(r.url,'链接')}};
   box.appendChild(e)});
  document.getElementById('dlgForce').style.display=fail?'':'none';
- document.getElementById('dlgMask').classList.add('open')}
-function closeDlg(){document.getElementById('dlgMask').classList.remove('open')}
+ openMask('dlgMask')}
+function closeDlg(){closeMask('dlgMask')}
 document.getElementById('dlgCopy').onclick=()=>{if(!lastDeleteResult)return;try{navigator.clipboard.writeText(JSON.stringify(lastDeleteResult,null,2))}catch(e){}};
 document.getElementById('dlgForce').onclick=()=>forceDeleteLocal();
 async function forceDeleteLocal(){
@@ -1003,10 +1029,10 @@ function enhanceManual(){
  });
 }
 
-function openManual(){document.getElementById('manualBody').innerHTML=MANUAL_HTML;enhanceManual();document.getElementById('manualMask').classList.add('open')}
-function closeManual(){document.getElementById('manualMask').classList.remove('open')}
-function openTask(){document.getElementById('taskMask').classList.add('open');setTimeout(()=>document.getElementById('task').focus(),60)}
-function closeTask(){document.getElementById('taskMask').classList.remove('open')}
+function openManual(){document.getElementById('manualBody').innerHTML=MANUAL_HTML;enhanceManual();openMask('manualMask')}
+function closeManual(){closeMask('manualMask')}
+function openTask(){openMask('taskMask')}
+function closeTask(){closeMask('taskMask')}
 
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closeTask()}});
 
@@ -1025,8 +1051,8 @@ function expandLive(){
  document.getElementById('liveBody').innerHTML=liveTabName==='chat'
   ?document.getElementById('chatlog').innerHTML
   :document.getElementById(liveTabName).innerHTML;
- document.getElementById('liveMask').classList.add('open')}
-function closeLive(){document.getElementById('liveMask').classList.remove('open')}
+ openMask('liveMask')}
+function closeLive(){closeMask('liveMask')}
 document.getElementById('liveCopy').onclick=()=>{try{navigator.clipboard.writeText(document.getElementById('liveBody').textContent||'')}catch(e){}};
 /* 查看该会话的初始提示词（首回合发给模型的完整内容）。
    未落库的旧会话由后端按当前工作区近似重建，这里明确标注。 */
@@ -1097,6 +1123,8 @@ function updateChannelUI(){
  let prov=isProviderModel(currentModel);
  ['btnActivate','btnOpenChat'].forEach(id=>{
   let el=document.getElementById(id);if(el)el.style.display=prov?'none':''});
+ // 分组框也要跟着隐藏：否则提供商会话下留一个空 div 和一条多余的分隔竖线
+ let _wg=document.getElementById('webGrp');if(_wg)_wg.style.display=prov?'none':'';
  let meta=document.querySelector('#chat .chatbar .meta');
  if(meta)meta.innerHTML=`与 <b>${esc(assistantLabel())}</b> 继续 · <b>Ctrl+J</b> 强行插入指令（运行中即时生效）`}
 
@@ -1376,8 +1404,9 @@ function bootBanner(){
 }
 function showBoot(state,ready,err){
  const el=bootBanner();
- if(ready){el.style.display='none';return}
- el.style.display='flex';
+ if(ready){el.style.display='none';syncFixedLanes();return}
+ el.style.display='flex';   // 先写文字再 syncFixedLanes：否则量到的是空框高度，
+                            // 内容会在 1.5s 心跳重算时跳一下（截图抓到过空框）
  const map={idle:'浏览器未启动（首次使用 Copilot 时自动启动）',
             starting:'浏览器启动中…',
             browser_up:'浏览器已启动，等待 Copilot 就绪（可能需要在自动化窗口登录）',
@@ -1385,6 +1414,7 @@ function showBoot(state,ready,err){
             failed:'浏览器启动失败'};
  const txt='Copilot 未就绪：'+(map[state]||state||'未知')+(err?('（'+(err+'').slice(0,120)+'）'):'')+'　提供商模型不受影响，可直接使用。';
  document.getElementById('bootText').textContent=txt;
+ syncFixedLanes();
 }
 async function pollBoot(){
  try{const h=await api('/health');showBoot(h.browser_state,h.copilot_ready,h.browser_error)}
