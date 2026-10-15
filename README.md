@@ -435,3 +435,45 @@ tests/            单元测试（python -m unittest discover -s tests）
 ## 免责声明
 
 本项目通过浏览器自动化使用 Copilot 网页版，仅供个人学习与研究。请遵守 Microsoft 365 Copilot 的使用条款，勿用于高频率、商业化或违反服务条款的用途。
+
+## 破坏性操作的一次性审批（fail-closed）
+
+威胁模型：`delete_path` / `outlook_send` / `run_python` 一旦被模型误调用后果不可回滚。
+因此默认 `agent.approval_policy: "ask"`：**每次**执行前都要用户下达一次授权，
+授权精确到「工具 + 参数哈希」，**用后即焚**（没有 allow-always，也没有撤销存储）。
+
+```powershell
+# 查看待授权（含会话记录的 approval_pending）
+curl http://127.0.0.1:8765/v1/agent/sessions/<sid>/approvals
+# 下达一次性授权（不传 args_hash 时按 approval_pending 精确授权）
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"delete_path"}' http://127.0.0.1:8765/v1/agent/sessions/<sid>/approvals
+```
+
+未获授权时 Agent 不会执行该操作：它会记录一条 `approval_required` 步骤、把状态置为
+`waiting`（并在 runtime 里写 `approval_pending`），然后停下等你授权；授权后点继续即可。
+把 `approval_policy` 设为 `"never"` 表示你明确承担这些操作的风险（不推荐）。
+
+## 沙箱拒绝是结构化的
+
+越界/敏感路径不再只回一句"拒绝访问"，而是给出错误码（`FS_SANDBOX_ESCAPE` /
+`FS_SANDBOX_DENYLIST` / `FS_SANDBOX_NOT_ALLOWED`）、当前模式、原因与**可行动方案**
+（改用工作区相对路径 / 开启自升级 / 让用户把文件放进工作区）。工具参数写错时也会
+列出该工具的**合法参数名**，避免模型反复试探。
+
+## 运行时不变量检查（提交前必跑）
+
+```powershell
+python scripts/invariants.py        # 失败退出码 1；--json 供 CI 使用
+```
+
+它检查那些"坏了不一定报错、但会让行为错误"的隐式契约：工具分组表与注册表一致、
+core 组最小工具面、steps 表 append-only、检查点表与状态取值、AgentRunner 可选回调
+向后兼容、评测断言名与实现一致、提示词工具清单单一数据源、破坏性工具审批契约。
+
+## 崩溃恢复时的检查点语义
+
+- **发请求前**登记回合（`turn_results.status=inflight`），成功后转 `done`；
+- **工具派发前**登记步骤（`step_dispatch`），成功/失败/未知分别收尾；
+- 恢复时若发现"已派发但未收尾"的步骤，**绝不原样重放**：先让模型只读核对现状
+  （对应 DSH 的 `Its outcome is unknown.`），避免重复副作用。

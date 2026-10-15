@@ -216,3 +216,38 @@ def _prompt_tools_single_source() -> None:
         raise InvariantError("未从 tools.descriptions() 取工具清单")
     if re.search(r"可用工具：\n\[\s*\{", src):
         raise InvariantError("提示词里出现了手写的工具清单")
+
+
+@invariant("破坏性工具的一次性审批契约")
+def _approval_contract() -> None:
+    """三类破坏性工具必须默认要求审批，且授权是"消费式"的（allowed-once）。"""
+    from .tools import APPROVAL_REQUIRED_TOOLS, ToolRegistry
+
+    expected = {"delete_path", "outlook_send", "run_python"}
+    if set(APPROVAL_REQUIRED_TOOLS) != expected:
+        raise InvariantError(f"审批工具集合变化了: {sorted(APPROVAL_REQUIRED_TOOLS)}（需同步文档与测试）")
+    tmp = Path(tempfile.mkdtemp(prefix="cbp_inv_appr_"))
+    try:
+        t = ToolRegistry(tmp, {"allow_delete": True, "allow_outlook_send": True, "allow_python": True})
+        for name in expected:
+            if not t.requires_approval(name):
+                raise InvariantError(f"{name} 在能力开启时未要求审批（fail-closed 被破坏）")
+        t2 = ToolRegistry(tmp, {"allow_delete": True, "approval_policy": "never"})
+        if t2.requires_approval("delete_path"):
+            raise InvariantError("approval_policy=never 应按约定关闭审批要求")
+
+        from .session_store import SessionStore
+
+        st = SessionStore(tmp / "a.db")
+        st.create("s1", "t", str(tmp), "m")
+        if st.take_approval("s1", "delete_path", "h"):
+            raise InvariantError("未授权就放行了（fail-open）")
+        st.grant_approval("s1", "delete_path", "h")
+        if not st.take_approval("s1", "delete_path", "h"):
+            raise InvariantError("授权后仍不放行")
+        if st.take_approval("s1", "delete_path", "h"):
+            raise InvariantError("授权被复用（应为 allowed-once，用后即焚）")
+    finally:
+        import shutil
+
+        shutil.rmtree(tmp, ignore_errors=True)
