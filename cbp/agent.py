@@ -847,6 +847,10 @@ class AgentRunner:
         # ② 先读一堆文件、再直接 final 不写任何产出——原先只拦 total==0，
         #    这种"读完了就宣布完成"完全不被拦（用户实测：能读，没有写步骤）。
         noop_strikes = 0   # 允许连续拒绝的次数，超限放行，避免小模型无限重试烧 token
+        # 实例级标记：换会话（rollover）发生在同一次 run() 内，而 history 会被
+        # 截断；用实例标记记住"本次运行有没有真的产出/尝试过产出"。
+        self._action_done = False
+        self._action_tried = False
         _action_words = ("创建", "新建", "写", "修改", "改", "删除", "运行", "执行", "生成",
                          "保存", "记录", "记到", "整理", "转换",
                          "create", "write", "modify", "delete", "run", "save")
@@ -859,8 +863,17 @@ class AgentRunner:
                          "self_write_text_b64", "self_append_text_b64", "self_replace_text"}
 
         def _did_action() -> bool:
+            # 先看实例标记：换会话（rollover）会截断 history，只看 history 会在
+            # 换会话后误判"没有任何产出"（实测：一个 493 步、6 次换会话的真实
+            # 任务里，模型已成功 replace_text 99 次，仍被误判并弹了 noop_guard）。
+            if getattr(self, "_action_done", False):
+                return True
             return any((s.get("tool") or "") in _action_tools and s.get("status") == "ok"
                        for s in history)
+
+        def _tried_action() -> bool:
+            return getattr(self, "_action_tried", False) or any(
+                (s.get("tool") or "") in _action_tools for s in history)
 
         def _save_gate() -> None:
             self.state_saver(gate_state=json.dumps({
@@ -1139,12 +1152,20 @@ class AgentRunner:
                 if str(sub.get("type")) == "final":
                     if _needs_action and not _did_action() and noop_strikes < 2:
                         noop_strikes += 1
-                        _where = ("还没有执行任何工具动作" if total == 0
-                                  else "至今只做了读取/检查，没有任何产出或改动")
+                        if _tried_action():
+                            _where = ("尝试过修改但每次都失败（见时间线里的 error 步骤），"
+                                      "没有任何成功产出")
+                            _how = ("先用 read_text 取到文件的精确片段（注意缩进与行尾）再 replace_text，"
+                                    "写新文件用 write_text_b64")
+                        elif total == 0:
+                            _where = "还没有执行任何工具动作"
+                            _how = "（写文件用 write_text_b64/append_text_b64，改现有内容用 replace_text）"
+                        else:
+                            _where = "至今只做了读取/检查，没有任何产出或改动"
+                            _how = "（写文件用 write_text_b64/append_text_b64，改现有内容用 replace_text）"
                         warn = {"step": total + 1, "status": "noop_guard",
                                 "error": f"任务要求实际动手（创建/修改/写入/运行），但你{_where}"
-                                         "就宣布完成。请先用工具落地结果"
-                                         "（写文件用 write_text_b64/append_text_b64，改现有内容用 replace_text），"
+                                         f"就宣布完成。请先用工具落地结果{_how}，"
                                          "再返回 final；若确实无需任何改动，请明确说明原因后再次 final。"}
                         history.append(warn); all_steps.append(warn); self.step_saver(warn)
                         total += 1
@@ -1256,9 +1277,13 @@ class AgentRunner:
                             _tspan.fail(_exc)
                             raise
                         step.update({"status": "ok", "result": result})
+                        if tool in _action_tools:
+                            self._action_done = True
                         event = result.get("file_event") if isinstance(result, dict) else None
                     except Exception as exc:
                         step.update({"status": "error", "error": str(exc)})
+                        if tool in _action_tools:
+                            self._action_tried = True
                 if step.get("status") == "ok" and not duplicate:
                     changed_path = str(arguments.get("path") or arguments.get("destination") or "")
                     # 注意必须含 b64 写入族：提示词要求代码/JSON/HTML 一律用

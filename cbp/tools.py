@@ -872,6 +872,25 @@ class ToolRegistry:
         result["tool"] = "append_text_b64"
         return result
 
+    @staticmethod
+    def _nearest_hint(text: str, old: str) -> str:
+        """片段没匹配上时，把文件里最接近的原文摘给模型，便于一轮内纠正。
+
+        模型常见错误是缩进/空格与文件不一致（或凭记忆写片段）。只说"未找到"
+        它会反复重试同一片段；把真实内容摆出来它才能改成精确片段。
+        """
+        first = next((ln.strip() for ln in (old or "").splitlines() if ln.strip()), "")
+        if not first:
+            return ""
+        lines = text.replace("\r\n", "\n").splitlines()
+        for i, ln in enumerate(lines):
+            if first in ln.strip():
+                lo, hi = max(0, i - 1), min(len(lines), i + 3)
+                excerpt = "\n".join(lines[lo:hi])[:600]
+                return (f"。文件第 {i + 1} 行附近实际内容是：\n{excerpt}\n"
+                        "请照抄其中的精确片段（注意缩进与行尾）后重试")
+        return ""
+
     async def replace_text(self, path: str, old: str, new: str, count: int = 1) -> dict[str, Any]:
         if not old:
             raise ToolError("old 不能为空")
@@ -892,12 +911,32 @@ class ToolRegistry:
         except UnicodeDecodeError as exc:
             raise ToolError(f"文件不是有效的 UTF-8 文本，拒绝替换（防止乱码写回）: {exc}")
         found = text.count(old)
+        old_used, new_used = old, new
         if found == 0:
-            raise ToolError("未找到要替换的原文本，请先 read_text 后使用精确短片段")
+            # 行尾容错：Windows 工作区文件是 CRLF，而模型从 JSON 里给出的多行
+            # 片段通常是 LF（JSON 里 \n 更自然）。按文件自身的行尾风格改写片段
+            # 再试一次——实测这是"未找到要替换的原文本"失败的主因（真实任务里
+            # 一个会话失败 91 次）。只替换文件里真实存在的那个变体，不会改动
+            # 文件其余部分的行尾风格。
+            if "\r\n" in text and "\r\n" not in old:
+                cand = old.replace("\n", "\r\n")
+                if text.count(cand):
+                    old_used = cand
+                    new_used = new if "\r\n" in new else new.replace("\n", "\r\n")
+                    found = text.count(cand)
+            elif "\r\n" not in text and "\r\n" in old:
+                cand = old.replace("\r\n", "\n")
+                if text.count(cand):
+                    old_used = cand
+                    new_used = new.replace("\r\n", "\n")
+                    found = text.count(cand)
+        if found == 0:
+            raise ToolError("未找到要替换的原文本，请先 read_text 后使用精确短片段"
+                            + self._nearest_hint(text, old))
         replaced = min(found, count)
         before=self._hash(target)
         self._snap("replace_text", path, target)
-        with target.open("w", encoding="utf-8", newline="") as f: f.write(text.replace(old,new,count))
+        with target.open("w", encoding="utf-8", newline="") as f: f.write(text.replace(old_used,new_used,count))
         after=self._hash(target)
         return {"path":path,"replaced":replaced,"remaining_matches":max(0,found-replaced),"file_event":{"tool":"replace_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
 
