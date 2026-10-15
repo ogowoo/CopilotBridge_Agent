@@ -47,7 +47,17 @@ class SessionStore:
               reason TEXT, payload TEXT NOT NULL,
               FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
-            CREATE TABLE IF NOT EXISTS messages (
+            CREATE TABLE IF NOT EXISTS step_dispatch (
+  session_id TEXT NOT NULL,
+  conversation_index INTEGER NOT NULL DEFAULT 0,
+  step_no INTEGER NOT NULL,
+  tool TEXT,
+  args_hash TEXT,
+  status TEXT NOT NULL DEFAULT 'inflight',
+  created REAL NOT NULL,
+  PRIMARY KEY (session_id, conversation_index, step_no)
+);
+CREATE TABLE IF NOT EXISTS messages (
               id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
               created REAL NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
               conversation_index INTEGER NOT NULL DEFAULT 0,
@@ -249,6 +259,36 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 "DO UPDATE SET steps_after=excluded.steps_after, status='inflight', created=excluded.created",
                 (sid, int(conv_index), prompt_hash, int(steps_before), time.time()))
 
+    def begin_step(self, sid: str, conv_index: int, step_no: int,
+                   tool: str, args_hash: str) -> None:
+        """**工具派发之前**登记（DSH 的 checkpoint-before-dispatch）。
+
+        与 turn_results 一样放在独立表：steps 是 append-only 且 step_no 会复用，
+        往里插一条 inflight 会让时间线出现重复步骤。若进程在工具执行后、结果落库前
+        崩溃，这里会留下一条 status='inflight' 的记录——那正是"副作用结果未知"的
+        唯一可靠线索，恢复时应据此只允许只读/幂等重试。
+        """
+        with self.lock, self._connect() as con:
+            con.execute(
+                "INSERT INTO step_dispatch(session_id,conversation_index,step_no,tool,args_hash,status,created) "
+                "VALUES(?,?,?,?,?,'inflight',?) ON CONFLICT(session_id,conversation_index,step_no) "
+                "DO UPDATE SET tool=excluded.tool, args_hash=excluded.args_hash, "
+                "status='inflight', created=excluded.created",
+                (sid, int(conv_index), int(step_no), tool, args_hash, time.time()))
+
+    def finish_step(self, sid: str, conv_index: int, step_no: int, status: str = "done") -> None:
+        with self.lock, self._connect() as con:
+            con.execute("UPDATE step_dispatch SET status=? WHERE session_id=? AND conversation_index=? AND step_no=?",
+                        (status, sid, int(conv_index), int(step_no)))
+
+    def pending_steps(self, sid: str) -> list[dict[str, Any]]:
+        """未收尾（结果未知）的工具步骤：恢复时用它决定"能不能重放"。"""
+        with self.lock, self._connect() as con:
+            rows = con.execute(
+                "SELECT * FROM step_dispatch WHERE session_id=? AND status='inflight' ORDER BY step_no",
+                (sid,)).fetchall()
+            return [dict(r) for r in rows]
+
     def save_turn(self, sid: str, conv_index: int, prompt_hash: str,
                   answer: str, steps_after: int) -> None:
         """回合成功产出结果：标为 done，恢复时可据此跳过重发。"""
@@ -275,7 +315,7 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         """
         with self.lock, self._connect() as con:
             existed = con.execute("DELETE FROM sessions WHERE id=?", (sid,)).rowcount > 0
-            for table in ("messages", "steps", "file_events", "conv_stats", "turn_results"):
+            for table in ("messages", "steps", "file_events", "conv_stats", "turn_results", "step_dispatch"):
                 try:
                     con.execute(f"DELETE FROM {table} WHERE session_id=?", (sid,))
                 except Exception:
