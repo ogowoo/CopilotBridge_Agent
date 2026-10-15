@@ -166,7 +166,7 @@ def main() -> int:
             # 清理上一轮评测留下的产物：否则后续任务的 run_unittest 会踩到脏文件
             # （实测 gate-limit 因 tests/test_eval_mod.py 引用已删除的 eval_mod 而
             #  花 10+ 步去补模块，步数从 4 涨到 21，纯属评测卫生问题）。
-            patterns = ("eval_*", "tests/test_eval_*", "tests/eval_*")
+            patterns = ("eval_*", "tests/test_eval_*", "tests/eval_*", ".spill")
             for pat in patterns:
                 for old in WS.glob(pat):
                     try:
