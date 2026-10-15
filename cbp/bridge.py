@@ -2203,7 +2203,9 @@ async def provider_turn(sid: str, model_id: str, prompt: str, force_new: bool = 
         answer = await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
     except providers_mod.ProviderUnavailable as exc:
         hist.pop()                                    # 回滚本次 user，重试不重复
-        raise CopilotRateLimited(str(exc)) from exc
+        # window_seconds=0：提供商走"下次重试"倒计时，不用 Copilot 网页实测的
+        # 1 小时固定窗口（提供商的 429/5xx/网络抖动通常几秒~几分钟就恢复）。
+        raise CopilotRateLimited(str(exc), window_seconds=0) from exc
     except Exception:
         hist.pop()
         raise
@@ -2230,7 +2232,7 @@ async def provider_session_chat(sid: str, content: str, model_id: str) -> dict:
         try:
             answer = await provider.complete(pm[1], history)
         except providers_mod.ProviderUnavailable as exc:
-            raise CopilotRateLimited(str(exc)) from exc
+            raise CopilotRateLimited(str(exc), window_seconds=0) from exc
         current = AGENT_SESSIONS.get(sid)
         if not current:
             raise RuntimeError("会话在执行期间被删除")

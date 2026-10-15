@@ -102,6 +102,22 @@ $env:DEEPSEEK_API_KEY="sk-..."   # 或 MOONSHOT_API_KEY / OPENAI_API_KEY / XAI_A
 
 提供商模型在所有入口都可用：OpenAI 兼容对话（流式透传）、WebUI 新任务（普通对话/Agent 执行）、Session 跟进。普通对话用 Session 的消息记录作上下文；Agent 模式复用同一套 JSON 动作协议与工具循环。提供商限流/5xx 会自动走与 Copilot 相同的指数退避重试。
 
+**代理（重要）**：浏览器访问 API 走的是 **Windows 系统代理**，而 Python 的 httpx 默认只读 `HTTP_PROXY`/`HTTPS_PROXY` 环境变量、**不看系统代理**——这会造成"浏览器能打开、服务却报提供商不可用"的假故障。现在提供商请求默认**跟随系统代理**（读注册表），传输层失败且代理是自动探测来的，还会**直连重试一次**。可显式配置：
+
+```json
+"providers": {
+  "deepseek": { "proxy": "http://127.0.0.1:10809" },   // 显式代理
+  "kimi":     { "use_system_proxy": false }            // 强制直连（代理故障时用）
+}
+```
+
+**一条命令自检连通性**（会分别打印"经代理/直连"两条路径的真实结果）：
+
+```powershell
+python scripts/provider_selftest.py                    # 全部已配置提供商
+python scripts/provider_selftest.py --provider deepseek
+```
+
 ### Agent 任务
 
 ```bash
@@ -180,7 +196,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `allow_copilot_file` | `true` | 是否开放 `copilot_file`（让 Copilot 直接生成文件并下载进工作区，内容不走聊天消息、不受输出上限约束）。**注意**：`copilot_file` 与 `copilot_attach` 依赖 Copilot 网页会话，因此在使用 API 提供商模型（如 `deepseek/…`）的会话里**自动禁用**（既不注入也不执行，避免白烧回合） |
 | `max_service_unavailable` | `30` | 限流退避重试上限，超过后转入安全暂停 |
 | `service_retry_base_seconds` / `service_retry_max_seconds` | `30` / `600` | 限流指数退避的起始/上限 |
-| `service_retry_window_seconds` | `3660` | 限流窗口：首次超限后到可再次使用大致要等这么久（实测约 1 小时，多加 1 分钟余量），**居中倒计时卡片**锚定"首次超限 + 该窗口"。Copilot 网页与 API 提供商共用该窗口（浮窗标题按当前模型通道分别显示"Copilot 限流/不可用"或"API 服务限流/不可用"） |
+| `service_retry_window_seconds` | `3660` | **Copilot 网页**的限流窗口：首次超限后到可再次使用大致要等这么久（实测约 1 小时，多加 1 分钟余量），**居中倒计时卡片**锚定"首次超限 + 该窗口"。**API 提供商不用这个窗口**（它们的 429/5xx/网络抖动通常几秒~几分钟就恢复，套 1 小时会误导），而是按本轮退避显示"下次重试"；卡片标题按当前模型通道分别显示"Copilot 限流/不可用"或"API 服务限流/不可用" |
 | `max_read_chars` / `max_write_chars` | `120000` / `200000` | 工具单次读写上限 |
 | `allow_delete` | `false` | 是否开放 `delete_path` 工具 |
 | `allow_python` | `false` | 是否开放 `run_python` 工具（**可执行任意代码，谨慎开启**） |

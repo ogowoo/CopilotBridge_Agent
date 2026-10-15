@@ -79,7 +79,19 @@ class CopilotServiceUnavailable(RuntimeError):
     """
 
 class CopilotRateLimited(CopilotServiceUnavailable):
-    """真正的服务侧限流/不可用：只有它才启动固定窗口退避与前端倒计时浮窗。"""
+    """真正的服务侧限流/不可用：只有它才启动固定窗口退避与前端倒计时浮窗。
+
+    window_seconds 区分"预计恢复"的算法：
+      None → 用 service_retry_window_seconds（Copilot 网页实测的固定窗口，约 1 小时）
+      0    → 按本轮退避时间显示"下次重试"（API 提供商的 429/5xx/网络抖动通常
+             几秒~几分钟就恢复，套 1 小时窗口会误导：用户实测看到"预计恢复 59:16"
+             其实只是网络抖动）
+      其它数值 → 用该窗口
+    """
+
+    def __init__(self, message: str = "", window_seconds: float | None = None):
+        super().__init__(message)
+        self.window_seconds = window_seconds
 
 
 class CopilotSendFailed(RuntimeError):
@@ -1132,21 +1144,41 @@ class AgentRunner:
                 chat_active = True  # 回合大概率已发出，重试留在原会话
                 service_failures += 1
                 parse_failures = 0
-                reason = str(exc)[:300]
+                # 异常消息可能为空（实测 httpx 的 ReadTimeout/ConnectError 常是
+                # 空字符串），那样步骤里就只剩"（第 N 次）："什么都看不到——退化成
+                # 类名，保证用户至少知道是哪类错误。
+                reason = str(exc).strip()[:300] or f"{type(exc).__name__}（无详细消息）"
                 step = {"step": total + 1, "status": "service_unavailable",
-                        "error": f"Copilot 服务暂时不可用（第 {service_failures} 次）：{reason}"}
+                        "error": f"服务暂时不可用（第 {service_failures} 次）：{reason}"}
                 all_steps.append(step); self.step_saver(step)
                 # 退避期间状态置 waiting（前端显示"等待服务"）；用户已暂停时不抢状态。
                 _updates = {"recent_steps": history[-self.keep_recent:], "last_error": step["error"]}
                 if (self.state_getter() or {}).get("state") == "running":
                     _updates["state"] = "waiting"
-                # 限流窗口：首次超限记起点，之后重试都锚定同一终点（=起点 + 窗口），
-                # 前端浮窗按它倒数到"Copilot 预计恢复可用"。
-                limited_since = (self.state_getter() or {}).get("rate_limited_since") or time.time()
-                resume_at = limited_since + self.service_retry_window_seconds
-                _updates.update({"rate_limited_since": limited_since,
-                                 "retry_resume_at": resume_at,
-                                 "retry_attempt": service_failures})
+                # 本轮退避时长（先算，倒计时要用）
+                delay = min(self.service_retry_base_seconds * (2 ** min(service_failures - 1, 4)),
+                            self.service_retry_max_seconds)
+                # 倒计时终点：
+                # - Copilot 网页（window_seconds=None）：固定窗口（实测约 1 小时），
+                #   锚定"首次超限"，退避重试期间终点不跳变。
+                # - API 提供商（window_seconds=0）：按本轮退避时间显示"下次重试"——
+                #   提供商的 429/5xx/网络抖动通常几秒~几分钟就恢复，套 1 小时窗口
+                #   会误导（用户实测看到"预计恢复 59:16"其实只是网络抖动）。
+                # - 显式给数值：用该窗口。
+                _window = getattr(exc, "window_seconds", None)
+                if _window == 0:
+                    _updates.update({"rate_limited_since": None,
+                                     "retry_resume_at": time.time() + delay,
+                                     "retry_attempt": service_failures,
+                                     "retry_note": "next_retry"})
+                else:
+                    limited_since = (self.state_getter() or {}).get("rate_limited_since") or time.time()
+                    _updates.update({"rate_limited_since": limited_since,
+                                     "retry_resume_at": limited_since + (
+                                         self.service_retry_window_seconds if _window is None
+                                         else float(_window)),
+                                     "retry_attempt": service_failures,
+                                     "retry_note": "window"})
                 self.state_saver(**_updates)
                 if service_failures >= self.max_service_unavailable:
                     # 用户已请求暂停时不覆盖 paused，只记录原因。
@@ -1158,8 +1190,6 @@ class AgentRunner:
                                          last_error="Copilot 服务持续不可用，已停止自动重试；服务恢复后请点击继续",
                                          retry_resume_at=None, retry_attempt=0, rate_limited_since=None)
                     return AgentResult("Copilot 服务持续不可用，任务已安全暂停，可稍后继续。", all_steps)
-                delay = min(self.service_retry_base_seconds * (2 ** min(service_failures - 1, 4)),
-                            self.service_retry_max_seconds)
                 deadline = time.monotonic() + delay
                 while time.monotonic() < deadline:
                     state = self.state_getter()

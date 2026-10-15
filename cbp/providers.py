@@ -20,9 +20,29 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.request
 from typing import Any, AsyncIterator
 
 import httpx
+
+
+def system_proxy() -> str | None:
+    """读取本机系统代理（Windows 注册表 / 环境变量）。
+
+    为什么需要它：浏览器走的是 Windows 系统代理（WinINET），而 Python 的 httpx
+    默认只读 HTTP_PROXY/HTTPS_PROXY 环境变量、**不看系统代理**。于是出现
+    "浏览器能打开 API 站点、本服务却报提供商不可用"这种最容易被误判成"对方挂了"
+    的情况。urllib 在 Windows 上会读注册表，正好补上这个差异。
+    """
+    try:
+        proxies = urllib.request.getproxies() or {}
+    except Exception:
+        return None
+    for key in ("https", "http"):
+        value = str(proxies.get(key) or "").strip()
+        if value:
+            return value
+    return None
 
 PRESETS: dict[str, dict[str, Any]] = {
     "openai": {
@@ -109,6 +129,10 @@ class ApiProvider:
         # 结构化输出模式：auto（默认，先试 json_object）/ json_schema /
         # json_object / off。不支持的服务会在 4xx 时自动降级重试一次。
         self.json_mode = str(cfg.get("json_mode", "auto")).lower()
+        # 代理：显式 proxy 优先；否则 use_system_proxy（默认开）时用系统代理。
+        # 关掉可强制直连（代理本身故障时用）。
+        self.proxy = str(cfg.get("proxy") or "").strip() or None
+        self.use_system_proxy = bool(cfg.get("use_system_proxy", True))
 
     @property
     def configured(self) -> bool:
@@ -123,12 +147,41 @@ class ApiProvider:
                 f"或在 config.json providers.{self.name}.api_key 中填写"
             )
 
-    def _client(self) -> httpx.AsyncClient:
+    def proxy_url(self) -> str | None:
+        if self.proxy:
+            return self.proxy
+        if self.use_system_proxy:
+            return system_proxy()
+        return None
+
+    def _client(self, use_proxy: bool = True):
+        kwargs: dict[str, Any] = {}
+        if use_proxy:
+            proxy = self.proxy_url()
+            if proxy:
+                kwargs["proxy"] = proxy
         return httpx.AsyncClient(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {self.api_key}"},
             timeout=httpx.Timeout(self.timeout, connect=30),
+            **kwargs,
         )
+
+    def net_error_text(self, exc: Exception | None) -> str:
+        """传输层异常的可读描述。
+
+        httpx 的 ReadTimeout/ConnectError 等 str() **常为空串**，只报类名等于什么都没
+        说（用户实测：步骤里"服务暂时不可用（第 1 次）："后面是空的，看不出原因）。
+        这里补上异常类名、目标地址、是否经代理，并给出可操作的排查提示。
+        """
+        name = type(exc).__name__ if exc is not None else "NetworkError"
+        detail = str(exc).strip() if exc is not None else ""
+        via = self.proxy_url()
+        where = f"经代理 {via}" if via else "直连"
+        return (f"{where} 访问 {self.base_url} 时网络异常（{name}）："
+                f"{detail[:200] if detail else '对端无详细消息'}。"
+                "若浏览器能打开该站点而这里失败，多半是代理差异——"
+                "可在 providers 配置里设 proxy，或设 use_system_proxy=false 强制直连")
 
     @staticmethod
     def _check_status(resp: httpx.Response) -> None:
@@ -151,23 +204,31 @@ class ApiProvider:
     async def complete(self, model: str, messages: list[dict[str, str]],
                        response_schema: dict[str, Any] | None = None) -> str:
         self.require_ready()
-        try:
-            async with self._client() as client:
-                payload: dict[str, Any] = {
-                    "model": model, "messages": messages, "stream": False}
-                payload.update(self._json_hint(response_schema))
-                resp = await client.post("/chat/completions", json=payload)
-                if resp.status_code >= 400 and "response_format" in payload:
-                    # 服务不支持该参数：去掉后重试一次（能力探测，不报错给用户）
-                    payload.pop("response_format", None)
+        payload: dict[str, Any] = {"model": model, "messages": messages, "stream": False}
+        payload.update(self._json_hint(response_schema))
+        # 先按配置（可能含自动探测到的系统代理）请求；传输层失败且代理是**自动探测**
+        # 来的，再直连重试一次——避免"系统代理存在但连不上"把可用服务判死。
+        attempts = [True]
+        if self.proxy_url() and not self.proxy:
+            attempts.append(False)
+        last_exc: Exception | None = None
+        for use_proxy in attempts:
+            try:
+                async with self._client(use_proxy=use_proxy) as client:
                     resp = await client.post("/chat/completions", json=payload)
-        except (httpx.TimeoutException, httpx.TransportError) as exc:
-            raise ProviderUnavailable(str(exc)) from exc
-        self._check_status(resp)
-        try:
-            return resp.json()["choices"][0]["message"].get("content") or ""
-        except Exception as exc:
-            raise ProviderError(f"响应格式异常: {exc}") from exc
+                    if resp.status_code >= 400 and "response_format" in payload:
+                        # 服务不支持该参数：去掉后重试一次（能力探测，不报错给用户）
+                        payload.pop("response_format", None)
+                        resp = await client.post("/chat/completions", json=payload)
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                last_exc = exc
+                continue
+            self._check_status(resp)
+            try:
+                return resp.json()["choices"][0]["message"].get("content") or ""
+            except Exception as exc:
+                raise ProviderError(f"响应格式异常: {exc}") from exc
+        raise ProviderUnavailable(self.net_error_text(last_exc)) from last_exc
 
     async def stream(self, model: str, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         """流式产出 content 增量。"""
@@ -194,7 +255,7 @@ class ApiProvider:
                             if delta:
                                 yield delta
         except (httpx.TimeoutException, httpx.TransportError) as exc:
-            raise ProviderUnavailable(str(exc)) from exc
+            raise ProviderUnavailable(self.net_error_text(exc)) from exc
 
 
 def build_providers(cfg: dict[str, Any]) -> dict[str, ApiProvider]:
