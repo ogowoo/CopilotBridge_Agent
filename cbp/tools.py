@@ -163,6 +163,15 @@ class _ComWorker:
 # 授权用完即焚，下一次同类操作要重新授权。
 APPROVAL_REQUIRED_TOOLS = ("delete_path", "outlook_send", "run_python")
 
+# 一次调用可能已经产生副作用、但我们**拿不到结果**的动作：禁止原样重试。
+NON_IDEMPOTENT_TOOLS = ("outlook_send", "delete_path", "move_path", "append_text",
+                        "append_text_b64", "copy_path")
+
+# 只读动作：它们成功即说明"当前真实状态"已核对过，可以解除上面的封锁。
+READ_ONLY_TOOLS = ("read_text", "list_directory", "find_files", "outlook_unread",
+                   "read_excel", "read_csv", "read_pdf", "read_docx", "memory_search",
+                   "skill_list", "tool_list", "validate_python", "run_unittest")
+
 class ToolRegistry:
     def __init__(self, root: Path, config: dict[str, Any]):
         self.root = root.resolve()
@@ -187,6 +196,10 @@ class ToolRegistry:
         # Outlook 后端：bridge 层注册的 OWA 网页自动化后端；None 时走 COM（经典 Outlook）
         self.outlook_backend = None
         self.python_timeout = float(config.get("python_timeout_seconds", 20))
+        # COM/Outlook 超时后"结果未知"的封锁标记：见 _mark_unknown_outcome
+        self._com_unknown: dict[str, Any] | None = None
+        # 可配置超时（测试与慢机器需要；默认 60 秒）
+        self.outlook_timeout = float(config.get("outlook_timeout_seconds", 60))
         # 工作区根目录白名单：配置后 set_root 只能切到这些根目录之下，
         # 防止 API 把工具根目录移到 C:\ 之类的地方使路径沙箱形同虚设。
         self.workspace_roots = [
@@ -802,6 +815,30 @@ class ToolRegistry:
                         raise ToolError(f"该路径属于服务敏感文件，禁止通过工作区工具访问: {rel}")
         return candidate
 
+    # ── "结果未知"封锁（协作式取消的兜底）─────────────────────────────
+    # 背景：COM 调用超时无法真正取消（线程里的调用还在跑）。原来的实现直接放弃等待，
+    # 于是模型可能再次发起同一动作 → 重复发信/重复删除；更糟的是外层还会重试一次。
+    # 现在改为：超时后**记录结果未知**并阶段性封锁不可幂等动作，直到只读动作成功
+    # （等价于"先核对现状再说"），绝不静默放弃、也绝不自动重试。
+
+    def _mark_unknown_outcome(self, tool: str, detail: str) -> None:
+        self._com_unknown = {"tool": tool, "detail": detail, "since": time.time()}
+
+    def clear_unknown_outcome(self, by: str = "") -> None:
+        if self._com_unknown:
+            log_line = self._com_unknown.get("tool")
+            self._com_unknown = None
+            if by:
+                print(f"[tools] 结果未知封锁已由只读动作 {by} 解除（涉及 {log_line}）", flush=True)
+
+    def unknown_outcome_error(self, tool: str) -> str:
+        info = self._com_unknown or {}
+        return ("[TOOL_TIMEOUT_UNKNOWN] 上一次 " + str(info.get("tool") or "工具") +
+                " 调用超时，**结果未知**（调用可能仍在后台执行，也可能已经产生副作用）。\n"
+                "已禁止原样重试该动作。请先用只读工具核对真实现状（例如 read_text / "
+                "list_directory / outlook_unread），确认之后再决定下一步；"
+                "若确认没有发生，可再明确重发一次。\n详情：" + str(info.get("detail") or "")[:200])
+
     async def execute(self, name: str, arguments: dict[str, Any] | None) -> Any:
         if not self.allow_web_copilot_tools and name in self.web_copilot_tools:
             raise ToolError(
@@ -811,13 +848,17 @@ class ToolRegistry:
         fn = self._tools.get(name)
         if not fn:
             raise ToolError(f"未知工具: {name}")
+        if self._com_unknown and name in NON_IDEMPOTENT_TOOLS:
+            raise ToolError(self.unknown_outcome_error(name))
         try:
             result = fn(**(arguments or {}))
             # 工具可以同步也可以异步：skill_list 等纯计算工具是同步函数，
             # 无条件 await 会报 "object list can't be used in 'await' expression"，
             # 使这些工具经 Agent 调用时永远失败。
             if inspect.isawaitable(result):
-                return await result
+                result = await result
+            if name in READ_ONLY_TOOLS:
+                self.clear_unknown_outcome(name)
             return result
         except TypeError as exc:
             # 参数错误必须**可行动**：只报 "unexpected keyword argument" 模型无法自救
@@ -1329,21 +1370,45 @@ class ToolRegistry:
             except Exception as exc:
                 raise ToolError(self._explain_outlook_error(exc))
 
-        # COM 弹安全确认框或 Outlook 脱机时会永久阻塞，加超时保护
-        timeout = max(self.python_timeout, 30) * 2
+        # COM 弹安全确认框或 Outlook 脱机时会永久阻塞，加超时保护。
+        # 注意：COM 调用**无法真正取消**——超时只表示"我们不再等"，线程里的调用仍在跑。
+        # 因此这里用 shield 保护底层 future（不抛弃它）并对它的最终结果挂回调，
+        # 超时绝不重试（重试 = 在第一次可能已生效的情况下再来一次）。
+        timeout = max(self.outlook_timeout, 1.0)
         worker = _ComWorker.get()
         for attempt in (1, 2):
+            fut = worker.submit(runner)
             try:
-                return await asyncio.wait_for(worker.submit(runner), timeout=timeout)
+                return await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
             except ToolError:
                 raise
+            except (asyncio.TimeoutError, TimeoutError):
+                self._mark_unknown_outcome("outlook", f"{timeout:.0f} 秒无响应")
+
+                def _late(done, _t=timeout):
+                    """迟到的结果：不改变任务走向，只把真相记下来（不静默抛弃）。"""
+                    try:
+                        if done.cancelled():
+                            return
+                        err = done.exception()
+                        if err is not None:
+                            print(f"[tools] 超时后的 Outlook 调用最终失败：{err}"[:300], flush=True)
+                        else:
+                            print("[tools] 超时后的 Outlook 调用最终成功——副作用很可能已发生，"
+                                  "已禁止原样重试，请先只读核对", flush=True)
+                    except Exception:
+                        pass
+
+                fut.add_done_callback(_late)
+                raise ToolError(
+                    f"[TOOL_TIMEOUT] 调用 Outlook 超过 {timeout:.0f} 秒无响应：Outlook 可能弹出了"
+                    "安全确认框、处于脱机或卡死状态。**该调用可能仍在后台执行**，因此结果未知："
+                    "已禁止原样重试同一动作；请先在本机确认 Outlook 状态，并用只读工具"
+                    "（如 outlook_unread）核对是否已经发生，再决定下一步。")
             except Exception as exc:
                 if attempt == 1 and self._busy_hresult(exc):
-                    await asyncio.sleep(2.0)  # Outlook 繁忙瞬时拒绝：退后重试一次
+                    await asyncio.sleep(2.0)  # Outlook 繁忙瞬时拒绝：退后重试一次（此时调用确未生效）
                     continue
-                if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
-                    raise ToolError("调用 Outlook 超时（40 秒无响应）——Outlook 可能弹出了安全确认框、"
-                                    "处于脱机或卡死状态；请在本机桌面确认 Outlook 后重试")
                 raise ToolError(self._explain_outlook_error(exc))
 
     @staticmethod
