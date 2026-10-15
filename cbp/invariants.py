@@ -295,3 +295,42 @@ def _state_keys_are_persistable() -> None:
                         f"{fname}:{node.lineno} 写入状态键 {kw.arg}，不在存储白名单里（会被静默丢弃）")
     if checked < 15:
         raise InvariantError(f"状态键检查覆盖太少（{checked} 处），AST 扫描可能失效")
+
+
+@invariant("事件流足以重建检查点状态")
+def _events_reconstruct_checkpoints() -> None:
+    """投影（P2-10 第二期）必须能从事件重建列里的事实。
+
+    这条守住的是"日志即真相"的**前提**：只要事件覆盖退化（少发/漏发），投影与列就会
+    不一致，这里立刻失败——而不是等到第三期切读取路径时才发现。
+    """
+    from .projection import compare_with_columns, project
+    from .session_store import SessionStore
+
+    tmp = Path(tempfile.mkdtemp(prefix="cbp_inv_proj_"))
+    try:
+        st = SessionStore(tmp / "a.db")
+        st.create("s1", "任务", str(tmp), "m")
+        st.patch("s1", state="running")
+        st.begin_turn("s1", 0, "ph1", 0)
+        st.save_turn("s1", 0, "ph1", "答案", 1)
+        st.begin_step("s1", 0, 1, "read_text", "ah")
+        st.finish_step("s1", 0, 1, "done")
+        st.add_step("s1", 1, 0, {"step": 1, "tool": "read_text", "status": "ok"})
+        st.patch("s1", state="completed")
+
+        events = st.events("s1")
+        con = st._connect()
+        turns = [dict(r) for r in con.execute(
+            "SELECT prompt_hash,status,steps_after FROM turn_results WHERE session_id='s1'")]
+        steps = [dict(r) for r in con.execute(
+            "SELECT step_no,tool,status FROM step_dispatch WHERE session_id='s1'")]
+        problems = compare_with_columns(project(events), turns, steps)
+        if problems:
+            raise InvariantError("投影与列不一致: " + "; ".join(problems[:3]))
+        if project(events).get("current_state") != "completed":
+            raise InvariantError("状态事件未能重放出最终状态")
+    finally:
+        import shutil
+
+        shutil.rmtree(tmp, ignore_errors=True)

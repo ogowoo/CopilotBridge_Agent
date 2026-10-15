@@ -204,11 +204,23 @@ CREATE TABLE IF NOT EXISTS conv_stats (
             if key in values: values[key] = int(bool(values[key]))
         values["updated"] = time.time()
         with self.lock, self._connect() as con:
+            prev_state = None
+            if "state" in values:
+                row = con.execute("SELECT state FROM sessions WHERE id=?", (sid,)).fetchone()
+                prev_state = row["state"] if row else None
             con.execute("UPDATE sessions SET " + ",".join(f"{k}=?" for k in values) + " WHERE id=?", (*values.values(), sid))
+            # 状态迁移是"日志即真相"最关键的一类事件：只记**真实变化**（重复写同值不记），
+            # 并带上 from/to，便于重放与审计。事件复用同一连接（见 append_event 注释）。
+            if "state" in values and prev_state != values["state"]:
+                self.append_event(sid, "state",
+                                  {"from": prev_state, "to": values["state"]}, con=con)
         return self.get(sid)
 
     def add_step(self, sid: str, step_no: int, conversation_index: int, step: dict[str, Any]):
         with self.lock, self._connect() as con:
+            self.append_event(sid, "step_recorded",
+                              {"step_no": int(step_no), "tool": step.get("tool"),
+                               "status": step.get("status", "unknown")}, con=con)
             con.execute("INSERT INTO steps(session_id,step_no,conversation_index,created,tool,status,reason,payload) VALUES(?,?,?,?,?,?,?,?)",
                         (sid,step_no,conversation_index,time.time(),step.get("tool"),step.get("status","unknown"),step.get("reason"),json.dumps(step,ensure_ascii=False)))
 
