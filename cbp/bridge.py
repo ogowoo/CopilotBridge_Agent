@@ -2245,6 +2245,51 @@ def _trim_provider_history(hist: list[dict], max_chars: int | None = None) -> No
             hist.pop(2)                               # 它的回复一起丢，保持配对
 
 
+def _repair_provider_history(hist: list[dict]) -> int:
+    """按**真实 API 契约**校验并自愈提供商对话序列，返回修掉的条数。
+
+    契约（实测 OpenAI 兼容行为，不是我当初想当然的"严格交替"）：
+      · system 必须在首位（缺失则补回）；
+      · 其后**不能以 assistant 打头**（没有对应用户输入的回答）；
+      · 连续的 user 消息是**合法的**（服务端会顺次理解），不能为了"交替"去删；
+      · 连续 assistant 才会被合并（保留较新的一条）。
+
+    这里踩过两次坑，都由既有测试当场抓到：
+      1. 先写"严格交替"→ 把锚点（首条含工具清单的 prompt）与最近一轮 user 拆开，
+         既有测试断言"最近一轮仍在"立刻失败；
+      2. 再写"与锚点冲突就丢新来的"→ 又把最近一轮 user 丢了，仍然失败。
+    教训：契约要按**真实 API 行为**定，不要按"看起来更整齐"定。
+    """
+    fixed = 0
+    if not hist:
+        return fixed
+
+    head = hist[0] if hist[0].get("role") == "system" else {"role": "system", "content": _PROVIDER_PROTOCOL}
+    if head is not hist[0]:
+        fixed += 1
+    rest = list(hist[1:]) if hist[0].get("role") == "system" else list(hist)
+
+    out: list[dict] = [head]
+    for msg in rest:
+        role = msg.get("role")
+        if role not in ("user", "assistant"):
+            fixed += 1
+            continue
+        if role == "assistant" and len(out) == 1:
+            fixed += 1                     # 不能以 assistant 打头（其 user 已丢失）
+            continue
+        if role == "assistant" and out[-1].get("role") == "assistant":
+            out[-1] = msg                  # 连续 assistant：保留较新
+            fixed += 1
+            continue
+        out.append(msg)                    # 连续 user 合法，原样保留
+
+    if fixed:
+        hist[:] = out
+        log(f"提供商对话历史结构已自愈：修正 {fixed} 条（system 首位、不以 assistant 打头）")
+    return fixed
+
+
 def discard_provider_agent_history(sid: str) -> None:
     """会话删除时清理提供商对话历史（避免长期运行内存里堆积）。"""
     _PROVIDER_AGENT_HISTORY.pop(sid, None)
@@ -2376,6 +2421,7 @@ async def provider_turn(sid: str, model_id: str, prompt: str, force_new: bool = 
     hist = _PROVIDER_AGENT_HISTORY[sid]
     hist.append({"role": "user", "content": prompt})
     _trim_provider_history(hist)
+    _repair_provider_history(hist)
     remember_initial_prompt(sid, prompt)
     # 提供商 Agent 回合原先完全不写 runtime，导致 WebUI 的"最近发送内容/
     # Copilot 当前回答/当前执行状态"三个面板全程空白——这里补齐。
@@ -2447,6 +2493,7 @@ async def provider_turn(sid: str, model_id: str, prompt: str, force_new: bool = 
         raise
     hist.append({"role": "assistant", "content": answer})
     _trim_provider_history(hist)
+    _repair_provider_history(hist)
     runtime_update(sid, phase="api_received", detail=f"{pm[0]} API 已返回，正在解析动作",
                    answer_preview=answer[-12000:])
     return answer
