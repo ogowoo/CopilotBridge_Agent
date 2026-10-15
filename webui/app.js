@@ -327,6 +327,12 @@ function updateRetryCountdown(r){
  if(!resumeAt||resumeAt*1000<=Date.now()){box.style.display='none';box.removeAttribute('data-resume');return}
  box.style.display='block';
  box.dataset.resume=resumeAt;
+ // 标题按实际通道措辞：API 提供商（模型 ID 含 /，如 deepseek/deepseek-chat）
+ // 的 5xx/超时也走同一个窗口，写成"Copilot 限流"不准确。
+ let isProvider=!!(currentModel&&currentModel.indexOf('/')>=0);
+ let title=box.querySelector('.rc-title');
+ if(title)title.textContent=isProvider?'⏳ API 服务限流/不可用，预计恢复'
+                                     :'⏳ Copilot 限流/不可用，预计恢复';
  box.querySelector('.rc-count').textContent=fmtCountdown(resumeAt*1000-Date.now());
  let sub=box.querySelector('.rc-sub');
  sub.textContent=`第 ${r.retry_attempt||1} 次 · 自动重试中，可点「暂停」稍后继续`;

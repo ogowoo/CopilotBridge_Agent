@@ -180,7 +180,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `allow_copilot_file` | `true` | 是否开放 `copilot_file`（让 Copilot 直接生成文件并下载进工作区，内容不走聊天消息、不受输出上限约束） |
 | `max_service_unavailable` | `30` | 限流退避重试上限，超过后转入安全暂停 |
 | `service_retry_base_seconds` / `service_retry_max_seconds` | `30` / `600` | 限流指数退避的起始/上限 |
-| `service_retry_window_seconds` | `3660` | Copilot 限流窗口：首次超限后到可再次使用大致要等这么久（实测约 1 小时，多加 1 分钟余量），右上角倒计时浮窗锚定"首次超限 + 该窗口" |
+| `service_retry_window_seconds` | `3660` | 限流窗口：首次超限后到可再次使用大致要等这么久（实测约 1 小时，多加 1 分钟余量），右上角倒计时浮窗锚定"首次超限 + 该窗口"。Copilot 网页与 API 提供商共用该窗口（浮窗标题按当前模型通道分别显示"Copilot 限流/不可用"或"API 服务限流/不可用"） |
 | `max_read_chars` / `max_write_chars` | `120000` / `200000` | 工具单次读写上限 |
 | `allow_delete` | `false` | 是否开放 `delete_path` 工具 |
 | `allow_python` | `false` | 是否开放 `run_python` 工具（**可执行任意代码，谨慎开启**） |
@@ -359,7 +359,7 @@ python scripts/rollback.py --list            # 查看可回滚的任务与自升
 |---|---|
 | 服务起不来、导入报错 | 多半是自升级改坏了：`python scripts/rollback.py --scope self --last --yes` 后重启 |
 | 写文件只写了一半、写文件中断 | WebUI 导出该会话时间线发维护者；确认用的是 b64 分块（每块 ≤3000 字符）；大文件优先改用 `copilot_file` 让 Copilot 直接生成下载 |
-| 任务卡在「等待服务」 | Copilot 限流，指数退避自动重试；右上角出现**倒计时浮窗**（锚定首次超限 + `service_retry_window_seconds`，默认 1 小时 1 分钟）显示预计恢复时间；长时间不恢复会安全暂停，服务恢复后点「恢复」 |
+| 任务卡在「等待服务」 | 限流/服务不可用，指数退避自动重试；右上角出现**倒计时浮窗**（锚定首次超限 + `service_retry_window_seconds`，默认 1 小时 1 分钟，标题按 Copilot / API 提供商分别措辞）显示预计恢复时间；长时间不恢复会安全暂停，服务恢复后点「恢复」。若提示的是"消息未能发送"而非限流，那不是限流——点「切换到页面」查看或「重试浏览器」重建页面 |
 | 页面找不到输入框/模型按钮 | 登录态失效：停服务后 `python scripts/login.py`（必要时 `--reset`） |
 | 频繁换会话/上下文被压缩 | 跑 `scripts/calibrate.py`，按建议调整 `compact_at_tokens`/`rollover_at_tokens` |
 | Outlook 报「不可用」或 0x8000400x | 跑 `scripts/outlook_selftest.py` 定位；COM 路径必须走专用消息泵线程（`_ComWorker`），OWA 路径看登录态 |
