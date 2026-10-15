@@ -201,7 +201,7 @@ profile = bundle 顺序叠层。slot = 浏览器 UI 插槽；inspect provider = 
 | P1-7 | 运行时不变量注册表 | ✅ 已落地 | `cbp/invariants.py`（9 条）、`scripts/invariants.py`、`tests/test_invariants.py` |
 | P1-8 | next-turn / next-step 队列分离 + 批量中途抢占 | ✅ 已落地 | `pending_steps`、`step_preempted`、`tests/test_two_queue.py` |
 | P2-9 | 提示词分段注册表（拆 `_system_prompt`） | ✅ 已落地（**输出逐字不变**：3918=3918） | `cbp/prompt.py`（order/scope 遮蔽/变量 fail-fast）、`AGENT_PROTOCOL` 常量、`tests/test_prompt_registry.py` |
-| P2-10 | 事件溯源化（日志即唯一真相，状态可重建） | ⛔ 暂缓（大改，需专门排期；可分期：先并行写 append-only 事件日志 → 再让状态由日志投影 → 最后切读取路径，每期保持现有列兼容） | — |
+| P2-10 | 事件溯源化（日志即唯一真相，状态可重建） | 🟡 **第一期已落地**（并行写 append-only 事件日志，读取路径不变；第二期＝让状态由日志投影，第三期＝切读取路径，均待排期） | `events` 表、`append_event()/events()`、检查点 7 个发点、`tests/test_event_log.py`；不变量已守住四类事件必发 |
 | P2-11 | 对话/提示词结构契约 | ✅ 已落地（按真实 API 契约自愈：system 首位、不以 assistant 打头、连续 user 合法、连续 assistant 合并保留较新） | `_repair_provider_history()`、`tests/test_provider_history.py`；提示词稳定由 `tests/test_prompt_stability.py` 守 |
 | P2-12 | 工具结果 spill 落盘（替代纯截断） | ✅ 已落地 | `_spill_result()`、工作区 `.spill/`、`tests/test_spill.py` |
 | P2-13 | `run_code` 式程序化工具调用（白名单 + 进程隔离） | ⛔ 暂缓（需进程隔离 + 冻结注入 + 限额，属新子系统；现有 run_python 是无工具访问的弱版本且默认关闭） | — |
