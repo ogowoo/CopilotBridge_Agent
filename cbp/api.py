@@ -612,14 +612,25 @@ async def control(sid: str, action: str):
     if action == "resume":
         if prev_state in {"paused", "waiting", "ready", "failed"}:
             # 恢复即续跑：直接从检查点拉起 runner，不再需要手动"继续执行"
+            was_running = b.lock.locked() and b.ACTIVE_SESSION_ID == sid
             started = await b.resume_session_task(sid)
         else:
             # 终态会话（completed/cancelled/archived）不改成 ready 也不拉起
             started = False
             return {**b.AGENT_SESSIONS.get(sid), "runner_started": False,
-                    "note": f"会话状态为 {prev_state}，不支持恢复"}
+                    "note": f"会话状态为 {prev_state}，不支持恢复", "note_kind": "err"}
         result = dict(b.AGENT_SESSIONS.get(sid) or {})
         result["runner_started"] = started
+        if started:
+            result["note"] = "已恢复，正在续跑任务"
+            result["note_kind"] = "ok"
+        elif was_running or result.get("state") == "ready":
+            # runner 还活着（正停在暂停循环里），已把状态改回 ready 唤醒它
+            result["note"] = "已解除暂停：该会话的 runner 仍在运行，会继续往下跑"
+            result["note_kind"] = "ok"
+        else:
+            result["note"] = "未能拉起 runner（会话可能正被其它任务占用），请稍后重试"
+            result["note_kind"] = "err"
         return result
     return b.AGENT_SESSIONS.patch(sid, **maps[action])
 

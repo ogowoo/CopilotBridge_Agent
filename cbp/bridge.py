@@ -1648,13 +1648,25 @@ async def resume_session_task(sid: str) -> bool:
 
     供 actions/resume 与 auto_resume 使用：恢复消息与原任务一致，
     避免被当作"用户追加任务"重复进入 pending。
+
+    ⚠ 无论是否新建 runner，**都必须先把状态改回 ready**：AgentRunner.run()
+    里有一段"暂停停等"是**持有全局锁**的（while state==paused: sleep），
+    唯一唤醒方式就是把状态改成非 paused。若像以前那样在"锁被本会话持有"
+    时直接 return False，停等的 runner 永远醒不过来、锁也一直不释放——
+    表现为"点恢复弹已恢复，会话却一直是已暂停"（用户实测）。
     """
-    if lock.locked() and ACTIVE_SESSION_ID == sid:
-        return False
-    if sid in _RESUMING:  # 原子认领：并发 resume 只允许一个通过
-        return False
     state = AGENT_SESSIONS.get(sid)
     if not state:
+        return False
+    wake = {"state": "ready", "cancel_requested": False, "rollover_requested": False}
+    # 情况一：会话的 runner 还活着（锁被它持有、正停在暂停循环里）→ 只唤醒，不新建
+    if lock.locked() and ACTIVE_SESSION_ID == sid:
+        AGENT_SESSIONS.patch(sid, **wake)
+        log(f"会话 {sid} 的 runner 仍在运行，已解除暂停状态（不新建 runner）")
+        return False
+    # 情况二：已有恢复任务在排队等锁 → 同样先唤醒，避免重复拉起
+    if sid in _RESUMING:
+        AGENT_SESSIONS.patch(sid, **wake)
         return False
     _RESUMING.add(sid)
     try:
