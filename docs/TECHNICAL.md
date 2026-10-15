@@ -360,3 +360,34 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 7. 定期备份 `data/agent.db`；备份前停止写入或使用 SQLite 在线备份，避免直接复制活跃库。
 8. 自升级改动需**人工重启**才生效；`/v1/agent/self/status` 的 `restart_pending` 会提示。
    回滚：`POST /v1/agent/self/rollback`（在线）或 `python scripts/rollback.py`（离线）。
+
+---
+
+## 附录 A：可靠性子系统（近期新增，均有测试与真机验证）
+
+| 子系统 | 解决的问题 | 关键位置 | 关闭/调参 |
+|---|---|---|---|
+| **回合检查点**（`turn_results`） | 崩溃后重放要精确；"已派发但结果未知"不能被当成没发生 | `begin_turn/save_turn`、`turn_cache_decision()` | `turn_cache_enabled` |
+| **步骤检查点**（`step_dispatch`） | 崩在"工具已执行、步骤未落库"窗口 → 重复副作用 | `begin_step/finish_step/pending_steps`、`AgentRunner(step_begin/step_finish)` | 同上 |
+| **结果未知语义** | 恢复时不原样重放副作用，先只读核对 | bridge 的 `pending_steps` 分支 | — |
+| **一次性审批**（`approvals`） | 破坏性工具必须用户逐次授权，用后即焚 | `requires_approval()`、`approval_check`、`/approvals` | `approval_policy`、`approval_required_tools` |
+| **两级队列** | 插话分"整轮重排"与"立即生效并抢占批量" | `pending`（next-turn）、`pending_steps`（next-step） | 插话接口的 `queue` 参数 |
+| **结果保留**（保头保尾） | 只截断会丢掉尾部的错误与结论 | `AgentRunner.retain_text()` | `keep_recent_steps` |
+| **结果 spill** | 超大结果不再丢信息：摘要 + 可读全文 | `_spill_result()`、工作区 `.spill/` | `spill_threshold_chars`、`spill_max_bytes` |
+| **指令预算** | 超预算丢宽泛优先，并给可见提示；闭合标签转义 | `_load_agent_md()`、`escape_instruction_text()` | `agent_md_max_chars`、`agent_md_total_max_chars` |
+| **沙箱结构化拒绝** | 拒绝信息可行动（错误码/模式/原因/出路） | `_sandbox_denied()`、`FS_SANDBOX_*` | — |
+| **不变量注册表** | 把隐式契约变成可执行检查（10 条） | `cbp/invariants.py`、`scripts/invariants.py` | — |
+| **span 遥测 + 分析** | 用时序数据定位瓶颈（实测远端占 99%+） | `cbp/spans.py`、`scripts/spans.py`、`/v1/agent/spans` | `spans_enabled`、`spans_max_lines` |
+| **提示词稳定性契约** | 保证同一任务内系统提示词逐字一致（缓存友好） | `tests/test_prompt_stability.py` | — |
+
+## 附录 B：当前风险评估（诚实版）
+
+| 风险 | 现状 | 影响 | 缓解/待办 |
+|---|---|---|---|
+| **工作区与安装目录混用** | 会话工作区由请求决定；安装目录亦可作为工作区 | 敏感路径（`config.json`/`data/`/`EdgeProfile/`）只靠 denylist 拦 | 已有 denylist + 结构化拒绝；建议默认拒绝把安装目录当工作区 |
+| **COM/线程模型** | Outlook 走 `_ComWorker` 专用泵线程 | 超时会放弃 future 但操作仍在跑 | 待办：协作式取消（DSH `exec.signal` 思路） |
+| **模型质量波动** | 评测出现过"模型给一次性脚本自造测试文件并写错"从而步数暴涨 | 影响成本而非正确性 | 验证门比例原则 + no-progress 守卫已能止损；保留 `max_steps` 作金丝雀 |
+| **压缩** | 启发式摘要替换历史 | 极端情况下可能丢关键约束 | 待办：配对校验 + 摘要复用热前缀（P2-11） |
+| **提示词单体** | `_system_prompt()` 仍是较长函数 | 改一处容易伤别处（本人已踩坑两次） | 待办：分段注册表（P2-9） |
+| **事件溯源** | 会话状态是列 + JSON，不是事件日志 | 无法从日志精确重建状态 | 待办：P2-10（大改，需专门排期） |
+| **测试"绿"的可信度** | 曾出现"单测绿但生产未接线"（step_begin 从未接） | 高：会误判功能已可用 | 已加不变量检查 + 真机验证流程；后续新增接线一律配真机验证 |

@@ -199,11 +199,11 @@ profile = bundle 顺序叠层。slot = 浏览器 UI 插槽；inspect provider = 
 | P1-5 | 沙箱拒绝结构化（`FS_SANDBOX_*`） | ✅ 已落地 | `_sandbox_denied()`、`tests/test_sandbox_errors.py` |
 | P1-6 | 破坏性工具一次性审批（fail-closed、allowed-once） | ✅ 已落地 | `approvals` 表、`requires_approval()`、`approval_check` 回调、`/approvals` 路由、`tests/test_approval.py`（真机端到端未做：三类开关默认全关，需用户决策） |
 | P1-7 | 运行时不变量注册表 | ✅ 已落地 | `cbp/invariants.py`（9 条）、`scripts/invariants.py`、`tests/test_invariants.py` |
-| P1-8 | next-turn / next-step 队列分离 | ⬜ 待办 | — |
+| P1-8 | next-turn / next-step 队列分离 + 批量中途抢占 | ✅ 已落地 | `pending_steps`、`step_preempted`、`tests/test_two_queue.py` |
 | P2-9 | 提示词分段注册表（拆 `_system_prompt`） | ⬜ 待办 | — |
 | P2-10 | 事件溯源化（日志即唯一真相，状态可重建） | ⬜ 待办 | — |
-| P2-11 | 压缩配对校验 + 摘要复用热前缀 | ⬜ 待办 | — |
-| P2-12 | 工具结果 spill 落盘（替代纯截断） | ⬜ 待办 | — |
+| P2-11 | 压缩配对校验 + 摘要复用热前缀 | ⬜ 待办（**稳定性前提已达成并有测试**：`tests/test_prompt_stability.py` 证明系统提示词逐字稳定） | — |
+| P2-12 | 工具结果 spill 落盘（替代纯截断） | ✅ 已落地 | `_spill_result()`、工作区 `.spill/`、`tests/test_spill.py` |
 | P2-13 | `run_code` 式程序化工具调用（白名单 + 进程隔离） | ⬜ 待办 | — |
 
 **顺带修掉的真缺陷**（不在原计划内，由真实任务/评测暴露）：
