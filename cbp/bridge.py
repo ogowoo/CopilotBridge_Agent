@@ -2106,20 +2106,24 @@ _PROVIDER_HISTORY_MAX_CHARS = 160000
 
 
 def _trim_provider_history(hist: list[dict], max_chars: int | None = None) -> None:
-    """按字符上限回收历史：始终保留 system 与最近一轮问答。
+    """按字符上限回收历史：保留 system、**首条任务/工具清单消息**与最近一轮。
+
+    首条 user 消息里带着完整的系统提示词（含可用工具清单），必须保住：
+    实测 493 步的真实任务里，历史被裁剪后模型忘记了工具名，开始瞎编
+    run_tests / check_syntax / execute_command，最后卡在验证门上判 failed。
+    因此裁剪从 index 2 开始（跳过 system 与首条消息）。
 
     max_chars 取调用时的模块常量（作为函数默认参数会在定义时固定，
-    运行期改常量就失效了）。至少留 system + user + assistant 三条，
-    否则会把当前回合问的东西也丢掉。
+    运行期改常量就失效了）。至少留 system + 首条 + 最近一轮。
     """
     cap = _PROVIDER_HISTORY_MAX_CHARS if max_chars is None else max_chars
 
     def total() -> int:
         return sum(len(m.get("content") or "") for m in hist)
-    while total() > cap and len(hist) > 3:
-        hist.pop(1)                                   # 最早的 user
-        if len(hist) > 1 and hist[1].get("role") == "assistant":
-            hist.pop(1)                               # 它的回复一起丢，保持配对
+    while total() > cap and len(hist) > 4:
+        hist.pop(2)                                   # 保留 system 与首条（工具清单）
+        if len(hist) > 2 and hist[2].get("role") == "assistant":
+            hist.pop(2)                               # 它的回复一起丢，保持配对
 
 
 def discard_provider_agent_history(sid: str) -> None:

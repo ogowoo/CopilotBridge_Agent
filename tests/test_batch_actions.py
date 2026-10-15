@@ -184,7 +184,13 @@ class BatchExecutionTests(unittest.TestCase):
         self.assertEqual(statuses, ["error", "ok"])
 
     def test_batch_validation_gate_still_applies(self):
-        """批量写代码文件后，未验证的 final 仍被拦下。"""
+        """批量写代码文件后，未验证的 final 不能直接完成。
+
+        验证门仍然生效（改了代码必须有真验证），只是第一次被拒时由**系统补跑**
+        validate_python + run_unittest（实测长任务里模型换过多次会话后会忘记
+        工具名、瞎编 run_tests/check_syntax，自己永远过不了门），补跑通过即
+        正常收尾——因此这里看到的是补跑步骤而不是 validation_gate 步骤。
+        """
         ws = Path(tempfile.mkdtemp(prefix="cbp_batch_"))
         turns, steps = [], []
         state = {"state": "ready"}
@@ -210,8 +216,12 @@ class BatchExecutionTests(unittest.TestCase):
             encoding="utf-8")
         runner = self._runner(ws, chat, state, steps)
         asyncio.run(runner.run("写代码", "m"))
-        self.assertIn("validation_gate", [s.get("status") for s in steps])
+        tools = [(s.get("tool"), s.get("status")) for s in steps]
+        self.assertIn(("validate_python", "ok"), tools)          # 系统补跑语法检查
+        self.assertIn(("run_unittest", "ok"), tools)             # 系统补跑单元测试
+        self.assertTrue(any(s.get("reason") == "验证门补跑（模型未自行验证）" for s in steps))
         self.assertEqual(state.get("state"), "completed")
+        self.assertEqual(len(turns), 2)                          # 补跑通过，无需再喂模型回合
 
 
 if __name__ == "__main__":

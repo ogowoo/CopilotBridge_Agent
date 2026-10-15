@@ -747,6 +747,62 @@ class AgentRunner:
         # 实际观测调整。
         self.service_retry_window_seconds = max(60.0, float(config.get("service_retry_window_seconds", 3660)))
 
+    def _gate_message(self, strikes: int, auto: dict | None) -> str:
+        """验证门拒绝消息：必须报出**逐字可照抄**的工具名与参数。
+
+        实测教训：只说"尚未通过语法检查和单元测试"时，忘记工具名的模型会去编
+        run_tests / check_syntax / execute_command，永远过不了门。
+        """
+        base = (f"代码已修改但尚未通过语法检查和单元测试，拒绝提前完成（第 {strikes} 次）。"
+                "请立即依次调用这两个工具（**工具名逐字照抄**，不要用 run_tests、check_syntax、"
+                "execute_command 等不存在的名字）：\n"
+                '1) {"type":"tool","tool":"validate_python","arguments":{"path":"."}}\n'
+                '2) {"type":"tool","tool":"run_unittest","arguments":{"path":"tests"}}\n'
+                "两者都返回 passed=true 之后才能返回 final。")
+        if auto and not (auto.get("syntax_ok") and auto.get("tests_ok")):
+            detail = str(auto.get("detail") or "")[:800]
+            base += f"\n（系统已代你补跑过一次，真实结果：{detail}）"
+        return base
+
+    async def _auto_validate(self, history: list, all_steps: list, total: int) -> dict[str, Any]:
+        """系统代跑验证：validate_python(root) + run_unittest(tests|root)。
+
+        补跑的是真实验证（py_compile / unittest），每步照常记进时间线，
+        因此闭环没有放松；只是不再依赖模型记得工具名（长任务换会话后极易忘）。
+        返回 {total, syntax_ok, tests_ok, detail}。
+        """
+        results: dict[str, Any] = {}
+        detail_bits: list[str] = []
+        calls = [("validate_python", {"path": "."})]
+        tests_dir = self.tools.root / "tests"
+        calls.append(("run_unittest", {"path": "tests" if tests_dir.is_dir() else "."}))
+        for tool, args in calls:
+            status, res = "ok", None
+            try:
+                res = await self.tools.execute(tool, args)
+            except Exception as exc:
+                status, res = "error", {"error": str(exc)}
+            step = {"step": total + 1, "tool": tool, "arguments": args, "status": status,
+                    "reason": "验证门补跑（模型未自行验证）"}
+            if status == "ok":
+                step["result"] = res
+            else:
+                step["error"] = str((res or {}).get("error") or "")
+            total += 1
+            history.append(step); all_steps.append(step); self.step_saver(step)
+            passed = status == "ok" and isinstance(res, dict) and bool(res.get("passed"))
+            results[tool] = passed
+            if not passed:
+                if status == "ok" and isinstance(res, dict):
+                    fails = res.get("failures") or res.get("output") or ""
+                    detail_bits.append(f"{tool} 未通过：{str(fails)[:300]}")
+                else:
+                    detail_bits.append(f"{tool} 执行失败：{step.get('error','')[:200]}")
+        return {"total": total,
+                "syntax_ok": bool(results.get("validate_python")),
+                "tests_ok": bool(results.get("run_unittest")),
+                "detail": "；".join(detail_bits) or "两项均未通过"}
+
     def _deterministic_summary(self, task: str, history: list[dict[str, Any]], state: dict) -> dict[str, Any]:
         completed, errors, modified, findings = [], [], dict(state.get("modified_files") or {}), []
         for item in history:
@@ -1174,17 +1230,33 @@ class AgentRunner:
                         continue
                     if validation_required and not (syntax_validated and tests_passed):
                         gate_strikes += 1
+                        # 第一次被拒时由系统补跑验证。实测（493 步真实任务）：模型
+                        # 换过多次会话后**忘记了工具名**，瞎编 run_tests / check_syntax
+                        # / execute_command / execute_python，怎么都过不了门，几小时
+                        # 的成果被判 failed。补跑的是**真验证**（py_compile + unittest），
+                        # 结果照常记进时间线，闭环不放松——只是不再赌模型记得工具名。
+                        _auto = None
+                        if gate_strikes == 1:
+                            _auto = await self._auto_validate(history, all_steps, total)
+                            total = _auto["total"]
+                            syntax_validated, tests_passed = _auto["syntax_ok"], _auto["tests_ok"]
+                            _save_gate()
+                            if syntax_validated and tests_passed:
+                                self._record_conv_stat(state, conv_steps + 1, conv_t + used_tokens,
+                                                       conv_c + used_chars, "completed", model)
+                                self.state_saver(state="completed", total_steps=total + 1,
+                                                 conversation_steps=conv_steps + 1,
+                                                 estimated_tokens=tokens + used_tokens,
+                                                 estimated_chars=chars + used_chars)
+                                validation_required = syntax_validated = tests_passed = False
+                                _save_gate()
+                                return AgentResult(sub.get("content") or "任务已完成。", all_steps)
                         step = {"step": total + 1, "status": "validation_gate",
-                                "error": "代码已修改但尚未通过语法检查和单元测试，拒绝提前完成"
-                                         f"（第 {gate_strikes} 次）"}
+                                "error": self._gate_message(gate_strikes, _auto)}
                         if gate_strikes >= 3:
-                            # 实测：任务只要求 validate_python 时，模型会陷入
-                            # 「final→被拒→再 final」的无限重试（每轮一次模型调用，
-                            # 300 秒上百轮、零工具步骤、纯烧 token）。超限即停。
                             step["status"] = "gate_blocked"
-                            step["error"] = ("验证门连续 3 次未通过，已停止任务以避免无限重试。"
-                                             "缺少的通常是 run_unittest（或 validate_python）；"
-                                             "请明确要求两者通过，或放宽该任务的验证要求。")
+                            step["error"] = (self._gate_message(gate_strikes, _auto)
+                                             + " 已停止自动重试以避免无限循环。")
                             history.append(step); all_steps.append(step); self.step_saver(step)
                             self.state_saver(state="failed", total_steps=total + 1,
                                              recent_steps=history[-self.keep_recent:],

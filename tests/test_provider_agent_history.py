@@ -110,18 +110,23 @@ class ProviderAgentTurnTests(unittest.TestCase):
         sent = self.prov.calls[-1]
         self.assertEqual([m["content"] for m in sent].count("提示A"), 1)
 
-    def test_history_trim_keeps_system(self):
-        """历史超上限时回收老回合，但 system 与最近一轮必须保住。"""
-        b._PROVIDER_HISTORY_MAX_CHARS = 200   # system 本身约 600 字符，故只断言结构
-        self._turn("首轮提示：" + "A" * 200)
+    def test_history_trim_keeps_system_and_tool_list(self):
+        """历史超上限时回收老回合，但 system 与**首条（带工具清单）**必须保住。
+
+        实测 493 步任务：历史裁剪把首条（含可用工具清单）丢掉后，模型忘记
+        工具名、开始瞎编 run_tests/check_syntax，最后卡在验证门判 failed。
+        """
+        b._PROVIDER_HISTORY_MAX_CHARS = 300   # system 本身约 600 字符，故只断言结构
+        self._turn("首轮提示：可用工具清单 list_directory read_text write_text_b64 " + "A" * 200)
         for i in range(10):
             self._turn(f"继续同一任务。第 {i} 轮结果：" + "x" * 80)
         hist = b._PROVIDER_AGENT_HISTORY["s1"]
-        self.assertEqual(hist[0]["role"], "system")        # system 始终保留
-        self.assertLessEqual(len(hist), 5)                 # 老回合被回收
         joined = "\n".join(m.get("content") or "" for m in hist)
-        self.assertNotIn("A" * 200, joined)                # 最早的提示已被丢掉
-        self.assertIn("继续同一任务", joined)               # 当前回合仍在
+        self.assertEqual(hist[0]["role"], "system")        # system 始终保留
+        self.assertIn("可用工具清单", hist[1]["content"])   # 首条（工具清单）保住
+        self.assertLessEqual(len(hist), 5)                 # 老回合被回收
+        self.assertNotIn("第 3 轮结果", joined)             # 中间回合已丢
+        self.assertIn("第 9 轮结果", joined)                # 最近一轮仍在
 
     def test_discard_clears_history(self):
         self._turn("提示")
