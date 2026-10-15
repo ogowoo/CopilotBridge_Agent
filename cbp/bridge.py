@@ -11,11 +11,15 @@ from typing import Literal
 from fastapi import HTTPException
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
-from .agent import AGENT_ACTION_SCHEMA, AgentRunner, AgentPaused, CopilotServiceUnavailable, CopilotConversationFull, validate_token_budget
-from .tools import ToolRegistry, ToolError
+from .agent import (AGENT_ACTION_SCHEMA, AgentRunner, AgentPaused, CopilotRateLimited,
+                    CopilotSendFailed, CopilotServiceUnavailable,
+                    CopilotConversationFull, validate_token_budget)
+from . import providers as providers_mod
+from .memory import MemoryStore
 from .session_store import SessionStore
 from .snapshots import SnapshotStore
-from . import providers as providers_mod
+from .spans import SpanRecorder, set_recorder
+from .tools import ToolError, ToolRegistry
 
 BASE = Path(__file__).resolve().parent.parent  # 包在 cbp/ 内，项目根目录再上一层
 CFG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
@@ -1014,7 +1018,7 @@ async def click_send_button():
 
 async def send(prompt, make_new, model_id):
     if not await ensure_browser_ready():
-        raise CopilotServiceUnavailable(
+        raise CopilotSendFailed(
             "Copilot 浏览器未就绪（未登录或启动失败）：可改用提供商模型，"
             "或在界面点『重试浏览器』后重试")
     await wait_copilot_ready(90)  # 若恰逢重启后的 SSO/ADFS 回跳，先等它就绪
@@ -1057,7 +1061,7 @@ async def send(prompt, make_new, model_id):
         await diagnostics("send_failed_conversation_full")
         raise CopilotConversationFull(full)
     await diagnostics("send_failed")
-    raise RuntimeError("问题停留在输入框，Enter、发送按钮和 Ctrl+Enter 均未触发发送")
+    raise CopilotSendFailed("问题停留在输入框，Enter、发送按钮和 Ctrl+Enter 均未触发发送")
 
 
 async def completion_signal():
@@ -1986,7 +1990,7 @@ async def wait_agent_answer(previous: str = "", pause_check=None) -> str:
             unavailable = copilot_unavailable_reason(current)
             if unavailable and quiet_for >= max(1.0, POLL * 3):
                 await diagnostics("copilot_service_unavailable")
-                raise CopilotServiceUnavailable(unavailable)
+                raise CopilotRateLimited(unavailable)
             # 无法解析的回答有可能是"暂歇"而非写完：Copilot 生成 JSON 中途停顿
             # （渲染文件链接、网络抖动）时，3 秒静默就取快照会拿到半截文本，上层
             # 只能报 invalid_action——实测就发生过：界面上答案完整（final JSON），
@@ -2016,7 +2020,7 @@ async def wait_agent_answer(previous: str = "", pause_check=None) -> str:
             unavailable = copilot_unavailable_reason(final)
             if unavailable and not _has_complete_agent_action(final):
                 await diagnostics("copilot_service_unavailable_idle")
-                raise CopilotServiceUnavailable(unavailable)
+                raise CopilotRateLimited(unavailable)
             if final and (final != previous or generation_seen or candidate_seen):
                 await diagnostics("agent_answer_idle_return")
                 return final
@@ -2034,7 +2038,7 @@ async def wait_agent_answer(previous: str = "", pause_check=None) -> str:
     unavailable = copilot_unavailable_reason(final)
     if unavailable and not _has_complete_agent_action(final):
         await diagnostics("copilot_service_unavailable_hard")
-        raise CopilotServiceUnavailable(unavailable)
+        raise CopilotRateLimited(unavailable)
     if final and (final != previous or generation_seen or candidate_seen):
         await diagnostics("agent_answer_hard_return")
         return final
@@ -2101,7 +2105,7 @@ async def provider_turn(model_id: str, prompt: str) -> str:
         return await provider.complete(pm[1], messages,
                                        response_schema=AGENT_ACTION_SCHEMA)
     except providers_mod.ProviderUnavailable as exc:
-        raise CopilotServiceUnavailable(str(exc)) from exc
+        raise CopilotRateLimited(str(exc)) from exc
 
 
 # provider 普通对话的按会话锁：同 sid 并发请求基于相同历史交错写回的防护
@@ -2124,7 +2128,7 @@ async def provider_session_chat(sid: str, content: str, model_id: str) -> dict:
         try:
             answer = await provider.complete(pm[1], history)
         except providers_mod.ProviderUnavailable as exc:
-            raise CopilotServiceUnavailable(str(exc)) from exc
+            raise CopilotRateLimited(str(exc)) from exc
         current = AGENT_SESSIONS.get(sid)
         if not current:
             raise RuntimeError("会话在执行期间被删除")

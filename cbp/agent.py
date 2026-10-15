@@ -78,6 +78,17 @@ class CopilotServiceUnavailable(RuntimeError):
     不触发新建会话，由 run() 指数退避后在原会话重试。
     """
 
+class CopilotRateLimited(CopilotServiceUnavailable):
+    """真正的服务侧限流/不可用：只有它才启动固定窗口退避与前端倒计时浮窗。"""
+
+
+class CopilotSendFailed(RuntimeError):
+    """本回合压根没发出去（输入框/发送按钮失效、页面未就绪）。
+
+    与限流无关：不启动 1 小时窗口、不弹倒计时，只做短退避与明确提示，
+    避免"明明没被限流却显示限流"的误报（实测 UI 误报来源）。
+    """
+
 
 class CopilotConversationFull(RuntimeError):
     """Copilot 提示当前对话已达到长度上限，由桥接层识别抛出。
@@ -813,6 +824,7 @@ class AgentRunner:
         all_steps: list[dict[str, Any]] = []
         parse_failures = 0
         service_failures = 0
+        send_failures = 0
         # 验证闭环三面旗必须从持久状态恢复：暂停→继续/服务重启会新建 runner，
         # 若从 False 起步，"代码已改但没验证"的记忆就丢了，恢复后的 Agent 直接
         # 返回 final 即可绕过验证门（实测过）。
@@ -1000,7 +1012,29 @@ class AgentRunner:
                     self.state_saver(state="cancelled")
                     return AgentResult("任务已取消。", all_steps)
                 continue
-            except (CopilotServiceUnavailable, TimeoutError) as exc:
+            except CopilotSendFailed as exc:
+                # 没发出去：短退避重试，不进入"限流窗口"，不设置 retry_resume_at
+                send_failures += 1
+                reason = str(exc)[:300]
+                step = {"step": total + 1, "status": "send_failed",
+                        "error": f"消息未能发送（第 {send_failures} 次）：{reason}"}
+                all_steps.append(step); self.step_saver(step)
+                self.state_saver(recent_steps=history[-self.keep_recent:], last_error=step["error"])
+                if send_failures >= 3:
+                    return AgentResult(
+                        f"连续 {send_failures} 次未能把消息送进 Copilot 输入框：{reason}。"
+                        "这通常不是限流，而是页面/输入框状态异常——可在界面点『切换到页面』查看，"
+                        "或点『重试浏览器』重建页面后继续。", all_steps)
+                _base = float(self.config.get("send_retry_base_seconds", 5) or 5)
+                _d = min(_base * send_failures, max(_base * 4, 20))
+                _dl = time.monotonic() + _d
+                while time.monotonic() < _dl:
+                    if (self.state_getter() or {}).get("cancel_requested"):
+                        self.state_saver(state="cancelled", last_error=None)
+                        return AgentResult("任务已取消。", all_steps)
+                    await asyncio.sleep(1)
+                continue
+            except (CopilotRateLimited, TimeoutError) as exc:
                 # 服务限流/不可用/长时间无进度：不记步、不记解析失败、不换会话，
                 # 指数退避后在原 Copilot 会话重试；退避期间可暂停、可取消。
                 chat_active = True  # 回合大概率已发出，重试留在原会话
@@ -1056,6 +1090,7 @@ class AgentRunner:
                 action = self._parse(raw)
                 parse_failures = 0
                 service_failures = 0
+                send_failures = 0
                 # 服务恢复：waiting 状态回到 running（paused 状态不受影响），
                 # 并清掉退避倒计时（浮窗消失）。
                 if (self.state_getter() or {}).get("state") == "waiting":
