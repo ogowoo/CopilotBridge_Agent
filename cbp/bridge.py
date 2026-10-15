@@ -2531,7 +2531,36 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             # 换会话只影响本地上下文压缩。
             async def turn(prompt, model, force_new=False):
                 SNAPSHOTS.next_turn(sid)   # 一次 Copilot 回合 = 一个快照版本
-                return await provider_turn(sid, model, prompt, force_new=force_new)
+                # 提供商回合同样"发出即不可回滚"：先落 inflight，成功后转 done；
+                # 崩在途中（HTTP 被中断）→ 恢复时按"结果未知"处理，只做只读核对，不重发。
+                import hashlib as _hl
+                _ph = _hl.sha1((prompt or "").encode("utf-8")).hexdigest()[:20]
+                _ci = int((AGENT_SESSIONS.get(sid) or {}).get("conversation_index", 0))
+                _steps = int((AGENT_SESSIONS.get(sid) or {}).get("total_steps", 0))
+                _cache_on = bool(AGENT_CFG.get("turn_cache_enabled", True))
+                if _cache_on:
+                    _act, _ans = turn_cache_decision(AGENT_SESSIONS.get_turn(sid, _ci, _ph), _steps)
+                    if _act == "reuse":
+                        log(f"提供商回合命中缓存（{_ph[:8]}），跳过重发")
+                        return _ans
+                    if _act == "probe":
+                        log(f"提供商回合 {_ph[:8]} 结果未知（中断在途），改为只读核对")
+                        return json.dumps({
+                            "type": "tool", "tool": "list_directory", "arguments": {"path": "."},
+                            "reason": "上一回合结果未知（连接中断）：先只读核对当前状态，"
+                                      "不要重复可能已发生的写入/删除等副作用。"}, ensure_ascii=False)
+                    try:
+                        AGENT_SESSIONS.begin_turn(sid, _ci, _ph, _steps)
+                    except Exception:
+                        pass
+                _ans = await provider_turn(sid, model, prompt, force_new=force_new)
+                if _cache_on and _ans:
+                    try:
+                        AGENT_SESSIONS.save_turn(sid, _ci, _ph, _ans,
+                                                 int((AGENT_SESSIONS.get(sid) or {}).get("total_steps", 0)))
+                    except Exception:
+                        pass
+                return _ans
         else:
             attached = {"done": False}   # 附件只在首个回合附加一次
             async def turn(prompt,model,force_new=False):

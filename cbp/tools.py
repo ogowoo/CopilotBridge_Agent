@@ -768,7 +768,36 @@ class ToolRegistry:
                 return await result
             return result
         except TypeError as exc:
-            raise ToolError(f"工具参数错误: {exc}") from exc
+            # 参数错误必须**可行动**：只报 "unexpected keyword argument" 模型无法自救
+            # （实测它只会换个路径瞎试，浪费回合）。这里直接列出该工具的合法参数名与
+            # 各自含义，并把"路径不要带 workspace/ 前缀"这类高频坑一并点出。
+            raise ToolError(self._argument_error_hint(name, fn, arguments, exc)) from exc
+
+    def _argument_error_hint(self, name: str, fn: Any, arguments: dict | None,
+                             exc: TypeError) -> str:
+        """把 TypeError 翻译成"怎么改"的提示。"""
+        given = ", ".join(sorted((arguments or {}).keys())) or "(无)"
+        spec = ""
+        for item in self.descriptions():
+            if item.get("name") == name:
+                spec = ", ".join(f"{k}（{v}）" for k, v in (item.get("arguments") or {}).items())
+                break
+        if not spec:
+            try:
+                sig = inspect.signature(fn)
+                spec = ", ".join(
+                    f"{p.name}（{'必填' if p.default is inspect._empty else '可选'}）"
+                    for p in sig.parameters.values() if p.kind is not p.VAR_KEYWORD)
+            except Exception:
+                spec = "(未知)"
+        hint = (f"工具参数错误: {exc}\n"
+                f"你传的参数: {given}\n"
+                f"{name} 的合法参数: {spec}")
+        if any(str(k).startswith("workspace/") for k in (arguments or {})):
+            hint += ("\n提示: 工具路径**相对于当前工作区根**，不要再加 workspace/ 前缀"
+                     "（根目录下直接用 README.md 这样的相对路径）。")
+        hint += "\n请按上面的参数名重发本次动作，不要重试同一个错误参数。"
+        return hint
 
     async def list_directory(self, path: str = ".") -> dict[str, Any]:
         target = self._path(path)
