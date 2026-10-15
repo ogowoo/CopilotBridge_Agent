@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from playwright.async_api import async_playwright
 
 from . import bridge as b
@@ -714,6 +714,53 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
 async def continue_agent_session(sid: str, req: SessionMessageRequest):
     req.agent_mode = True
     return await continue_session_message(sid, req)
+
+
+class InjectRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=20000)
+
+
+@app.post("/v1/agent/sessions/{sid}/inject")
+async def inject_session_message(sid: str, req: InjectRequest):
+    """强行插入指令（类似 DSH 的 Ctrl+J）：不抢锁、不等这轮跑完，立即生效。
+
+    区别于 /messages 的"排队跟进"（那要等当前 run 结束再起一轮）：这里把指令写进
+    会话的 pending，运行中的 Agent **在每个回合开头都会重读 state**
+    （agent.py: `state = self.state_getter()`），因此下一回合就优先执行——用于
+    "打断当前计划、插入新要求"。
+
+    会话空闲时 pending 没人消费，改为按普通跟进入队，避免指令悬空。
+    """
+    state = b.AGENT_SESSIONS.get(sid)
+    if not state:
+        raise HTTPException(404, "Session 不存在")
+    if state.get("state") in {"cancelled", "archived"}:
+        raise HTTPException(409, f"Session 状态为 {state.get('state')}，不能插入指令")
+    content = req.content.strip()
+    if not content:
+        raise HTTPException(400, "指令不能为空")
+    conv_idx = int(state.get("conversation_index", 0))
+    running = b.lock.locked() and b.ACTIVE_SESSION_ID == sid
+    b.AGENT_SESSIONS.add_message(sid, "user", content, conv_idx)
+    step = {"step": int(state.get("total_steps", 0)) + 1, "status": "user_inject",
+            "reason": f"运行中插入指令：{content[:120]}",
+            "result": {"chars": len(content), "running": running}}
+    b.AGENT_SESSIONS.add_step(sid, step["step"], conv_idx, step)
+    if running:
+        pending = [str(x) for x in (state.get("pending") or []) if str(x).strip()]
+        pending.append(content)
+        b.AGENT_SESSIONS.patch(sid, pending=pending)
+        b.runtime_update(sid, detail=f"已插入指令，将在下一回合优先执行：{content[:80]}")
+        return {"session_id": sid, "injected": True, "running": True, "queued": False,
+                "pending": len(pending),
+                "note": "已插入：Agent 会在下一回合读取并优先执行"}
+    # 空闲会话：pending 不会有人消费 -> 走队列起一轮（等同普通跟进）
+    queued = await b.enqueue_session_message(
+        sid, content, b.normalize_model_soft(state.get("model") or b.DEFAULT_MODEL),
+        True, None, None)
+    return {"session_id": sid, "injected": True, "running": False, "queued": True,
+            "position": queued.get("position"),
+            "note": "会话当前空闲，已按跟进排队执行（运行中插入才会即时生效）"}
 
 
 @app.get("/v1/agent/sessions/{sid}/runtime")

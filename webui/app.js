@@ -759,6 +759,29 @@ function attachPasteHandler(taId,store){
  })}
 
 document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();sendFollowup()}});
+/* 强行插入指令（像 DSH 的 Ctrl+J）：运行中立即生效，Agent 下一回合优先执行；
+   与"排队跟进"不同——后者要等当前这轮跑完才起新一轮。 */
+async function injectMessage(){
+ if(!current){toast('请先选择 Session','err');return}
+ let content=await dlgPrompt(
+  '插入指令（运行中即时生效：Agent 会在下一回合读取并优先执行，不会等当前这轮跑完）',
+  '', '强行插入对话');
+ if(content===null)return;
+ content=String(content).trim();
+ if(!content)return;
+ try{
+  let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/inject`,
+                  {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+  toast(d.note||'已插入', d.running?'ok':'');
+  liveTab('chat');
+  // 让聊天区尽快看到这条指令
+  let log=document.getElementById('chatlog'),mine=document.createElement('div');
+  mine.className='msg user';mine.innerHTML=`<b>你</b>（插入）${esc(content)}`;
+  log.appendChild(mine);log.scrollTop=log.scrollHeight;
+  refreshSessions();
+ }catch(e){toast('插入失败: '+e,'err')}}
+document.addEventListener('keydown',e=>{
+ if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='j'||e.key==='J')){e.preventDefault();injectMessage()}});
 /* ── 新任务模式：Agent 执行 / 普通对话 ── */
 let taskMode='agent';
 function setTaskMode(m){taskMode=m;
