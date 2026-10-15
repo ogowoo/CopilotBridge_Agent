@@ -933,6 +933,38 @@ async def browser_retry():
     return {"started": True, "state": BOOT["browser_state"]}
 
 
+@app.get("/v1/agent/sessions/{sid}/approvals")
+async def list_approvals(sid: str):
+    """本会话待用的一次性授权（allowed-once，无 allow-always）。"""
+    return {"pending": b.AGENT_SESSIONS.pending_approvals(sid),
+            "session": b.AGENT_SESSIONS.get(sid) or {},
+            "approval_pending": (b.AGENT_SESSIONS.get(sid) or {}).get("approval_pending")}
+
+
+@app.post("/v1/agent/sessions/{sid}/approvals")
+async def grant_approval(sid: str, payload: dict):
+    """用户下达一次性授权：{"tool": "delete_path", "args_hash": "<可选，精确到参数>"}
+
+    不传 args_hash 时，按会话状态里记录的 approval_pending 精确授权（推荐：避免
+    授权被用在意料之外的同名操作上）。
+    """
+    session = b.AGENT_SESSIONS.get(sid)
+    if not session:
+        raise HTTPException(404, "会话不存在")
+    tool = str(payload.get("tool") or "").strip()
+    args_hash = str(payload.get("args_hash") or "").strip()
+    if not args_hash:
+        pend = session.get("approval_pending") or {}
+        if pend.get("tool") == tool and pend.get("args_hash"):
+            args_hash = str(pend["args_hash"])
+    if not tool or not args_hash:
+        raise HTTPException(400, "需要 tool 与 args_hash（或先用 approval_pending 记录）")
+    b.AGENT_SESSIONS.grant_approval(sid, tool, args_hash)
+    b.AGENT_SESSIONS.update(sid, last_error=None)
+    return {"ok": True, "tool": tool, "args_hash": args_hash,
+            "note": "已授权一次；该授权用后即焚，下次同类操作需重新授权。"}
+
+
 @app.get("/v1/agent/spans")
 async def list_spans(limit: int = 200, session_id: str | None = None):
     """最近的操作 span（JSONL 尾部）：回合/工具调用，字段对齐 OTel GenAI 语义约定。"""

@@ -796,7 +796,7 @@ class AgentRunner:
 
     def __init__(self, tools: ToolRegistry, chat: ChatFunction, config: dict[str, Any],
                  state_getter, state_saver, step_saver, file_event_saver, conv_stat_saver=None,
-                 step_begin=None, step_finish=None):
+                 step_begin=None, step_finish=None, approval_check=None):
         self.tools, self.chat, self.config = tools, chat, config
         self.state_getter, self.state_saver = state_getter, state_saver
         self.step_saver, self.file_event_saver = step_saver, file_event_saver
@@ -804,6 +804,8 @@ class AgentRunner:
         # 工具派发检查点（可选）：派发前登记 inflight，结果落库后收尾。
         # 崩在「工具已执行、步骤未落库」窗口时靠它识别结果未知，避免重复副作用。
         self.step_begin, self.step_finish = step_begin, step_finish
+        # 破坏性工具的一次性审批（fail-closed）：没有回调=不放行。
+        self.approval_check = approval_check
         self.max_total_steps = min(int(config.get("max_total_steps", 1000)), 10000)
         # 一次回答最多执行几个动作（批量协议）：上限越小越不容易被输出上限截断
         self.max_actions_per_turn = max(1, min(int(config.get("max_actions_per_turn", 4)), 12))
@@ -1470,6 +1472,27 @@ class AgentRunner:
                 else:
                     try:
                         _dispatch_hash = hashlib.sha1(json.dumps(arguments, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()[:16]
+
+                        _approval_hash = hashlib.sha1((str(tool) + '|' + json.dumps(arguments, ensure_ascii=False, sort_keys=True)).encode('utf-8')).hexdigest()[:16]
+                        # ── 一次性审批门（fail-closed）：破坏性工具必须有本步专属的授权，授权用后即焚；
+                        # 没有回调就视为不放行（绝不自动批准）——对应 DSH 的 allowed-once 语义。
+                        if self.tools.requires_approval(str(tool)):
+                            _granted = False
+                            if self.approval_check:
+                                try:
+                                    _granted = bool(self.approval_check(str(tool), _approval_hash))
+                                except Exception:
+                                    _granted = False
+                            if not _granted:
+                                _msg = ('工具 ' + str(tool) + ' 属于破坏性操作，需要用户一次性授权后才会执行；'
+                                        '请让用户在本会话授权该操作，然后继续任务。')
+                                _st = {'step': total + 1, 'status': 'approval_required', 'tool': str(tool),
+                                       'reason': '破坏性工具未获一次性授权', 'error': _msg}
+                                history.append(_st); all_steps.append(_st); self.step_saver(_st)
+                                self.state_saver(recent_steps=history[-self.keep_recent:], last_error=_msg,
+                                                 state='waiting',
+                                                 approval_pending={'tool': str(tool), 'args_hash': _approval_hash})
+                                return AgentResult(_msg, all_steps)
                         if self.step_begin:
                             try:
                                 self.step_begin(total + 1, str(tool), _dispatch_hash)

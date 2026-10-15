@@ -57,6 +57,14 @@ class SessionStore:
   created REAL NOT NULL,
   PRIMARY KEY (session_id, conversation_index, step_no)
 );
+CREATE TABLE IF NOT EXISTS approvals (
+  session_id TEXT NOT NULL,
+  tool TEXT NOT NULL,
+  args_hash TEXT NOT NULL,
+  created REAL NOT NULL,
+  consumed INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (session_id, tool, args_hash)
+);
 CREATE TABLE IF NOT EXISTS messages (
               id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
               created REAL NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
@@ -259,6 +267,31 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 "DO UPDATE SET steps_after=excluded.steps_after, status='inflight', created=excluded.created",
                 (sid, int(conv_index), prompt_hash, int(steps_before), time.time()))
 
+    def grant_approval(self, sid: str, tool: str, args_hash: str) -> None:
+        """用户下达一次性授权（allowed-once）。没有 allow-always、也没有撤销存储。"""
+        with self.lock, self._connect() as con:
+            con.execute("INSERT INTO approvals(session_id,tool,args_hash,created,consumed) "
+                        "VALUES(?,?,?,?,0) ON CONFLICT(session_id,tool,args_hash) "
+                        "DO UPDATE SET created=excluded.created, consumed=0",
+                        (sid, tool, args_hash, time.time()))
+
+    def take_approval(self, sid: str, tool: str, args_hash: str) -> bool:
+        """消费式取用：命中且未消费 → 标记已消费并返回 True；否则 False（fail-closed）。"""
+        with self.lock, self._connect() as con:
+            row = con.execute("SELECT consumed FROM approvals WHERE session_id=? AND tool=? AND args_hash=?",
+                              (sid, tool, args_hash)).fetchone()
+            if not row or int(row["consumed"] or 0) == 1:
+                return False
+            con.execute("UPDATE approvals SET consumed=1 WHERE session_id=? AND tool=? AND args_hash=?",
+                        (sid, tool, args_hash))
+            return True
+
+    def pending_approvals(self, sid: str) -> list[dict[str, Any]]:
+        with self.lock, self._connect() as con:
+            rows = con.execute("SELECT * FROM approvals WHERE session_id=? AND consumed=0 ORDER BY created",
+                               (sid,)).fetchall()
+            return [dict(r) for r in rows]
+
     def begin_step(self, sid: str, conv_index: int, step_no: int,
                    tool: str, args_hash: str) -> None:
         """**工具派发之前**登记（DSH 的 checkpoint-before-dispatch）。
@@ -315,7 +348,7 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         """
         with self.lock, self._connect() as con:
             existed = con.execute("DELETE FROM sessions WHERE id=?", (sid,)).rowcount > 0
-            for table in ("messages", "steps", "file_events", "conv_stats", "turn_results", "step_dispatch"):
+            for table in ("messages", "steps", "file_events", "conv_stats", "turn_results", "step_dispatch", "approvals"):
                 try:
                     con.execute(f"DELETE FROM {table} WHERE session_id=?", (sid,))
                 except Exception:

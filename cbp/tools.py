@@ -157,6 +157,12 @@ class _ComWorker:
         return fut
 
 
+
+# 破坏性/不可回滚操作：默认需要用户**一次性**授权（fail-closed）。
+# 与 DSH 一致：只有 allowed-once，没有 allow-always、也没有撤销存储——
+# 授权用完即焚，下一次同类操作要重新授权。
+APPROVAL_REQUIRED_TOOLS = ("delete_path", "outlook_send", "run_python")
+
 class ToolRegistry:
     def __init__(self, root: Path, config: dict[str, Any]):
         self.root = root.resolve()
@@ -164,6 +170,10 @@ class ToolRegistry:
         self.max_read = int(config.get("max_read_chars", 120000))
         self.max_write = int(config.get("max_write_chars", 200000))
         self.allow_delete = bool(config.get("allow_delete", False))
+        # 一次性审批策略（fail-closed）：ask=破坏性工具须用户逐次授权；never=不要求。
+        self.approval_policy = str(config.get("approval_policy", "ask")).lower()
+        self.approval_required_tools = tuple(
+            config.get("approval_required_tools") or APPROVAL_REQUIRED_TOOLS)
         self.allow_python = bool(config.get("allow_python", False))
         self.allow_office = bool(config.get("allow_office", True))
         self.allow_outlook = bool(config.get("allow_outlook", False))
@@ -727,6 +737,25 @@ class ToolRegistry:
             extra = [x for x in extra if x.get("name") not in self.web_copilot_tools]
         items += extra
         return items
+
+    def requires_approval(self, name: str) -> bool:
+        """该工具此刻是否需要一次性授权。
+
+        策略 config.approval_policy：ask（默认，要求授权）/ never（不要求，视为用户
+        已明确承担风险）。可配 approval_required_tools 覆盖默认集合。
+        """
+        if self.approval_policy == "never":
+            return False
+        if name not in self.approval_required_tools:
+            return False
+        # 能力本身没开时不需要审批（工具根本不该被调用，另有报错路径）。
+        if name == "delete_path":
+            return self.allow_delete
+        if name == "run_python":
+            return self.allow_python
+        if name == "outlook_send":
+            return self.allow_outlook_send
+        return True
 
     def _sandbox_denied(self, code: str, target: str, reason: str) -> str:
         """结构化沙箱拒绝（借 DSH 的 FS_SANDBOX_DENIED 思路）。

@@ -2480,6 +2480,14 @@ async def provider_session_chat(sid: str, content: str, model_id: str) -> dict:
                 "url": None, "mode": "chat", "provider": pm[0]}
 
 
+def _conv_index(sid: str) -> int:
+    """当前对话序号（换会话后 step_no 会复用，检查点靠它区分代次）。"""
+    try:
+        return int((AGENT_SESSIONS.get(sid) or {}).get("conversation_index", 0))
+    except Exception:
+        return 0
+
+
 async def run_agent(req: AgentRequest, attach_paths: list | None = None):
     global ACTIVE_SESSION_ID
     if not AGENT_CFG.get("enabled", True): raise HTTPException(503, "Agent 功能已禁用")
@@ -2710,7 +2718,10 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
         # 写操作前捕获原像：工作区改动与自升级改动分作用域，均可整任务回滚
         AGENT_TOOLS.set_snapshot_hook(self_snapshot_hook(sid))
         AGENT_TOOLS.self_rollback_fn = lambda: SNAPSHOTS.restore(self_scope(sid), BASE)
-        runner=AgentRunner(AGENT_TOOLS,turn,AGENT_CFG,get,save,add_step,add_file,add_conv_stat)
+        runner=AgentRunner(AGENT_TOOLS,turn,AGENT_CFG,get,save,add_step,add_file,add_conv_stat,
+                        step_begin=lambda no,tool,h: AGENT_SESSIONS.begin_step(sid, _conv_index(sid), no, tool, h),
+                        step_finish=lambda no,st='done': AGENT_SESSIONS.finish_step(sid, _conv_index(sid), no, st),
+                        approval_check=lambda tool,h: AGENT_SESSIONS.take_approval(sid, tool, h))
         try:
             result = await runner.run(effective_task,req.model)
             runtime_update(sid, phase="completed", detail=result.content, answer_preview=result.content)

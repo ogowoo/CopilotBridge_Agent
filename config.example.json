@@ -51,6 +51,12 @@
     "max_read_chars": 120000,
     "max_write_chars": 200000,
     "allow_delete": false,
+    "approval_policy": "ask",
+    "approval_required_tools": [
+      "delete_path",
+      "outlook_send",
+      "run_python"
+    ],
     "allow_python": false,
     "allow_office": true,
     "allow_outlook": false,
