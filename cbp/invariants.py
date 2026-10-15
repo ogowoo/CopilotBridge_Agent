@@ -251,3 +251,41 @@ def _approval_contract() -> None:
         import shutil
 
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+@invariant("状态键都在存储白名单内")
+def _state_keys_are_persistable() -> None:
+    """runner/bridge/api 写入的状态键必须被 SessionStore.patch 接受。
+
+    这是真被抓到的缺陷类别：patch 有键名白名单，写不在名单里的键会**静默丢弃**
+    （pending_steps、approval_pending 都曾因此失效，而单测完全看不出来）。
+    用 AST 取调用的关键字实参，避免把 json.dumps(ensure_ascii=...) 这类嵌套调用误判。
+    """
+    import ast
+
+    store_src = (HERE / "session_store.py").read_text(encoding="utf-8")
+    m = re.search(r"allowed\s*=\s*\{(.*?)\}", store_src, re.S)
+    if not m:
+        raise InvariantError("未能在 session_store 里解析出 allowed 白名单")
+    allowed = set(re.findall(r'"([a-z_]+)"', m.group(1)))
+    if len(allowed) < 10:
+        raise InvariantError("allowed 白名单解析异常（过少）")
+
+    checked = 0
+    for fname in ("agent.py", "bridge.py", "api.py"):
+        tree = ast.parse((HERE / fname).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+            if name not in ("state_saver", "patch", "save"):
+                continue
+            for kw in node.keywords:
+                if not kw.arg:
+                    continue
+                checked += 1
+                if kw.arg not in allowed:
+                    raise InvariantError(
+                        f"{fname}:{node.lineno} 写入状态键 {kw.arg}，不在存储白名单里（会被静默丢弃）")
+    if checked < 15:
+        raise InvariantError(f"状态键检查覆盖太少（{checked} 处），AST 扫描可能失效")

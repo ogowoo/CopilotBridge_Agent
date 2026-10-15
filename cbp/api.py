@@ -719,6 +719,7 @@ async def continue_agent_session(sid: str, req: SessionMessageRequest):
 
 class InjectRequest(BaseModel):
     content: str = Field(min_length=1, max_length=20000)
+    queue: str = "turn"   # turn=整轮重排（默认）；step=立即生效并抢占批量剩余动作
 
 
 @app.post("/v1/agent/sessions/{sid}/inject")
@@ -748,6 +749,18 @@ async def inject_session_message(sid: str, req: InjectRequest):
             "result": {"chars": len(content), "running": running}}
     b.AGENT_SESSIONS.add_step(sid, step["step"], conv_idx, step)
     if running:
+        # 两级队列（P1-8）：默认 turn（整轮按新指令重排）；queue=step 时进 next-step
+        # 队列——立即注入下一条提示词，并在批量执行途中抢占剩余动作。
+        _queue = str(getattr(req, "queue", None) or "turn").lower()
+        if _queue == "step":
+            pending_steps = [str(x) for x in (state.get("pending_steps") or []) if str(x).strip()]
+            pending_steps.append(content)
+            b.AGENT_SESSIONS.patch(sid, pending_steps=pending_steps)
+            b.request_interrupt(sid)
+            b.runtime_update(sid, detail=f"已插入紧急指令（next-step）：{content[:80]}")
+            return {"session_id": sid, "injected": True, "running": True, "queued": False,
+                    "interrupted": True, "queue": "step", "pending_steps": len(pending_steps),
+                    "note": "已插入 next-step 队列：立即生效，且批量中的剩余动作会被放弃"}
         pending = [str(x) for x in (state.get("pending") or []) if str(x).strip()]
         pending.append(content)
         b.AGENT_SESSIONS.patch(sid, pending=pending)

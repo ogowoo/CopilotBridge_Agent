@@ -1094,6 +1094,7 @@ class AgentRunner:
                                   conv_steps >= self.min_steps_before_rollover)
             need_rollover = bool(force_rollover or manual_rollover or automatic_rollover)
             carrying_pending = False
+            carrying_step = False
 
             if need_rollover:
                 # 记录上一个 Copilot 会话的实测数据（主动切换或触顶被动切换）
@@ -1155,6 +1156,21 @@ class AgentRunner:
                     else:
                         prompt = "继续同一任务。上一动作实际结果：\n" + last_json
                     force_new = False
+
+            # ── next-step 队列（P1-8，对应 DSH 的 ReactLoopInbox 两级队列）──
+            # pending（next-turn）：整轮替换为"优先执行追加指令"；
+            # pending_steps（next-step）：细粒度、**立即生效**，追加在当前提示词后面，
+            # 用于"执行途中改主意"（例如"别用 run_python"），不必等下一轮重排计划。
+            _urgent_now = []
+            try:
+                _urgent_now = [str(x) for x in (self.state_getter() or {}).get("pending_steps") or []
+                               if str(x).strip()]
+            except Exception:
+                _urgent_now = []
+            if _urgent_now:
+                prompt += ("\n\n用户在执行途中插入的紧急指令（立即遵守，优先于原计划）：\n"
+                           + "\n".join(_urgent_now))
+                carrying_step = True
 
             prompt += f"\n\n当前总步骤 {total + 1}/{self.max_total_steps}。返回下一个 JSON 动作（互不依赖的小动作可批量）。"
             # 发送前最后确认暂停/取消，避免暂停生效后仍向 Copilot 发起新回合。
@@ -1300,6 +1316,9 @@ class AgentRunner:
                         break  # 回到循环顶部停放
                     await asyncio.sleep(1)
                 continue
+            if carrying_step:
+                # 紧急指令已随本回合送达，清空 next-step 队列（避免每条提示词都重复注入）
+                self.state_saver(pending_steps=[])
             if carrying_pending:
                 # 追加指令已成功送达 Copilot 会话，清除待送达列表避免重复下达。
                 self.state_saver(pending=[])
@@ -1343,6 +1362,24 @@ class AgentRunner:
             batch_ok = batch_errors = 0
             usage_counted = False
             for idx, sub in enumerate(todo):
+
+                # next-step 队列：批量执行途中若出现紧急指令，立刻放弃剩余动作，
+                # 让下一回合按新指令走（避免已经过时的动作继续产生副作用）。
+                _urgent = []
+                try:
+                    _urgent = [str(x) for x in (self.state_getter() or {}).get('pending_steps') or []
+                               if str(x).strip()]
+                except Exception:
+                    _urgent = []
+                if _urgent:
+                    _pre = {'step': total + 1, 'status': 'step_preempted',
+                            'reason': '用户插入紧急指令，放弃剩余 ' + str(len(todo) - idx) + ' 个动作',
+                            'error': '紧急指令：' + '；'.join(_urgent)[:300]}
+                    history.append(_pre); all_steps.append(_pre); self.step_saver(_pre)
+                    total += 1
+                    self.state_saver(total_steps=total, recent_steps=history[-self.keep_recent:],
+                                     last_error=_pre['error'])
+                    break
                 if str(sub.get("type")) == "final":
                     if _needs_action and not _did_action() and noop_strikes < 2:
                         noop_strikes += 1
