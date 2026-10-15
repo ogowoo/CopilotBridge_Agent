@@ -370,3 +370,21 @@ def _ungrouped_tools_stay_visible() -> None:
         import shutil
 
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+@invariant("API 只调用存在且有白名单的方法")
+def _api_calls_exist_on_store() -> None:
+    """api.py 里对会话存储的调用必须真实存在。
+
+    真事：授权路由写了 `AGENT_SESSIONS.update(...)`，而 SessionStore 只有 `patch()` —— 
+    运行时 500，静态检查与单测都没覆盖到（端到端验证才发现）。这里做一次静态核对。
+    """
+    from .session_store import SessionStore
+
+    src = (HERE / "api.py").read_text(encoding="utf-8")
+    names = set(re.findall(r"AGENT_SESSIONS\.([a-z_]+)\(", src))
+    if not names:
+        raise InvariantError("未在 api.py 里解析到 AGENT_SESSIONS 调用（正则失效？）")
+    missing = sorted(n for n in names if not hasattr(SessionStore, n))
+    if missing:
+        raise InvariantError(f"api.py 调用了 SessionStore 上不存在的方法: {missing}")

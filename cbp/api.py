@@ -877,6 +877,8 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
         "retry_resume_at": (state or {}).get("retry_resume_at"),
         "retry_attempt": (state or {}).get("retry_attempt", 0),
         "rate_limited_since": (state or {}).get("rate_limited_since"),
+        # 破坏性工具待授权：前端据此显示"授权执行 <tool>"入口（否则用户只能手工 curl）
+        "approval_pending": (state or {}).get("approval_pending"),
     })
     return runtime
 
@@ -1090,7 +1092,13 @@ async def grant_approval(sid: str, payload: dict):
     if not tool or not args_hash:
         raise HTTPException(400, "需要 tool 与 args_hash（或先用 approval_pending 记录）")
     b.AGENT_SESSIONS.grant_approval(sid, tool, args_hash)
-    b.AGENT_SESSIONS.update(sid, last_error=None)
+    # SessionStore 没有 update()（只有 patch()）：原先这里抛 AttributeError → 授权接口 500，
+    # 也就是"审批功能在 UI/API 侧根本走不通"。端到端验证才发现。
+    try:
+        # 同时清掉 approval_pending：否则前端授权横幅会一直挂着（已授权却还在提示）
+        b.AGENT_SESSIONS.patch(sid, last_error=None, approval_pending=None)
+    except Exception:
+        pass
     return {"ok": True, "tool": tool, "args_hash": args_hash,
             "note": "已授权一次；该授权用后即焚，下次同类操作需重新授权。"}
 

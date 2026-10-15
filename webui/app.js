@@ -52,6 +52,38 @@ function showConnBanner(msg,clickable){
  el.textContent=msg;el.dataset.retry=clickable?'1':'0';el.style.display='block';
  el.style.cursor=clickable?'pointer':'default'}
 function hideConnBanner(){const el=document.getElementById('connBanner');if(el)el.style.display='none'}
+/* ── 破坏性工具授权（一次性审批的 UI 入口）──────────────────────────
+   后端在需要授权时把会话置为 waiting 并写入 approval_pending{tool,args_hash}。
+   没有这个入口，用户只能手工 curl —— 审批功能等于不可用。 */
+let approvalSeen=null;
+function showApprovalBar(p){
+ let el=document.getElementById('approvalBar');
+ if(!p||!p.tool){if(el)el.style.display='none';approvalSeen=null;return}
+ if(!el){el=document.createElement('div');el.id='approvalBar';el.className='approvalbar';
+  document.body.appendChild(el)}
+ const key=(current||'')+'|'+p.tool+'|'+(p.args_hash||'');
+ if(approvalSeen!==key){approvalSeen=key;
+  el.innerHTML='';
+  const span=document.createElement('span');
+  span.textContent='需要授权：'+p.tool+' 属于不可回滚操作；授权仅对这一次执行有效（用后即焚）';
+  const btn=document.createElement('button');
+  btn.className='btn accent';btn.type='button';btn.textContent='授权执行';
+  btn.onclick=async()=>{
+   btn.disabled=true;btn.textContent='授权中…';
+   try{
+    await api(`/v1/agent/sessions/${encodeURIComponent(current)}/approvals`,
+              {method:'POST',headers:{'Content-Type':'application/json'},
+               body:JSON.stringify({tool:p.tool,args_hash:p.args_hash||''})});
+    await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/resume`,{method:'POST'});
+    toast('已授权并继续执行（该授权仅对这一次操作有效）','ok');
+    el.style.display='none';approvalSeen=null;await runtime();
+   }catch(e){btn.disabled=false;btn.textContent='授权执行';toast('授权失败: '+(e.text||e),'err')}};
+  const no=document.createElement('button');
+  no.className='btn ghost';no.type='button';no.textContent='暂不授权';
+  no.onclick=()=>{el.style.display='none'};
+  el.appendChild(span);el.appendChild(btn);el.appendChild(no)}
+ el.style.display='flex'}
+
 async function api(u,o={}){
   if(DEMO)return demoApi(u,o);
   const call=tk=>{const opt=Object.assign({},o);opt.headers=Object.assign({},o.headers||{});
@@ -583,6 +615,7 @@ async function applyRuntime(r){
   if(_ans!==lastAns){lastAns=_ans;if(liveTabName!=='answer')document.getElementById('tabAnswer').classList.add('new')}
   document.getElementById('prompt').textContent=r.prompt_preview||'';
   setPill(r.session_state);setKpis(r);
+  try{showApprovalBar(r.approval_pending)}catch(e){}
   updateRetryCountdown(r);
   if(r.total_steps!==lastTotal||(r.detail||'')!==lastDetail){
    lastDetail=r.detail||'';

@@ -473,3 +473,10 @@ section.card:has(#stepCount){margin-top:14px}
   padding:8px 14px;font-size:13px;text-align:center;
   background:var(--warn,#8a6d1f);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 .connbanner[data-retry="1"]{background:var(--accent,#2f6f4f)}
+
+/* ── 破坏性工具授权横幅（一次性审批的 UI 入口）── */
+.approvalbar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:82;
+  display:none;align-items:center;gap:10px;max-width:min(92vw,760px);
+  padding:10px 14px;border-radius:10px;font-size:13px;
+  background:var(--panel,#1c1f24);color:var(--text,#e6e6e6);
+  border:1px solid var(--accent,#2f6f4f);box-shadow:0 6px 20px rgba(0,0,0,.35)}
