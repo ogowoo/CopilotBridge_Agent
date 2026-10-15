@@ -764,7 +764,7 @@ document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e
 async function injectMessage(){
  if(!current){toast('请先选择 Session','err');return}
  let content=await dlgPrompt(
-  '插入指令（运行中即时生效：Agent 会在下一回合读取并优先执行，不会等当前这轮跑完）',
+  '插入指令（运行中即时生效：会立即中断当前回合——提供商直接取消请求；网页版若回答尚未开始生成也会立即停下——然后按新指令继续）',
   '', '强行插入对话');
  if(content===null)return;
  content=String(content).trim();

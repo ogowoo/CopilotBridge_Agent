@@ -94,6 +94,15 @@ class CopilotRateLimited(CopilotServiceUnavailable):
         self.window_seconds = window_seconds
 
 
+class AgentInterrupted(Exception):
+    """用户"强行插入指令"（DSH Ctrl+J 式）：中止当前回合，改为下一回合按新指令执行。
+
+    由桥接层抛出：提供商路径取消底层 HTTP 调用（无状态，取消即"这轮没发生"）；
+    网页路径只在"本回合还没产出内容"时中止等待（避免丢掉 Copilot 已生成的回答）。
+    run() 收到后本回合作废：不记步、不记失败、不换会话，回到循环顶部读取 pending。
+    """
+
+
 class CopilotSendFailed(RuntimeError):
     """本回合压根没发出去（输入框/发送按钮失效、页面未就绪）。
 
@@ -1054,6 +1063,16 @@ class AgentRunner:
                 all_steps.append(event); self.step_saver(event)
             elif total == 0:
                 prompt = self._system_prompt() + "\n\n用户任务：\n" + task
+                # 首回合也要带上"运行中插入的指令"：被强行插入中断时本回合不计步，
+                # total 仍是 0，若这里不读 pending，插入的指令会被推迟一个回合。
+                # （run_agent 会把"同一会话的新任务文本"也塞进 pending，那段已在
+                # task 里了，用 `not in task` 过滤掉，避免重复下达。）
+                pending_now = [str(x).strip() for x in (state.get("pending") or [])
+                               if str(x).strip() and str(x).strip() not in task]
+                if pending_now:
+                    prompt += ("\n\n用户在原任务基础上追加新指令，请优先执行最新指令：\n"
+                               + "\n".join(pending_now))
+                    carrying_pending = True
                 force_new = not chat_active
             else:
                 pending_now = [str(x) for x in (state.get("pending") or []) if str(x).strip()]
@@ -1115,6 +1134,20 @@ class AgentRunner:
                 if state.get("cancel_requested"):
                     self.state_saver(state="cancelled")
                     return AgentResult("任务已取消。", all_steps)
+                continue
+            except AgentInterrupted as exc:
+                # 用户"强行插入指令"（DSH Ctrl+J 式）：本回合作废——不记步、不记失败、
+                # 不换会话、不清 pending；回到循环顶部后，pending 里的新指令会被
+                # "请优先执行最新指令"分支读取并执行。
+                # 提供商路径是取消 HTTP 调用（无状态，取消即"这轮没发生"）；
+                # 网页路径只在"还没产出内容"时才中止等待（见 wait_agent_answer）。
+                chat_active = True     # 网页路径回合可能已发出，重试留在原会话
+                parse_failures = 0
+                service_failures = 0
+                ev = {"step": total + 1, "status": "user_interrupt",
+                      "reason": f"已插入新指令，当前回合被中断：{str(exc)[:160]}"}
+                history.append(ev); all_steps.append(ev); self.step_saver(ev)
+                self.state_saver(recent_steps=history[-self.keep_recent:], last_error=None)
                 continue
             except CopilotSendFailed as exc:
                 # 没发出去：短退避重试，不进入"限流窗口"，不设置 retry_resume_at

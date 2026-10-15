@@ -11,8 +11,8 @@ from typing import Literal
 from fastapi import HTTPException
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
-from .agent import (AGENT_ACTION_SCHEMA, AgentRunner, AgentPaused, CopilotRateLimited,
-                    CopilotSendFailed, CopilotServiceUnavailable,
+from .agent import (AGENT_ACTION_SCHEMA, AgentRunner, AgentPaused, AgentInterrupted,
+                    CopilotRateLimited, CopilotSendFailed, CopilotServiceUnavailable,
                     CopilotConversationFull, validate_token_budget)
 from . import providers as providers_mod
 from .memory import MemoryStore
@@ -1945,13 +1945,17 @@ async def conversation_full_check() -> str:
     return conversation_full_reason(body)
 
 
-async def wait_agent_answer(previous: str = "", pause_check=None) -> str:
+async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_check=None) -> str:
     """Wait using inactivity timeout, not a fixed per-turn wall-clock timeout.
 
     TIMEOUT now means: fail only when no answer progress is observed for this
     many seconds. Every text change and every visible generation cycle refreshes
     the idle deadline. A separate hard deadline prevents an infinite wait.
     Malformed but finished output is returned to AgentRunner for repair.
+
+    interrupt_check：用户"强行插入指令"时返回 True。**半中断**——仅当本回合还
+    什么都没产出（文本没变、也没在生成）时才中止等待；一旦 Copilot 已开始生成就
+    让它答完，避免丢掉已生成的回答、以及"被放弃的回答"与下一轮应答错位。
     """
     started_at = time.monotonic()
     hard_timeout = float(CFG.get("reply_hard_timeout_seconds", max(TIMEOUT * 5, 900)))
@@ -1970,6 +1974,12 @@ async def wait_agent_answer(previous: str = "", pause_check=None) -> str:
         now = time.monotonic()
         still_generating = await generating()
         value = (await current_answer()).strip()
+
+        # 插入指令的半中断点：还没产出任何内容 -> 放弃等待不丢东西
+        if (interrupt_check and interrupt_check() and not still_generating
+                and not generation_seen and value == previous):
+            await diagnostics("agent_answer_interrupted_before_output")
+            raise AgentInterrupted("已插入新指令，本回合尚未产出，已中止等待")
 
         # 对话已满时 Copilot 不会开始生成：快速失败，交给上层换会话重发。
         if not still_generating and not candidate_seen and not generation_seen:
@@ -2059,7 +2069,8 @@ async def wait_agent_answer(previous: str = "", pause_check=None) -> str:
         f"Copilot 单步等待超过硬上限 {int(hard_timeout)} 秒，请查看 last_page.txt"
     )
 
-async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pause_check=None) -> str:
+async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pause_check=None,
+                          interrupt_check=None) -> str:
     """Send one Agent turn and bind the response to a unique visible turn marker.
 
     Copilot virtualizes long chat DOM nodes, so the number of visible "You said"
@@ -2085,7 +2096,8 @@ async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pa
         raise TimeoutError(f"未确认 Agent 回合 {turn_id} 进入 Copilot 会话，已停止以避免读取旧回答")
 
     runtime_update(phase="waiting", detail=f"Agent 回合 {turn_id} 已确认，等待 Copilot 回答")
-    return await wait_agent_answer(previous, pause_check=pause_check)
+    return await wait_agent_answer(previous, pause_check=pause_check,
+                                   interrupt_check=interrupt_check)
 
 # API 提供商的协议强化：网页 Copilot 对 JSON 协议遵循度高，但 DeepSeek/Kimi
 # 等聊天模型爱在动作外面加解释或输出两段 JSON（撞严格防线烧回合）。
@@ -2141,6 +2153,69 @@ def _trim_provider_history(hist: list[dict], max_chars: int | None = None) -> No
 def discard_provider_agent_history(sid: str) -> None:
     """会话删除时清理提供商对话历史（避免长期运行内存里堆积）。"""
     _PROVIDER_AGENT_HISTORY.pop(sid, None)
+
+
+# ── 强行插入指令的"立即中断"信号 ────────────────────────────────────
+# 用户 Ctrl+J 插入指令时置位。提供商路径用它取消底层 HTTP 调用（取消即"这轮
+# 没发生"）；网页路径只在"本回合还没产出内容"时中止等待（见 wait_agent_answer）。
+_INTERRUPTS: dict[str, asyncio.Event] = {}
+
+
+def _interrupt_event(sid: str) -> asyncio.Event:
+    ev = _INTERRUPTS.get(sid)
+    if ev is None:
+        ev = asyncio.Event()
+        _INTERRUPTS[sid] = ev
+    return ev
+
+
+def request_interrupt(sid: str) -> None:
+    """请求立即中断该会话当前回合（由 /inject 在运行中调用）。"""
+    _interrupt_event(sid).set()
+
+
+def interrupt_pending(sid: str) -> bool:
+    """只窥探不清除：等待循环每 POLL 都会问一次，若在这里清掉，
+    "已开始生成所以不中断"的那次询问就会把信号吃掉、再也不会生效。"""
+    ev = _INTERRUPTS.get(sid)
+    return bool(ev and ev.is_set())
+
+
+def clear_interrupt(sid: str) -> None:
+    ev = _INTERRUPTS.get(sid)
+    if ev is not None:
+        ev.clear()
+
+
+def discard_interrupts(sid: str) -> None:
+    _INTERRUPTS.pop(sid, None)
+
+
+async def _await_interruptible(sid: str, coro, what: str):
+    """等待 coro；若期间该会话被要求"立即插入"，取消它并抛 AgentInterrupted。
+
+    注意这里把底层协程包成 task 再取消，因此**外层看到的是 AgentInterrupted 而不是
+    CancelledError**——provider_turn 的 `except Exception` 清理逻辑照常生效，
+    历史里那条 user 消息不会残留（否则下一回合会重复追加）。
+    """
+    ev = _interrupt_event(sid)
+    task = asyncio.ensure_future(coro)
+    waiter = asyncio.ensure_future(ev.wait())
+    try:
+        done, _ = await asyncio.wait({task, waiter}, return_when=asyncio.FIRST_COMPLETED)
+    except BaseException:
+        task.cancel(); waiter.cancel()
+        raise
+    if task in done:
+        waiter.cancel()
+        return await task
+    task.cancel()
+    try:
+        await task
+    except BaseException:
+        pass
+    clear_interrupt(sid)
+    raise AgentInterrupted(f"已插入新指令，{what}被中断，改为下一回合按新指令执行")
 
 
 def remember_initial_prompt(sid: str, prompt: str) -> None:
@@ -2209,17 +2284,30 @@ async def provider_turn(sid: str, model_id: str, prompt: str, force_new: bool = 
     remember_initial_prompt(sid, prompt)
     # 提供商 Agent 回合原先完全不写 runtime，导致 WebUI 的"最近发送内容/
     # Copilot 当前回答/当前执行状态"三个面板全程空白——这里补齐。
+    clear_interrupt(sid)   # 新回合开始：上一轮的插入信号已由 pending 承接，别误伤本回合
     runtime_update(sid, phase="api_sending", detail=f"正在调用 {pm[0]} API（{pm[1]}）",
                    prompt_preview=prompt[-12000:], answer_preview="")
+
+    def _rollback_user() -> None:
+        """回滚本次追加的 user 消息（含取消/中断），避免重试时重复追加。"""
+        if hist and hist[-1].get("role") == "user":
+            hist.pop()
+
     try:
-        answer = await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
+        # 强行插入指令时立即取消这次 HTTP 调用：提供商是无状态请求，取消即
+        # "这轮没发生"，下一回合直接带上新指令重发，不用等它跑完。
+        answer = await _await_interruptible(
+            sid, provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA),
+            "调用提供商 API")
     except providers_mod.ProviderUnavailable as exc:
-        hist.pop()                                    # 回滚本次 user，重试不重复
+        _rollback_user()
         # window_seconds=0：提供商走"下次重试"倒计时，不用 Copilot 网页实测的
         # 1 小时固定窗口（提供商的 429/5xx/网络抖动通常几秒~几分钟就恢复）。
         raise CopilotRateLimited(str(exc), window_seconds=0) from exc
-    except Exception:
-        hist.pop()
+    except BaseException:
+        # BaseException：包含 CancelledError——外部取消整个任务时也要回滚，
+        # 否则下次运行会看到一条残留的 user 消息（重复追加）。
+        _rollback_user()
         raise
     hist.append({"role": "assistant", "content": answer})
     _trim_provider_history(hist)
@@ -2312,6 +2400,7 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             attached = {"done": False}   # 附件只在首个回合附加一次
             async def turn(prompt,model,force_new=False):
                 SNAPSHOTS.next_turn(sid)   # 一次 Copilot 回合 = 一个快照版本
+                clear_interrupt(sid)       # 新回合：上一轮的插入信号已由 pending 承接
                 st=AGENT_SESSIONS.get(sid)
                 make_new = force_new or not st.get("current_url")
                 if not make_new:
@@ -2337,7 +2426,8 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 send_prompt = (marker + "\n" + prompt) if make_new else prompt
                 remember_initial_prompt(sid, send_prompt)   # 与实际发送内容一致
                 try:
-                    ans=await agent_chat_once(send_prompt,model,make_new,pause_check=pause_check)
+                    ans=await agent_chat_once(send_prompt,model,make_new,pause_check=pause_check,
+                                              interrupt_check=lambda: interrupt_pending(sid))
                 except AgentPaused:
                     # 回合已发送到 Copilot：保存会话 URL，恢复后继续同一聊天，
                     # 避免暂停-恢复后重复创建新会话。

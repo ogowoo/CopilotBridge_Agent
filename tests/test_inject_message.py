@@ -61,9 +61,11 @@ class InjectEndpointTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         d = r.json()
         self.assertTrue(d["running"] and d["injected"] and not d["queued"])
-        self.assertIn("下一回合", d["note"])
+        self.assertTrue(d.get("interrupted"), "运行中插入应同时请求中断当前回合")
+        self.assertIn("立即按新指令继续", d["note"])
         self.assertEqual(b.AGENT_SESSIONS.get("s1")["pending"], ["别动数据库，先只改前端"])
         self.assertEqual(b.queue_depth("s1"), 0)
+        self.assertTrue(b.interrupt_pending("s1"), "应已置位中断信号")
 
     def test_idle_session_is_queued(self):
         """空闲会话：pending 没人消费 -> 改为排队执行，避免指令悬空。"""

@@ -673,6 +673,7 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
     b.RUNTIME.pop(sid, None)
     b.cancel_message_queue(sid)   # 清理该会话的排队消息与 worker
     b.discard_provider_agent_history(sid)   # 清理提供商 Agent 对话历史
+    b.discard_interrupts(sid)               # 清理强行插入的中断信号
     if local_deleted:
         # 会话记录已删除，其快照不再可回滚（回滚端点要求会话存在）：回收磁盘。
         # 自升级作用域 _self_<sid> 同样要清——否则孤儿作用域会被"回滚最近一次
@@ -750,10 +751,13 @@ async def inject_session_message(sid: str, req: InjectRequest):
         pending = [str(x) for x in (state.get("pending") or []) if str(x).strip()]
         pending.append(content)
         b.AGENT_SESSIONS.patch(sid, pending=pending)
-        b.runtime_update(sid, detail=f"已插入指令，将在下一回合优先执行：{content[:80]}")
+        # 立即中断当前回合（提供商：取消 HTTP 调用；网页：仅在还没产出内容时中止
+        # 等待），这样新指令不必等这一轮跑完。
+        b.request_interrupt(sid)
+        b.runtime_update(sid, detail=f"已插入指令并中断当前回合：{content[:80]}")
         return {"session_id": sid, "injected": True, "running": True, "queued": False,
-                "pending": len(pending),
-                "note": "已插入：Agent 会在下一回合读取并优先执行"}
+                "interrupted": True, "pending": len(pending),
+                "note": "已插入并中断当前回合：Agent 会立即按新指令继续"}
     # 空闲会话：pending 不会有人消费 -> 走队列起一轮（等同普通跟进）
     queued = await b.enqueue_session_message(
         sid, content, b.normalize_model_soft(state.get("model") or b.DEFAULT_MODEL),
