@@ -256,7 +256,7 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 .retry-fab .rc-count{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent2);line-height:1.1;font-family:Consolas,"Cascadia Mono",monospace}
 .retry-fab .rc-sub{font-size:11.5px;color:var(--faint);margin-top:6px}
 /* 收起后的小标（右下角，不挡顶部控件） */
-.retry-chip{position:fixed;right:18px;bottom:14px;z-index:80;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;font-family:Consolas,"Cascadia Mono",monospace;color:var(--accent2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+.retry-chip{position:fixed;right:18px;bottom:calc(14px + var(--approval-h));z-index:80;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;font-family:Consolas,"Cascadia Mono",monospace;color:var(--accent2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}
 .retry-chip:hover{border-color:var(--accent2)}
 
 /* ── 删除结果弹窗 ── */
@@ -281,7 +281,7 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 .dfoot{display:flex;gap:9px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
 
 /* ── 页面内通知与通用弹层（替代浏览器原生 alert/confirm/prompt） ── */
-.toasts{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:120;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toasts{position:fixed;top:calc(var(--banner-h) + var(--boot-h) + 18px);left:50%;transform:translateX(-50%);z-index:120;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
 .toast{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:10px 18px;font-size:13px;box-shadow:0 10px 32px var(--dlg-shadow);animation:dlgIn .16s ease-out;max-width:min(560px,90vw);white-space:pre-wrap;word-break:break-word;pointer-events:auto}
 .toast.err{border-color:var(--red);color:var(--danger-text)}
 .toast.ok{border-color:var(--green);color:var(--green)}
@@ -435,7 +435,7 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 /* ── 原生控件跟随主题 ──────────────────────────────────────────────
    下拉弹层是浏览器原生渲染，只有 color-scheme 能让它变暗；否则在深色
    主题下永远是系统白底（对比刺眼）。浅色主题显式声明 light。 */
-:root{color-scheme:dark}
+:root{color-scheme:dark;--banner-h:0px;--boot-h:0px;--approval-h:0px}
 :root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]){color-scheme:light}
 select{background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:6px;
  padding:4px 8px;font:inherit}
@@ -462,7 +462,7 @@ section.card:has(#stepCount){margin-top:14px}
 #manualBody summary::marker{color:var(--muted)}
 
 /* ── Copilot 未就绪提示条 ───────────────────────────────────────── */
-#bootBar{position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:55;display:none;
+#bootBar{position:fixed;left:50%;top:calc(var(--banner-h) + 12px);transform:translateX(-50%);z-index:55;display:none;
  align-items:center;gap:10px;max-width:min(760px,92vw);padding:7px 12px;border-radius:9px;
  background:var(--panel2);color:var(--text);border:1px solid var(--amber);
  box-shadow:0 6px 20px var(--menu-shadow);font-size:12.5px}
@@ -475,8 +475,34 @@ section.card:has(#stepCount){margin-top:14px}
 .connbanner[data-retry="1"]{background:var(--accent,#2f6f4f)}
 
 /* ── 破坏性工具授权横幅（一次性审批的 UI 入口）── */
+/* 授权横幅：窄屏必须能换行，否则文案被挤成 6 行并压住 KPI（实测 480px 宽时）
+   说明：给文字 flex:1 1 220px 让它可以占满一行、按钮 flex:none 不被压缩。 */
 .approvalbar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:82;
-  display:none;align-items:center;gap:10px;max-width:min(92vw,760px);
-  padding:10px 14px;border-radius:10px;font-size:13px;
+  display:none;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;
+  width:min(94vw,860px);padding:10px 14px;border-radius:10px;font-size:13px;
   background:var(--panel,#1c1f24);color:var(--text,#e6e6e6);
   border:1px solid var(--accent,#2f6f4f);box-shadow:0 6px 20px rgba(0,0,0,.35)}
+.approvalbar span{flex:1 1 220px;min-width:0;line-height:1.35;text-align:left}
+.approvalbar .btn{flex:none}
+
+/* ── 窄屏：工具栏换行 ────────────────────────────────────────────────
+   实测 480x900 时 #sessModel(269..499) 与 #btnRefreshSess(511..537) 超出视口，
+   因为这一行是 nowrap 且下拉框有内在宽度。让标题独占一行、控件可换行。 */
+@media(max-width:640px){
+  #bootBar{max-width:96vw}          /* 窄屏未就绪条允许更宽，减少不必要的换行 */
+  .trow{flex-wrap:wrap;row-gap:8px}
+  .trow h1{flex:1 1 100%;white-space:normal}
+  #sessModel{flex:1 1 auto;min-width:0;max-width:100%}
+  .topbar{padding:12px 12px}
+  .approvalbar{bottom:8px;width:96vw;padding:9px 11px}
+  .approvalbar span{flex:1 1 100%}
+}
+
+/* ── 固定浮层分车道（实测：三者都挤在顶部中央时互相遮挡 683x21）──────────
+   顶部自上而下：连接横幅 → Copilot 未就绪条 → 提示(toasts)；
+   底部：授权横幅在最下，限流小标抬到它上面（窄屏 480px 时两者原本相撞）。
+   高度由 JS 用 --banner-h/--boot-h/--approval-h 同步（元素显隐时重算）。 */
+.connbanner{z-index:80}
+#bootBar{z-index:55}
+.toasts{z-index:120}
+.approvalbar{z-index:82}

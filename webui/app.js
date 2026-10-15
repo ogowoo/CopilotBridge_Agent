@@ -44,14 +44,29 @@ class ApiError extends Error{
   this.body=body;this.url=url;
   try{const j=JSON.parse(body);if(j&&j.detail)this.detail=String(j.detail)}catch(e){}}
  get text(){return this.detail||this.body||('HTTP '+this.status)}}
+/* 固定浮层分车道：把三个横幅/浮条的实际高度写进 CSS 变量，供 style.css 计算各自位置。
+   元素是动态创建且高度随文案变化（窄屏换行），所以必须实测而不是写死。 */
+function syncFixedLanes(){
+ try{
+  const h=id=>{const e=document.getElementById(id);
+   if(!e||getComputedStyle(e).display==='none')return 0;
+   return Math.round(e.getBoundingClientRect().height)};
+  const rs=document.documentElement.style;
+  rs.setProperty('--banner-h', h('connBanner')+'px');
+  rs.setProperty('--boot-h', h('bootBar')+'px');
+  rs.setProperty('--approval-h', h('approvalBar')+'px');
+ }catch(e){}}
+window.addEventListener('resize',()=>syncFixedLanes());
+setInterval(syncFixedLanes,1500);   // 文案变化/换行导致高度变化时靠它跟上（成本极低）
+
 function showConnBanner(msg,clickable){
  let el=document.getElementById('connBanner');
  if(!el){el=document.createElement('div');el.id='connBanner';el.className='connbanner';
   document.body.appendChild(el);
   el.onclick=()=>{if(el.dataset.retry==='1'){tokenPromptCancelled=false;el.style.display='none';location.reload()}}}
- el.textContent=msg;el.dataset.retry=clickable?'1':'0';el.style.display='block';
+ el.textContent=msg;el.dataset.retry=clickable?'1':'0';el.style.display='block';syncFixedLanes();
  el.style.cursor=clickable?'pointer':'default'}
-function hideConnBanner(){const el=document.getElementById('connBanner');if(el)el.style.display='none'}
+function hideConnBanner(){const el=document.getElementById('connBanner');if(el)el.style.display='none';syncFixedLanes()}
 /* ── 破坏性工具授权（一次性审批的 UI 入口）──────────────────────────
    后端在需要授权时把会话置为 waiting 并写入 approval_pending{tool,args_hash}。
    没有这个入口，用户只能手工 curl —— 审批功能等于不可用。 */
