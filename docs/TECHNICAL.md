@@ -384,8 +384,8 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 
 | 风险 | 现状 | 影响 | 缓解/待办 |
 |---|---|---|---|
-| **工作区与安装目录混用** | 会话工作区由请求决定；安装目录亦可作为工作区 | 敏感路径（`config.json`/`data/`/`EdgeProfile/`）只靠 denylist 拦 | 已有 denylist + 结构化拒绝；建议默认拒绝把安装目录当工作区 |
-| **COM/线程模型** | Outlook 走 `_ComWorker` 专用泵线程 | 超时会放弃 future 但操作仍在跑 | 待办：协作式取消（DSH `exec.signal` 思路） |
+| **工作区与安装目录混用** | 会话工作区由请求决定 | 若工作区=安装目录，普通文件工具可改服务代码 | **已缓解（核实后修正）**：`set_root` 默认拒绝把安装目录当工作区（需 `allow_self_upgrade`）；安装目录内的独立子目录（默认 `workspace/`）允许；工作区内无法用 `../` 逃逸（`FS_SANDBOX_ESCAPE`）；敏感路径即便开了自升级仍按 denylist 拒绝。`tests/test_workspace_guard.py` 6 例守住 |
+| **COM/线程模型** | Outlook 走 `_ComWorker` 专用泵线程 | 超时无法真取消（调用仍在跑） | **已缓解**：`shield` 保留调用并挂回调记录迟到结果、超时**不重试**、阶段封锁不可幂等动作直到只读核对成功（`[TOOL_TIMEOUT_UNKNOWN]`）；`tests/test_unknown_outcome.py` 4 例守住 |
 | **模型质量波动** | 评测出现过"模型给一次性脚本自造测试文件并写错"从而步数暴涨 | 影响成本而非正确性 | 验证门比例原则 + no-progress 守卫已能止损；保留 `max_steps` 作金丝雀 |
 | **压缩** | 启发式摘要替换历史 | 极端情况下可能丢关键约束 | 待办：配对校验 + 摘要复用热前缀（P2-11） |
 | **提示词单体** | `_system_prompt()` 仍是较长函数 | 改一处容易伤别处（本人已踩坑两次） | 待办：分段注册表（P2-9） |

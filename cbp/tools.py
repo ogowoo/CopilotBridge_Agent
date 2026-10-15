@@ -812,7 +812,8 @@ class ToolRegistry:
                             raise ToolError(self._sandbox_denied(
                                 "FS_SANDBOX_DENYLIST", rel, "该路径属于服务敏感目录（denylist）"))
                     elif rel == deny:
-                        raise ToolError(f"该路径属于服务敏感文件，禁止通过工作区工具访问: {rel}")
+                        raise ToolError(self._sandbox_denied(
+                            "FS_SANDBOX_DENYLIST", rel, "该路径属于服务敏感文件（denylist）"))
         return candidate
 
     # ── "结果未知"封锁（协作式取消的兜底）─────────────────────────────
