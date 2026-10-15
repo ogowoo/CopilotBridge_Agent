@@ -62,7 +62,16 @@ class SessionStore:
             );
             -- 每个 Copilot 会话结束时的实测数据：回合数/估算Token/字符/结束原因/模型。
             -- M365 Copilot 的实际上限不公开且动态变化，这些样本用于校准本地阈值。
-            CREATE TABLE IF NOT EXISTS conv_stats (
+            CREATE TABLE IF NOT EXISTS turn_results (
+  session_id TEXT NOT NULL,
+  conversation_index INTEGER NOT NULL DEFAULT 0,
+  prompt_hash TEXT NOT NULL,
+  answer TEXT NOT NULL DEFAULT '',
+  steps_after INTEGER NOT NULL DEFAULT 0,
+  created REAL NOT NULL,
+  PRIMARY KEY (session_id, conversation_index, prompt_hash)
+);
+CREATE TABLE IF NOT EXISTS conv_stats (
               id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
               conversation_index INTEGER NOT NULL, model TEXT,
               steps INTEGER NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0,
@@ -220,6 +229,23 @@ class SessionStore:
         with self.lock, self._connect() as con:
             return [dict(x) for x in con.execute("SELECT * FROM conv_stats WHERE session_id=? ORDER BY id", (sid,))]
 
+    def save_turn(self, sid: str, conv_index: int, prompt_hash: str,
+                  answer: str, steps_after: int) -> None:
+        """记录"这个回合已真正发过并产出结果"：恢复时可据此跳过重发。"""
+        with self.lock, self._connect() as con:
+            con.execute(
+                "INSERT INTO turn_results(session_id,conversation_index,prompt_hash,answer,steps_after,created) "
+                "VALUES(?,?,?,?,?,?) ON CONFLICT(session_id,conversation_index,prompt_hash) "
+                "DO UPDATE SET answer=excluded.answer, steps_after=excluded.steps_after, created=excluded.created",
+                (sid, int(conv_index), prompt_hash, (answer or "")[:4000], int(steps_after), time.time()))
+
+    def get_turn(self, sid: str, conv_index: int, prompt_hash: str) -> dict[str, Any] | None:
+        with self.lock, self._connect() as con:
+            row = con.execute(
+                "SELECT * FROM turn_results WHERE session_id=? AND conversation_index=? AND prompt_hash=?",
+                (sid, int(conv_index), prompt_hash)).fetchone()
+            return dict(row) if row else None
+
     def delete(self, sid: str):
         """删除会话及其全部从属数据。
 
@@ -228,7 +254,7 @@ class SessionStore:
         """
         with self.lock, self._connect() as con:
             existed = con.execute("DELETE FROM sessions WHERE id=?", (sid,)).rowcount > 0
-            for table in ("messages", "steps", "file_events", "conv_stats"):
+            for table in ("messages", "steps", "file_events", "conv_stats", "turn_results"):
                 try:
                     con.execute(f"DELETE FROM {table} WHERE session_id=?", (sid,))
                 except Exception:

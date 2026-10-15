@@ -163,11 +163,23 @@ def main() -> int:
                 c.delete(f"/v1/agent/sessions/{sid}", params={"force_local": "true"}, timeout=20)
             except Exception:
                 pass
-            for old in WS.glob("eval_*"):      # 清掉上一轮产物，避免"文件已存在"式假 PASS
-                try:
-                    old.unlink()
-                except Exception:
-                    pass
+            # 清理上一轮评测留下的产物：否则后续任务的 run_unittest 会踩到脏文件
+            # （实测 gate-limit 因 tests/test_eval_mod.py 引用已删除的 eval_mod 而
+            #  花 10+ 步去补模块，步数从 4 涨到 21，纯属评测卫生问题）。
+            patterns = ("eval_*", "tests/test_eval_*", "tests/eval_*")
+            for pat in patterns:
+                for old in WS.glob(pat):
+                    try:
+                        if old.is_file():
+                            old.unlink()
+                    except Exception:
+                        pass
+            tdir = WS / "tests"
+            try:
+                if tdir.is_dir() and not any(tdir.iterdir()):
+                    tdir.rmdir()
+            except Exception:
+                pass
             if not wait_idle(args.wait_idle):
                 results.append({"id": t["id"], "ok": False, "seconds": 0, "steps": 0, "tools": [],
                                 "blocked": True, "checks": [

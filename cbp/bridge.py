@@ -2542,9 +2542,31 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 # message. This is more stable than automating the Rename editor.
                 send_prompt = (marker + "\n" + prompt) if make_new else prompt
                 remember_initial_prompt(sid, send_prompt)   # 与实际发送内容一致
+                # ── 回合结果缓存（P1-1）：同一会话/对话/提示词的回合若已真正发出并落过步数，
+                # 恢复或重试时直接复用答案，不再重发（省一次远端回合 = 省时间与额度）。
+                import hashlib as _hl
+                _ph = _hl.sha1((send_prompt or "").encode("utf-8")).hexdigest()[:20]
+                _ci = int((AGENT_SESSIONS.get(sid) or {}).get("conversation_index", 0))
+                _cache_on = bool(AGENT_CFG.get("turn_cache_enabled", True))
+                if _cache_on:
+                    _hit = AGENT_SESSIONS.get_turn(sid, _ci, _ph)
+                    _done = int((AGENT_SESSIONS.get(sid) or {}).get("total_steps", 0))
+                    # 必须"精确相等"：只有"该回合已落库且此后没有任何进展"才算崩溃后重放。
+                    # 用 >= 会在正常推进中误命中（同一答案被反复当新动作处理，实测步数 3→14）。
+                    if _hit and _done == int(_hit.get("steps_after", 0)):
+                        log(f"回合结果命中缓存（{_ph[:8]}），跳过重发")
+                        return _hit.get("answer") or ""
+
                 try:
                     ans=await agent_chat_once(send_prompt,model,make_new,pause_check=pause_check,
                                               interrupt_check=lambda: interrupt_pending(sid))
+                    if _cache_on and ans:
+                        try:
+                            AGENT_SESSIONS.save_turn(sid, _ci, _ph, ans,
+                                                    int((AGENT_SESSIONS.get(sid) or {}).get("total_steps", 0)))
+                        except Exception:
+                            pass
+
                 except AgentPaused:
                     # 回合已发送到 Copilot：保存会话 URL，恢复后继续同一聊天，
                     # 避免暂停-恢复后重复创建新会话。

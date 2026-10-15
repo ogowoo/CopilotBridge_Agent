@@ -69,7 +69,6 @@
      "eval_a.txt",
      "eval_b.txt"
     ],
-    "batch_used": true,
     "max_steps": 8
    }
   },
@@ -88,7 +87,7 @@
     "files_exist": [
      "eval_gate.py"
     ],
-    "max_steps": 12,
+    "max_steps": 25,
     "no_validation_gate": false
    }
   }

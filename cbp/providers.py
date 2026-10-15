@@ -44,6 +44,17 @@ def system_proxy() -> str | None:
             return value
     return None
 
+# 结构化输出能力：openai/grok 支持真·json_schema；deepseek/kimi 支持 json_object；
+# 未列出的走 auto（先试 json_object，服务不支持时自动去掉并重试一次）。
+JSON_MODE_BY_PROVIDER = {
+    "openai": "json_schema",
+    "deepseek": "json_object",
+    "kimi": "json_object",
+    "moonshot": "json_object",
+    "grok": "json_schema",
+    "xai": "json_schema",
+}
+
 PRESETS: dict[str, dict[str, Any]] = {
     "openai": {
         "base_url": "https://api.openai.com/v1",
@@ -270,4 +281,10 @@ def build_providers(cfg: dict[str, Any]) -> dict[str, ApiProvider]:
     for name, custom in (cfg.get("providers") or {}).items():
         if isinstance(custom, dict):
             merged.setdefault(name, {}).update(custom)
-    return {name: ApiProvider(name, c) for name, c in merged.items()}
+    out: dict[str, ApiProvider] = {}
+    for name, c in merged.items():
+        cfg2 = dict(c)
+        # 未显式配置时按已知能力给默认值（不支持的会在 4xx 时自动降级重试）
+        cfg2.setdefault("json_mode", JSON_MODE_BY_PROVIDER.get(name.lower(), "auto"))
+        out[name] = ApiProvider(name, cfg2)
+    return out

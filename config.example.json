@@ -78,7 +78,9 @@
   },
   "models": {},
   "providers": {
-    "deepseek": {},
+    "deepseek": {
+      "json_mode": "json_object"
+    },
     "kimi": {},
     "myapi": {
       "base_url": "https://example.com/v1",
@@ -87,6 +89,15 @@
         "my-model"
       ],
       "description": "自建 OpenAI 兼容网关"
+    },
+    "openai": {
+      "base_url": "https://api.openai.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "models": [
+        "gpt-4o-mini"
+      ],
+      "json_mode": "json_schema",
+      "description": "OpenAI 官方（支持 json_schema 约束输出）"
     }
   },
   "markers": {
