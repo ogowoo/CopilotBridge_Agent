@@ -2531,6 +2531,27 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             # 换会话只影响本地上下文压缩。
             async def turn(prompt, model, force_new=False):
                 SNAPSHOTS.next_turn(sid)   # 一次 Copilot 回合 = 一个快照版本
+                # 上一次的工具调用已派发但结果未知（进程在结果落库前退出）：绝不原样重放，
+                # 先让模型只读核对现状；随后把这些步骤标为 unknown，保证只提示一次。
+                _pend = []
+                try:
+                    _pend = AGENT_SESSIONS.pending_steps(sid)
+                except Exception:
+                    _pend = []
+                if _pend:
+                    for _p in _pend:
+                        try:
+                            AGENT_SESSIONS.finish_step(sid, int(_p.get('conversation_index') or 0),
+                                                       int(_p.get('step_no') or 0), 'unknown')
+                        except Exception:
+                            pass
+                    _names = ', '.join(sorted({str(_p.get('tool') or '?') for _p in _pend}))
+                    log(f'检测到 {len(_pend)} 个结果未知的工具步骤（{_names}），先只读核对不重放')
+                    return json.dumps({
+                        'type': 'tool', 'tool': 'list_directory', 'arguments': {'path': '.'},
+                        'reason': f'上一次工具调用（{_names}）的结果未知：先只读核对当前状态，'
+                                  '不要重复可能已发生的写入/删除/发送等副作用；确认后再继续原计划。'},
+                        ensure_ascii=False)
                 # 提供商回合同样"发出即不可回滚"：先落 inflight，成功后转 done；
                 # 崩在途中（HTTP 被中断）→ 恢复时按"结果未知"处理，只做只读核对，不重发。
                 import hashlib as _hl
@@ -2565,6 +2586,28 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             attached = {"done": False}   # 附件只在首个回合附加一次
             async def turn(prompt,model,force_new=False):
                 SNAPSHOTS.next_turn(sid)   # 一次 Copilot 回合 = 一个快照版本
+                # 上一次的工具调用已派发但结果未知（进程在结果落库前退出）：绝不原样重放，
+                # 先让模型只读核对现状；随后把这些步骤标为 unknown，保证只提示一次。
+                _pend = []
+                try:
+                    _pend = AGENT_SESSIONS.pending_steps(sid)
+                except Exception:
+                    _pend = []
+                if _pend:
+                    for _p in _pend:
+                        try:
+                            AGENT_SESSIONS.finish_step(sid, int(_p.get('conversation_index') or 0),
+                                                       int(_p.get('step_no') or 0), 'unknown')
+                        except Exception:
+                            pass
+                    _names = ', '.join(sorted({str(_p.get('tool') or '?') for _p in _pend}))
+                    log(f'检测到 {len(_pend)} 个结果未知的工具步骤（{_names}），先只读核对不重放')
+                    return json.dumps({
+                        'type': 'tool', 'tool': 'list_directory', 'arguments': {'path': '.'},
+                        'reason': f'上一次工具调用（{_names}）的结果未知：先只读核对当前状态，'
+                                  '不要重复可能已发生的写入/删除/发送等副作用；确认后再继续原计划。'},
+                        ensure_ascii=False)
+
                 clear_interrupt(sid)       # 新回合：上一轮的插入信号已由 pending 承接
                 st=AGENT_SESSIONS.get(sid)
                 make_new = force_new or not st.get("current_url")

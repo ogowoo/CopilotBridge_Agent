@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import html
+import hashlib
 import json
 import re
 import time
@@ -794,11 +795,15 @@ class AgentRunner:
         return value
 
     def __init__(self, tools: ToolRegistry, chat: ChatFunction, config: dict[str, Any],
-                 state_getter, state_saver, step_saver, file_event_saver, conv_stat_saver=None):
+                 state_getter, state_saver, step_saver, file_event_saver, conv_stat_saver=None,
+                 step_begin=None, step_finish=None):
         self.tools, self.chat, self.config = tools, chat, config
         self.state_getter, self.state_saver = state_getter, state_saver
         self.step_saver, self.file_event_saver = step_saver, file_event_saver
         self.conv_stat_saver = conv_stat_saver
+        # 工具派发检查点（可选）：派发前登记 inflight，结果落库后收尾。
+        # 崩在「工具已执行、步骤未落库」窗口时靠它识别结果未知，避免重复副作用。
+        self.step_begin, self.step_finish = step_begin, step_finish
         self.max_total_steps = min(int(config.get("max_total_steps", 1000)), 10000)
         # 一次回答最多执行几个动作（批量协议）：上限越小越不容易被输出上限截断
         self.max_actions_per_turn = max(1, min(int(config.get("max_actions_per_turn", 4)), 12))
@@ -1464,6 +1469,13 @@ class AgentRunner:
                                  "detail": "与上一成功动作完全相同，幂等保护已跳过重复执行"}})
                 else:
                     try:
+                        _dispatch_hash = hashlib.sha1(json.dumps(arguments, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()[:16]
+                        if self.step_begin:
+                            try:
+                                self.step_begin(total + 1, str(tool), _dispatch_hash)
+                            except Exception:
+                                pass
+
                         _tspan = span("tool." + str(tool), "execute_tool",
                                       **{"gen_ai.tool.name": str(tool),
                                          "gen_ai.tool.call.id": f"{getattr(self, '_session_id', '') or 's'}-{total + 1}",
@@ -1479,7 +1491,18 @@ class AgentRunner:
                                     pass
                         except Exception as _exc:
                             _tspan.fail(_exc)
+                            if self.step_finish:
+                                try:
+                                    self.step_finish(total + 1, "error")
+                                except Exception:
+                                    pass
                             raise
+                        else:
+                            if self.step_finish:
+                                try:
+                                    self.step_finish(total + 1, "done")
+                                except Exception:
+                                    pass
                         step.update({"status": "ok", "result": result})
                         if tool in _action_tools:
                             self._action_done = True
