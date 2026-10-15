@@ -68,6 +68,7 @@ class SessionStore:
   prompt_hash TEXT NOT NULL,
   answer TEXT NOT NULL DEFAULT '',
   steps_after INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'done',
   created REAL NOT NULL,
   PRIMARY KEY (session_id, conversation_index, prompt_hash)
 );
@@ -95,6 +96,11 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 con.execute("ALTER TABLE sessions ADD COLUMN gate_state TEXT")
             except Exception:
                 pass  # 列已存在
+            # 迁移：回合表补 status（inflight/done），用于"已派发但结果未知"的判定
+            try:
+                con.execute("ALTER TABLE turn_results ADD COLUMN status TEXT NOT NULL DEFAULT 'done'")
+            except Exception:
+                pass  # 列已存在或表尚未创建
             # 迁移：服务限流退避的倒计时信息——resume_at 供前端右上角浮窗倒数；
             # rate_limited_since 记录首次限流起点，窗口期内重试都锚定同一终点。
             try:
@@ -229,14 +235,29 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         with self.lock, self._connect() as con:
             return [dict(x) for x in con.execute("SELECT * FROM conv_stats WHERE session_id=? ORDER BY id", (sid,))]
 
-    def save_turn(self, sid: str, conv_index: int, prompt_hash: str,
-                  answer: str, steps_after: int) -> None:
-        """记录"这个回合已真正发过并产出结果"：恢复时可据此跳过重发。"""
+    def begin_turn(self, sid: str, conv_index: int, prompt_hash: str, steps_before: int) -> None:
+        """**发请求之前**登记"这一回合即将派发"（DSH 的 checkpoint-before-dispatch 思路）。
+
+        崩溃/中断后若看到 status='inflight'，说明该回合已发出但结果未知——此时既不能
+        当作没发生（可能已产生副作用），也不能直接重发（可能重复副作用），只能让模型
+        先做只读核对。这正是"日志即真相"的最小可用形态。
+        """
         with self.lock, self._connect() as con:
             con.execute(
-                "INSERT INTO turn_results(session_id,conversation_index,prompt_hash,answer,steps_after,created) "
-                "VALUES(?,?,?,?,?,?) ON CONFLICT(session_id,conversation_index,prompt_hash) "
-                "DO UPDATE SET answer=excluded.answer, steps_after=excluded.steps_after, created=excluded.created",
+                "INSERT INTO turn_results(session_id,conversation_index,prompt_hash,answer,steps_after,status,created) "
+                "VALUES(?,?,?,'',?,'inflight',?) ON CONFLICT(session_id,conversation_index,prompt_hash) "
+                "DO UPDATE SET steps_after=excluded.steps_after, status='inflight', created=excluded.created",
+                (sid, int(conv_index), prompt_hash, int(steps_before), time.time()))
+
+    def save_turn(self, sid: str, conv_index: int, prompt_hash: str,
+                  answer: str, steps_after: int) -> None:
+        """回合成功产出结果：标为 done，恢复时可据此跳过重发。"""
+        with self.lock, self._connect() as con:
+            con.execute(
+                "INSERT INTO turn_results(session_id,conversation_index,prompt_hash,answer,steps_after,status,created) "
+                "VALUES(?,?,?,?,?,'done',?) ON CONFLICT(session_id,conversation_index,prompt_hash) "
+                "DO UPDATE SET answer=excluded.answer, steps_after=excluded.steps_after, "
+                "status='done', created=excluded.created",
                 (sid, int(conv_index), prompt_hash, (answer or "")[:4000], int(steps_after), time.time()))
 
     def get_turn(self, sid: str, conv_index: int, prompt_hash: str) -> dict[str, Any] | None:

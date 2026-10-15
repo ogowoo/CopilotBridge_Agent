@@ -1307,6 +1307,25 @@ set_recorder(SPANS)
 AGENT_TOOLS.memory = MEMORY
 
 
+def turn_cache_decision(hit: dict | None, steps_now: int) -> tuple[str, str]:
+    """回合缓存决策（纯函数，便于单测）。
+
+    返回 (动作, 复用答案)：
+      ("reuse", answer) —— 该回合已成功产出且此后无进展：直接复用，不重发；
+      ("probe", "")     —— 该回合已派发但**结果未知**（中断在途）：不重发副作用，
+                            让模型先做只读核对（DSH 的 "Its outcome is unknown." 思路）；
+      ("send", "")      —— 没有记录或状态允许重发。
+    """
+    if not hit:
+        return "send", ""
+    status = str(hit.get("status") or "done")
+    if status == "inflight":
+        return "probe", ""
+    if int(hit.get("steps_after") or 0) == int(steps_now):
+        return "reuse", str(hit.get("answer") or "")
+    return "send", ""
+
+
 def memory_scopes(scope: str = "all") -> list[str]:
     """记忆作用域解析：all=全局+当前工作区；global/project 各自单取。"""
     key = str(scope or "all").strip().lower()
@@ -2551,12 +2570,25 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 if _cache_on:
                     _hit = AGENT_SESSIONS.get_turn(sid, _ci, _ph)
                     _done = int((AGENT_SESSIONS.get(sid) or {}).get("total_steps", 0))
-                    # 必须"精确相等"：只有"该回合已落库且此后没有任何进展"才算崩溃后重放。
-                    # 用 >= 会在正常推进中误命中（同一答案被反复当新动作处理，实测步数 3→14）。
-                    if _hit and _done == int(_hit.get("steps_after", 0)):
+                    _act, _ans = turn_cache_decision(_hit, _done)
+                    if _act == "reuse":
                         log(f"回合结果命中缓存（{_ph[:8]}），跳过重发")
-                        return _hit.get("answer") or ""
+                        return _ans
+                    if _act == "probe":
+                        # 已派发但结果未知：绝不重发（可能重复副作用），先只读核对
+                        log(f"回合 {_ph[:8]} 结果未知（中断在途），改为只读核对后再继续")
+                        return json.dumps({
+                            "type": "tool", "tool": "list_directory", "arguments": {"path": "."},
+                            "reason": "上一回合在执行途中被中断，其结果未知：先只读核对当前文件与状态，"
+                                      "不要重复可能已发生的写入/删除等副作用；确认后再继续原计划。"},
+                            ensure_ascii=False)
 
+                if _cache_on:
+                    try:
+                        AGENT_SESSIONS.begin_turn(sid, _ci, _ph,
+                                                  int((AGENT_SESSIONS.get(sid) or {}).get("total_steps", 0)))
+                    except Exception:
+                        pass
                 try:
                     ans=await agent_chat_once(send_prompt,model,make_new,pause_check=pause_check,
                                               interrupt_check=lambda: interrupt_pending(sid))

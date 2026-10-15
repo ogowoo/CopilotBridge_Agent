@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from cbp.bridge import turn_cache_decision
 from cbp.session_store import SessionStore
 
 
@@ -38,6 +39,29 @@ class TurnCacheTests(unittest.TestCase):
     def test_answer_is_capped(self):
         self.store.save_turn("s1", 0, "h", "x" * 9000, 1)
         self.assertLessEqual(len(self.store.get_turn("s1", 0, "h")["answer"]), 4000)
+
+    def test_inflight_then_done(self):
+        """发请求前落 inflight；成功后转 done。"""
+        self.store.begin_turn("s1", 0, "h", 2)
+        got = self.store.get_turn("s1", 0, "h")
+        self.assertEqual(got["status"], "inflight")
+        self.assertEqual(got["answer"], "")
+        self.store.save_turn("s1", 0, "h", "答案", 3)
+        got = self.store.get_turn("s1", 0, "h")
+        self.assertEqual(got["status"], "done")
+        self.assertEqual(got["answer"], "答案")
+
+    def test_decision_reuse_probe_send(self):
+        """决策三态：已成功且无进展→复用；在途→只读核对；其它→正常发送。"""
+        self.assertEqual(turn_cache_decision(None, 5), ("send", ""))
+        self.assertEqual(turn_cache_decision({"status": "done", "steps_after": 5, "answer": "A"}, 5),
+                         ("reuse", "A"))
+        # 步数已推进（此后有进展）→ 视为新回合，正常发送
+        self.assertEqual(turn_cache_decision({"status": "done", "steps_after": 5, "answer": "A"}, 7)[0],
+                         "send")
+        # 在途：绝不重发
+        self.assertEqual(turn_cache_decision({"status": "inflight", "steps_after": 5, "answer": ""}, 5)[0],
+                         "probe")
 
     def test_cascade_delete(self):
         self.store.save_turn("s1", 0, "h", "a", 1)
