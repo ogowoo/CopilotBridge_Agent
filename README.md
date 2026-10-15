@@ -579,3 +579,9 @@ EventSource 用），普通请求会一直挂着直到断开，这是设计如�
 
 开启方式：`config.json` 的 `agent.allow_run_code: true`（默认 false）。建议同时把 `run_code`
 加进 `approval_required_tools`，让它像 `run_python` 一样逐次授权。
+
+### 评测的方差处理
+
+模型是随机的：同一任务可能 3 步完成、也可能 28 步。因此评测支持在 `tests/evals/tasks.json`
+里给单个任务声明 `"retries": 1`（失败后**重试一次**，两次都失败才算失败）——这样既能压掉
+单次抽样的假失败，又不会掩盖真实回归。当前只有 `code-with-validation` 声明了重试。

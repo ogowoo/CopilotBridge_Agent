@@ -163,7 +163,10 @@ def main() -> int:
         elif not _needs_browser:
             print("提供商路径：跳过 Copilot 预热（不需要浏览器）\n")
 
-        for t in tasks:
+        pending = list(tasks)
+        attempts: dict[str, int] = {}
+        while pending:
+            t = pending.pop(0)
             # 会话 ID 带运行戳：固定 ID 会复用到历史会话的 cancelled/archived 状态，
             # 导致 runner 看到取消标志直接退出（200 + 0 步的假失败）。
             sid = f"eval-{t['id']}-{stamp}"
@@ -253,6 +256,12 @@ def main() -> int:
                             "checks": checks, "error": d.get("_error") or d.get("_blocked"),
                             "events": hc.get("events"), "coverage_gaps": hc.get("coverage_gaps") or [],
                             "legacy_no_events": bool(hc.get("legacy"))})
+            if not ok and attempts.get(t["id"], 0) < int(t.get("retries") or 0):
+                attempts[t["id"]] = attempts.get(t["id"], 0) + 1
+                print(f"[RETRY] {t['id']} 第 {attempts[t['id']] + 1} 次尝试"
+                      f"（模型方差，失败后重试一次）")
+                pending.append(t)
+                continue
             mark = "PASS" if ok else "FAIL"
             bad = [x["name"] for x in checks if not x["ok"]]
             extra = f"  失败断言: {', '.join(bad)}" if bad else ""

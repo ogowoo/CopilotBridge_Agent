@@ -38,7 +38,9 @@
      "validate_python",
      "run_unittest"
     ]
-   }
+   },
+   "retries": 1,
+   "_note": "模型方差大（实测 3~28 步，且有时先被验证门拒绝）：失败后重试一次，两次都失败才算真失败。"
   },
   {
    "id": "read-analyze",
