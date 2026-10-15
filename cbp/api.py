@@ -661,6 +661,7 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
     local_deleted = b.AGENT_SESSIONS.delete(sid)
     b.RUNTIME.pop(sid, None)
     b.cancel_message_queue(sid)   # 清理该会话的排队消息与 worker
+    b.discard_provider_agent_history(sid)   # 清理提供商 Agent 对话历史
     if local_deleted:
         # 会话记录已删除，其快照不再可回滚（回滚端点要求会话存在）：回收磁盘。
         # 自升级作用域 _self_<sid> 同样要清——否则孤儿作用域会被"回滚最近一次

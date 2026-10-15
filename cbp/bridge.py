@@ -2091,25 +2091,77 @@ _PROVIDER_PROTOCOL = """你在与一个自动化执行器对话。你的整个�
 违反任何一条都会被系统拒绝执行并浪费回合。"""
 
 
-async def provider_turn(model_id: str, prompt: str) -> str:
-    """API 提供商的 Agent 回合：system 协议约束 + user 提示，返回回答文本。
+# provider 普通对话的按会话锁：同 sid 并发请求基于相同历史交错写回的防护
+_PROVIDER_LOCKS: dict[str, asyncio.Lock] = {}
 
-    限流/5xx/超时映射为 CopilotServiceUnavailable，复用 AgentRunner 的
-    指数退避重试；其他错误原样抛出计入解析失败/失败处理。
+# API 提供商 Agent 模式的按会话对话历史。
+#
+# 为什么必须留历史：AgentRunner 只在首回合（total==0）把系统提示词（含可用
+# 工具清单）放进 prompt，后续回合只发"继续同一任务。上一动作实际结果：…"。
+# 浏览器版 Copilot 自己保留对话上下文所以没问题；提供商是无状态 HTTP 调用，
+# 若不把历史一起发过去，第二回合起模型既看不到工具清单也看不到任务目标
+# （实测报错："本轮消息仍未附带可用工具清单，也没有给出任务目标…"直接卡死）。
+_PROVIDER_AGENT_HISTORY: dict[str, list[dict]] = {}
+_PROVIDER_HISTORY_MAX_CHARS = 160000
+
+
+def _trim_provider_history(hist: list[dict], max_chars: int | None = None) -> None:
+    """按字符上限回收历史：始终保留 system 与最近一轮问答。
+
+    max_chars 取调用时的模块常量（作为函数默认参数会在定义时固定，
+    运行期改常量就失效了）。至少留 system + user + assistant 三条，
+    否则会把当前回合问的东西也丢掉。
+    """
+    cap = _PROVIDER_HISTORY_MAX_CHARS if max_chars is None else max_chars
+
+    def total() -> int:
+        return sum(len(m.get("content") or "") for m in hist)
+    while total() > cap and len(hist) > 3:
+        hist.pop(1)                                   # 最早的 user
+        if len(hist) > 1 and hist[1].get("role") == "assistant":
+            hist.pop(1)                               # 它的回复一起丢，保持配对
+
+
+def discard_provider_agent_history(sid: str) -> None:
+    """会话删除时清理提供商对话历史（避免长期运行内存里堆积）。"""
+    _PROVIDER_AGENT_HISTORY.pop(sid, None)
+
+
+async def provider_turn(sid: str, model_id: str, prompt: str, force_new: bool = False) -> str:
+    """API 提供商的 Agent 回合：带会话历史的 system 协议约束 + 累积对话。
+
+    与浏览器版的关键差异：提供商每回合都是独立 HTTP 调用，必须把历史一起
+    发过去（否则模型看不到工具清单与任务目标）。force_new（换会话/滚动摘要）
+    时重置历史，从新的摘要提示重新开始。
+
+    限流/5xx/超时映射为 CopilotRateLimited，复用 AgentRunner 的指数退避重试；
+    其他错误原样抛出计入解析失败/失败处理。失败回合会把刚追加的 user 消息
+    回滚掉，避免重试时同一提示在历史里堆叠。
     """
     pm = providers_mod.split_provider_model(model_id)
     provider = PROVIDERS[pm[0]]
-    messages = [{"role": "system", "content": _PROVIDER_PROTOCOL},
-                {"role": "user", "content": prompt}]
+    if force_new or sid not in _PROVIDER_AGENT_HISTORY:
+        _PROVIDER_AGENT_HISTORY[sid] = [{"role": "system", "content": _PROVIDER_PROTOCOL}]
+    hist = _PROVIDER_AGENT_HISTORY[sid]
+    hist.append({"role": "user", "content": prompt})
+    _trim_provider_history(hist)
+    # 提供商 Agent 回合原先完全不写 runtime，导致 WebUI 的"最近发送内容/
+    # Copilot 当前回答/当前执行状态"三个面板全程空白——这里补齐。
+    runtime_update(sid, phase="api_sending", detail=f"正在调用 {pm[0]} API（{pm[1]}）",
+                   prompt_preview=prompt[-12000:], answer_preview="")
     try:
-        return await provider.complete(pm[1], messages,
-                                       response_schema=AGENT_ACTION_SCHEMA)
+        answer = await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
     except providers_mod.ProviderUnavailable as exc:
+        hist.pop()                                    # 回滚本次 user，重试不重复
         raise CopilotRateLimited(str(exc)) from exc
-
-
-# provider 普通对话的按会话锁：同 sid 并发请求基于相同历史交错写回的防护
-_PROVIDER_LOCKS: dict[str, asyncio.Lock] = {}
+    except Exception:
+        hist.pop()
+        raise
+    hist.append({"role": "assistant", "content": answer})
+    _trim_provider_history(hist)
+    runtime_update(sid, phase="api_received", detail=f"{pm[0]} API 已返回，正在解析动作",
+                   answer_preview=answer[-12000:])
+    return answer
 
 
 async def provider_session_chat(sid: str, content: str, model_id: str) -> dict:
@@ -2187,7 +2239,7 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             # 换会话只影响本地上下文压缩。
             async def turn(prompt, model, force_new=False):
                 SNAPSHOTS.next_turn(sid)   # 一次 Copilot 回合 = 一个快照版本
-                return await provider_turn(model, prompt)
+                return await provider_turn(sid, model, prompt, force_new=force_new)
         else:
             attached = {"done": False}   # 附件只在首个回合附加一次
             async def turn(prompt,model,force_new=False):
