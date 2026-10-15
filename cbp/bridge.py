@@ -2293,12 +2293,53 @@ async def provider_turn(sid: str, model_id: str, prompt: str, force_new: bool = 
         if hist and hist[-1].get("role") == "user":
             hist.pop()
 
+    async def _call() -> str:
+        """调用提供商：优先流式（边收边写 answer_preview，界面就能"逐字"看到），
+        流式不可用（服务不支持 response_format+stream 等）则退回非流式 complete()。
+
+        只在**一个增量都没收到**时才退回：已经收到内容再重发会重复计费、
+        也可能拿到两份不同的回答。
+        """
+        if not bool(CFG.get("stream_provider_agent", True)) or not hasattr(provider, "stream"):
+            return await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
+        chunks: list[str] = []
+        last_push = 0.0
+        try:
+            async for piece in provider.stream(pm[1], hist,
+                                               response_schema=AGENT_ACTION_SCHEMA):
+                if not piece:
+                    continue
+                chunks.append(piece)
+                now = time.monotonic()
+                # 节流：最多每 150ms 写一次 runtime，避免高频 DB 写入
+                if now - last_push >= 0.15:
+                    last_push = now
+                    runtime_update(sid, phase="api_streaming",
+                                   detail=f"{pm[0]} API 正在流式返回…",
+                                   answer_preview="".join(chunks)[-12000:])
+        except (providers_mod.ProviderError, providers_mod.ProviderUnavailable) as exc:
+            if chunks:
+                raise
+            log(f"提供商流式不可用，退回非流式：{exc}")
+            return await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
+        except AttributeError as exc:
+            # 自定义 provider 对象没实现 stream（保留兼容）
+            log(f"提供商不支持流式（{exc}），改用非流式")
+            return await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
+        text = "".join(chunks)
+        if not text.strip():
+            log("提供商流式返回为空，退回非流式")
+            return await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
+        # 收尾必推完整文本：节流可能让最后一次增量没发出去，预览会停在半截
+        runtime_update(sid, phase="api_streaming",
+                       detail=f"{pm[0]} API 流式返回完成，正在解析动作",
+                       answer_preview=text[-12000:])
+        return text
+
     try:
         # 强行插入指令时立即取消这次 HTTP 调用：提供商是无状态请求，取消即
         # "这轮没发生"，下一回合直接带上新指令重发，不用等它跑完。
-        answer = await _await_interruptible(
-            sid, provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA),
-            "调用提供商 API")
+        answer = await _await_interruptible(sid, _call(), "调用提供商 API")
     except providers_mod.ProviderUnavailable as exc:
         _rollback_user()
         # window_seconds=0：提供商走"下次重试"倒计时，不用 Copilot 网页实测的

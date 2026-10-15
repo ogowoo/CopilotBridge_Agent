@@ -212,6 +212,35 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .md-table{border-collapse:collapse;font-size:12.5px;min-width:60%}
 .md-table th,.md-table td{border:1px solid var(--line2);padding:4px 9px;text-align:left}
 .md-table th{background:var(--panel2);font-weight:600}
+/* ── 语法高亮（零依赖手写着色）──────────────────────────────────── */
+.hl-c{color:var(--faint);font-style:italic}
+.hl-s{color:var(--st)}
+.hl-k{color:var(--ky);font-weight:600}
+.hl-n{color:var(--nm)}
+.hl-t{color:var(--bl)}
+.hl-p{color:var(--nl)}
+/* 长代码块 / 长消息折叠 */
+.md-codewrap.foldable.collapsed .md-code{max-height:260px;overflow:hidden;position:relative}
+.md-codewrap.foldable.collapsed .md-code::after{content:"";position:absolute;left:0;right:0;bottom:0;height:56px;background:linear-gradient(transparent,var(--jv-bg))}
+.md-fold{border:0;background:transparent;color:var(--accent2);font-size:11px;cursor:pointer;padding:1px 7px;border-radius:5px}
+.md-fold:hover{background:var(--menu-hover)}
+.md-lines{font-size:11px;color:var(--faint)}
+.msg-main{position:relative}
+.msg-main.foldable.collapsed .md-body{max-height:340px;overflow:hidden}
+.msg-main.foldable.collapsed::after{content:"";position:absolute;left:1px;right:1px;bottom:24px;height:52px;background:linear-gradient(transparent,var(--panel2));pointer-events:none}
+.msg.user .msg-main.foldable.collapsed::after{background:linear-gradient(transparent,var(--msg-user-bg))}
+.msg-fold{margin-top:4px;border:0;background:transparent;color:var(--accent2);font-size:11.5px;cursor:pointer;padding:2px 6px;border-radius:5px}
+.msg-fold:hover{background:var(--menu-hover)}
+/* 对话搜索 */
+.findbar{display:flex;align-items:center;gap:6px;padding:6px 12px 0}
+.findbar input{flex:1;min-width:0}
+.findcount{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+mark.cbp-hit{background:var(--amber);color:#1a1206;border-radius:3px;padding:0 1px}
+mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--accent2)}
+/* 新到达消息的渐显（流式观感） */
+@keyframes cbp-reveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.msg.reveal{animation:cbp-reveal .28s ease-out}
+@media (prefers-reduced-motion:reduce){.msg.reveal{animation:none}}
 .composer{display:flex;gap:9px;padding:12px 15px;border-top:1px solid var(--line);align-items:flex-end}
 .composer textarea{flex:1;min-height:44px;max-height:160px}
 .composer .btn{flex:none;height:44px;padding:0 22px}

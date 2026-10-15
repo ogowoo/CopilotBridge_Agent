@@ -207,18 +207,152 @@ function renderSteps(steps){
   box.prepend(e)});
  renderedSteps=steps.length}
 
-function renderMessages(messages){
+function renderMessages(messages,opts){
+ opts=opts||{};
  let box=document.getElementById('chatlog');box.innerHTML='';
+ lastMessages=messages||[];
  if(!messages.length){box.innerHTML='<div class="meta">当前没有人工续聊记录。下面发送的消息会发给该 Session 正在使用的模型。</div>';return}
  messages.forEach(m=>{box.appendChild(msgEl(m.role,m.content,m.created))});
+ // 新到达的消息做一次渐显（纯动画，不改内容；尊重 prefers-reduced-motion）
+ if(opts.animateLast&&box.lastElementChild)box.lastElementChild.classList.add('reveal');
+ applyMsgFold(box);
+ if(findQuery)applyFind();
  box.scrollTop=box.scrollHeight}
 /* 复制整条消息 / 复制代码块 */
 function copyMsg(btn){let m=btn.closest('.msg');if(!m)return;
  try{navigator.clipboard.writeText(m.dataset.raw||'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
 function copyCode(btn){let w=btn.closest('.md-codewrap');if(!w)return;let c=w.querySelector('code');
  try{navigator.clipboard.writeText(c?c.textContent:'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
-/* 统一的消息构造器：服务器消息、乐观显示、队列提示、错误提示都走这里，
-   保证样式与"时间戳"一致（时间缺失时用当前时间）。 */
+function toggleCodeFold(btn){
+ let w=btn.closest('.md-codewrap');if(!w)return;
+ let folded=w.classList.toggle('collapsed');
+ btn.textContent=folded?'展开':'收起'}
+/* ── 长消息折叠 + 消息内搜索 ────────────────────────────────────────
+   折叠按**文本长度**判定（不依赖布局高度：会话页可能在未激活的页签里，
+   此时 scrollHeight 为 0，测高会失效）。 */
+const MSG_FOLD_CHARS=1800;
+function applyMsgFold(scope){
+ scope.querySelectorAll('.msg-main').forEach(m=>{
+  if(m.dataset.foldReady)return;
+  m.dataset.foldReady='1';
+  if((m.textContent||'').length<=MSG_FOLD_CHARS)return;
+  m.classList.add('foldable','collapsed');
+  let b=document.createElement('button');b.className='msg-fold';b.textContent='展开全文';
+  b.onclick=()=>{let c=m.classList.toggle('collapsed');b.textContent=c?'展开全文':'收起'};
+  m.appendChild(b)})}
+/* 搜索：输入即高亮命中，Enter/Shift+Enter 或按钮在命中之间跳转 */
+let findHits=[],findCur=-1,findQuery='';
+function chatFindInput(){
+ let q=(document.getElementById('chatFind').value||'').trim();
+ findQuery=q;
+ // 重渲染拿回干净 DOM（renderMessages 内部会按 findQuery 重新高亮）。
+ // 不要再单独调 applyFind()：那会在已标记的 DOM 上再标一遍（嵌套 mark、计数翻倍）。
+ renderMessages(lastMessages);
+}
+function applyFind(){
+ let box=document.getElementById('chatlog');findHits=[];findCur=-1;
+ let cnt=document.getElementById('findCount');
+ if(!findQuery){if(cnt)cnt.textContent='';return}
+ // 文本节点快照后逐个替换，避免边遍历边改 DOM；跳过按钮与已有标记
+ const nodes=[];
+ (function walk(n){for(let c=n.firstChild;c;c=c.nextSibling){
+   if(c.nodeType===3){if(c.nodeValue&&c.nodeValue.trim())nodes.push(c)}
+   else if(c.nodeType===1&&c.tagName!=='BUTTON'&&c.tagName!=='MARK'
+           &&!c.classList.contains('msg-fold'))walk(c)}})(box);
+ const q=findQuery.toLowerCase();
+ nodes.forEach(node=>{
+  const text=node.nodeValue,low=text.toLowerCase();
+  let idx=low.indexOf(q);if(idx<0)return;
+  const frag=document.createDocumentFragment();let last=0;
+  while(idx>=0){
+   frag.appendChild(document.createTextNode(text.slice(last,idx)));
+   const mk=document.createElement('mark');mk.className='cbp-hit';mk.textContent=text.substr(idx,findQuery.length);
+   frag.appendChild(mk);findHits.push(mk);
+   last=idx+findQuery.length;idx=low.indexOf(q,last)}
+  frag.appendChild(document.createTextNode(text.slice(last)));
+  node.parentNode.replaceChild(frag,node)});
+ if(cnt)cnt.textContent=findHits.length?`0/${findHits.length}`:'无匹配';
+ if(findHits.length){findCur=0;focusHit()}}
+function focusHit(){
+ findHits.forEach((h,i)=>h.classList.toggle('cur',i===findCur));
+ if(findCur<0)return;
+ const h=findHits[findCur];
+ h.scrollIntoView({block:'center',behavior:'smooth'});
+ let cnt=document.getElementById('findCount');
+ if(cnt)cnt.textContent=`${findCur+1}/${findHits.length}`}
+function findStep(delta){
+ if(!findHits.length)return;
+ findCur=(findCur+delta+findHits.length)%findHits.length;focusHit()}
+function toggleChatFind(){
+ let bar=document.getElementById('chatFindBar');if(!bar)return;
+ let show=bar.style.display==='none'||!bar.style.display;
+ bar.style.display=show?'flex':'none';
+ let inp=document.getElementById('chatFind');
+ if(show){inp.focus();inp.select()}
+ else{findQuery='';findHits=[];findCur=-1;if(inp)inp.value='';
+      let cnt=document.getElementById('findCount');if(cnt)cnt.textContent='';
+      renderMessages(lastMessages)}}   // 重渲染：把高亮标记一起清掉
+/* ── 代码语法高亮（零依赖，手写）───────────────────────────────────
+   输入是**已经 HTML 转义**的代码；做法：先把注释/字符串抽成占位符（占位符只用
+   字母 z，绝不含数字，因此不会被后面的数字/关键字正则误匹配），再给关键字、
+   数字、属性上色，最后还原占位符。未知语言原样返回（只吃 monospace 样式）。 */
+const HL_ALIAS={py:'python',python:'python',python3:'python',
+ js:'js',javascript:'js',mjs:'js',cjs:'js',ts:'js',typescript:'js',jsx:'js',tsx:'js',
+ json:'json',jsonc:'json',sh:'bash',bash:'bash',shell:'bash',zsh:'bash',console:'bash',
+ ps1:'powershell',powershell:'powershell',pwsh:'powershell',
+ sql:'sql',yml:'yaml',yaml:'yaml',html:'html',xml:'html',htm:'html',vue:'html',
+ css:'css',scss:'css',less:'css'};
+const HL_KW={
+ python:'def class return if elif else for while import from as try except finally with lambda yield async await None True False self in not and or is pass raise global nonlocal assert del break continue',
+ js:'function const let var return if else for while class new import export from async await try catch finally throw typeof instanceof null undefined true false this extends super of in do switch case break default delete void yield static get set',
+ json:'true false null',
+ bash:'if then else elif fi for do done while until case esac function return export local readonly echo cd set source unset alias trap',
+ powershell:'if elseif else foreach for while do until switch function param return try catch finally throw in begin process end filter',
+ sql:'select from where insert into update delete join left right inner outer full on group by order having limit offset create table alter drop index view values set as and or not null distinct count sum avg min max like between asc desc union all case when then end',
+ yaml:'true false null',
+ html:'DOCTYPE html head body div span script style link meta title table tr td th a img input button form section header footer nav ul li p h1 h2 h3 h4 h5 h6 pre code br hr',
+ css:'important media supports import charset'};
+function hlKeyword(re){return new RegExp('\\b('+re+')\\b','g')}
+function hlWrap(store){return(html)=>{store.push(html);return '\u0000'+'z'.repeat(store.length)+'\u0000'}}
+/* 入参是**原始代码**（未转义），返回值是已转义并上色的 HTML。
+   顺序很关键：先在原文上抽出注释/字符串（存转义后的 HTML），再转义剩余部分，
+   最后上色——若反过来（先转义再上色），引号变成 &quot;，字符串正则永远匹配不到。 */
+function highlight(raw,lang){
+ const fam=HL_ALIAS[String(lang||'').toLowerCase()];
+ const text=String(raw==null?'':raw);
+ if(!fam)return esc(text);
+ const store=[],keep=hlWrap(store);
+ // HTML 家族反过来：要匹配的是 &lt;tag 这种转义后的形态
+ if(fam==='html'){
+  let s=esc(text);
+  s=s.replace(/(&lt;!--[\s\S]*?--&gt;)/g,m=>keep('<span class="hl-c">'+m+'</span>'));
+  s=s.replace(/(&lt;\/?)([A-Za-z][\w:-]*)/g,(m,a,b)=>a+keep('<span class="hl-t">'+b+'</span>'));
+  s=s.replace(/([A-Za-z-]+)(=)(&quot;[^&]*?&quot;)/g,(m,a,b,c)=>keep('<span class="hl-p">'+a+'</span>')+b+keep('<span class="hl-s">'+c+'</span>'));
+  const kws=HL_KW[fam];
+  if(kws)s=s.replace(hlKeyword(kws.replace(/ /g,'|')),'<span class="hl-k">$1</span>');
+  return s.replace(/\u0000(z+)\u0000/g,(m,zs)=>store[zs.length-1]||m)}
+ let s=text;
+ const keepEsc=(m,cls)=>keep('<span class="'+cls+'">'+esc(m)+'</span>');
+ if(fam==='python'){
+  s=s.replace(/("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/g,m=>keepEsc(m,'hl-s'));
+  s=s.replace(/(#[^\n]*)/g,m=>keepEsc(m,'hl-c'));
+ }else if(fam==='js'||fam==='css'){
+  s=s.replace(/(\/\*[\s\S]*?\*\/|\/\/[^\n]*)/g,m=>keepEsc(m,'hl-c'));
+  s=s.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,m=>keepEsc(m,'hl-s'));
+ }else if(fam==='json'){
+  s=s.replace(/("(?:[^"\\]|\\.)*")(\s*:)?/g,(m,str,colon)=>colon?keepEsc(str,'hl-k')+colon:keepEsc(str,'hl-s'));
+ }else if(fam==='sql'){
+  s=s.replace(/(--[^\n]*)/g,m=>keepEsc(m,'hl-c'));
+  s=s.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/g,m=>keepEsc(m,'hl-s'));
+ }else{   // bash / powershell / yaml
+  s=s.replace(/(#[^\n]*)/g,m=>keepEsc(m,'hl-c'));
+  s=s.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/g,m=>keepEsc(m,'hl-s'));
+ }
+ s=esc(s);                                  // 剩余部分（关键字/数字所在）统一转义
+ const kws=HL_KW[fam];
+ if(kws)s=s.replace(hlKeyword(kws.replace(/ /g,'|')),'<span class="hl-k">$1</span>');
+ s=s.replace(/\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g,'<span class="hl-n">$&</span>');
+ return s.replace(/\u0000(z+)\u0000/g,(m,zs)=>store[zs.length-1]||m)}
 function msgEl(role,content,ts,opts){
  opts=opts||{};
  let who=opts.who||(role==='user'?'你':assistantLabel());
@@ -259,9 +393,16 @@ function mdToHtml(src){
    i++;
    while(i<lines.length&&!/^\s*```\s*$/.test(lines[i])){buf.push(lines[i]);i++}
    closeLists(0);
-   out.push(`<div class="md-codewrap"><div class="md-codebar"><span class="md-lang">${esc(lang)}</span>`+
-            `<button class="md-copy" onclick="copyCode(this)">复制</button></div>`+
-            `<pre class="md-code"><code>${esc(buf.join('\n'))}</code></pre></div>`);
+   // 高亮内部会先分词再转义（入参是原始代码，不要预先 esc）
+   const codeHtml=highlight(buf.join('\n'),lang);
+   const long=buf.length>22;
+   out.push(`<div class="md-codewrap${long?' foldable collapsed':''}"><div class="md-codebar">`+
+            `<span class="md-lang">${esc(lang)}</span>`+
+            (long?`<span class="md-lines">${buf.length} 行</span>`:'')+
+            `<button class="md-copy" onclick="copyCode(this)">复制</button>`+
+            (long?`<button class="md-fold" onclick="toggleCodeFold(this)">展开</button>`:'')+
+            `</div>`+
+            `<pre class="md-code"><code>${codeHtml}</code></pre></div>`);
    continue}
   // 表格：本行含 | 且下一行是分隔行
   if(line.includes('|')&&i+1<lines.length&&/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i+1])&&/-/.test(lines[i+1])){
@@ -806,7 +947,7 @@ async function awaitFollowupReply(sid,baseAssistants){
   try{
    let d=await api('/v1/agent/sessions/'+encodeURIComponent(sid));
    let as=d.messages.filter(m=>m.role==='assistant');
-   if(as.length>baseAssistants){renderMessages(d.messages);return}
+   if(as.length>baseAssistants){renderMessages(d.messages,{animateLast:true});return}
   }catch(e){}
  }}
 
@@ -1134,3 +1275,11 @@ attachPasteHandler('followup','follow');
  loadModels();browserState();
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();
+/* 流式期间加快刷新：常规 1s 太慢，看起来是一秒一跳；"正在发送/流式返回/等待回答"
+   时用 350ms，让内容真的像在逐字增长（非流式阶段仍走上面的 1s）。 */
+const FAST_PHASES=['api_sending','api_streaming','waiting','sending'];
+(function fastTick(){
+ setTimeout(()=>{
+  try{if(lastRuntime&&FAST_PHASES.indexOf(String(lastRuntime.phase||''))>=0){
+   runtime();refreshQueue()}}catch(e){}
+  fastTick()},350)})();

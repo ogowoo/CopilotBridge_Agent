@@ -230,14 +230,20 @@ class ApiProvider:
                 raise ProviderError(f"响应格式异常: {exc}") from exc
         raise ProviderUnavailable(self.net_error_text(last_exc)) from last_exc
 
-    async def stream(self, model: str, messages: list[dict[str, str]]) -> AsyncIterator[str]:
-        """流式产出 content 增量。"""
+    async def stream(self, model: str, messages: list[dict[str, str]],
+                     response_schema: dict[str, Any] | None = None) -> AsyncIterator[str]:
+        """流式产出 content 增量。
+
+        response_schema：与 complete() 同样支持结构化输出（Agent 的 JSON 动作协议
+        靠它稳住解析率）。若服务不支持 response_format+stream（4xx），抛
+        ProviderError —— 调用方可退回非流式 complete()。
+        """
         self.require_ready()
+        body: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
+        body.update(self._json_hint(response_schema))
         try:
             async with self._client() as client:
-                async with client.stream("POST", "/chat/completions", json={
-                    "model": model, "messages": messages, "stream": True,
-                }) as resp:
+                async with client.stream("POST", "/chat/completions", json=body) as resp:
                     self._check_status(resp)
                     async for line in resp.aiter_lines():
                         line = line.strip()
