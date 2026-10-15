@@ -635,6 +635,21 @@ function expandLive(){
  document.getElementById('liveMask').classList.add('open')}
 function closeLive(){document.getElementById('liveMask').classList.remove('open')}
 document.getElementById('liveCopy').onclick=()=>{try{navigator.clipboard.writeText(document.getElementById('liveBody').textContent||'')}catch(e){}};
+/* 查看该会话的初始提示词（首回合发给模型的完整内容）。
+   未落库的旧会话由后端按当前工作区近似重建，这里明确标注。 */
+async function showPromptView(){
+ if(!current){toast('请先选择 Session','err');return}
+ try{
+  let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/prompt');
+  let t=d.initial_prompt||'(空：该会话还没有发出过回合)';
+  document.getElementById('liveTitle').textContent=(d.rebuilt
+    ?'初始提示词（本会话未保存，以下为按当前工作区近似重建）'
+    :'初始提示词（首回合实际发送内容）')+` · ${t.length} 字符`;
+  let body=document.getElementById('liveBody');
+  body.textContent=t;
+  if(d.rebuild_error)body.textContent=t+'\n\n(重建失败: '+d.rebuild_error+')';
+  document.getElementById('liveMask').classList.add('open')
+ }catch(e){toast('读取初始提示词失败: '+e,'err')}}
 async function continueAgent(){
  if(!current){toast('请先选择 Session','err');return}
  let instruction=await dlgPrompt('请输入要继续执行的任务','继续执行当前任务，从未完成事项开始','继续执行');

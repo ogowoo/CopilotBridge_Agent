@@ -2131,6 +2131,51 @@ def discard_provider_agent_history(sid: str) -> None:
     _PROVIDER_AGENT_HISTORY.pop(sid, None)
 
 
+def remember_initial_prompt(sid: str, prompt: str) -> None:
+    """首个回合发给模型的提示词落库，供事后查看看。
+
+    里头是完整系统提示词（工具清单 + 项目约定 + 验证闭环规则 + 任务），
+    是排查"Agent 为什么这么做"的第一现场。此前只写在 RUNTIME.prompt_preview，
+    每个回合都被覆盖，初始提示词随即丢失。只记第一次，异常静默（不影响回合）。
+    """
+    if not prompt:
+        return
+    try:
+        st = AGENT_SESSIONS.get(sid)
+        if not st or (st.get("initial_prompt") or "").strip():
+            return
+        AGENT_SESSIONS.patch(sid, initial_prompt=prompt[:200000])
+    except Exception:
+        pass
+
+
+def rebuild_initial_prompt(state: dict) -> str:
+    """按会话的工作区与任务重建"初始提示词"（旧会话没存过时用）。
+
+    用独立的 ToolRegistry 重建，避免动到正在运行任务共享的那个实例
+    （改 AGENT_TOOLS.root 会让跑着的任务串台）。内容可能与当初略有差异
+    （AGENT.md / skills / 工具开关后来改过），因此界面会标注"近似重建"。
+    """
+    from .tools import ToolRegistry
+    ws = Path(state.get("workspace") or DEFAULT_WORKSPACE)
+    tools = ToolRegistry(ws, AGENT_CFG)
+    tools.set_global_root(BASE)
+    tools.current_session_id = str(state.get("id") or "")
+    try:
+        tools.memory_scope = memory_scope_for(ws)
+    except Exception:
+        pass
+    tools.set_web_copilot_tools(True)
+    task = str(state.get("original_task") or "")
+    runner = AgentRunner(tools, None, AGENT_CFG, None, None, None, None)
+    runner._task_text = task          # 供工具按任务裁剪
+    try:
+        runner._agent_md, runner._skills = runner._context_values()
+    except Exception:
+        pass
+    return runner._system_prompt() + "\n\n用户任务：\n" + task
+
+
 async def provider_turn(sid: str, model_id: str, prompt: str, force_new: bool = False) -> str:
     """API 提供商的 Agent 回合：带会话历史的 system 协议约束 + 累积对话。
 
@@ -2149,6 +2194,7 @@ async def provider_turn(sid: str, model_id: str, prompt: str, force_new: bool = 
     hist = _PROVIDER_AGENT_HISTORY[sid]
     hist.append({"role": "user", "content": prompt})
     _trim_provider_history(hist)
+    remember_initial_prompt(sid, prompt)
     # 提供商 Agent 回合原先完全不写 runtime，导致 WebUI 的"最近发送内容/
     # Copilot 当前回答/当前执行状态"三个面板全程空白——这里补齐。
     runtime_update(sid, phase="api_sending", detail=f"正在调用 {pm[0]} API（{pm[1]}）",
@@ -2275,6 +2321,7 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 # Copilot derives the sidebar title from the beginning of the first
                 # message. This is more stable than automating the Rename editor.
                 send_prompt = (marker + "\n" + prompt) if make_new else prompt
+                remember_initial_prompt(sid, send_prompt)   # 与实际发送内容一致
                 try:
                     ans=await agent_chat_once(send_prompt,model,make_new,pause_check=pause_check)
                 except AgentPaused:

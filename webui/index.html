@@ -54,7 +54,7 @@
             <button class="tab" id="tabPrompt" onclick="liveTab('prompt')">最近发送内容</button>
             <button class="tab" id="tabChat" onclick="liveTab('chat')">继续对话</button>
           </div>
-          <span class="hint"><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="放大查看当前面板" onclick="expandLive()">⤢ 放大</button></span>
+          <span class="hint"><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="查看该会话首回合发给模型的完整提示词（含系统提示词、工具清单、项目约定）" onclick="showPromptView()">📄 初始提示词</button><button class="btn ghost" style="padding:2px 10px;font-size:12px" title="放大查看当前面板" onclick="expandLive()">⤢ 放大</button></span>
         </div>
         <pre id="activity" class="term livepane">—</pre>
         <pre id="answer" class="term livepane" style="display:none">等待回答…</pre>

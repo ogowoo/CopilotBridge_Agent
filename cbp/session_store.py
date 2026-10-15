@@ -100,6 +100,13 @@ class SessionStore:
                 con.execute("ALTER TABLE sessions ADD COLUMN rate_limited_since REAL")
             except Exception:
                 pass  # 列已存在
+            # 迁移：会话的**初始提示词**（首回合发给模型的完整内容，含系统提示词、
+            # 工具清单、项目约定）。RUNTIME.prompt_preview 每回合都被覆盖，不落库
+            # 就再也看不到"这个任务当初被交待了什么"。
+            try:
+                con.execute("ALTER TABLE sessions ADD COLUMN initial_prompt TEXT")
+            except Exception:
+                pass  # 列已存在
 
     @staticmethod
     def _decode(row):
@@ -136,7 +143,7 @@ class SessionStore:
                    "total_steps","conversation_steps","estimated_tokens","estimated_chars","summary","recent_steps",
                    "modified_files","pending","last_error","cancel_requested","archived","compact_requested",
                    "rollover_requested","conv_tokens","conv_chars","gate_state",
-                   "retry_resume_at","retry_attempt","rate_limited_since"}
+                   "retry_resume_at","retry_attempt","rate_limited_since","initial_prompt"}
         values = {k:v for k,v in values.items() if k in allowed}
         if "state" in values and values["state"] not in self.STATES: raise ValueError("invalid state")
         for key in ("conversation_urls","summary","recent_steps","modified_files","pending"):

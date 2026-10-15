@@ -729,6 +729,30 @@ async def session_runtime(sid: str):
     return runtime
 
 
+@app.get("/v1/agent/sessions/{sid}/prompt")
+async def session_prompt(sid: str):
+    """查看该会话的提示词：初始（首回合完整内容）与最近一条。
+
+    初始提示词是排查"Agent 为什么这么做"的第一现场（含系统提示词、工具清单、
+    项目约定、验证闭环规则）。旧会话未落库时会**按当前工作区近似重建**并标注。
+    """
+    state = b.AGENT_SESSIONS.get(sid)
+    if not state:
+        raise HTTPException(404, "Session 不存在")
+    initial = (state.get("initial_prompt") or "").strip()
+    runtime = b.RUNTIME.get(sid) or {}
+    out = {"session_id": sid, "task": state.get("original_task") or "",
+           "initial_prompt": initial, "rebuilt": False, "rebuild_error": None,
+           "last_prompt": runtime.get("prompt_preview") or ""}
+    if not initial:
+        try:
+            out["initial_prompt"] = b.rebuild_initial_prompt(state)
+            out["rebuilt"] = True
+        except Exception as exc:
+            out["rebuild_error"] = str(exc)
+    return out
+
+
 # ── 跟进消息队列：查看 / 修改 / 删除排队中的消息 ──────────────────────
 @app.get("/v1/agent/sessions/{sid}/queue")
 async def list_queue(sid: str):
