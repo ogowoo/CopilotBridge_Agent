@@ -388,3 +388,34 @@ def _api_calls_exist_on_store() -> None:
     missing = sorted(n for n in names if not hasattr(SessionStore, n))
     if missing:
         raise InvariantError(f"api.py 调用了 SessionStore 上不存在的方法: {missing}")
+
+
+@invariant("前端 data-act 与 ACTIONS 表一一对应")
+def _ui_actions_wired() -> None:
+    """事件委托迁移后的护栏。
+
+    背景：为了收紧 CSP（去掉 script-src 'unsafe-inline'），页面里 49 处内联处理器
+    全部改成了 `data-act`，由 app.js 的 `ACTIONS` 表统一分发。风险是**名字写错就静默失效**
+    （按钮点了没反应，控制台也不报错）。这里做静态双向核对：
+    - 页面/JS 里出现的每个 data-act 都要在 ACTIONS 里有实现；
+    - ACTIONS 里每一项都要被引用（否则是死代码或拼错的名字）。
+    """
+    web = ROOT / "webui"          # 注意是 ROOT：HERE 指向 cbp/ 包目录
+    if not web.is_dir():
+        raise InvariantError(f"找不到 webui 目录: {web}")
+    html = (web / "index.html").read_text(encoding="utf-8")
+    js = (web / "app.js").read_text(encoding="utf-8")
+    used = set(re.findall(r'data-act(?:-input|-key)?="([A-Za-z0-9_]+)"', html + js))
+    if not used:
+        raise InvariantError("没有解析到任何 data-act（事件委托被回退了？）")
+    parts = js.split("const ACTIONS={", 1)
+    if len(parts) < 2:
+        raise InvariantError("app.js 里找不到 ACTIONS 表")
+    table = parts[1].split("\n};", 1)[0]
+    defined = set(re.findall(r'^\s*([A-Za-z0-9_]+):', table, re.M))
+    missing = sorted(used - defined)
+    if missing:
+        raise InvariantError(f"这些 data-act 没有实现（点击无反应）: {missing}")
+    extra = sorted(defined - used)
+    if extra:
+        raise InvariantError(f"ACTIONS 里有未被引用的条目（死代码或拼错）: {extra}")

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -59,6 +60,12 @@ def run(url: str, keep_open: bool) -> int:
             problems.append("页面抛异常: " + "; ".join(page_errors[:3]))
         if console_errors:
             problems.append("控制台 error: " + "; ".join(console_errors[:3]))
+        # CSP 专项：收紧 script-src 后，任何漏改的内联脚本/内联事件处理器都会在这里现形
+        csp_hits = [t for t in console_errors + page_errors
+                    if "Content Security Policy" in t or "Refused to execute" in t
+                    or "violates the following" in t]
+        if csp_hits:
+            problems.append("CSP 违规（还有内联脚本/处理器未迁移）: " + "; ".join(csp_hits[:3]))
         if bad_responses:
             problems.append("4xx/5xx 资源: " + "; ".join(sorted(set(bad_responses))[:4]))
 
@@ -73,6 +80,99 @@ def run(url: str, keep_open: bool) -> int:
         except Exception as exc:
             problems.append(f"未选会话时 toggleChatFind() 抛异常: {exc}")
 
+        # 3b) 安全交互回归：验证事件委托确实把点击送到了 ACTIONS 里的实现
+        #     先加载一个会话：#sessionView 在未选会话时是 display:none，标签/工具栏点不到
+        sid_for_ui = page.evaluate(
+            "async()=>{try{const d=await (await fetch('/v1/agent/sessions')).json();"
+            "return (d.sessions&&d.sessions[0]&&d.sessions[0].id)||''}catch(e){return ''}}")
+        if sid_for_ui:
+            page.evaluate(f"load({json.dumps(sid_for_ui)})")
+            page.wait_for_timeout(900)
+        #     （收紧 CSP 后内联处理器全部移除，名字写错会静默失效）
+        def act(name):
+            return page.evaluate(f"document.querySelector('[data-act=\\'{name}\\']')!==null")
+
+        def safe_click(selector, label):
+            try:
+                page.click(selector, timeout=4000)
+                return True
+            except Exception as exc:
+                problems.append(f"点击 {label}（{selector}）失败: {str(exc)[:80]}")
+                return False
+        theme_before = page.evaluate("document.documentElement.dataset.theme||'dark'")
+        safe_click('[data-act="toggleTheme"]', "主题切换")
+        page.wait_for_timeout(300)
+        theme_after = page.evaluate("document.documentElement.dataset.theme||'dark'")
+        if theme_after == theme_before:
+            problems.append("点击 主题切换（data-act=toggleTheme）无效：事件委托未生效")
+        else:
+            safe_click('[data-act="toggleTheme"]', "主题切换(还原)")   # 切回
+        if not act("liveTab"):
+            problems.append("找不到 data-act=liveTab（标签按钮未迁移）")
+        else:
+            safe_click('[data-act="liveTab"][data-arg="chat"]', "继续对话标签")
+            page.wait_for_timeout(300)
+            if not page.evaluate("document.getElementById('chat').classList.contains('on')||"
+                                 "getComputedStyle(document.getElementById('chat')).display!=='none'"):
+                problems.append("点击 继续对话 标签未切换")
+        # 3c) 扩大覆盖：逐个验证「委托 → ACTIONS → 实现」链路（只用只读或纯 UI 动作）
+        #     toggleRail：侧栏折叠开关
+        rail_before = page.evaluate("document.documentElement.dataset.rail||''")
+        safe_click('[data-act="toggleRail"]', "侧栏折叠")
+        page.wait_for_timeout(300)
+        if page.evaluate("document.documentElement.dataset.rail||''") == rail_before:
+            problems.append("点击 侧栏折叠（toggleRail）无效果")
+        else:
+            safe_click('[data-act="toggleRail"]', "侧栏折叠(还原)")
+        #     四个标签逐个切
+        for t in ("activity", "answer", "prompt", "chat"):
+            if safe_click(f'[data-act="liveTab"][data-arg="{t}"]', f"标签 {t}"):
+                page.wait_for_timeout(250)
+                if not page.evaluate(f"document.getElementById('tab{t.capitalize()}')"
+                                     f".classList.contains('on')"):
+                    problems.append(f"标签 {t} 点击后未选中")
+        #     toggleChatFind：查找条显隐
+        #     判据：状态**翻转**（不能用"点击后应为 flex"——本脚本前面的
+        #     "未选会话时 toggleChatFind() 不抛异常" 那一步已经把查找条打开了）。
+        #     另外判 inline style 而非 computedStyle：面板未激活时 computed 恒为 none。
+        bar_before = page.evaluate("(()=>{const b=document.getElementById('chatFindBar');"
+                                   "return b?(b.style.display||'none'):null})()")
+        safe_click('[data-act="toggleChatFind"]', "对话查找")
+        page.wait_for_timeout(300)
+        bar_after = page.evaluate("(()=>{const b=document.getElementById('chatFindBar');"
+                                  "return b?(b.style.display||'none'):null})()")
+        if bar_before == bar_after:
+            problems.append(f"点击 对话查找（toggleChatFind）无变化（{bar_before} → {bar_after}）")
+        #     showPromptView：初始提示词是 GET，只读安全
+        if safe_click('[data-act="showPromptView"]', "初始提示词"):
+            page.wait_for_timeout(1200)
+            # 实测它把内容塞进 #liveBody 并打开 liveMask（不是 prompt 面板）
+            if not page.evaluate("document.getElementById('liveMask').classList.contains('open')"):
+                problems.append("点击 初始提示词（showPromptView）未打开查看弹窗")
+            elif page.evaluate("document.getElementById('liveBody').innerHTML.length") < 20:
+                problems.append("点击 初始提示词后弹窗内容为空")
+            else:
+                safe_click('[data-act="closeLive"]', "关闭提示词弹窗")
+        #     expandLive / closeLive：放大弹窗开关
+        if act("expandLive"):
+            # 每个面板各有一个"放大"按钮，必须先切到可见面板再点（Playwright 的 :visible）
+            safe_click('[data-act="liveTab"][data-arg="chat"]', "切到对话(为放大)")
+            page.wait_for_timeout(250)
+            safe_click('[data-act="expandLive"]:visible', "放大")
+            page.wait_for_timeout(400)
+            if not page.evaluate("document.getElementById('liveMask').classList.contains('open')"):
+                problems.append("点击 放大（expandLive）未打开弹窗")
+            else:
+                safe_click('[data-act="closeLive"]', "关闭放大弹窗")
+        if act("closeManual"):
+            safe_click('[data-act="openManual"]', "使用手册"); page.wait_for_timeout(400)
+            opened = page.evaluate("document.getElementById('manualMask').classList.contains('open')")
+            if not opened:
+                problems.append("点击 使用手册（data-act=openManual）未打开弹窗")
+            else:
+                safe_click('[data-act="closeManual"]', "关闭手册"); page.wait_for_timeout(300)
+                if page.evaluate("document.getElementById('manualMask').classList.contains('open')"):
+                    problems.append("点击 关闭（data-act=closeManual）未关闭弹窗")
         # 4) SSE 必须带 token（配置 api_token 时否则恒 401）
         if sse_urls and not any("token=" in u for u in sse_urls):
             problems.append(f"SSE 未附加 token: {sse_urls[0][:120]}")

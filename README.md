@@ -399,6 +399,13 @@ python scripts/rollback.py --list            # 查看可回滚的任务与自升
 4. **容错写文件**：对 Copilot 返回的未转义写文件动作有正则容错恢复，恢复结果可能不完美；重要文件请先备份，`.py/.json/.html` 有语法+单测验证闭环兜底，其他类型没有。
 5. **自升级是高权限开关**：`allow_self_upgrade=true` 后 Agent 能改服务自身代码（白名单内）。虽然每次改动前都有快照、验证不过会被门拦住、且有离线回滚通道，但它仍是"让模型改运行中的服务"——只在你能接受这个前提、并且测试套件可用的前提下开启；不要在工作区里处理来源不可信的文件时同时开着自升级。
 6. **凭据与快照**：`data/snapshots/` 保存了被改文件的**改动前原像**，其中可能包含敏感内容（例如曾写入过密钥的文件），外发调试数据前先确认；`data/` 与 `EdgeProfile/` 都不要提交或分享。
+7. **跨站写入（CSRF）**：服务默认无 token 时，任意网页都能用 `fetch(..., {mode:'no-cors'})` 向 `127.0.0.1` 发简单请求（不触发 CORS 预检），从而取消任务、回滚服务自身代码、删会话——**读不到响应不等于没有副作用**。因此内置 `origin_guard` 中间件：写方法（POST/PUT/PATCH/DELETE）按浏览器信号判定，`Sec-Fetch-Site: cross-site|same-site` 或 `Origin` 非本机/异端口一律 **403**；不带 `Origin`/`Sec-Fetch-*` 的非浏览器客户端（curl、评测脚本）照常放行。可用 `agent.csrf_protect: false` 关闭（不推荐），`agent.csrf_allowed_origins` 加白名单。
+8. **安全响应头与 CSP**：所有响应带 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`（防点击劫持——本机场景下"诱导点删除/回滚"是现实威胁）与 CSP。CSP 为
+   `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`。
+   **`script-src` 不含 `'unsafe-inline'`，这是硬约束**：
+   - 页面里**不允许**再写内联事件处理器（`onclick="..."`）：一律用 `data-act="名称"`（输入类用 `data-act-input`，键盘类用 `data-act-key`），并在 `webui/app.js` 的 `ACTIONS` 表里注册实现——分发器会按 `data-act` 调用。写错名字不会报错、只是"点了没反应"，所以有第 14 条不变量**双向核对** `data-act` ↔ `ACTIONS`（缺实现 / 有死条目都会失败）。
+   - 也**不允许**内联 `<script>`：首屏主题初始化已外置为 `webui/boot.js`；新增静态资源必须加进 `cbp/api.py` 里 `/ui/{asset}` 的白名单（目前是 `style.css` / `app.js` / `boot.js`）。
+   - `style-src` 仍保留 `'unsafe-inline'`：页面大量使用 `style="..."` 属性与动态注入的 `<style>`，影响面小于脚本，暂不收紧。
 
 ## 已知限制
 

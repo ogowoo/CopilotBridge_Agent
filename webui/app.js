@@ -441,7 +441,7 @@ function msgEl(role,content,ts,opts){
  e.innerHTML=`<div class="msg-av">${esc(String(who).charAt(0))}</div>`+
   `<div class="msg-main"><div class="msg-head"><span class="msg-role">${esc(who)}</span>`+
   (t?`<span class="msg-time">${t}</span>`:'')+
-  `<button class="msg-copy" title="复制这条消息" onclick="copyMsg(this)">复制</button></div>`+
+  `<button class="msg-copy" title="复制这条消息" data-act="copyMsg">复制</button></div>`+
   body+`</div>`;
  e.dataset.raw=content||'';
  return e}
@@ -476,8 +476,8 @@ function mdToHtml(src){
    out.push(`<div class="md-codewrap${long?' foldable collapsed':''}"><div class="md-codebar">`+
             `<span class="md-lang">${esc(lang)}</span>`+
             (long?`<span class="md-lines">${buf.length} 行</span>`:'')+
-            `<button class="md-copy" onclick="copyCode(this)">复制</button>`+
-            (long?`<button class="md-fold" onclick="toggleCodeFold(this)">展开</button>`:'')+
+            `<button class="md-copy" data-act="copyCode">复制</button>`+
+            (long?`<button class="md-fold" data-act="toggleCodeFold">展开</button>`:'')+
             `</div>`+
             `<pre class="md-code"><code>${codeHtml}</code></pre></div>`);
    continue}
@@ -1164,7 +1164,7 @@ async function removeQueueItem(itemId){
 const IMG_STORES={task:[],follow:[]};
 
 function thumbsHtml(arr,store){
- return arr.map((a,i)=>`<span class="thumb"><img src="${a.dataUrl}" alt=""><button class="rm" title="移除" onclick="removeAttachment('${store}',${i})">×</button></span>`).join('')}
+ return arr.map((a,i)=>`<span class="thumb"><img src="${a.dataUrl}" alt=""><button class="rm" title="移除" data-act="removeAttachment" data-store="${store}" data-arg="${i}">×</button></span>`).join('')}
 function renderThumbs(){
  let tb=document.getElementById('taskThumbs'),fb=document.getElementById('followThumbs');
  if(tb)tb.innerHTML=thumbsHtml(IMG_STORES.task,'task');
@@ -1462,3 +1462,63 @@ const FAST_PHASES=['api_sending','api_streaming','waiting','sending'];
    if(!evtSrc&&lastRuntime&&FAST_PHASES.indexOf(String(lastRuntime.phase||''))>=0){
     runtime();refreshQueue()}}catch(e){}
   fastTick()},350)})();
+
+
+/* ── 事件委托（CSP 收紧后的统一入口）─────────────────────────────────
+   原先页面有 49 处内联 onclick/oninput/onkeydown，加上动态生成的 4 处。
+   内联处理器有两个问题：① 迫使 CSP 保留 script-src 'unsafe-inline'，
+   而内联脚本正是 XSS 的主要放大器；② 动态 HTML 每次重建都要重新绑定。
+   现在统一走 data-act / data-act-input / data-act-key + 一个分发器：
+   处理器集中在此，可审计；动态内容天然可用；CSP 可以只留 'self'。 */
+const ACTIONS={
+ toggleRail:()=>toggleRail(),
+ openTask:()=>openTask(),
+ openManual:()=>openManual(),
+ toggleBrowser:()=>toggleBrowser(),
+ toggleTheme:()=>toggleTheme(),
+ drawSessions:()=>drawSessions(),
+ chatFindInput:()=>chatFindInput(),
+ findStepKey:(el,e)=>{if(e.key==='Enter'){e.preventDefault();findStep(e.shiftKey?-1:1)}},
+ findStep:(el)=>findStep(Number(el.dataset.arg||1)),
+ control:(el)=>control(el.dataset.arg),
+ continueAgent:()=>continueAgent(),
+ activate:()=>activate(),
+ openCopilot:()=>openCopilot(),
+ toggleMore:(el,e)=>toggleMore(e),
+ rollbackSession:()=>rollbackSession(),
+ rollbackSelfUpgrade:()=>rollbackSelfUpgrade(),
+ removeSession:(el)=>removeSession(el.dataset.arg==='true'),
+ liveTab:(el)=>liveTab(el.dataset.arg),
+ showPromptView:()=>showPromptView(),
+ expandLive:()=>expandLive(),
+ toggleChatFind:()=>toggleChatFind(),
+ injectMessage:()=>injectMessage(),
+ setFollowupMode:(el)=>setFollowupMode(el.dataset.arg),
+ setTaskMode:(el)=>setTaskMode(el.dataset.arg),
+ sendFollowup:()=>sendFollowup(),
+ exportTimeline:()=>exportTimeline(),
+ refreshModels:()=>refreshModels(),
+ runTask:()=>runTask(),
+ closeDlg:()=>closeDlg(),
+ closeManual:()=>closeManual(),
+ closeLive:()=>closeLive(),
+ closeTask:()=>closeTask(),
+ // 点击遮罩**背景**才关闭（点弹窗内部不关）：原来写在内联里的 if(event.target===this)
+ mask:(el,e)=>{if(e.target!==el)return;
+  ({dlg:closeDlg,manual:closeManual,live:closeLive,task:closeTask}[el.dataset.arg]||(()=>{}))()},
+ maskGm:(el,e)=>{if(e.target===el)gmClose(null)},
+ // 动态生成内容里的处理器（消息复制/代码折叠/附件移除）
+ copyMsg:(el)=>copyMsg(el),
+ copyCode:(el)=>copyCode(el),
+ toggleCodeFold:(el)=>toggleCodeFold(el),
+ removeAttachment:(el)=>removeAttachment(el.dataset.store,Number(el.dataset.arg)),
+};
+document.addEventListener('click',e=>{
+ const el=e.target.closest?e.target.closest('[data-act]'):null;
+ if(!el)return;const fn=ACTIONS[el.dataset.act];if(fn)fn(el,e)});
+document.addEventListener('input',e=>{
+ const el=e.target.closest?e.target.closest('[data-act-input]'):null;
+ if(!el)return;const fn=ACTIONS[el.dataset.actInput];if(fn)fn(el,e)});
+document.addEventListener('keydown',e=>{
+ const el=e.target.closest?e.target.closest('[data-act-key]'):null;
+ if(!el)return;const fn=ACTIONS[el.dataset.actKey];if(fn)fn(el,e)});

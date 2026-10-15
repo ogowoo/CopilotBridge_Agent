@@ -223,7 +223,7 @@ async def origin_guard(request, call_next):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; "
         "form-action 'self'; frame-ancestors 'none'")
     return resp
@@ -552,7 +552,7 @@ async def web_ui_index():
 @app.get("/ui/{asset}", include_in_schema=False)
 async def web_ui_asset(asset: str):
     # 静态资产白名单，禁止路径穿越
-    if asset not in ("style.css", "app.js"):
+    if asset not in ("style.css", "app.js", "boot.js"):
         raise HTTPException(404, "Not Found")
     return FileResponse(b.BASE / "webui" / asset, headers={"Cache-Control": "no-cache, must-revalidate"})
 
