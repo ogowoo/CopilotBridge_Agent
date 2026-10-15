@@ -22,7 +22,7 @@ MEASURE_JS = r"""
 () => {
   const de = document.documentElement;
   const res = {inner: window.innerWidth, scrollW: de.scrollWidth, bodyScrollW: document.body.scrollWidth,
-               offenders: [], overlaps: [], clippedText: [], scrollOwners: [], byDesignTruncated: []};
+               offenders: [], overlaps: [], clippedText: [], scrollOwners: [], byDesignTruncated: [], edgeOverlaps: []};
   const vw = window.innerWidth, vh = window.innerHeight;
 
   const describe = el => ({
@@ -77,6 +77,35 @@ MEASURE_JS = r"""
   res.fixedList = fixed.map(f => ({id: f.id || f.cls, z: f.z,
                                    box: [Math.round(f.r.left), Math.round(f.r.top),
                                          Math.round(f.r.right), Math.round(f.r.bottom)]}));
+
+  // 3b) 固定浮层遮挡**内容**元素（此前的盲区：只比了浮层之间，漏掉"浮层压住标题/按钮"）
+  const KEY = ['#title','#status','#sidChip','.tabs','#chatlog','#followup','#sendFollowup',
+               '#injectBtn','#chatFindToggle','#sessModel','.actions','#steps','#activity','#answer'];
+  res.occlusions = [];
+  fixed.forEach(f => {
+    if (f.r.right < 0 || f.r.left > vw || f.r.bottom < 0 || f.r.top > vh) return;
+    KEY.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => {
+        const cs2 = getComputedStyle(el);
+        if (cs2.display === 'none' || cs2.visibility === 'hidden') return;
+        const b = el.getBoundingClientRect();
+        if (b.width < 4 || b.height < 4) return;
+        const ox = Math.max(0, Math.min(f.r.right, b.right) - Math.max(f.r.left, b.left));
+        const oy = Math.max(0, Math.min(f.r.bottom, b.bottom) - Math.max(f.r.top, b.top));
+        if (ox * oy <= 0) return;
+        const ratio = (ox * oy) / (b.width * b.height);
+        if (ratio < 0.05) return;    // 5% 以下忽略（轻微擦边）
+        // 判据：目标**中心点**是否真的被盖住。仅矩形相交不足以判定遮挡——
+        // 目标可能被祖先容器裁剪（矩形伸到可视区之外），那样"重叠"是不可见的。
+        const cx = Math.round(b.left + b.width / 2), cy = Math.round(b.top + b.height / 2);
+        const hit = document.elementFromPoint(cx, cy);
+        const reallyCovered = hit === f.el || (hit && f.el.contains(hit));
+        const item = {cover: f.id || f.cls, target: sel, ratio: Math.round(ratio * 100),
+                      overlap: Math.round(ox) + 'x' + Math.round(oy)};
+        if (reallyCovered) res.occlusions.push(item); else res.edgeOverlaps.push(item);
+      });
+    });
+  });
 
   // 4) 文字被裁剪（元素内文字超出其可视宽度且未换行）
   document.querySelectorAll('#sessionView *, #sessions *, .kpi, .btn, .stag, .sid, h1, h2, h3, label').forEach(el => {
@@ -138,6 +167,10 @@ def audit(widths: list[tuple[int, int]], url: str, stress: bool = False) -> int:
                   try{const b=document.getElementById('retryCountdown');if(b)b.style.display='none';
                       const cp=document.getElementById('retryChip');if(cp){cp.style.display='block';
                       cp.textContent='⏳ 57:59'}}catch(e){}
+                  try{syncFixedLanes();}catch(e){}
+                  // 打开对话标签：否则 #followup/#sendFollowup/#injectBtn/#chatlog 都是 display:none，
+                  // 量不到"浮层压住发送按钮"这类问题（子代理正是开着对话标签量到的）
+                  try{liveTab('chat');}catch(e){}
                   try{syncFixedLanes();}catch(e){}}""")
                 page.wait_for_timeout(500)
             m = page.evaluate(MEASURE_JS)
@@ -154,9 +187,15 @@ def audit(widths: list[tuple[int, int]], url: str, stress: bool = False) -> int:
                 problems.append(f"{w}x{h}: {len(m['offenders'])} 个元素超出视口（例："
                                 + "; ".join(f"{o['tag']}#{o['id'] or o['cls']}[{o['left']}..{o['right']}]"
                                             for o in top) + ")")
+            for oc in m.get("occlusions", []):
+                problems.append(f"{w}x{h}: 浮层 {oc['cover']} 遮挡 {oc['target']} "
+                                f"{oc['ratio']}%（{oc['overlap']}）")
             for ov in m["overlaps"]:
                 problems.append(f"{w}x{h}: 固定元素重叠 {ov['a']} × {ov['b']} ({ov['overlap']}, "
                                 f"z={ov['za']}/{ov['zb']})")
+            if m.get("edgeOverlaps"):
+                report.setdefault("edge_overlaps", []).append(
+                    {"width": w, "items": m["edgeOverlaps"]})
             if m.get("byDesignTruncated"):
                 report.setdefault("by_design", []).append(
                     {"width": w, "count": len(m["byDesignTruncated"])})

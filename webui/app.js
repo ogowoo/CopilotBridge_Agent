@@ -55,6 +55,9 @@ function syncFixedLanes(){
   rs.setProperty('--banner-h', h('connBanner')+'px');
   rs.setProperty('--boot-h', h('bootBar')+'px');
   rs.setProperty('--approval-h', h('approvalBar')+'px');
+  // 限流卡与小标是同一位置的两种形态（展开/收起），取当前可见那个的高度
+  rs.setProperty('--retry-h', Math.max(h('retryCountdown'), h('retryChip'))+'px');
+  rs.setProperty('--toast-h', h('toasts')+'px');
  }catch(e){}}
 window.addEventListener('resize',()=>syncFixedLanes());
 setInterval(syncFixedLanes,1500);   // 文案变化/换行导致高度变化时靠它跟上（成本极低）
@@ -75,7 +78,10 @@ function showApprovalBar(p){
  let el=document.getElementById('approvalBar');
  if(!p||!p.tool){if(el)el.style.display='none';approvalSeen=null;return}
  if(!el){el=document.createElement('div');el.id='approvalBar';el.className='approvalbar';
-  document.body.appendChild(el)}
+  // **流内**：插到会话视图顶部，占位把内容推开，而不是浮在上面盖住发送按钮/时间线。
+  // 实测：作为 fixed 浮层时，窄屏会遮住 #injectBtn/#chatFindToggle 43%、#chatlog 34%。
+  const host=document.getElementById('sessionView')||document.body;
+  host.insertBefore(el,host.firstChild)}
  const key=(current||'')+'|'+p.tool+'|'+(p.args_hash||'');
  if(approvalSeen!==key){approvalSeen=key;
   el.innerHTML='';

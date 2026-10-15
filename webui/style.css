@@ -71,7 +71,12 @@ textarea{resize:vertical}
 .btn:disabled{opacity:.55;cursor:default}
 
 /* ── 主区域 ─────────────────────────────── */
-.main{overflow:auto;min-width:0;padding:18px 22px 26px;display:flex;flex-direction:column}
+/* 浮层占位：固定浮层（连接横幅/未就绪条/授权横幅/限流/提示）不参与布局，
+   所以在内容区上下各保留一条 padding 带，让它们只覆盖留白、不遮内容元素——
+   实测过：只挪位置解决不了（顶部浮层必然压住顶栏的标题/状态）。 */
+.main{overflow:hidden;min-width:0;display:flex;flex-direction:column;
+  padding:calc(18px + var(--banner-h,0px) + var(--boot-h,0px)) 22px
+          calc(26px + var(--retry-h,0px) + var(--toast-h,0px))}
 #sessionView{flex:1;display:flex;flex-direction:column;min-height:0}
 .empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--faint)}
 .empty .big{font-size:44px;font-weight:700;letter-spacing:2px;color:var(--big)}
@@ -87,7 +92,7 @@ textarea{resize:vertical}
 .pill.done{color:#79b0ff;border-color:#58a6ff66;background:#58a6ff14}
 .sub{color:var(--muted);font-size:12px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .actions{display:flex;gap:14px;margin-top:12px;flex-wrap:wrap}
-.grp{display:flex;gap:7px;padding-right:14px;border-right:1px solid var(--line);align-items:center}
+.grp{display:flex;gap:7px;padding-right:14px;border-right:1px solid var(--line);align-items:center;flex-wrap:wrap;min-width:0}
 .grp:last-child{border-right:0;padding-right:0}
 .actions .btn{height:34px;padding-top:0;padding-bottom:0}
 .menu{position:relative;display:flex;align-items:center}
@@ -99,7 +104,7 @@ textarea{resize:vertical}
 
 /* KPI 条：auto-fit 让卡片数随可用宽度自适应，杜绝窄窗口网格溢出互相挤压 */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
-.kpis .kpi:last-child{grid-column:span 2}
+@media(min-width:1281px){.kpis .kpi:last-child{grid-column:span 2}}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 14px}
 .kpi span{display:block;font-size:11px;letter-spacing:1px;color:var(--faint);margin-bottom:5px}
 .kpi b{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
@@ -107,7 +112,7 @@ textarea{resize:vertical}
 .meter span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .5s}
 
 /* 内容区：实时面板已上移为独立选项卡卡片，这里只剩时间线独占整宽 */
-.content{display:grid;grid-template-columns:1fr;gap:12px;align-items:stretch;flex:1;min-height:280px}
+.content{display:grid;grid-template-columns:1fr;gap:12px;align-items:stretch;flex:1 1 auto;min-height:0;overflow:hidden}
 .content>.card{display:flex;flex-direction:column;min-height:0}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
 .chead{display:flex;align-items:center;gap:9px;padding:11px 15px;border-bottom:1px solid var(--line);font-weight:600;font-size:13.5px}
@@ -249,14 +254,14 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 
 .demo{position:fixed;left:16px;bottom:14px;z-index:99;background:#3d2b10;border:1px solid #9e6a03;color:#e8b339;font-size:12px;padding:6px 13px;border-radius:20px}
 /* 限流倒计时：居中卡片（可收起为右下角小标——原先贴右上角会挡住模型选择器） */
-.retry-fab{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:80;min-width:250px;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:12px;padding:14px 20px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
+.retry-fab{position:fixed;top:auto;left:calc((100vw + 318px) / 2);bottom:calc(16px + var(--approval-h,0px) + var(--retry-h,0px) + 12px);transform:translateX(-50%);z-index:78;min-width:250px;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:12px;padding:14px 20px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
 .retry-fab .rc-x{position:absolute;top:5px;right:7px;border:0;background:transparent;color:var(--muted);font-size:17px;line-height:1;cursor:pointer;padding:2px 7px;border-radius:6px}
 .retry-fab .rc-x:hover{color:var(--text);background:var(--menu-hover)}
 .retry-fab .rc-title{font-size:12.5px;color:var(--muted);margin-bottom:4px}
 .retry-fab .rc-count{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent2);line-height:1.1;font-family:Consolas,"Cascadia Mono",monospace}
 .retry-fab .rc-sub{font-size:11.5px;color:var(--faint);margin-top:6px}
 /* 收起后的小标（右下角，不挡顶部控件） */
-.retry-chip{position:fixed;right:18px;bottom:calc(14px + var(--approval-h));z-index:80;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;font-family:Consolas,"Cascadia Mono",monospace;color:var(--accent2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+.retry-chip{position:fixed;left:calc((100vw + 318px) / 2);right:auto;bottom:calc(16px + var(--approval-h,0px) + 12px);transform:translateX(-50%);z-index:78;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;font-family:Consolas,"Cascadia Mono",monospace;color:var(--accent2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}
 .retry-chip:hover{border-color:var(--accent2)}
 
 /* ── 删除结果弹窗 ── */
@@ -281,7 +286,7 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 .dfoot{display:flex;gap:9px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
 
 /* ── 页面内通知与通用弹层（替代浏览器原生 alert/confirm/prompt） ── */
-.toasts{position:fixed;top:calc(var(--banner-h) + var(--boot-h) + 18px);left:50%;transform:translateX(-50%);z-index:120;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toasts{position:fixed;top:auto;bottom:calc(16px + var(--approval-h,0px) + var(--retry-h,0px) + 12px);right:16px;left:auto;transform:none;z-index:120;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
 .toast{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:10px 18px;font-size:13px;box-shadow:0 10px 32px var(--dlg-shadow);animation:dlgIn .16s ease-out;max-width:min(560px,90vw);white-space:pre-wrap;word-break:break-word;pointer-events:auto}
 .toast.err{border-color:var(--red);color:var(--danger-text)}
 .toast.ok{border-color:var(--green);color:var(--green)}
@@ -404,7 +409,7 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 :root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres .err{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
 :root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres.ok .ric{background:#16a34a1a;color:#15803d;border-color:#16a34a55}
 :root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres.fail .ric{background:#dc26261a;color:#b91c1c;border-color:#dc262655}
-@media(max-width:1100px){.content{grid-template-columns:1fr;min-height:0;flex:none}.steps,.livepane{flex:none;max-height:60vh}}
+@media(max-width:1100px){.main{overflow:auto}.content{grid-template-columns:1fr;min-height:0;flex:none}.steps,.livepane{flex:none;max-height:60vh}}
 /* 左侧栏折叠（仅宽屏生效）：侧栏宽度归零，只剩边缘拉手 */
 @media(min-width:861px){
   :root[data-rail="closed"] .app{grid-template-columns:0 1fr}
@@ -462,7 +467,7 @@ section.card:has(#stepCount){margin-top:14px}
 #manualBody summary::marker{color:var(--muted)}
 
 /* ── Copilot 未就绪提示条 ───────────────────────────────────────── */
-#bootBar{position:fixed;left:50%;top:calc(var(--banner-h) + 12px);transform:translateX(-50%);z-index:55;display:none;
+#bootBar{position:fixed;left:calc((100vw + 318px) / 2);top:calc(var(--banner-h) + 12px);transform:translateX(-50%);z-index:55;display:none;
  align-items:center;gap:10px;max-width:min(760px,92vw);padding:7px 12px;border-radius:9px;
  background:var(--panel2);color:var(--text);border:1px solid var(--amber);
  box-shadow:0 6px 20px var(--menu-shadow);font-size:12.5px}
@@ -477,12 +482,12 @@ section.card:has(#stepCount){margin-top:14px}
 /* ── 破坏性工具授权横幅（一次性审批的 UI 入口）── */
 /* 授权横幅：窄屏必须能换行，否则文案被挤成 6 行并压住 KPI（实测 480px 宽时）
    说明：给文字 flex:1 1 220px 让它可以占满一行、按钮 flex:none 不被压缩。 */
-.approvalbar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:82;
-  display:none;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;
-  width:min(94vw,860px);padding:10px 14px;border-radius:10px;font-size:13px;
+/* 授权横幅：**流内**（不是浮层）——它是阻塞式提示，必须占位推开内容 */
+.approvalbar{position:static;display:none;align-items:center;flex-wrap:wrap;gap:10px;
+  margin:0 0 12px;padding:10px 14px;border-radius:10px;font-size:13px;
   background:var(--panel,#1c1f24);color:var(--text,#e6e6e6);
-  border:1px solid var(--accent,#2f6f4f);box-shadow:0 6px 20px rgba(0,0,0,.35)}
-.approvalbar span{flex:1 1 220px;min-width:0;line-height:1.35;text-align:left}
+  border:1px solid var(--accent,#2f6f4f);box-shadow:0 2px 10px rgba(0,0,0,.2)}
+.approvalbar span{flex:1 1 220px;min-width:0;line-height:1.35;text-align:left;overflow-wrap:anywhere}
 .approvalbar .btn{flex:none}
 
 /* ── 窄屏：工具栏换行 ────────────────────────────────────────────────
@@ -494,7 +499,8 @@ section.card:has(#stepCount){margin-top:14px}
   .trow h1{flex:1 1 100%;white-space:normal}
   #sessModel{flex:1 1 auto;min-width:0;max-width:100%}
   .topbar{padding:12px 12px}
-  .approvalbar{bottom:8px;width:96vw;padding:9px 11px}
+  /* 流内元素不能设 width:96vw（实测 480px 下 461px > 父容器 436px → 自身溢出） */
+  .approvalbar{padding:9px 11px}
   .approvalbar span{flex:1 1 100%}
 }
 
@@ -506,3 +512,25 @@ section.card:has(#stepCount){margin-top:14px}
 #bootBar{z-index:55}
 .toasts{z-index:120}
 .approvalbar{z-index:82}
+
+/* ── 浮层横向对齐内容区（实测：bootBar 用视口居中会偏左 159px 压住顶栏）──
+   宽屏内容区中心 = (100vw + 318px)/2；侧栏折叠或窄屏（单列）时回到 50vw。 */
+:root[data-rail="closed"] #bootBar,
+:root[data-rail="closed"] .retry-fab,
+:root[data-rail="closed"] .retry-chip,
+
+@media(max-width:860px){
+  #bootBar,.retry-fab,.retry-chip{left:50%}
+  #bootBar{max-width:96vw}
+}
+.retry-fab,.retry-chip{bottom:calc(16px + var(--retry-h,0px) + 12px)}
+.toasts{bottom:16px}
+.approvalbar{bottom:16px}
+
+/* ── 中等宽度（861–1100px）顶栏挤压 ─────────────────────────────────
+   实测 900px 时 #title 只剩 29.5px（scrollW 637），因为模型下拉框固定 230px
+   而这一行不换行。允许换行并把标题设最小宽度。 */
+@media(max-width:1100px){
+  .trow{flex-wrap:wrap;row-gap:8px}
+  .trow h1{flex:1 1 220px;min-width:120px;white-space:normal}
+}
