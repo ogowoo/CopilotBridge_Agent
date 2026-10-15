@@ -733,9 +733,30 @@ class AgentRunner:
         return max(1, chinese + words + punctuation // 2 + code_weight + base64_weight)
 
     @staticmethod
+    @staticmethod
+    def retain_text(text: str, limit: int) -> str:
+        """超长文本**保头保尾**（DSH 的 head/tail 保留思路）。
+
+        原来只留头部（`value[:limit] + "[truncated]"`），把**尾部**丢掉了——而工具
+        结果的尾部往往正是错误信息与结论（例如 unittest 的失败列表、traceback 末尾）。
+        这里保留头 60% / 尾 40%，中间替换为统一省略标记，并给出省略字符数。
+        Python 的字符串切片按码点，不会切坏 UTF-8。
+        """
+        if limit <= 0 or len(text) <= limit:
+            return text
+        head = max(1, int(limit * 0.6))
+        tail = max(1, limit - head)
+        removed = len(text) - head - tail
+        if removed <= 0:
+            return text[:limit]
+        return (text[:head]
+                + f"\n\n[... 中间 {removed} 字符已省略（保留头尾；错误与结论通常在尾部）...]\n\n"
+                + text[-tail:])
+
+    @staticmethod
     def compact_value(value: Any, limit: int = 3000) -> Any:
         if isinstance(value, str):
-            return value if len(value) <= limit else value[:limit] + "...[truncated]"
+            return AgentRunner.retain_text(value, limit)
         if isinstance(value, list):
             return [AgentRunner.compact_value(x, limit) for x in value]
         if isinstance(value, dict):
