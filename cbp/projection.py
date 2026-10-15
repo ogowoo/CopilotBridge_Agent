@@ -16,6 +16,7 @@ from typing import Any
 KNOWN_KINDS = (
     "turn_begin", "turn_done", "step_begin", "step_done", "step_recorded",
     "approval_granted", "approval_taken", "approval_denied", "state",
+    "message", "files_modified",
 )
 
 
@@ -26,6 +27,8 @@ def project(events: list[dict[str, Any]]) -> dict[str, Any]:
     approvals = {"granted": 0, "taken": 0, "denied": 0}
     states: list[dict[str, Any]] = []
     recorded_steps: list[int] = []
+    messages: list[dict[str, Any]] = []
+    changed_files: list[str] = []
     unknown: dict[str, int] = {}
 
     for ev in events:
@@ -63,6 +66,14 @@ def project(events: list[dict[str, Any]]) -> dict[str, Any]:
         elif kind == "state":
             states.append({"from": payload.get("from"), "to": payload.get("to"),
                            "id": ev.get("id")})
+        elif kind == "message":
+            messages.append({"role": payload.get("role"), "chars": payload.get("chars"),
+                             "conversation_index": payload.get("conversation_index"),
+                             "message_id": payload.get("message_id")})
+        elif kind == "files_modified":
+            for path in (payload.get("added") or []):
+                if path not in changed_files:
+                    changed_files.append(path)
         else:
             unknown[str(kind)] = unknown.get(str(kind), 0) + 1
 
@@ -72,6 +83,8 @@ def project(events: list[dict[str, Any]]) -> dict[str, Any]:
         "approvals": approvals,
         "states": states,
         "recorded_steps": sorted(recorded_steps),
+        "messages": messages,
+        "changed_files": changed_files,
         "unknown_kinds": unknown,
         "event_count": len(events),
         "last_event_id": max((int(e.get("id") or 0) for e in events), default=0),

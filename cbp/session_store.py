@@ -205,15 +205,32 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         values["updated"] = time.time()
         with self.lock, self._connect() as con:
             prev_state = None
-            if "state" in values:
-                row = con.execute("SELECT state FROM sessions WHERE id=?", (sid,)).fetchone()
-                prev_state = row["state"] if row else None
+            prev_files: dict = {}
+            if "state" in values or "modified_files" in values:
+                row = con.execute("SELECT state, modified_files FROM sessions WHERE id=?", (sid,)).fetchone()
+                if row:
+                    prev_state = row["state"]
+                    try:
+                        prev_files = json.loads(row["modified_files"] or "{}")
+                    except Exception:
+                        prev_files = {}
             con.execute("UPDATE sessions SET " + ",".join(f"{k}=?" for k in values) + " WHERE id=?", (*values.values(), sid))
             # 状态迁移是"日志即真相"最关键的一类事件：只记**真实变化**（重复写同值不记），
             # 并带上 from/to，便于重放与审计。事件复用同一连接（见 append_event 注释）。
             if "state" in values and prev_state != values["state"]:
                 self.append_event(sid, "state",
                                   {"from": prev_state, "to": values["state"]}, con=con)
+            if "modified_files" in values:
+                try:
+                    cur_files = json.loads(values["modified_files"] or "{}")
+                except Exception:
+                    cur_files = {}
+                added = sorted(set(cur_files) - set(prev_files))
+                removed = sorted(set(prev_files) - set(cur_files))
+                if added or removed:
+                    self.append_event(sid, "files_modified",
+                                      {"added": added[:50], "removed": removed[:50],
+                                       "total": len(cur_files)}, con=con)
         return self.get(sid)
 
     def add_step(self, sid: str, step_no: int, conversation_index: int, step: dict[str, Any]):
@@ -241,6 +258,12 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         with self.lock, self._connect() as con:
             cur = con.execute("INSERT INTO messages(session_id,created,role,content,conversation_index) VALUES(?,?,?,?,?)",
                               (sid, time.time(), role, content, int(conversation_index)))
+            # 事件只记元信息（角色/长度/对话序号），正文留在 messages 表：
+            # 事件表要保证轻量，重放对话时按 id 关联即可。
+            self.append_event(sid, "message",
+                              {"role": role, "chars": len(content or ""),
+                               "conversation_index": int(conversation_index),
+                               "message_id": cur.lastrowid}, con=con)
             return cur.lastrowid
 
     def update_message(self, sid: str, message_id: int, content: str) -> bool:

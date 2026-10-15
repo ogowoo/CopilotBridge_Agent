@@ -50,6 +50,35 @@ class EventLogTests(unittest.TestCase):
         self.store.begin_turn("s1", 0, "ph", 0)
         self.assertEqual((self.store.get_turn("s1", 0, "ph") or {}).get("status"), "inflight")
 
+    def test_message_events_are_lightweight(self):
+        """消息事件只记元信息（正文留在 messages 表），避免事件表膨胀。"""
+        self.store.add_message("s1", "user", "很长的正文" * 500, 0)
+        ev = self.store.events("s1", kinds=("message",))[0]
+        self.assertEqual(ev["payload"]["role"], "user")
+        self.assertEqual(ev["payload"]["chars"], len("很长的正文" * 500))
+        self.assertNotIn("content", ev["payload"])
+
+    def test_files_modified_event_records_delta(self):
+        self.store.patch("s1", modified_files={"a.py": {"operation": "write"}})
+        self.store.patch("s1", modified_files={"a.py": {"operation": "write"},
+                                              "b.py": {"operation": "write"}})
+        self.store.patch("s1", modified_files={"b.py": {"operation": "write"}})
+        evs = self.store.events("s1", kinds=("files_modified",))
+        self.assertEqual(len(evs), 3, "三次集合变化应各发一条事件")
+        self.assertEqual(evs[0]["payload"]["added"], ["a.py"])
+        self.assertEqual(evs[1]["payload"]["added"], ["b.py"])
+        self.assertEqual(evs[1]["payload"]["removed"], [])
+        self.assertEqual(evs[2]["payload"]["added"], [])
+        self.assertEqual(evs[2]["payload"]["removed"], ["a.py"])
+        self.assertEqual(evs[2]["payload"]["total"], 1)
+
+    def test_no_event_when_files_unchanged(self):
+        self.store.patch("s1", modified_files={"a.py": {"operation": "write"}})
+        n = len(self.store.events("s1", kinds=("files_modified",)))
+        self.store.patch("s1", modified_files={"a.py": {"operation": "write"}})
+        self.assertEqual(len(self.store.events("s1", kinds=("files_modified",))), n,
+                         "文件集合没变就不该再发事件")
+
     def test_cascade_delete(self):
         self.store.begin_turn("s1", 0, "ph", 0)
         self.assertTrue(self.store.delete("s1"))

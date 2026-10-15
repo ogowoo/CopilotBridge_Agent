@@ -515,6 +515,16 @@ curl "http://127.0.0.1:8765/v1/agent/sessions/<sid>/event-log?limit=50&kinds=tur
 curl "http://127.0.0.1:8765/v1/agent/sessions/<sid>/projection"
 ```
 
+### 巡检：投影与列是否一致（P2-10 第三期前的验收）
+
+```powershell
+python scripts/health.py            # 巡检全部会话；--limit / --session / --json 可选
+```
+
+它逐个会话把**事件流重放**成状态，再与数据库列交叉核对。输出区分三类：
+一致 / **不一致**（有事件却对不上＝事件覆盖有缺口）/ **早于事件功能**（0 事件的历史会话，
+跳过不计）。存在不一致时退出码为 1，可直接接 CI 或长跑任务巡检。
+
 ⚠️ 不要用普通 GET 调 `/v1/agent/sessions/{sid}/events`——那是 **SSE 长连接**（前端
 EventSource 用），普通请求会一直挂着直到断开，这是设计如此；要历史事件请用上面的
 `event-log`。
