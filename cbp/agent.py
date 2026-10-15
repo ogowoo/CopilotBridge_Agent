@@ -972,6 +972,13 @@ class AgentRunner:
         # 工作区项目上下文：AGENT.md 全量注入 + skills 清单。每次 run 重新读取，
         # 恢复运行/换工作区后总能拿到最新版本。
         self._session_id = str(state.get("id") or state.get("session_id") or "")
+        # 验证门的"比例原则"：默认要求 validate+unittest 双通过；但任务本身只要求
+        # 语法检查（或明确不需要单测）时，强制单测会逼模型给一次性脚本造 tests/
+        # 目录与测试文件——实测 gate-limit 因此涨到 24 步。故允许按任务放宽。
+        _relax_words = ("只做语法检查", "只需语法检查", "不用单测", "无需单测", "不需要单测",
+                        "不用写测试", "syntax only", "no tests")
+        self._require_unittest = bool(self.config.get("require_unittest", True)) and not any(
+            w in (task or "") for w in _relax_words)
         self._task_text = task
         self._agent_md = self._load_agent_md()
         self._skills = self._load_skill_catalog()
@@ -1302,7 +1309,8 @@ class AgentRunner:
                         self.state_saver(total_steps=total, recent_steps=history[-self.keep_recent:],
                                          last_error=warn["error"])
                         continue
-                    if validation_required and not (syntax_validated and tests_passed):
+                    _tests_ok = tests_passed or not getattr(self, '_require_unittest', True)
+                    if validation_required and not (syntax_validated and _tests_ok):
                         gate_strikes += 1
                         # 第一次被拒时由系统补跑验证。实测（493 步真实任务）：模型
                         # 换过多次会话后**忘记了工具名**，瞎编 run_tests / check_syntax
