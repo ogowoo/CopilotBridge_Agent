@@ -190,9 +190,94 @@ function renderSteps(steps){
 function renderMessages(messages){
  let box=document.getElementById('chatlog');box.innerHTML='';
  if(!messages.length){box.innerHTML='<div class="meta">当前没有人工续聊记录。下面发送的消息会进入该 Session 对应的 Copilot 会话。</div>';return}
- messages.forEach(m=>{let e=document.createElement('div');e.className='msg '+m.role;
-  e.innerHTML=`<b>${m.role==='user'?'你':'Copilot'}</b>${esc(m.content)}`;box.appendChild(e)});
+ messages.forEach(m=>{
+  let e=document.createElement('div');e.className='msg '+m.role;
+  let who=m.role==='user'?'你':'Copilot';
+  let t=m.created?new Date(m.created*1000).toLocaleTimeString('zh-CN',{hour12:false}):'';
+  // 助手消息按 Markdown 渲染（代码块/列表/表格/链接），用户消息保持原样换行：
+  // 用户输入的是指令，任何"格式"都可能是有意为之，不要自作主张改写。
+  let body=m.role==='user'?`<div class="md-body plain">${esc(m.content)}</div>`
+                          :`<div class="md-body">${mdToHtml(m.content)}</div>`;
+  e.innerHTML=`<div class="msg-av">${m.role==='user'?'你':'C'}</div>`+
+   `<div class="msg-main"><div class="msg-head"><span class="msg-role">${who}</span>`+
+   (t?`<span class="msg-time">${t}</span>`:'')+
+   `<button class="msg-copy" title="复制这条消息" onclick="copyMsg(this)">复制</button></div>`+
+   body+`</div>`;
+  e.dataset.raw=m.content||'';
+  box.appendChild(e)});
  box.scrollTop=box.scrollHeight}
+/* 复制整条消息 / 复制代码块 */
+function copyMsg(btn){let m=btn.closest('.msg');if(!m)return;
+ try{navigator.clipboard.writeText(m.dataset.raw||'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
+function copyCode(btn){let w=btn.closest('.md-codewrap');if(!w)return;let c=w.querySelector('code');
+ try{navigator.clipboard.writeText(c?c.textContent:'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
+
+/* ── 轻量 Markdown 渲染（零依赖、离线可用）─────────────────────────
+   安全前提：**先整体转义**再插入我们自己的标签；链接只允许 http(s)，
+   因此模型输出里的 <script>/javascript: 之类不会变成可执行内容。
+   支持：围栏代码块（带语言标签与复制）、标题、粗斜体、行内代码、
+   无序/有序列表（含一层缩进嵌套）、引用、表格、分隔线、链接。 */
+function mdToHtml(src){
+ const lines=String(src==null?'':src).replace(/\r\n?/g,'\n').split('\n');
+ const inline=(s)=>esc(s)
+  .replace(/`([^`]+)`/g,(m,a)=>`<code class="md-ic">${a}</code>`)
+  .replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
+  .replace(/(^|[\s（(])\*([^*\n]+)\*/g,'$1<i>$2</i>')
+  .replace(/\[([^\]\n]+)\]\((https?:[^)\s]+)\)/g,
+           '<a class="md-a" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+ let out=[],list=[];   // list: 栈，元素为 'ul' | 'ol'
+ const closeLists=(depth)=>{while(list.length>depth){out.push(`</${list.pop()}>`);if(list.length)out.push('</li>')}};
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i];
+  // 围栏代码块
+  let m=/^\s*```(\S*)\s*$/.exec(line);
+  if(m){
+   const lang=m[1]||'code',buf=[];
+   i++;
+   while(i<lines.length&&!/^\s*```\s*$/.test(lines[i])){buf.push(lines[i]);i++}
+   closeLists(0);
+   out.push(`<div class="md-codewrap"><div class="md-codebar"><span class="md-lang">${esc(lang)}</span>`+
+            `<button class="md-copy" onclick="copyCode(this)">复制</button></div>`+
+            `<pre class="md-code"><code>${esc(buf.join('\n'))}</code></pre></div>`);
+   continue}
+  // 表格：本行含 | 且下一行是分隔行
+  if(line.includes('|')&&i+1<lines.length&&/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i+1])&&/-/.test(lines[i+1])){
+   const cells=(r)=>r.replace(/^\s*\|/,'').replace(/\|\s*$/,'').split('|').map(x=>x.trim());
+   const head=cells(line);i+=2;const rows=[];
+   while(i<lines.length&&lines[i].includes('|')) {rows.push(cells(lines[i]));i++}
+   i--;
+   closeLists(0);
+   out.push('<div class="md-tablewrap"><table class="md-table"><thead><tr>'+
+     head.map(h=>`<th>${inline(h)}</th>`).join('')+'</tr></thead><tbody>'+
+     rows.map(r=>'<tr>'+head.map((_,k)=>`<td>${inline(r[k]||'')}</td>`).join('')+'</tr>').join('')+
+     '</tbody></table></div>');
+   continue}
+  // 标题
+  let h=/^(#{1,6})\s+(.*)$/.exec(line);
+  if(h){closeLists(0);out.push(`<div class="md-h md-h${h[1].length}">${inline(h[2])}</div>`);continue}
+  // 分隔线
+  if(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)){closeLists(0);out.push('<hr class="md-hr">');continue}
+  // 引用
+  let q=/^\s*>\s?(.*)$/.exec(line);
+  if(q){closeLists(0);out.push(`<div class="md-quote">${inline(q[1])}</div>`);continue}
+  // 列表（缩进 0/2/4 空格 -> 最多 3 层）
+  let li=/^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(line);
+  if(li){
+   const indent=li[1].replace(/\t/g,'  ').length;
+   const depth=Math.min(3,Math.floor(indent/2)+1);
+   const kind=/\d/.test(li[2])?'ol':'ul';
+   while(list.length<depth){list.push(kind);out.push(`<${kind} class="md-list">`)}
+   if(list.length>depth)closeLists(depth);
+   out.push('<li>');
+   out.push(inline(li[3]));
+   continue}
+  // 普通段落 / 空行
+  closeLists(0);
+  if(line.trim()===''){out.push('<div class="md-gap"></div>')}
+  else{out.push(`<div class="md-p">${inline(line)}</div>`)}
+ }
+ closeLists(0);
+ return out.join('')}
 
 /* 导出完整时间线：调试/复盘用，含每步原始参数、结果与 invalid_action 的 raw_tail */
 async function exportTimeline(){
@@ -285,7 +370,9 @@ async function runtime(){
   document.getElementById('activity').textContent=`阶段: ${r.phase||r.session_state}\n${r.detail||''}\n总步骤: ${r.total_steps}\n当前会话步骤: ${r.conversation_steps}\nToken估算: ${r.estimated_tokens}\n会话序号: ${(r.conversation_index??0)+1}\n${r.queue_pending?`队列: ${r.queue_pending} 条待处理\n`:''}最后更新: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():''}${r.model_warning?`\n\n⚠ ${r.model_warning}`:''}`;
   let _ans=r.answer_preview||'等待 Copilot 回答…',_ae=document.getElementById('answer'),_pj=null;
   try{_pj=JSON.parse(_ans)}catch(e){}
-  if(_pj&&typeof _pj==='object'){_ae.innerHTML='<div class="jsonview">'+jv(_pj)+'</div>'}else{_ae.textContent=_ans}
+  // 结构化动作走 JSON 视图；普通回答按 Markdown 渲染（`.term` 面板里 code 块仍可读）
+  if(_pj&&typeof _pj==='object'){_ae.innerHTML='<div class="jsonview">'+jv(_pj)+'</div>'}
+  else{_ae.innerHTML='<div class="md-body">'+mdToHtml(_ans)+'</div>'}
   if(_ans!==lastAns){lastAns=_ans;if(liveTabName!=='answer')document.getElementById('tabAnswer').classList.add('new')}
   document.getElementById('prompt').textContent=r.prompt_preview||'';
   setPill(r.session_state);setKpis(r);
