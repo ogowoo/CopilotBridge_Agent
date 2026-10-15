@@ -630,7 +630,8 @@ class ToolRegistry:
         target = target.resolve() if target.is_absolute() else (self.root / target).resolve()
         if self.workspace_roots and not any(target == r or r in target.parents
                                             for r in self.workspace_roots):
-            raise ToolError("目标目录不在 workspace_roots 白名单内")
+            raise ToolError(self._sandbox_denied(
+                "FS_SANDBOX_NOT_ALLOWED", str(value), "目标目录不在 workspace_roots 白名单内"))
         # 权限门：工作区若覆盖服务安装目录，普通文件工具就能直接改服务代码/
         # config.json/data —— 等于绕过 allow_self_upgrade、self 白名单与自升级
         # 验证闭环。因此这种工作区必须显式开启自升级权限才允许。
@@ -727,12 +728,33 @@ class ToolRegistry:
         items += extra
         return items
 
+    def _sandbox_denied(self, code: str, target: str, reason: str) -> str:
+        """结构化沙箱拒绝（借 DSH 的 FS_SANDBOX_DENIED 思路）。
+
+        只报"拒绝访问"对模型不可行动——它不知道当前边界在哪、也不知道怎么合法达成
+        目的，于是反复试探浪费回合。这里统一给出：错误码、当前模式、原因、可行动方案。
+        """
+        mode = "self-upgrade" if self.allow_self_upgrade else "workspace-write"
+        lines = [
+            f"[sandbox: {code}] 拒绝访问: {target}",
+            f"当前模式: {mode}（工作区根 {self.root}；"
+            + ("服务安装目录内仅白名单路径可写）" if self.allow_self_upgrade
+               else "仅工作区内可写，服务安装目录受保护）"),
+            f"原因: {reason}",
+            "可以这样做: ① 改用工作区内的相对路径（不要用 ../ 或绝对路径）；"
+            "② 若确实需要改服务自身代码，请让用户在 config.json 打开 agent.allow_self_upgrade 后重试；"
+            "③ 只需要内容时用只读工具读取，或请用户把文件放进工作区。",
+        ]
+        return "\n".join(lines)
+
     def _path(self, value: str = ".") -> Path:
         candidate = (self.root / value).resolve()
         try:
             candidate.relative_to(self.root)
         except ValueError as exc:
-            raise ToolError("拒绝访问工作区之外的路径") from exc
+            raise ToolError(self._sandbox_denied(
+                "FS_SANDBOX_ESCAPE", str(value),
+                "解析后的路径落在工作区之外（含 ../ 或绝对路径越界）")) from exc
         # 纵深防御：工作区覆盖服务安装目录时（已要求 allow_self_upgrade），
         # 敏感路径仍按自升级黑名单拒绝——config.json/data/EdgeProfile 不该
         # 因为"换个工作目录"就变成可写。
@@ -745,7 +767,8 @@ class ToolRegistry:
                 for deny in self.self_denylist:
                     if deny.endswith("/"):
                         if rel.startswith(deny) or rel == deny.rstrip("/"):
-                            raise ToolError(f"该路径属于服务敏感目录，禁止通过工作区工具访问: {rel}")
+                            raise ToolError(self._sandbox_denied(
+                                "FS_SANDBOX_DENYLIST", rel, "该路径属于服务敏感目录（denylist）"))
                     elif rel == deny:
                         raise ToolError(f"该路径属于服务敏感文件，禁止通过工作区工具访问: {rel}")
         return candidate
