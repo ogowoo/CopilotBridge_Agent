@@ -851,7 +851,14 @@ class ToolRegistry:
             raw = base64.b64decode(content_b64, validate=True)
             return raw.decode("utf-8")
         except Exception as exc:
-            raise ToolError(f"Base64 UTF-8 内容无效: {exc}") from exc
+            # 提示要可自救：模型（尤其小模型）常见错误是把明文直接塞进
+            # content_b64，或漏做 Base64。给出"下一步怎么做"，别让它原地重试。
+            s = (content_b64 or "").strip()
+            hint = ""
+            if s and not re.fullmatch(r"[A-Za-z0-9+/=\s]*", s):
+                hint = ("；检测到 content_b64 含非 Base64 字符——请把原文按 UTF-8 做 "
+                        "Base64 编码后放进 content_b64（纯文本文件也可改用 write_text/append_text）")
+            raise ToolError(f"Base64 UTF-8 内容无效: {exc}{hint}") from exc
 
     async def write_text_b64(self, path: str, content_b64: str) -> dict[str, Any]:
         content = self._decode_b64(content_b64)
