@@ -767,6 +767,42 @@ async def inject_session_message(sid: str, req: InjectRequest):
             "note": "会话当前空闲，已按跟进排队执行（运行中插入才会即时生效）"}
 
 
+@app.get("/v1/agent/sessions/{sid}/events")
+async def session_events(sid: str):
+    """SSE 实时推送：runtime 快照 / 队列变化 / 新消息 / 会话列表变化。
+
+    前端用 EventSource 连它，就不用轮询了——提供商流式输出因此是真·逐字。
+    EventSource 不能带自定义请求头，token 走 `?token=`（鉴权中间件已支持）。
+    连接断开（客户端离开/服务重启）时在 finally 里退订，不留内存。
+    """
+    if not b.AGENT_SESSIONS.get(sid):
+        raise HTTPException(404, "Session 不存在")
+    queue = b.subscribe_events(sid)
+
+    async def gen():
+        try:
+            # 先送一份当前快照，客户端连上即有内容，不必等第一次变化
+            snap = dict(b.RUNTIME.get(sid) or {})
+            snap.update({"session_id": sid, "type": "runtime"})
+            yield f"data: {json.dumps({'type': 'runtime', 'data': snap}, ensure_ascii=False)}\n\n"
+            while True:
+                try:
+                    ev = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"        # 心跳：防代理/浏览器把空闲连接掐掉
+                    continue
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            raise
+        finally:
+            b.unsubscribe_events(sid, queue)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "Connection": "keep-alive",
+                                      "X-Accel-Buffering": "no"})
+
+
 @app.get("/v1/agent/sessions/{sid}/runtime")
 async def session_runtime(sid: str):
     state = b.AGENT_SESSIONS.get(sid)

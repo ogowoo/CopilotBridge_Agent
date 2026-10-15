@@ -127,6 +127,75 @@ lock = asyncio.Lock()
 RUNTIME = {}
 ACTIVE_SESSION_ID = None
 
+# ── SSE 事件总线（每个会话一组订阅队列）──────────────────────────────
+# 让前端不必轮询：runtime 快照直接推给浏览器，提供商流式输出就是真·逐字。
+# 队列有界（慢客户端只丢事件、不拖慢 Agent）；没有订阅者时几乎零开销。
+_EVENT_SUBS: dict[str, set] = {}
+_EVENT_LOOPS: dict = {}          # 队列 -> 创建它的事件循环（跨线程推送要用）
+_EVENT_QUEUE_MAX = 64
+
+
+def _safe_put(q, payload: dict) -> None:
+    """入队；满了就丢最旧的，保证最新状态能送达（慢客户端绝不拖慢 Agent）。"""
+    try:
+        q.put_nowait(payload)
+    except asyncio.QueueFull:
+        try:
+            q.get_nowait()
+            q.put_nowait(payload)
+        except Exception:
+            pass
+
+
+def subscribe_events(sid: str):
+    q: asyncio.Queue = asyncio.Queue(maxsize=_EVENT_QUEUE_MAX)
+    _EVENT_SUBS.setdefault(sid, set()).add(q)
+    try:
+        _EVENT_LOOPS[q] = asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    return q
+
+
+def unsubscribe_events(sid: str, q) -> None:
+    _EVENT_LOOPS.pop(q, None)
+    subs = _EVENT_SUBS.get(sid)
+    if not subs:
+        return
+    subs.discard(q)
+    if not subs:
+        _EVENT_SUBS.pop(sid, None)
+
+
+def publish_event(sid: str | None, kind: str, data=None) -> None:
+    """向该会话的订阅者推送一个事件；无人订阅或队列满时静默丢弃。
+
+    跨线程调用（脚本、后台线程）时转交到该队列所属的事件循环——asyncio.Queue
+    不是线程安全的，直接 put_nowait 不会唤醒等待中的消费者，事件会静默丢失。
+    """
+    if not sid:
+        return
+    subs = _EVENT_SUBS.get(sid)
+    if not subs:
+        return
+    payload = {"type": kind}
+    if data is not None:
+        payload["data"] = data
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    for q in list(subs):
+        loop = _EVENT_LOOPS.get(q)
+        if loop is not None and loop is not running and not loop.is_closed():
+            try:
+                loop.call_soon_threadsafe(_safe_put, q, payload)
+                continue
+            except RuntimeError:
+                pass
+        _safe_put(q, payload)
+
+
 def runtime_update(session_id=None, **values):
     sid = session_id or ACTIVE_SESSION_ID
     if not sid:
@@ -134,6 +203,8 @@ def runtime_update(session_id=None, **values):
     item = RUNTIME.setdefault(sid, {"phase": "idle", "updated": time.time(), "answer_preview": "", "prompt_preview": "", "detail": ""})
     item.update(values)
     item["updated"] = time.time()
+    if _EVENT_SUBS.get(sid):           # 只在有人订阅时才付出序列化成本
+        publish_event(sid, "runtime", dict(item))
 
 
 class Message(BaseModel):
@@ -1807,6 +1878,7 @@ async def _process_queued_message(sid: str, item: dict):
     AGENT_SESSIONS.add_message(sid, "assistant", answer, conv_idx)
     runtime_update(sid, phase="followup_completed", answer_preview=answer[-12000:],
                    detail="跟进消息处理完成")
+    publish_event(sid, "messages")     # 新回复：通知前端立即刷新对话
 
 
 async def enqueue_session_message(sid: str, content: str, model_id: str,
@@ -1825,6 +1897,8 @@ async def enqueue_session_message(sid: str, content: str, model_id: str,
                "agent_mode": agent_mode, "attach_paths": attach_paths or [],
                "message_id": message_id})
     _MSG_WAKE[sid].set()
+    publish_event(sid, "queue")
+    publish_event(sid, "messages")
     return {"session_id": sid, "queued": True, "id": item_id, "position": ahead + 1,
             "mode": "agent" if agent_mode else "chat"}
 
@@ -1849,6 +1923,8 @@ def remove_queue_item(sid: str, item_id: str) -> bool:
             del dq[i]
             if item.get("message_id"):
                 AGENT_SESSIONS.delete_message(sid, item["message_id"])
+            publish_event(sid, "queue")
+            publish_event(sid, "messages")
             return True
     return False
 

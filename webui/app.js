@@ -519,6 +519,9 @@ async function load(id){
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
  if(current!==id)return;   // 等待期间已切换会话：丢弃迟到的详情
+ // 记住助手消息数（SSE 新消息通知据此决定是否播渐显动画）
+ lastAssistantCount=(d.messages||[]).filter(m=>m.role==='assistant').length;
+ startEvents(id);          // 切会话即重连 SSE（有推送时就不再依赖轮询）
  await runtime();await refreshSessions();refreshQueue()}
 
 /* 轮询在飞保护 + 会话切换竞态防护：
@@ -530,7 +533,15 @@ async function runtime(){
  const myId=current;
  try{let r=await api(`/v1/agent/sessions/${encodeURIComponent(myId)}/runtime`);
   if(current!==myId)return;  // 等待期间用户已切换会话
-  currentUrl=r.current_url||currentUrl;
+  await applyRuntime(r);
+ }catch(e){}
+ finally{runtimeInflight=false}}
+/* 渲染 runtime 快照：轮询与 SSE 推送共用（SSE 直接送快照，省一次往返） */
+async function applyRuntime(r){
+ if(!r)return;
+ const myId=current;
+ lastRuntime=r;
+ currentUrl=r.current_url||currentUrl;
   document.getElementById('pulse').className=r.busy?'pulse':'dot-off';
   document.getElementById('activity').textContent=`阶段: ${r.phase||r.session_state}\n${r.detail||''}\n总步骤: ${r.total_steps}\n当前会话步骤: ${r.conversation_steps}\nToken估算: ${r.estimated_tokens}\n会话序号: ${(r.conversation_index??0)+1}\n${r.queue_pending?`队列: ${r.queue_pending} 条待处理\n`:''}最后更新: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():''}${r.model_warning?`\n\n⚠ ${r.model_warning}`:''}`;
   let _ans=r.answer_preview||'等待模型回答…',_ae=document.getElementById('answer'),_pj=null;
@@ -547,9 +558,45 @@ async function runtime(){
    lastTotal=r.total_steps??lastTotal;
    let d=await api('/v1/agent/sessions/'+encodeURIComponent(myId));
    if(current!==myId)return;
-   renderSteps(d.steps);lastStepCount=d.steps.length}
- }catch(e){}
- finally{runtimeInflight=false}}
+   renderSteps(d.steps);lastStepCount=d.steps.length}}
+
+/* ── SSE 实时推送（EventSource）────────────────────────────────────
+   有 SSE 时不再依赖轮询：runtime 快照直接推送 → 提供商流式输出就是真·逐字。
+   EventSource 不能带自定义头，token 走 query 参数；连接失败自动退回轮询
+   （保留 350ms 快速轮询），并按退避重连。 */
+let evtSrc=null,evtSid=null,evtFails=0,lastAssistantCount=0;
+function stopEvents(){
+ if(evtSrc){try{evtSrc.close()}catch(e){}}
+ evtSrc=null;evtSid=null}
+function startEvents(sid){
+ stopEvents();
+ if(!sid||!window.EventSource)return;
+ let url=`/v1/agent/sessions/${encodeURIComponent(sid)}/events`;
+ if(typeof API_TOKEN!=='undefined'&&API_TOKEN)url+=`?token=${encodeURIComponent(API_TOKEN)}`;
+ try{evtSrc=new EventSource(url)}catch(e){evtSrc=null;return}
+ evtSid=sid;
+ evtSrc.onopen=()=>{evtFails=0};
+ evtSrc.onmessage=(e)=>{
+  let ev=null;try{ev=JSON.parse(e.data)}catch(_){return}
+  if(current!==sid)return;
+  if(ev.type==='runtime')applyRuntime(ev.data);
+  else if(ev.type==='queue')refreshQueue();
+  else if(ev.type==='messages')refreshChat();
+  else if(ev.type==='session')refreshSessions()};
+ evtSrc.onerror=()=>{
+  let failed=evtSid;
+  stopEvents();evtFails++;
+  if(current===failed&&evtFails<50)
+   setTimeout(()=>{if(current===failed)startEvents(failed)},Math.min(3000*evtFails,15000))}}
+/* 只刷新消息列表（SSE 通知有新消息时用，比整页 load 轻） */
+async function refreshChat(){
+ if(!current)return;
+ const myId=current;
+ try{let d=await api('/v1/agent/sessions/'+encodeURIComponent(myId));
+  if(current!==myId)return;
+  let as=(d.messages||[]).filter(m=>m.role==='assistant').length;
+  renderMessages(d.messages,{animateLast:as>lastAssistantCount});
+  lastAssistantCount=as}catch(e){}}
 
 /* ── 操作 ── */
 async function control(a){if(!current)return;try{let r=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/${a}`,{method:'POST'});if(a==='resume')toast(r.note||(r.runner_started?'已恢复，正在续跑任务':'已恢复'), r.note_kind==='err'?'err':'ok');await load(current)}catch(e){toast('操作失败: '+e,'err')}}
@@ -1280,6 +1327,8 @@ attachPasteHandler('followup','follow');
 const FAST_PHASES=['api_sending','api_streaming','waiting','sending'];
 (function fastTick(){
  setTimeout(()=>{
-  try{if(lastRuntime&&FAST_PHASES.indexOf(String(lastRuntime.phase||''))>=0){
-   runtime();refreshQueue()}}catch(e){}
+  try{
+   // 有 SSE 长连接时不必快速轮询（推送已即时到达）；断开后才退回 350ms
+   if(!evtSrc&&lastRuntime&&FAST_PHASES.indexOf(String(lastRuntime.phase||''))>=0){
+    runtime();refreshQueue()}}catch(e){}
   fastTick()},350)})();
