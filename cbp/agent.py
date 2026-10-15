@@ -119,14 +119,25 @@ class AgentRunner:
     # 该类唯一的构造函数是下方接收 config/state_getter 的版本。
 
     def _system_prompt(self) -> str:
-        return """你是本地任务 Agent，可以通过工具处理当前工作目录中的文件。
+        # copilot_attach / copilot_file 只在浏览器（Copilot 网页）会话可用。
+        # provider 会话里不能提这两个工具名，否则模型会照着提示词去调用
+        # （实测：提供商会话里 copilot_file 连续失败 10 次纯烧回合）。
+        if getattr(self.tools, "allow_web_copilot_tools", True):
+            _routing = ("只需分析（总结/找问题/提取信息）的大文件（约 20000 字符以上）优先用 "
+                        "copilot_attach 丢给 Copilot 分析，一个回合搞定，不要逐段翻页；\n"
+                        "需要精确修改的文件必须本地工具操作；大文件只需看局部时用 read_text 的 "
+                        "offset/limit 读目标段。")
+        else:
+            _routing = ("需要修改的文件直接本地工具操作；大文件只需看局部时用 read_text 的 "
+                        "offset/limit 读目标段，分段读完再下结论。（本会话走 API 提供商，没有 "
+                        "Copilot 网页可用，copilot_attach/copilot_file 不可用）")
+        return ("""你是本地任务 Agent，可以通过工具处理当前工作目录中的文件。
 每次返回一个 JSON 动作；若下一步是几个**互不依赖**的小动作（多处替换、写多个短文件、读几个小文件），用下方"批量"格式一次返回。不得使用 Markdown 代码块，不得在 JSON 前后添加解释。
 格式只有两种：
 {"type":"tool","tool":"工具名","arguments":{},"reason":"原因"}
 {"type":"final","content":"最终答复"}
 规则：先检查再修改；路径相对于当前工作目录；工具失败后调整方案；完成后必须立即返回 final。
-文件分流：只需分析（总结/找问题/提取信息）的大文件（约 20000 字符以上）优先用 copilot_attach 丢给 Copilot 分析，一个回合搞定，不要逐段翻页；
-需要精确修改的文件必须本地工具操作；大文件只需看局部时用 read_text 的 offset/limit 读目标段。
+文件分流：__CBP_FILE_ROUTING__
 修改现有文本优先使用 replace_text，不得使用 run_python 修改项目文件。
 需要分段读本地文件时：read_text 的 limit 参数每段可到 20000 字符（别分太碎浪费回合），按返回的 total_chars 和 next_offset 翻页，直到读完目标范围再下结论。
 创建或追加代码、JSON、HTML、Markdown 时必须使用 write_text_b64 或 append_text_b64，禁止把源码直接放入普通 JSON content。每次解码后内容不超过 3000 字符；大文件必须分多次 append_text_b64 追加，宁可多回合也不要让单个 JSON 动作过长（过长会被截断导致整个动作作废）。如果上一回合因过长被截断，下一回合只输出未写入的剩余分块。文件写完后用 read_text 验证。
@@ -140,7 +151,7 @@ class AgentRunner:
 记忆沉淀（任务收尾同样要做一次判断）：本次任务若产生了**跨任务仍有价值的事实**（用户偏好、环境特征、某接口的坑、已验证的结论），用 memory_write 记一条——写"自足"的陈述句（"X 环境的 Y 需要 Z"），不要写"本次任务做了…"这类只对当下有意义的流水账；琐碎过程不要记。pinned 只留给必须每回合遵守的极重要约定（其余交给检索）。
 技能沉淀（任务收尾必做的一次判断）：完成任务前先 skill_list 看有没有相关技能；如果这次任务暴露了「可复用的方法/命令/坑」且没有对应技能，用 skill_create 新建一个（scope 默认 project 写入当前工作区 skills/，只有确实对所有工作区都通用、且已开启自升级时才用 scope=global）。技能内容写清楚：什么时候用、关键步骤、踩过的坑与验证方式，控制在 8000 字符内；不要为了记录而记录，琐碎或一次性的过程不要沉淀。
 可用工具：
-""" + json.dumps(self.tools.descriptions(only=self._active_tool_names()), ensure_ascii=False) + self._self_upgrade_rules() + self._workspace_context()
+""" + json.dumps(self.tools.descriptions(only=self._active_tool_names()), ensure_ascii=False) + self._self_upgrade_rules() + self._workspace_context()).replace("__CBP_FILE_ROUTING__", _routing)
 
     def _active_tool_names(self) -> set[str] | None:
         """按任务文本裁剪工具面（P0-1）；None 表示不裁剪。

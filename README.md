@@ -177,7 +177,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `max_sessions` | `100` | 未归档会话数量上限，超出时从最久未更新的开始归档 |
 | `max_parse_failures` | `5` | 连续解析失败多少次后强制压缩上下文 |
 | `max_actions_per_turn` | `4` | 一次回答里最多执行几个动作（批量协议，硬顶 12）；调大能省回合但更容易被 Copilot 输出上限截断 |
-| `allow_copilot_file` | `true` | 是否开放 `copilot_file`（让 Copilot 直接生成文件并下载进工作区，内容不走聊天消息、不受输出上限约束） |
+| `allow_copilot_file` | `true` | 是否开放 `copilot_file`（让 Copilot 直接生成文件并下载进工作区，内容不走聊天消息、不受输出上限约束）。**注意**：`copilot_file` 与 `copilot_attach` 依赖 Copilot 网页会话，因此在使用 API 提供商模型（如 `deepseek/…`）的会话里**自动禁用**（既不注入也不执行，避免白烧回合） |
 | `max_service_unavailable` | `30` | 限流退避重试上限，超过后转入安全暂停 |
 | `service_retry_base_seconds` / `service_retry_max_seconds` | `30` / `600` | 限流指数退避的起始/上限 |
 | `service_retry_window_seconds` | `3660` | 限流窗口：首次超限后到可再次使用大致要等这么久（实测约 1 小时，多加 1 分钟余量），右上角倒计时浮窗锚定"首次超限 + 该窗口"。Copilot 网页与 API 提供商共用该窗口（浮窗标题按当前模型通道分别显示"Copilot 限流/不可用"或"API 服务限流/不可用"） |

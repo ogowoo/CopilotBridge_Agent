@@ -198,6 +198,9 @@ class ToolRegistry:
             "app.py", "start.py", "install.py", "requirements.txt",
             "AGENT.md", "README.md", "config.example.json",
         )) if self.allow_self_upgrade else ()
+        # "需要 Copilot 网页会话"的工具：provider（API）会话里禁用（见 set_web_copilot_tools）
+        self.web_copilot_tools = ("copilot_attach", "copilot_file")
+        self.allow_web_copilot_tools = True
         self.self_denylist = ("config.json", "data/", "EdgeProfile/", "for debug/", ".git/", "__pycache__/")
         self._tools: dict[str, Callable[..., Awaitable[Any]]] = {
             "list_directory": self.list_directory,
@@ -253,6 +256,15 @@ class ToolRegistry:
         self._tools[name] = fn
         self._extra_descriptions.append(
             {"name": name, "description": description, "arguments": arguments})
+
+    def set_web_copilot_tools(self, allowed: bool) -> None:
+        """启用/禁用"需要 Copilot 网页会话"的工具（copilot_attach/copilot_file）。
+
+        API 提供商（deepseek/… 等）会话没有 Copilot 网页对话可驱动，这两个工具
+        注定失败。实测真实任务里 copilot_file 连续失败 10 次、白烧回合——因此
+        provider 会话里既不注入也不执行（执行时给可自救的错误信息）。
+        """
+        self.allow_web_copilot_tools = bool(allowed)
 
     def set_snapshot_hook(self, fn: Callable[[str, str, Path], None] | None) -> None:
         """设置写操作前的快照钩子 fn(tool, relative_path, absolute_target)。
@@ -709,7 +721,10 @@ class ToolRegistry:
                 {"name": "self_unittest", "description": "【自升级】在服务安装目录跑单元测试；自升级必须通过", "arguments": {"pattern": "默认 test_*.py"}},
                 {"name": "self_rollback", "description": "【自升级】回滚本次任务对服务自身代码的改动（恢复到任务开始前）", "arguments": {}},
             ]
-        items += self._extra_descriptions
+        extra = self._extra_descriptions
+        if not self.allow_web_copilot_tools:
+            extra = [x for x in extra if x.get("name") not in self.web_copilot_tools]
+        items += extra
         return items
 
     def _path(self, value: str = ".") -> Path:
@@ -736,6 +751,11 @@ class ToolRegistry:
         return candidate
 
     async def execute(self, name: str, arguments: dict[str, Any] | None) -> Any:
+        if not self.allow_web_copilot_tools and name in self.web_copilot_tools:
+            raise ToolError(
+                f"{name} 需要 Copilot 网页会话，当前会话用的是 API 提供商模型（如 deepseek/…），"
+                "该工具不可用。请改用 write_text_b64/append_text_b64 分块写入新文件、"
+                "replace_text 修改现有内容。")
         fn = self._tools.get(name)
         if not fn:
             raise ToolError(f"未知工具: {name}")

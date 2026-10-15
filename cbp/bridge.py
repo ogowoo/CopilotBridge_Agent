@@ -2238,7 +2238,11 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             st = AGENT_SESSIONS.get(sid) or {}
             return st.get("state") == "paused"
         _pm = providers_mod.split_provider_model(req.model)
-        if _pm and _pm[0] in PROVIDERS:
+        _is_provider = bool(_pm and _pm[0] in PROVIDERS)
+        # provider 会话禁用"需要 Copilot 网页会话"的工具（copilot_attach/copilot_file：
+        # 没有网页对话可驱动，实测连续失败 10 次白烧回合）。浏览器会话保持启用。
+        AGENT_TOOLS.set_web_copilot_tools(not _is_provider)
+        if _is_provider:
             # API 提供商：不经过浏览器，无页面导航/会话 URL/标记确认簿记；
             # 换会话只影响本地上下文压缩。
             async def turn(prompt, model, force_new=False):
@@ -2333,6 +2337,7 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
         finally:
             AGENT_TOOLS.set_snapshot_hook(None)
             AGENT_TOOLS.self_rollback_fn = None
+            AGENT_TOOLS.set_web_copilot_tools(True)   # 复位，避免影响后续会话
             # 恢复进入前的值而非置 None：排队任务接管时不会被误清
             ACTIVE_SESSION_ID = prev_active
 
