@@ -501,3 +501,20 @@ COM（Outlook）调用**无法真正取消**：超时只表示"我们不再等"�
 4. 封锁期间相关动作会返回 `[TOOL_TIMEOUT_UNKNOWN]` 的结构化错误，说明该做什么。
 
 超时上限可用 `agent.outlook_timeout_seconds`（默认 60 秒）调整。
+
+## 事件日志与投影（P2-10）
+
+会话的所有关键动作都会写成 **append-only 事件**（`events` 表）：状态迁移、回合开始/结束、
+工具派发/收尾、工具结果入库、审批下达/取用/拒绝。它现在是**旁路记录**（运行时仍读数据库
+列），用途是排障、审计，以及为将来"状态可由日志重建"铺路。
+
+```powershell
+# 历史事件（一次性返回；kinds 可逗号分隔过滤）
+curl "http://127.0.0.1:8765/v1/agent/sessions/<sid>/event-log?limit=50&kinds=turn_begin,turn_done"
+# 由事件重建的状态快照 + 与数据库列的一致性核对（consistency 为空=一致）
+curl "http://127.0.0.1:8765/v1/agent/sessions/<sid>/projection"
+```
+
+⚠️ 不要用普通 GET 调 `/v1/agent/sessions/{sid}/events`——那是 **SSE 长连接**（前端
+EventSource 用），普通请求会一直挂着直到断开，这是设计如此；要历史事件请用上面的
+`event-log`。

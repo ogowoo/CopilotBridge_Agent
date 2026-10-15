@@ -946,6 +946,39 @@ async def browser_retry():
     return {"started": True, "state": BOOT["browser_state"]}
 
 
+@app.get("/v1/agent/sessions/{sid}/event-log")
+async def session_event_log(sid: str, limit: int = 200, kinds: str = ""):
+    """会话的 append-only 事件日志（P2-10），只读，一次性返回历史事件。
+
+    与 `/events` 的区别：`/events` 是 **SSE 实时推送**（前端 EventSource 长连接，
+    调用方要按流读取，普通 GET 会一直挂着——这是设计如此）；本路由用于排障与审计。
+    `kinds` 支持逗号分隔过滤（如 `kinds=turn_begin,turn_done`）。
+    """
+    kind_filter = tuple(k.strip() for k in kinds.split(",") if k.strip()) or None
+    events = b.AGENT_SESSIONS.events(sid, limit=limit, kinds=kind_filter)
+    return {"session_id": sid, "count": len(events), "kinds": list(kind_filter or ()),
+            "events": events}
+
+
+@app.get("/v1/agent/sessions/{sid}/projection")
+async def session_projection(sid: str):
+    """由事件流重建的状态快照（P2-10 第二期），只读；并附与数据库列的一致性核对。
+
+    `consistency` 为空列表表示"事件足以重建列里的事实"——这是第二期的验收标准。
+    运行时读取路径仍走数据库列；本路由只是旁路视图，不改变任何行为。
+    """
+    from .projection import compare_with_columns, project
+
+    proj = project(b.AGENT_SESSIONS.events(sid, limit=10000))
+    con = b.AGENT_SESSIONS._connect()
+    turns = [dict(r) for r in con.execute(
+        "SELECT prompt_hash,status,steps_after FROM turn_results WHERE session_id=?", (sid,))]
+    steps = [dict(r) for r in con.execute(
+        "SELECT step_no,tool,status FROM step_dispatch WHERE session_id=?", (sid,))]
+    return {"session_id": sid, "projection": proj,
+            "consistency": compare_with_columns(proj, turns, steps)}
+
+
 @app.get("/v1/agent/sessions/{sid}/approvals")
 async def list_approvals(sid: str):
     """本会话待用的一次性授权（allowed-once，无 allow-always）。"""
