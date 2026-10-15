@@ -158,7 +158,8 @@ class WorkspaceContextTests(unittest.TestCase):
         (ws / "AGENT.md").write_text("长" * 9000, encoding="utf-8")
         runner2, _ = self._runner(ws)
         text = runner2._load_agent_md()
-        self.assertLessEqual(len(text), 8000 + 40)
+        # 上界含标题与预算提示文本（P0-4 新增的可见提示），故留 100 字符余量
+        self.assertLessEqual(len(text), 8100)
         self.assertIn("已截断", text)
 
     def test_no_agent_md_no_section(self):

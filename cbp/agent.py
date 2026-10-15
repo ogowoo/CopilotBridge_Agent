@@ -264,10 +264,27 @@ class AgentRunner:
             roots.append(("项目", Path(ws)))
         return roots
 
+    # 会被解析器当作"块边界"的闭合标签：正文里出现就可能越出注入区，统一转义。
+    _ESCAPE_TAGS = ("</system-reminder>", "</instructions>", "</workspace_instructions>")
+
+    @staticmethod
+    def escape_instruction_text(text: str) -> str:
+        """转义指令文本里的块闭合标签（DSH：注入正文里的 </system-reminder> 要转义）。"""
+        for tag in AgentRunner._ESCAPE_TAGS:
+            if tag in text:
+                text = text.replace(tag, "<\\/" + tag[2:])
+        return text
+
     def _load_agent_md(self) -> str:
-        """合并注入：全局 AGENT.md + 项目 AGENT.md（同文件去重，各自截断）。"""
+        """合并注入：全局 AGENT.md + 项目 AGENT.md。
+
+        预算策略参照 DSH 的 workspace instructions：**超预算先整体丢"宽泛"文件
+        （全局），最后才截断"最具体"文件（项目）**，并渲染一条**可见的预算提示**，
+        而不是对所有文件一视同仁地硬截断（那会把最具体的项目约定也砍掉）。
+        """
         cap = int(self.config.get("agent_md_max_chars", 8000))
-        parts: list[str] = []
+        total_cap = int(self.config.get("agent_md_total_max_chars", cap * 2))
+        loaded: list[tuple[str, str]] = []          # (label, text) —— 顺序=宽泛→具体
         seen: set[str] = set()
         for label, root in self._md_roots():
             for name in ("AGENT.md", "agent.md"):
@@ -281,12 +298,24 @@ class AgentRunner:
                     seen.add(rp)
                     text = p.read_text(encoding="utf-8", errors="replace").strip()
                     if text:
-                        if len(text) > cap:
-                            text = text[:cap] + f"\n…[共 {len(text)} 字符，已截断到 {cap}]"
-                        parts.append(f"【{label} AGENT.md】\n{text}")
+                        loaded.append((label, text))
                     break
                 except Exception:
                     continue
+
+        notes: list[str] = []
+        # 超总预算：从头（最宽泛）开始整体丢弃，直到放进预算
+        while len(loaded) > 1 and sum(len(t) for _l, t in loaded) > total_cap:
+            label, text = loaded.pop(0)
+            notes.append(f"[{label} AGENT.md 共 {len(text)} 字符，超出指令预算已整体省略]")
+        parts: list[str] = []
+        for label, text in loaded:
+            if len(text) > cap:
+                notes.append(f"[{label} AGENT.md 共 {len(text)} 字符，已截断到 {cap}]")
+                text = text[:cap]
+            parts.append(f"【{label} AGENT.md】\n{self.escape_instruction_text(text)}")
+        if notes:
+            parts.append("指令预算提示：" + "；".join(notes))
         return "\n\n".join(parts)
 
     def _load_skill_catalog(self) -> list[dict[str, Any]]:

@@ -61,6 +61,7 @@
     "python_timeout_seconds": 20,
     "snapshot_retention": 50,
     "agent_md_max_chars": 8000,
+    "agent_md_total_max_chars": 16000,
     "allow_self_upgrade": false,
     "self_upgrade_paths": [
       "cbp/",
