@@ -32,7 +32,7 @@
     "file_contains": {
      "eval_mod.py": "def add"
     },
-    "max_steps": 20,
+    "max_steps": 25,
     "no_validation_gate": true,
     "tools_used_all": [
      "validate_python",

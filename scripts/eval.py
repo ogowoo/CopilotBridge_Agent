@@ -17,6 +17,8 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
+import sys
 import json
 import os
 import sys
@@ -26,6 +28,8 @@ from pathlib import Path
 import httpx
 
 BASE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from health import check_session  # noqa: E402  同目录脚本，逐会话做事件核对
 WS = BASE / "workspace"
 TASKS = BASE / "tests" / "evals" / "tasks.json"
 REPORT_DIR = BASE / "data" / "evals"
@@ -136,7 +140,10 @@ def main() -> int:
 
         # 预热：lazy 模式下浏览器按需启动 + 企业租户 SSO 可能需要数分钟；
         # 这段时间不应算进某一条任务的超时（否则首条任务无谓失败）。
-        if not c.get("/health", timeout=10).json().get("copilot_ready"):
+        # 预热只对"走 Copilot 网页"的模型有意义：提供商路径（deepseek/…）是一次 HTTP
+        # 调用，不需要浏览器。以前无条件预热，提供商评测会白等 600 秒超时才开跑。
+        _needs_browser = "/" not in str(model)
+        if _needs_browser and not c.get("/health", timeout=10).json().get("copilot_ready"):
             print(f"预热中：等待 Copilot 就绪（最多 {args.warmup_timeout:.0f} 秒）…")
             try:
                 c.post("/v1/agent/browser/retry", timeout=30)
@@ -153,6 +160,8 @@ def main() -> int:
                 time.sleep(5)
             else:
                 print("预热超时（可能需要人工在自动化窗口登录）；仍继续，首条任务可能失败\n")
+        elif not _needs_browser:
+            print("提供商路径：跳过 Copilot 预热（不需要浏览器）\n")
 
         for t in tasks:
             # 会话 ID 带运行戳：固定 ID 会复用到历史会话的 cancelled/archived 状态，
@@ -210,7 +219,25 @@ def main() -> int:
                 mem_items = mem.get("items", [])
             except Exception:
                 mem_items = []
+            # ── 事件核对（P2-10）：每条评测任务都顺带成为"日志能否重建状态"的探针。
+            # 必须在本任务会话被删除**之前**做，否则查不到数据。
+            hc: dict = {}
+            try:
+                con = sqlite3.connect(BASE / "data" / "agent.db")
+                con.row_factory = sqlite3.Row
+                hc = check_session(con, sid)
+                con.close()
+            except Exception as exc:
+                hc = {"error": f"{type(exc).__name__}: {exc}"}
+
             checks = check_task(t, steps, answer, mem_items, sid)
+            # 投影≠列属**致命**问题（说明事件流不足以重建状态）；覆盖缺口只告警
+            if hc.get("problems"):
+                checks.append({"name": "projection_consistency", "ok": False,
+                               "detail": "; ".join(hc["problems"][:3])})
+            else:
+                checks.append({"name": "projection_consistency", "ok": True,
+                               "detail": f"事件 {hc.get('events', 0)} 条，与列一致"})
             ok = all(x["ok"] for x in checks)
             failed += 0 if ok else 1
             if d.get("_blocked"):
@@ -223,12 +250,16 @@ def main() -> int:
                                           "args": json.dumps(x.get("arguments") or {}, ensure_ascii=False)[:160],
                                           "error": (x.get("error") or "")[:160]}
                                          for x in steps[-12:]],
-                            "checks": checks, "error": d.get("_error") or d.get("_blocked")})
+                            "checks": checks, "error": d.get("_error") or d.get("_blocked"),
+                            "events": hc.get("events"), "coverage_gaps": hc.get("coverage_gaps") or [],
+                            "legacy_no_events": bool(hc.get("legacy"))})
             mark = "PASS" if ok else "FAIL"
             bad = [x["name"] for x in checks if not x["ok"]]
             extra = f"  失败断言: {', '.join(bad)}" if bad else ""
             if bad and len(steps) == 0:
                 extra += f" | final: {(answer or '')[:110]!r}"
+            if hc.get("coverage_gaps"):
+                extra += f"  ⚠ 事件覆盖: {'; '.join(hc['coverage_gaps'][:1])}"
             print(f"[{mark}] {t['id']:<22} {round(time.time()-t0,1):>6}s 步数 {len(steps):<3}{extra}")
             if not args.keep:
                 try:
@@ -240,7 +271,12 @@ def main() -> int:
     out = REPORT_DIR / f"report-{stamp}.json"
     out.write_text(json.dumps({"model": model, "when": stamp, "results": results},
                               ensure_ascii=False, indent=1), encoding="utf-8")
+    no_events = sum(1 for r in results if r.get("legacy_no_events"))
+    mism = sum(1 for r in results for c in r["checks"]
+               if c["name"] == "projection_consistency" and not c["ok"])
+    gaps = sum(1 for r in results if r.get("coverage_gaps"))
     print(f"\n汇总: {len(results) - failed}/{len(results)} 通过   报告: {out}")
+    print(f"事件核对: 投影≠列 {mism} 例，覆盖告警 {gaps} 例，无事件 {no_events} 例")
     return 1 if failed else 0
 
 

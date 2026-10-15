@@ -73,6 +73,13 @@ CREATE TABLE IF NOT EXISTS events (
   created REAL NOT NULL,
   FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  created REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS messages (
               id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
               created REAL NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
@@ -206,14 +213,27 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         with self.lock, self._connect() as con:
             prev_state = None
             prev_files: dict = {}
-            if "state" in values or "modified_files" in values:
-                row = con.execute("SELECT state, modified_files FROM sessions WHERE id=?", (sid,)).fetchone()
+            # 这三个默认值必须在块首给全：任何分支（含"会话不存在"）都会走到后面的
+            # 事件发出逻辑，缺一个就是 UnboundLocalError（本轮就踩了，19 个测试同时红）。
+            prev_pending: list = []
+            prev_pending_steps: list = []
+            if any(k in values for k in ("state", "modified_files", "pending", "pending_steps")):
+                row = con.execute("SELECT state, modified_files, pending, pending_steps "
+                                  "FROM sessions WHERE id=?", (sid,)).fetchone()
                 if row:
                     prev_state = row["state"]
                     try:
                         prev_files = json.loads(row["modified_files"] or "{}")
                     except Exception:
                         prev_files = {}
+                    try:
+                        prev_pending = json.loads(row["pending"] or "[]")
+                    except Exception:
+                        prev_pending = []
+                    try:
+                        prev_pending_steps = json.loads(row["pending_steps"] or "[]")
+                    except Exception:
+                        prev_pending_steps = []
             con.execute("UPDATE sessions SET " + ",".join(f"{k}=?" for k in values) + " WHERE id=?", (*values.values(), sid))
             # 状态迁移是"日志即真相"最关键的一类事件：只记**真实变化**（重复写同值不记），
             # 并带上 from/to，便于重放与审计。事件复用同一连接（见 append_event 注释）。
@@ -231,6 +251,18 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                     self.append_event(sid, "files_modified",
                                       {"added": added[:50], "removed": removed[:50],
                                        "total": len(cur_files)}, con=con)
+            for key, prev_list in (("pending", prev_pending), ("pending_steps", prev_pending_steps)):
+                if key not in values:
+                    continue
+                try:
+                    cur_list = json.loads(values[key] or "[]")
+                except Exception:
+                    cur_list = []
+                if len(cur_list) != len(prev_list):
+                    # 队列进出（用户插话被消费 / 新插话入队）——只记数量变化，不记正文
+                    self.append_event(sid, "queue",
+                                      {"queue": key, "before": len(prev_list), "after": len(cur_list)},
+                                      con=con)
         return self.get(sid)
 
     def add_step(self, sid: str, step_no: int, conversation_index: int, step: dict[str, Any]):
@@ -313,6 +345,26 @@ CREATE TABLE IF NOT EXISTS conv_stats (
     def conv_stats(self, sid: str):
         with self.lock, self._connect() as con:
             return [dict(x) for x in con.execute("SELECT * FROM conv_stats WHERE session_id=? ORDER BY id", (sid,))]
+
+    def append_audit(self, kind: str, sid: str, payload: dict[str, Any] | None = None) -> None:
+        """全局审计流水（**不随会话删除**）：只会记"发生了什么"，不记内容。
+
+        为什么单独一张表：会话删除会级联清掉 `events`（隐私优先），但"某会话何时被删"
+        这种审计事实不该随之消失。因此只保留 kind + session_id + 少量元信息。
+        """
+        try:
+            with self.lock, self._connect() as con:
+                con.execute("INSERT INTO audit(kind,session_id,payload,created) VALUES(?,?,?,?)",
+                            (str(kind)[:60], str(sid)[:120],
+                             json.dumps(payload or {}, ensure_ascii=False, default=str)[:4000],
+                             time.time()))
+        except Exception:
+            pass
+
+    def audit_log(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self.lock, self._connect() as con:
+            return [dict(r) for r in con.execute(
+                "SELECT * FROM audit ORDER BY id DESC LIMIT ?", (int(limit),))]
 
     def append_event(self, sid: str, kind: str, payload: dict[str, Any] | None = None,
                      con: sqlite3.Connection | None = None) -> None:
@@ -454,6 +506,7 @@ CREATE TABLE IF NOT EXISTS conv_stats (
             return dict(row) if row else None
 
     def delete(self, sid: str):
+        self.append_audit("session_deleted", sid, {"reason": "explicit"})
         """删除会话及其全部从属数据。
 
         只删 sessions 行会让 messages/steps/file_events/conv_stats 永久残留

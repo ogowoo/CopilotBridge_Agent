@@ -16,7 +16,7 @@ from typing import Any
 KNOWN_KINDS = (
     "turn_begin", "turn_done", "step_begin", "step_done", "step_recorded",
     "approval_granted", "approval_taken", "approval_denied", "state",
-    "message", "files_modified", "file_event",
+    "message", "files_modified", "file_event", "queue",
 )
 
 
@@ -29,6 +29,7 @@ def project(events: list[dict[str, Any]]) -> dict[str, Any]:
     recorded_steps: list[int] = []
     messages: list[dict[str, Any]] = []
     changed_files: list[str] = []
+    queues: dict[str, dict[str, Any]] = {}
     unknown: dict[str, int] = {}
 
     for ev in events:
@@ -70,6 +71,9 @@ def project(events: list[dict[str, Any]]) -> dict[str, Any]:
             messages.append({"role": payload.get("role"), "chars": payload.get("chars"),
                              "conversation_index": payload.get("conversation_index"),
                              "message_id": payload.get("message_id")})
+        elif kind == "queue":
+            queues[str(payload.get("queue") or "pending")] = {
+                "before": payload.get("before"), "after": payload.get("after")}
         elif kind == "file_event":
             path = str(payload.get("path") or "")
             if path and path not in changed_files:
@@ -89,6 +93,7 @@ def project(events: list[dict[str, Any]]) -> dict[str, Any]:
         "recorded_steps": sorted(recorded_steps),
         "messages": messages,
         "changed_files": changed_files,
+        "queues": queues,
         "unknown_kinds": unknown,
         "event_count": len(events),
         "last_event_id": max((int(e.get("id") or 0) for e in events), default=0),

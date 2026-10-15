@@ -1,4 +1,5 @@
 """事件日志（P2-10 第一期）：检查点动作会并行落事件；读取路径不变。"""
+import json
 import shutil
 import sys
 import tempfile
@@ -87,6 +88,32 @@ class EventLogTests(unittest.TestCase):
         self.assertEqual(ev["payload"]["path"], "a.txt")
         self.assertEqual(ev["payload"]["tool"], "write_text")
         self.assertEqual(ev["payload"]["after_hash"][:6], "abc123")
+
+    def test_queue_events_only_on_size_change(self):
+        self.store.patch("s1", pending=["MARKER-ALPHA"])
+        self.store.patch("s1", pending=["MARKER-ALPHA"])          # 没变化 → 不发
+        self.store.patch("s1", pending=["MARKER-ALPHA", "MARKER-BETA"])   # 变化 → 发
+        self.store.patch("s1", pending=[])                        # 消费完 → 发
+        evs = self.store.events("s1", kinds=("queue",))
+        self.assertEqual([(e["payload"]["before"], e["payload"]["after"]) for e in evs],
+                         [(0, 1), (1, 2), (2, 0)])
+        self.assertEqual(evs[0]["payload"]["queue"], "pending")
+        self.assertNotIn("MARKER", json.dumps(evs[0]["payload"]),
+                         "队列事件只记数量，不记正文（避免把用户指令写进事件表）")
+
+    def test_pending_steps_queue_tracked_separately(self):
+        self.store.patch("s1", pending_steps=["别用 run_python"])
+        ev = self.store.events("s1", kinds=("queue",))[0]
+        self.assertEqual(ev["payload"]["queue"], "pending_steps")
+
+    def test_delete_writes_surviving_audit_record(self):
+        """会话删除会级联清事件，但审计流水必须留存（隐私与审计的平衡）。"""
+        self.store.begin_turn("s1", 0, "ph", 0)
+        self.assertTrue(self.store.delete("s1"))
+        self.assertEqual(self.store.events("s1"), [], "事件随会话删除")
+        audit = self.store.audit_log()
+        self.assertTrue(any(a["kind"] == "session_deleted" and a["session_id"] == "s1"
+                            for a in audit), f"审计里应有删除记录：{audit}")
 
     def test_cascade_delete(self):
         self.store.begin_turn("s1", 0, "ph", 0)
