@@ -164,6 +164,24 @@ class AgentRunner:
         reg.add("workspace", self._workspace_context(), order=300)
         return reg.render(variables={"CBP_FILE_ROUTING": _routing})
 
+    def _first_turn_copilot_hint(self) -> bool:
+        """首轮是否提示"可直接让 Copilot 生成文件"。
+
+        条件全部满足才提示：
+        1. 浏览器（Copilot 网页）通道——provider 会话没有 copilot_file，
+           提示了只会让模型去调用不存在的工具（实测连续失败 10 次）；
+        2. copilot_file 确实在本次工具面里（allow_copilot_file / 工具裁剪都过了）。
+        """
+        if not getattr(self.tools, "allow_web_copilot_tools", True):
+            return False
+        try:
+            names = self._active_tool_names()
+        except Exception:
+            names = None
+        if names is not None and "copilot_file" not in names:
+            return False
+        return "copilot_file" in getattr(self.tools, "_tools", {})
+
     def _active_tool_names(self) -> set[str] | None:
         """按任务文本裁剪工具面（P0-1）；None 表示不裁剪。
 
@@ -1170,6 +1188,18 @@ class AgentRunner:
                     prompt += ("\n\n用户在原任务基础上追加新指令，请优先执行最新指令：\n"
                                + "\n".join(pending_now))
                     carrying_pending = True
+                # 新话题首轮：Copilot 网页通道可以"直接生成文件"——copilot_file 让
+                # Copilot 生成并提供下载入口，内容不经过聊天消息，因此不受单条输出
+                # 上限约束（大文件一个回合拿到，不用 write_text_b64 分块写、也不会
+                # 截断）。这里只在首轮、且确实有这个工具时给一次建议，不写进系统
+                # 提示词（系统提示词要保持逐字稳定，prompt cache 依赖它）。
+                if self._first_turn_copilot_hint():
+                    prompt += ("\n\n首轮提示（新话题）：若任务要**产出新文件**（文档/代码/"
+                               "数据/页面），优先一次调用 copilot_file(path, instruction) "
+                               "让 Copilot 直接生成文件并下载到工作区——一个大文件一个"
+                               "回合即可拿到，比 write_text_b64 分块写更快也不易截断；"
+                               "只有需要精确修改**已有**文件、或内容很短需要逐块校验时，"
+                               "才用 write_text_b64/append_text_b64/replace_text。")
                 force_new = not chat_active
             else:
                 pending_now = [str(x) for x in (state.get("pending") or []) if str(x).strip()]

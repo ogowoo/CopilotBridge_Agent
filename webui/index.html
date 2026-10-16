@@ -114,7 +114,14 @@
 <div class="mask" role="dialog" aria-modal="true" aria-labelledby="gmTitle" id="gmMask" data-act="maskGm">
   <div class="dlg" style="width:min(480px,94vw)">
     <div class="dhead"><span id="gmTitle">提示</span></div>
-    <div class="dbody"><div class="dmsg" id="gmMsg"></div><input id="gmInput" aria-label="输入" style="display:none"></div>
+    <div class="dbody"><div class="dmsg" id="gmMsg"></div>
+      <div id="gmModes" class="gmodes" style="display:none" role="radiogroup" aria-label="插入方式">
+        <label class="gmopt"><input type="radio" name="gmMode" value="step" checked>
+          <span><b>立即遵守</b><small>马上生效：追加到当前执行中，并抢占批量里剩余的动作</small></span></label>
+        <label class="gmopt"><input type="radio" name="gmMode" value="turn">
+          <span><b>整轮重排</b><small>当前回合作废，按新指令重新规划这一轮</small></span></label>
+      </div>
+      <input id="gmInput" aria-label="输入" style="display:none"></div>
     <div class="dfoot">
       <button type="button" class="btn ghost" id="gmCancel">取消</button>
       <button type="button" class="btn accent" id="gmOk">确定</button>

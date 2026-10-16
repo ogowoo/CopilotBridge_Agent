@@ -53,12 +53,19 @@ TOOL_GROUPS: dict[str, tuple[str, ...]] = {
              "write_text_b64", "append_text_b64", "replace_text", "make_directory",
              "copy_path", "move_path", "validate_python", "run_unittest",
              "skill_list", "skill_read", "skill_create",
-             "memory_write", "memory_search", "memory_forget", "tool_list"),
+             "memory_write", "memory_search", "memory_forget", "tool_list",
+             # copilot_file 是**写工具**（让 Copilot 生成文件并下载到工作区），原先放在
+             # copilot 组，而该组关键字全是"图片/截图/附件/上传给 copilot"——结果任何
+             # "生成文件"类任务都会把它裁掉，模型根本看不到这个工具（实测：
+             # "生成一个报告文件" -> copilot_file 不在工具面里）。写工具必须常驻，
+             # 否则等于把"直接让 Copilot 生成文件"这条路堵死。
+             "copilot_file"),
     "delete": ("delete_path",),
     "python": ("run_python",),
     "office": ("read_excel", "write_excel", "read_docx", "write_docx", "read_pptx", "read_pdf"),
     "outlook": ("outlook_unread", "outlook_read", "outlook_search", "outlook_send"),
-    "copilot": ("copilot_attach", "copilot_file"),
+    # copilot 组只剩"上传文件给 Copilot 分析"，关键字围绕附件/图片
+    "copilot": ("copilot_attach",),
     "self": ("self_read_text", "self_write_text_b64", "self_append_text_b64",
              "self_replace_text", "self_validate", "self_unittest", "self_rollback"),
 }

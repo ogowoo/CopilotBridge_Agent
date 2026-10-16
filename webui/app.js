@@ -304,6 +304,11 @@ function copyMsg(btn){let m=btn.closest('.msg');if(!m)return;
  try{navigator.clipboard.writeText(m.dataset.raw||'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
 function copyCode(btn){let w=btn.closest('.md-codewrap');if(!w)return;let c=w.querySelector('code');
  try{navigator.clipboard.writeText(c?c.textContent:'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
+/* 复制任意文本（JSON 代码块等）：按钮文案短暂反馈 */
+function copyText(text,btn){
+ try{navigator.clipboard.writeText(text||'');
+     if(btn){const old=btn.textContent;btn.textContent='已复制 ✓';
+      setTimeout(()=>btn.textContent=old,900)}}catch(e){}}
 function toggleCodeFold(btn){
  let w=btn.closest('.md-codewrap');if(!w)return;
  let folded=w.classList.toggle('collapsed');
@@ -434,13 +439,64 @@ function highlight(raw,lang){
  if(kws)s=s.replace(hlKeyword(kws.replace(/ /g,'|')),'<span class="hl-k">$1</span>');
  s=s.replace(/\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g,'<span class="hl-n">$&</span>');
  return s.replace(/\u0000(z+)\u0000/g,(m,zs)=>store[zs.length-1]||m)}
+/* ── 助手回复的可视化：JSON 动作 / 最终答复 / Markdown ────────────────
+   问题：Agent 模式的回复常常是 JSON 动作原样落进对话（"final" 除外），
+   以往按纯文本渲染就是一大坨（还超过折叠阈值被折起来），完全没法读。
+   这里按内容形态分流渲染：
+     {type:"final",content}      -> content 按 Markdown 渲染 + "最终答复" 标记
+     {type:"tool",...}           -> 工具卡：工具名 + 原因 + 参数(JSON 视图)
+     {type:"actions",actions:[]} -> 批量动作卡：逐个工具 + 参数
+     其它 JSON                    -> JSON 视图（可读、可滚、键值着色）
+     非 JSON                      -> Markdown
+   CSP 下不能有内联事件，所有按钮走 data-act 事件委托。 */
+function tryParseJson(text){
+ let t=String(text==null?'':text).trim();
+ if(!t)return null;
+ let m=/^```(?:json|jsonc)?\s*([\s\S]*?)\s*```$/i.exec(t);
+ if(m)t=m[1].trim();
+ const looksJson=t.startsWith('{')||t.startsWith('[');
+ if(!looksJson)return null;
+ try{const v=JSON.parse(t);return (v&&typeof v==='object')?v:null}catch(e){}
+ // 容错：模型偶尔在 JSON 后面带尾巴，或前面有解释——取首尾括号之间的部分再试
+ const a=t.indexOf('{'),b=t.lastIndexOf('}');
+ if(a>=0&&b>a){try{const v=JSON.parse(t.slice(a,b+1));if(v&&typeof v==='object')return v}catch(e){}}
+ return null}
+function jsonViewBox(obj){
+ return '<div class="jsonview">'+jv(obj)+'</div>'}
+function actionCardHtml(a){
+ const name=(a&&(a.tool||a.name))||'(未知工具)';
+ const reason=(a&&(a.reason||a.why))||'';
+ const args=(a&&(a.arguments||a.args||a.params))||{};
+ return '<div class="act-card">'+
+  '<div class="act-head"><span class="act-ico">🔧</span><span class="act-tool">'+esc(String(name))+'</span>'+
+  (reason?'<span class="act-why">'+esc(String(reason).slice(0,200))+'</span>':'')+'</div>'+
+  jsonViewBox(args)+'</div>'}
+function renderJsonReply(obj){
+ const t=obj&&obj.type;
+ if(t==='final'){
+  const body=(obj.content!=null?String(obj.content):'');
+  return '<div class="act-badge ok">最终答复</div><div class="md-body">'+mdToHtml(body)+'</div>'}
+ if(t==='tool')return actionCardHtml(obj);
+ if(t==='actions'){
+  const list=Array.isArray(obj.actions)?obj.actions:[];
+  return '<div class="act-badge">批量动作 · '+list.length+' 个</div>'+
+   list.map(actionCardHtml).join('')}
+ return '<div class="act-badge">JSON 回复</div>'+jsonViewBox(obj)}
+function renderAssistantBody(content){
+ const raw=String(content==null?'':content);
+ const obj=tryParseJson(raw);
+ if(obj)return renderJsonReply(obj);
+ // 看起来像 JSON 但解析不了：明确告诉用户是原文，而不是让人以为界面坏了
+ if(/^\s*[{[]/.test(raw))return '<div class="act-badge warn">JSON 解析失败（原文）</div>'+
+   '<div class="md-body">'+mdToHtml(raw)+'</div>';
+ return '<div class="md-body">'+mdToHtml(raw)+'</div>'}
 function msgEl(role,content,ts,opts){
  opts=opts||{};
  let who=opts.who||(role==='user'?'你':assistantLabel());
  let t=fmtStamp(ts||Math.floor(Date.now()/1000));
  let plain=(opts.plain||role==='user');   // 用户/提示类消息不做 Markdown
  let body=plain?`<div class="md-body plain">${esc(content)}</div>`
-               :`<div class="md-body">${mdToHtml(content)}</div>`;
+               :renderAssistantBody(content);
  let e=document.createElement('div');e.className='msg '+role;
  e.innerHTML=`<div class="msg-av">${esc(String(who).charAt(0))}</div>`+
   `<div class="msg-main"><div class="msg-head"><span class="msg-role">${esc(who)}</span>`+
@@ -474,8 +530,16 @@ function mdToHtml(src){
    i++;
    while(i<lines.length&&!/^\s*```\s*$/.test(lines[i])){buf.push(lines[i]);i++}
    closeLists(0);
+   const rawCode=buf.join('\n');
+   // ```json 代码块直接用 JSON 视图（键值着色 + 可滚），比纯文本好读
+   if(/^(json|jsonc)$/i.test(String(lang))){ 
+    const parsed=tryParseJson(rawCode);
+    if(parsed){out.push('<div class="md-codewrap"><div class="md-codebar">'+
+      '<span class="md-lang">json</span>'+
+      '<button class="md-copy" data-act="copyRaw" data-raw="'+esc(rawCode)+'">复制</button></div>'+
+      jsonViewBox(parsed)+'</div>');continue}}
    // 高亮内部会先分词再转义（入参是原始代码，不要预先 esc）
-   const codeHtml=highlight(buf.join('\n'),lang);
+   const codeHtml=highlight(rawCode,lang);
    const long=buf.length>22;
    out.push(`<div class="md-codewrap${long?' foldable collapsed':''}"><div class="md-codebar">`+
             `<span class="md-lang">${esc(lang)}</span>`+
@@ -551,6 +615,12 @@ function gmShow(o){if(_gmResolve){const prev=_gmResolve;_gmResolve=null;prev(nul
  let m=document.getElementById('gmMsg');m.textContent=o.msg||'';m.style.display=o.msg?'':'none';
  let inp=document.getElementById('gmInput');
  if(o.input!==undefined&&o.input!==null){inp.style.display='';inp.value=o.input}else{inp.style.display='none'}
+ // 可选：插入方式选择（step 立即遵守 / turn 整轮重排），只有强行插入用得上
+ let modes=document.getElementById('gmModes');
+ if(modes){
+  modes.style.display=o.modes?'':'none';
+  if(o.modes){let pick=modes.querySelector('input[value="'+o.modes.default+'"]');
+   if(pick)pick.checked=true}}
  let c=document.getElementById('gmCancel');c.style.display=o.cancelText===null?'none':'';c.textContent=o.cancelText||'取消';
  let ok=document.getElementById('gmOk');ok.textContent=o.okText||'确定';ok.className='btn '+(o.danger?'danger':'accent');
  openMask('gmMask');
@@ -582,12 +652,23 @@ document.addEventListener('keydown',e=>{
  else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}});
 
 function gmClose(v){closeMask('gmMask');if(_gmResolve){_gmResolve(v);_gmResolve=null}}
-document.getElementById('gmOk').onclick=()=>{let inp=document.getElementById('gmInput');gmClose(inp.style.display==='none'?true:inp.value)};
+document.getElementById('gmOk').onclick=()=>{let inp=document.getElementById('gmInput');
+ let modes=document.getElementById('gmModes');
+ let mode=null;
+ if(modes&&modes.style.display!=='none'){let sel=modes.querySelector('input[name="gmMode"]:checked');mode=sel?sel.value:'step'}
+ if(inp.style.display==='none')gmClose(true);
+ else if(mode!==null)gmClose({text:inp.value,mode:mode});
+ else gmClose(inp.value)};
 document.getElementById('gmCancel').onclick=()=>gmClose(null);
 document.getElementById('gmInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('gmOk').click()}});
 const dlgAlert=(msg,title='提示')=>gmShow({title,msg,cancelText:null});
 const dlgConfirm=(msg,title='确认',danger=false)=>gmShow({title,msg,danger}).then(v=>v===true);
 const dlgPrompt=(msg,def='',okText='',title='输入')=>gmShow({title,msg,input:def,okText:okText||undefined});
+/* 带"插入方式"选择的输入框（强行插入用）：返回 {text,mode} 或 null */
+const dlgInjectPrompt=(msg,def,title,defaultMode)=>{
+ const modes=document.getElementById('gmModes');
+ const lastMode=(()=>{try{return localStorage.getItem('cbp-inject-mode')||defaultMode||'step'}catch(e){return defaultMode||'step'}})();
+ return gmShow({title,msg,input:def,okText:'插入',modes:{default:lastMode}})};
 
 /* ── 跟进消息模式切换（卡片头部按钮，不再占用输入区） ── */
 let followupMode='agent';
@@ -1199,20 +1280,24 @@ document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e
    与"排队跟进"不同——后者要等当前这轮跑完才起新一轮。 */
 async function injectMessage(){
  if(!current){toast('请先选择 Session','err');return}
- let content=await dlgPrompt(
-  '插入指令（运行中即时生效：会立即中断当前回合——提供商直接取消请求；网页版若回答尚未开始生成也会立即停下——然后按新指令继续）',
-  '', '强行插入','插入指令');
- if(content===null)return;
- content=String(content).trim();
+ let pick=await dlgInjectPrompt(
+  '插入指令（运行中即时生效，会立即中断当前回合后按新指令继续）。插入方式决定语义：',
+  '', '强行插入','step');
+ if(pick===null)return;
+ let content=String(pick.text||'').trim();
  if(!content)return;
+ let queue=(pick.mode==='turn')?'turn':'step';
+ try{localStorage.setItem('cbp-inject-mode',queue)}catch(e){}
  try{
   let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/inject`,
-                  {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+                  {method:'POST',headers:{'Content-Type':'application/json'},
+                   body:JSON.stringify({content,queue})});
   toast(d.note||'已插入', d.running?'ok':'');
   liveTab('chat');
   // 让聊天区尽快看到这条指令（标"插入",与普通发送区分）
   let log=document.getElementById('chatlog');
-  log.appendChild(msgEl('user',content,null,{who:'你（插入）'}));
+  log.appendChild(msgEl('user',content,null,
+    {who:queue==='step'?'你（插入·立即遵守）':'你（插入·整轮重排）'}));
   log.scrollTop=log.scrollHeight;
   refreshSessions();
  }catch(e){toast('插入失败: '+(e.text||e),'err')}}
@@ -1515,6 +1600,7 @@ const ACTIONS={
  // 动态生成内容里的处理器（消息复制/代码折叠/附件移除）
  copyMsg:(el)=>copyMsg(el),
  copyCode:(el)=>copyCode(el),
+ copyRaw:(el)=>copyText(el.dataset.raw||'',el),
  toggleCodeFold:(el)=>toggleCodeFold(el),
  removeAttachment:(el)=>removeAttachment(el.dataset.store,Number(el.dataset.arg)),
 };

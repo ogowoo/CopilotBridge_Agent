@@ -216,6 +216,28 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .md-table{border-collapse:collapse;font-size:12.5px;min-width:60%}
 .md-table th,.md-table td{border:1px solid var(--line2);padding:4px 9px;text-align:left}
 .md-table th{background:var(--panel2);font-weight:600}
+/* ── JSON 动作 / 徽标（对话里可视化 Agent 的 JSON 回复）───────────── */
+.act-badge{display:inline-block;font-size:10.5px;font-weight:600;letter-spacing:.3px;
+  padding:1px 8px;border-radius:999px;margin:2px 0 5px;background:var(--btn-bg);
+  color:var(--muted);border:1px solid var(--line2)}
+.act-badge.ok{color:var(--green);border-color:var(--green)}
+.act-badge.warn{color:var(--amber);border-color:var(--amber)}
+.act-card{border:1px solid var(--line2);border-radius:10px;margin:5px 0;overflow:hidden;background:var(--panel)}
+.act-head{display:flex;align-items:center;gap:7px;padding:5px 9px;background:var(--panel2);
+  border-bottom:1px solid var(--line2);flex-wrap:wrap}
+.act-ico{font-size:12px}
+.act-tool{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;font-weight:600;color:var(--accent2)}
+.act-why{font-size:11.5px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
+.act-card .jsonview{border:0;border-radius:0;max-height:300px}
+/* ── 对话框内的"插入方式"单选（强行插入用）───────────────────────── */
+.gmodes{display:flex;flex-direction:column;gap:6px;margin:10px 0 2px}
+.gmopt{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border:1px solid var(--line2);
+  border-radius:9px;background:var(--panel2);cursor:pointer;font-size:12.5px}
+.gmopt:hover{border-color:var(--accent2)}
+.gmopt input{margin-top:2px;flex:none}
+.gmopt span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.gmopt small{color:var(--muted);font-size:11.5px;line-height:1.45}
+.gmopt:has(input:checked){border-color:var(--accent);background:var(--sess-sel)}
 /* ── 语法高亮（零依赖手写着色）──────────────────────────────────── */
 .hl-c{color:var(--faint);font-style:italic}
 .hl-s{color:var(--st)}
