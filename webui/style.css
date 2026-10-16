@@ -122,8 +122,12 @@ textarea{resize:vertical}
 .content{display:grid;grid-template-columns:1fr;gap:12px;align-items:stretch;flex:1 1 auto;min-height:0;overflow:hidden}
 .content>.card{display:flex;flex-direction:column;min-height:0}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
-.chead{display:flex;align-items:center;gap:9px;padding:11px 15px;border-bottom:1px solid var(--line);font-weight:600;font-size:13.5px}
-.chead .hint{margin-left:auto;font-weight:400;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
+.chead{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:11px 15px;border-bottom:1px solid var(--line);font-weight:600;font-size:13.5px}
+/* 提示区里是"计数 + 两个下拉框 + 导出按钮"，内联排会在窄处堆叠（实测：两个下拉框
+   竖着叠在标题右上方）。改成 flex 行，放不下时整体换行而不是竖着叠。 */
+.chead .hint{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;justify-content:flex-end;
+  flex-shrink:0;                    /* 不被压缩：实测它被压到 166px 导致两个下拉框竖着叠 */
+  margin-left:auto;font-weight:400;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
 .term{margin:0;padding:12px 15px;background:var(--term-bg);border-radius:0 0 11px 11px;color:var(--term-text);font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;min-height:64px;max-height:40vh;overflow:auto}
 
 /* 实时面板选项卡（执行状态/当前回答/发送内容/继续对话共用面板体） */
@@ -420,7 +424,9 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 .dfoot{display:flex;gap:9px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
 
 /* ── 页面内通知与通用弹层（替代浏览器原生 alert/confirm/prompt） ── */
-.toasts{position:fixed;top:auto;bottom:calc(16px + var(--retry-h,0px) + 12px);right:16px;left:auto;transform:none;z-index:120;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+/* 提示气泡挪到左下角：右下会盖住对话区的"发送"按钮（实测重叠 64%），
+   左下是会话列表底部（非交互区），盖住也只会挡到列表项的尾部。 */
+.toasts{position:fixed;top:auto;bottom:calc(16px + var(--retry-h,0px) + 12px);left:16px;right:auto;transform:none;z-index:120;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
 .toast{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:10px 18px;font-size:13px;box-shadow:0 10px 32px var(--dlg-shadow);animation:dlgIn .16s ease-out;max-width:min(560px,90vw);white-space:pre-wrap;word-break:break-word;pointer-events:auto}
 .toast.err{border-color:var(--red);color:var(--danger-text)}
 .toast.ok{border-color:var(--green);color:var(--green)}

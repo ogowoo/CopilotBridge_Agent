@@ -979,6 +979,82 @@ async def wait_copilot_ready(timeout: float = 120) -> bool:
     return False
 
 
+
+MD_JS = r"""/* 把 Copilot 回答区域的 DOM 转成 Markdown。
+ * 之前用 innerText 提取 → 代码块/列表/标题/粗体全被拍成纯文本，
+ * 聊天区拿到的"原文"就没有格式可渲染（用户实测对比：网页有格式、这里全是纯文本）。
+ * 转换规则刻意简化：只覆盖 Copilot 回答里常见的结构，未知元素回退为文本。 */
+window.__cbp_html2md = function(root){
+  const SKIP = new Set(['SCRIPT','STYLE','BUTTON','SVG','INPUT','SELECT','TEXTAREA','NOSCRIPT']);
+  const SKIP_CLASS = ['citation','copilot-citation','attribution','sr-only','visually-hidden'];
+  function walk(node){
+    if(!node) return '';
+    if(node.nodeType === 3) return node.textContent;            // 文本节点
+    if(node.nodeType !== 1) return '';                           // 非元素
+    const tag = node.tagName;
+    if(SKIP.has(tag)) return '';                                 // UI 元素不进文本
+    const cls = (node.className && String(node.className)) || '';
+    if(SKIP_CLASS.some(c => cls.toLowerCase().includes(c))) return '';
+    // 跳过 Copilot 的"思考了 X 秒"头与引用角标
+    if(/reasoned|thinking|思考了/i.test(cls)) return '';
+    const kids = [...node.childNodes].map(walk).join('');
+    switch(tag){
+      case 'H1': return '\n# '+kids.trim()+'\n\n';
+      case 'H2': return '\n## '+kids.trim()+'\n\n';
+      case 'H3': return '\n### '+kids.trim()+'\n\n';
+      case 'H4': return '\n#### '+kids.trim()+'\n\n';
+      case 'P': return kids.trim()+'\n\n';
+      case 'BR': return '\n';
+      case 'STRONG': case 'B': return '**'+kids+'**';
+      case 'EM': case 'I': return '*'+kids+'*';
+      case 'CODE': {
+        // 行内 code（在 pre 里的是代码块，由 PRE 分支处理）
+        if(node.closest('pre')) return kids;
+        return '`'+kids.replace(/`/g,"\\`")+'`';
+      }
+      case 'PRE': {
+        // 代码块：先清掉行号/复制按钮再走子节点（行号 span 会直接变成文本，实测过
+        // "1$content" 这样漏进来——必须先清再取内容）。
+        node.querySelectorAll('[class*="line-number" i],[class*="lineno" i],button').forEach(el=>el.remove());
+        // 语言标签：优先 data-language，其次 header 里第一个 span 的文本（排除按钮）
+        let lang = '';
+        const head = node.parentElement ? node.parentElement.querySelector('[class*="header" i],[class*="lang" i],[data-language]') : null;
+        if(head){ lang = (head.getAttribute('data-language')||'').trim()
+                  || ((head.querySelector('span')||{}).textContent||'').trim().split(/\s/)[0].toLowerCase(); }
+        if(!lang){ const m = cls.match(/language-(\w+)/); if(m) lang = m[1]; }
+        const code = [...node.childNodes].map(walk).join('');
+        return '\n```'+lang+'\n'+code.replace(/\n+$/,'')+'\n```\n\n';
+      }
+      case 'UL': return [...node.children].map(li=>'- '+walk(li).trim()+'\n').join('')+'\n';
+      case 'OL': return [...node.children].map((li,ix)=>(ix+1)+'. '+walk(li).trim()+'\n').join('')+'\n';
+      case 'LI': return kids;
+      case 'BLOCKQUOTE': return kids.trim().split('\n').map(l=>'> '+l).join('\n')+'\n\n';
+      case 'TABLE': {
+        const rows = [...node.querySelectorAll('tr')].map(tr=>
+          [...tr.children].map(td=>walk(td).trim().replace(/\|/g,'\\|')).join(' | '));
+        if(!rows.length) return '';
+        const sep = rows[0] ? rows[0].split('|').map(()=>'---').join('|') : '';
+        return '\n| '+rows[0]+' |\n|'+sep+'|\n'+rows.slice(1).map(r=>'| '+r+' |').join('\n')+'\n\n';
+      }
+      case 'A': {
+        const href = node.getAttribute('href')||'';
+        const text = kids.trim()||href;
+        return /^https?:/i.test(href) ? '['+text+']('+href+')' : text;
+      }
+      case 'HR': return '\n---\n\n';
+      case 'DIV': case 'SECTION': case 'ARTICLE': case 'SPAN': case 'MAIN':
+      default: {
+        // 代码块头部（语言名 + 复制按钮）是 UI 元素，不是回答内容
+        if(/header/i.test(cls) && node.parentElement && /code-block/i.test(node.parentElement.className||'')) return '';
+        // 块级容器：内容后跟换行；行内容器直接拼接
+        const block = /^(DIV|SECTION|ARTICLE|P|MAIN|FIGURE)$/.test(tag);
+        return kids + (block && kids.trim() ? '\n' : '');
+      }
+    }
+  }
+  return walk(root).replace(/\n{3,}/g,'\n\n').trim();
+};"""
+
 async def body_text():
     try:
         return (await page.locator("body").inner_text()).replace("\r\n", "\n")
@@ -1005,7 +1081,27 @@ def extract_latest_answer(text):
     return "\n".join(lines).strip()
 
 
+async def answer_markdown() -> str:
+    """把最近一条 Copilot 回答的 DOM 转成 Markdown（保留代码块/列表/标题/粗体）。
+
+    之前用 `innerText` 提取 → 所有格式被拍平，聊天区拿到的"原文"就没有格式可渲染。
+    失败时回退到纯文本路径（保证 agent 协议不受影响——解析器自己剥 ``` 围栏）。
+    """
+    try:
+        await page.evaluate(MD_JS)          # 确保转换器已注入
+        loc = page.locator('[data-content="ai-message"], [class*="ai-message" i], '
+                           '[class*="assistant" i], article')
+        count = await loc.count()
+        if not count:
+            return ""
+        return (await loc.nth(count - 1).evaluate("el => window.__cbp_html2md(el)")).strip()
+    except Exception:
+        return ""
+
+
 async def current_answer():
+    # Agent 模式必须保持纯文本：回复是 JSON 动作，markdown 转换可能破坏它。
+    # 聊天显示的 markdown 版本由 plain_chat_turn 单独取（见 answer_markdown）。
     return extract_latest_answer(await body_text())
 
 
@@ -2954,6 +3050,9 @@ async def plain_chat_turn(sid: str, content: str, model_id: str, attach_paths: l
             send_content = send_content.rstrip() + f"\n\n[CBP-TURN:{uuid.uuid4().hex[:12]}]"
             await send(send_content, make_new, model_id)
             answer = (await wait_agent_answer(previous)).strip()
+            # 显示/存储用 markdown（保留代码块/列表/标题/粗体）；纯文本只用于回合判定。
+            # 失败时回退纯文本，保证对话总能落库。
+            display = (await answer_markdown()) or answer
             current = AGENT_SESSIONS.get(sid)
             if not current:
                 raise RuntimeError("会话在执行期间被删除")
@@ -2963,12 +3062,12 @@ async def plain_chat_turn(sid: str, content: str, model_id: str, attach_paths: l
                 chat_url = _cand if CONVERSATION_URL_RE.search(_cand) else ""
             urls = list(current.get("conversation_urls") or [])
             if chat_url and chat_url not in urls: urls.append(chat_url)
-            AGENT_SESSIONS.add_message(sid, "assistant", answer, int(current.get("conversation_index", 0)))
+            AGENT_SESSIONS.add_message(sid, "assistant", display, int(current.get("conversation_index", 0)))
             if chat_url:
                 AGENT_SESSIONS.patch(sid, current_url=chat_url, conversation_urls=urls, model=model_id)
             else:
                 AGENT_SESSIONS.patch(sid, conversation_urls=urls, model=model_id)
-            runtime_update(sid, phase="manual_completed", answer_preview=answer[-12000:], detail="普通对话完成")
+            runtime_update(sid, phase="manual_completed", answer_preview=display[-12000:], detail="普通对话完成")
             return {"session_id":sid,"role":"assistant","content":answer,"url":page.url,"mode":"chat"}
         finally:
             ACTIVE_SESSION_ID = prev_active
