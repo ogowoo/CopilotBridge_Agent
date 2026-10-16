@@ -239,6 +239,204 @@ function noteText(data, fallback) {
   return val === key ? ((data && data.note) || fallback || "") : val;
 }
 
+/* ── 长尾补充（面板/记忆/技能/回滚/删除明细/演示数据/HTML 片段）────────── */
+Object.assign(I18N_EN, {
+  " 个</div>": " item(s)</div>",
+  " 个菜单项，无新增）": " menu entries, nothing new)",
+  " 字符]</span>": " chars]</span>",
+  " 属于不可回滚操作；授权仅对这一次执行有效（用后即焚）": " is irreversible; this authorization applies to this execution only (single-use)",
+  " 条消息）": " messages)",
+  " 步）": " steps)",
+  "(无标记)": "(no marker)",
+  "(未知工具)": "(unknown tool)",
+  "(空：该会话还没有发出过回合)": "(empty: this session has not sent a turn yet)",
+  "<b>目录</b>": "<b>Contents</b>",
+  "<div class=\"act-badge ok\">最终答复</div><div class=\"md-body\">": "<div class=\"act-badge ok\">Final answer</div><div class=\"md-body\">",
+  "<div class=\"act-badge warn\">JSON 解析失败（原文）</div>": "<div class=\"act-badge warn\">JSON parse failed (raw text)</div>",
+  "<div class=\"act-badge\">JSON 回复</div>": "<div class=\"act-badge\">JSON reply</div>",
+  "<div class=\"act-badge\">批量动作 · ": "<div class=\"act-badge\">Batch actions · ",
+  "<div class=\"dmsg\">没有远程删除明细。</div>": "<div class=\"dmsg\">No remote deletion details.</div>",
+  "<div class=\"mem-empty\">没有匹配的记忆。Agent 完成任务时会自动沉淀，也可以直接让它「记到长期记忆」。</div>":
+    "<div class=\"mem-empty\">No matching memories. The agent persists them automatically when finishing tasks — or just ask it to remember something.</div>",
+  "<span class=\"mem-pin\">★ 置顶</span>": "<span class=\"mem-pin\">★ Pinned</span>",
+  "<span class=\"nl\">[Base64 内容，共 ": "<span class=\"nl\">[Base64 content, ",
+  "Agent 回合 a1b2c3d4e5f6 已确认，等待 Copilot 回答": "Agent turn a1b2c3d4e5f6 confirmed, waiting for Copilot's answer",
+  "Copilot 未就绪：": "Copilot not ready: ",
+  "HTTP 响应为空": "Empty HTTP response",
+  "Token/步数/手动触发自动创建新 Copilot 会话": "Token/step count/manual trigger created a new Copilot conversation",
+  "URL 对应会话不属于当前 Session，拒绝删除；需要前缀: [CBP-AGENT][task-demo01]":
+    "The conversation for this URL does not belong to the current session; deletion refused. Expected prefix: [CBP-AGENT][task-demo01]",
+  "⏳ API 服务限流/不可用，预计恢复": "⏳ API service rate-limited/unavailable, recovery expected",
+  "⏳ Copilot 限流/不可用，预计恢复": "⏳ Copilot rate-limited/unavailable, recovery expected",
+  "　提供商模型不受影响，可直接使用。": " Provider models are unaffected and can be used directly.",
+  "主题：": "Theme: ",
+  "任务启动失败: ": "Task start failed: ",
+  "任务已建立": "Task created",
+  "会话模型已切换为 ": "Session model switched to ",
+  "修改后语法检查": "Syntax check after the change",
+  "修改排队消息": "Edit queued message",
+  "关键词检索…（回车）": "Keyword search… (Enter)",
+  "写入修复后的 agent.py": "Write the fixed agent.py",
+  "分析 cbp 项目并生成 TODO": "Analyze the cbp project and generate a TODO",
+  "切换模型失败: ": "Switching model failed: ",
+  "初始提示词（本会话未保存，以下为按当前工作区近似重建）":
+    "Initial prompt (not stored for this session; approximately rebuilt from the current workspace)",
+  "初始提示词（首回合实际发送内容）": "Initial prompt (what was actually sent on the first turn)",
+  "删除排队消息": "Delete queued message",
+  "删除确认": "Confirm deletion",
+  "删除记忆": "Delete memory",
+  "删除这条排队中的消息？此操作不可撤销。": "Delete this queued message? This cannot be undone.",
+  "删除这条长期记忆？删除后不再参与检索。": "Delete this long-term memory? It will no longer be retrieved.",
+  "发现新模型: ": "New models found: ",
+  "取消置顶": "Unpin",
+  "回滚到哪个版本？": "Roll back to which version?",
+  "回滚失败: ": "Rollback failed: ",
+  "回滚服务自升级": "Roll back self-upgrade",
+  "图片超过 8MB，已忽略": "Image exceeds 8MB — ignored",
+  "地址不是 http(s)，已拒绝打开": "Not an http(s) address — refused to open",
+  "处理中…": "Working…",
+  "复制选中行": "Copy selected lines",
+  "宽限期后硬退出": "force-exit after the grace period",
+  "对比两个目录差异": "Compare two directories",
+  "导出失败: ": "Export failed: ",
+  "已删除排队消息": "Queued message deleted",
+  "已删除记忆 #": "Memory deleted #",
+  "已取消令牌输入": "Token entry cancelled",
+  "已取消置顶": "Unpinned",
+  "已复制 ✓  ": "Copied ✓  ",
+  "已复制会话 ID: ": "Session ID copied: ",
+  "已完成 3 个 P0 项：会话切换风暴、暂停状态覆盖、限流识别。剩余 1 项进行中。":
+    "3 P0 items done: session-switch storm, pause-state override, rate-limit detection; 1 remaining in progress.",
+  "已导出 Markdown（": "Markdown exported (",
+  "已将自动化 Edge 切换到该会话": "Automation Edge switched to this session",
+  "已恢复，正在续跑任务": "Resumed — continuing the task",
+  "已授权并继续执行（该授权仅对这一次操作有效）": "Authorized and continuing (this authorization is single-use)",
+  "已排队，等待处理…": "Queued, waiting…",
+  "已插入": "Injected",
+  "已更新排队消息": "Queued message updated",
+  "已置顶（检索时恒定注入）": "Pinned (always injected during retrieval)",
+  "已重新扫描（": "Re-scanned (",
+  "强制清理失败: ": "Force cleanup failed: ",
+  "当前为无头模式（窗口隐藏），点击显示自动化窗口":
+    "Headless mode (window hidden) — click to show the automation window",
+  "当前会话": "Current session",
+  "当前会话模型：": "Current session model: ",
+  "当前显示自动化窗口，点击切换为无头模式（隐藏窗口）":
+    "Automation window visible — click to switch to headless (hidden)",
+  "当前没有对话记录": "No conversation yet",
+  "授权中…": "Authorizing…",
+  "授权失败: ": "Authorization failed: ",
+  "排队跟进": "Queued follow-up",
+  "插入指令（运行中即时生效，会立即中断当前回合后按新指令继续）。插入方式决定语义：":
+    "Inject an instruction (applies immediately while running and interrupts the current turn). The mode decides the semantics:",
+  "操作失败": "Operation failed",
+  "整理 Outlook 未读邮件": "Tidy up unread Outlook mail",
+  "无匹配": "No match",
+  "无头模式启动失败，已回退为有窗口模式（旧版 Edge 或安全策略不支持无头持久化）":
+    "Headless start failed; fell back to windowed mode (old Edge or security policy lacks headless persistence support)",
+  "无法连接本地服务（127.0.0.1:8765 是否在运行？）": "Cannot reach the local service (is 127.0.0.1:8765 running?)",
+  "时间线刷新失败:": "Timeline refresh failed:",
+  "时间线已导出（": "Timeline exported (",
+  "智谱": "Zhipu",
+  "更新失败: ": "Update failed: ",
+  "最多附加 4 张图片": "Up to 4 images",
+  "最终答复": "Final answer",
+  "最近发送的内容": "Last prompt",
+  "服务已终止（连接已断开）": "Service stopped (connection lost)",
+  "未初始化": "not initialized",
+  "未授权：已取消令牌输入（点击重新输入）": "Unauthorized: token entry cancelled (click to re-enter)",
+  "未知": "unknown",
+  "未知原因": "unknown reason",
+  "标签已设为": "Tag set to ",
+  "检查字节码缓存时间状态": "Check the bytecode cache timestamp",
+  "检查用": "for inspection",
+  "模型列表已刷新": "Model list refreshed",
+  "模型菜单未能扫描：": "Could not scan the model menu: ",
+  "模型菜单读取失败: ": "Reading the model menu failed: ",
+  "正在发送/流式返回/等待回答": "sending / streaming / waiting for answer",
+  "正在发送普通对话 ": "Sending plain chat ",
+  "正在建立 Agent 任务 ": "Creating agent task ",
+  "没有可回滚的自升级记录": "No self-upgrade record to roll back",
+  "浏览器启动中…": "Browser starting…",
+  "浏览器启动失败": "Browser start failed",
+  "浏览器已启动，等待 Copilot 就绪（可能需要在自动化窗口登录）":
+    "Browser started; waiting for Copilot to be ready (you may need to sign in in the automation window)",
+  "浏览器未启动（首次使用 Copilot 时自动启动）": "Browser not started (starts automatically on first Copilot use)",
+  "深圳英文旅游手册": "Shenzhen English travel guide",
+  "渲染视图": "Rendered view",
+  "演示模式（?demo=1）——数据为本地假数据": "Demo mode (?demo=1) — local fake data",
+  "演示模式（API 未连接）：无法刷新模型列表": "Demo mode (API not connected): cannot refresh the model list",
+  "点击删除后，目标 URL 仍存在于 Chats 列表": "After deletion the target URL is still in the Chats list",
+  "点击复制完整 URL": "Click to copy the full URL",
+  "现在做 todo 里的 P0 阻断项，每完成一个请在 todo 里打上勾":
+    "Now do the P0 blocking items in the todo; tick each one off as it completes",
+  "确定终止？": "Stop the service?",
+  "移除": "Remove",
+  "等待模型回答…": "Waiting for the model…",
+  "继续执行当前任务，从未完成事项开始": "Continue the current task, starting from unfinished items",
+  "编辑": "Edit",
+  "编辑这条消息的内容（只改本地历史；已发给网页 Copilot 的内容无法撤回）":
+    "Edit this message (local history only; content already sent to web Copilot cannot be recalled)",
+  "网页对话": "web conversation",
+  "自升级回滚失败: ": "Self-upgrade rollback failed: ",
+  "设置会话标签（列表按标签分组；留空取消标签）":
+    "Set a session tag (the list groups by tag; leave empty to clear)",
+  "设置标签（用于分组）": "Set tag (used for grouping)",
+  "该 Session 暂无网页会话地址": "This session has no web conversation URL",
+  "该任务没有可回滚的文件改动": "This task has no file changes to roll back",
+  "该会话用的是 API 提供商模型，没有可打开的网页对话":
+    "This session uses an API provider model — there is no web conversation to open",
+  "请求失败: ": "Request failed: ",
+  "请输入要继续执行的任务": "Enter the task to continue with",
+  "请输入访问令牌": "Enter the access token",
+  "读取 agent.py 确认当前实现": "Read agent.py to confirm the current implementation",
+  "读取初始提示词失败: ": "Reading the initial prompt failed: ",
+  "还在生成": "still generating",
+  "这条消息不在最近加载的记录里（可能超出 500 条上限）":
+    "This message is not in the recently loaded records (may exceed the 500-message limit)",
+  "这条消息还没有落库，无法编辑": "This message is not stored yet and cannot be edited",
+  "部分 Copilot 会话删除失败，本地 Session 已保留。可检查后使用下方按钮重试，或仅清理本地记录。":
+    "Some Copilot conversations could not be deleted; the local session was kept. Check and retry with the button below, or clean up the local record only.",
+  "重试远程并强制清理本地记录": "Retry remote deletion and force-clear the local record",
+  "链接": "Link",
+  "长期记忆：查看 / 检索 / 置顶 / 删除（点击打开面板）":
+    "Long-term memory: view / search / pin / delete (click to open the panel)",
+  "需要 api_token：": "api_token required: ",
+  "需要在自动化窗口完成 Microsoft 登录": "Microsoft sign-in is required in the automation window",
+  "需要授权：": "Authorization required: ",
+  "默认工作区": "Default workspace",
+  "（下一回合生效，服务重启后仍沿用）": " (takes effect next turn, persists across restarts)",
+  "（演示模式）此处为 Copilot 回复": "(demo mode) Copilot's reply appears here",
+  "（点击切换）": " (click to cycle)",
+  "（菜单里未找到）": " (not found in the menu)",
+  "，下一回合生效": ", takes effect next turn",
+  "，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）":
+    ", plus all Copilot web conversations tied to this task (titles may no longer carry the [CBP-AGENT] marker; ownership is verified against the conversation body)",
+});
+
+/* 动态渲染出来的**属性**在 DOM 层翻译（title / placeholder / aria-label）。
+   为什么不改源码：把 JS 生成的 HTML 属性写成 tr(...) / ${esc(tr(...))} 需要区分
+   模板串与拼接串上下文，实测极易写坏（我自己就写坏过三次：转义引号截断、模板里
+   把 JS 源码当属性值、拼接结构错乱）。改在 DOM 层就没有这个风险：
+   只翻译"属性值恰好等于字典词条"的，命中不了就原样不动。 */
+const I18N_ATTR_ORIG = new WeakMap();
+function translateAttrs(scope) {
+  const root = scope || document;
+  root.querySelectorAll("[title],[placeholder],[aria-label]").forEach((el) => {
+    ["title", "placeholder", "aria-label"].forEach((a) => {
+      if (!el.hasAttribute(a)) return;
+      let store = I18N_ATTR_ORIG.get(el);
+      if (!store) { store = {}; I18N_ATTR_ORIG.set(el, store); }
+      if (store[a] === undefined) store[a] = el.getAttribute(a) || "";
+      const src = String(store[a] || "");
+      const key = src.trim();
+      if (!key) return;
+      const val = tr(key);
+      if (val !== key && el.getAttribute(a) !== val) el.setAttribute(a, val);
+    });
+  });
+}
+
 /* 台湾用语覆盖表（在简繁转换之后应用，修正词汇而非仅字形） */
 const I18N_TW_OVERRIDE = {
   "文件": "檔案", "文件夹": "資料夾", "保存": "儲存", "设置": "設定", "配置": "設定",
