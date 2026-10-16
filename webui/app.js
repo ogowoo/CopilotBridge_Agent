@@ -258,22 +258,49 @@ let sessSig='';
 function drawSessions(){
  let q=(document.getElementById('sessFilter').value||'').toLowerCase();
  let box=document.getElementById('sessions');
- let list=sessCache.filter(s=>!q||(s.title||'').toLowerCase().includes(q)||(s.id||'').toLowerCase().includes(q)||(s.state||'').includes(q));
- let sig=q+'|'+list.map(s=>s.id+s.state+s.total_steps+s.estimated_tokens+(s.conversation_index??'')+(s.title||'')+(s.attachment_count??'')).join('|')+'|'+current;
+ let list=sessCache.filter(s=>!q||(s.title||'').toLowerCase().includes(q)||(s.id||'').toLowerCase().includes(q)||(s.state||'').includes(q)||(s.tag||'').toLowerCase().includes(q));
+ let sig=q+'|'+list.map(s=>s.id+s.state+s.total_steps+s.estimated_tokens+(s.conversation_index??'')+(s.title||'')+(s.attachment_count??'')+(s.tag||'')).join('|')+'|'+current;
  if(sig===sessSig)return;
  sessSig=sig;
  box.innerHTML='';
  if(!list.length){box.innerHTML='<div class="sess-empty">没有匹配的 Session</div>';return}
- list.forEach(s=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
+ // 按标签分组（有标签的在前、组内保持 updated 倒序；未打标签的收在最后）
+ const groups=new Map();
+ list.forEach(s=>{const t=(s.tag||'').trim();if(!groups.has(t))groups.set(t,[]);groups.get(t).push(s)});
+ const keys=[...groups.keys()].filter(k=>k).sort((a,b)=>a.localeCompare(b,'zh'));
+ if(groups.has(''))keys.push('');
+ const renderCard=(s)=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
-  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>步骤 ${esc(s.total_steps??0)} · 会话 ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(STATE_TEXT[s.state]||s.state)}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}`;
+  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>步骤 ${esc(s.total_steps??0)} · 会话 ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(STATE_TEXT[s.state]||s.state)}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
   let chip=e.querySelector('.sid');
   if(chip)chip.onclick=ev=>{ev.stopPropagation();try{navigator.clipboard.writeText(s.id);chip.textContent='已复制 ✓';setTimeout(()=>chip.textContent=s.id,900)}catch(_){}};
   e.onclick=()=>load(s.id);
   // 键盘可达：会话切换是主入口，纯 div+onclick 对键盘用户等于不可用
   e.tabIndex=0;
   e.onkeydown=ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();load(s.id)}};
-  box.appendChild(e)})}
+  box.appendChild(e)};
+ keys.forEach(k=>{
+  if(keys.length>1||k){
+   const h=document.createElement('div');h.className='taghead';
+   h.textContent=k||'未分组';
+   if(k)h.title='标签：'+k;
+   box.appendChild(h)}
+  groups.get(k).forEach(renderCard)})}
+
+/* 会话标签：纯本地组织手段（不参与 Agent 逻辑），列表按标签分组 */
+async function editTag(btn){
+ const sid=btn.dataset.arg;
+ if(!sid)return;
+ const cur=((sessCache||[]).find(s=>s.id===sid)||{}).tag||'';
+ const tag=await dlgPrompt('设置会话标签（列表按标签分组；留空取消标签）',cur,'保存','会话标签');
+ if(tag===null)return;
+ try{
+  await api(`/v1/agent/sessions/${encodeURIComponent(sid)}/tag`,
+   {method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tag:String(tag).trim()})});
+  toast(tag.trim()?'标签已设为「'+tag.trim()+'」':'已取消标签','ok');
+  await refreshSessions();
+ }catch(e){toast('设置标签失败: '+(e.text||e),'err')}}
 
 /* ── 时间线：增量渲染，不重建已有 DOM，展开状态不丢失 ── */
 /* 工具结果的语言猜测：优先按参数里的文件扩展名，其次按工具名 */
@@ -313,11 +340,46 @@ function stepResultRender(s){
        codeBlockHtml(v,isJson?'json':lang,{label:langLabel(lang)})});
  if(!out)out='<div class="meta">（没有可渲染的字段）</div>';
  return out}
-function renderSteps(steps){
- let box=document.getElementById('steps');
- document.getElementById('stepCount').textContent=steps.length?steps.length+' 条':'';
- if(steps.length<renderedSteps){box.innerHTML='';renderedSteps=0}
- steps.slice(renderedSteps).forEach(s=>{
+/* 时间线筛选：按工具名与状态分组过滤。
+   默认（无筛选）仍走增量渲染，展开状态不丢；一旦筛选就整表重建——
+   筛选态本身是"检查用"的临时视图，重建的代价可以接受。 */
+let lastSteps=[],stepFilter={tool:'',status:''},stepFilterKey='';
+const BAD_STATUS=['error','invalid_action','failed','gate_blocked','noop_guard',
+                  'send_failed','service_unavailable','denied'];
+function stepMatch(s){
+ if(stepFilter.tool&&String(s.tool||'')!==stepFilter.tool)return false;
+ if(stepFilter.status==='ok'&&s.status!=='ok')return false;
+ if(stepFilter.status==='bad'&&!BAD_STATUS.includes(String(s.status||'')))return false;
+ if(stepFilter.status==='event'&&(s.status==='ok'||BAD_STATUS.includes(String(s.status||''))))return false;
+ return true}
+function fillStepTools(){
+ const sel=document.getElementById('stepTool');if(!sel)return;
+ const tools=[...new Set((lastSteps||[]).map(s=>String(s.tool||'').trim()).filter(Boolean))].sort();
+ const cur=sel.value;
+ sel.innerHTML='<option value="">全部工具</option>'+tools.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+ if(tools.includes(cur))sel.value=cur}
+function stepFilterInput(el){
+ const which=el.dataset.arg;
+ stepFilter[which==='status'?'status':'tool']=el.value||'';
+ stepFilterKey=JSON.stringify(stepFilter);
+ renderSteps(lastSteps,true)}
+function renderSteps(steps,force){
+ lastSteps=steps||[];
+ const box=document.getElementById('steps');
+ const filtered=!!(stepFilter.tool||stepFilter.status);
+ const shown=lastSteps.filter(stepMatch);
+ const key=JSON.stringify(stepFilter);
+ // 只在"筛选变了 / 被显式要求 / 步骤变少"时整表重建；其余情况继续增量 prepend，
+   // 这样默认视图不会失去展开状态，筛选态也不会每秒重建整棵 DOM。
+ const rebuild=force||key!==stepFilterKey||shown.length<renderedSteps;
+ stepFilterKey=key;
+ if(rebuild){box.innerHTML='';renderedSteps=0}
+ else if(!shown.length){box.innerHTML=''}
+ document.getElementById('stepCount').textContent=
+  filtered?`${shown.length}/${lastSteps.length} 条（筛选）`
+          :(lastSteps.length?lastSteps.length+' 条':'');
+ fillStepTools();
+ shown.slice(renderedSteps).forEach(s=>{
   let cls=s.status==='ok'?'ok':(s.status==='error'||s.status==='invalid_action'?'error':'info');
   let e=document.createElement('div');e.className='step '+cls;
   let tm=s._time?new Date(s._time*1000).toLocaleTimeString('zh-CN',{hour12:false}):'';
@@ -332,7 +394,9 @@ function renderSteps(steps){
     `</details>`}
   e.innerHTML=`<div class="head"><b>步骤 ${esc(s.step??'-')} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(s.reason||s.error||'')}</div>${detail}`;
   box.prepend(e)});
- renderedSteps=steps.length;
+ renderedSteps=shown.length;
+ if(!shown.length&&!box.innerHTML.trim())
+  box.innerHTML='<div class="sess-empty">没有符合筛选条件的步骤</div>';
  applyCodePrefs(box)}
 /* 工具结果：渲染 / JSON 双视图切换 */
 function stepView(btn){
@@ -355,6 +419,7 @@ function renderMessages(messages,opts){
  applyMsgFold(box);
  applyCodePrefs(box);          // 行号/软换行偏好（可全局开关，记住选择）
  if(findQuery)applyFind();
+ renderLiveBubble();           // 重渲染后恢复"正在生成"临时气泡（若仍在流式）
  box.scrollTop=box.scrollHeight}
 /* 语言显示名（对齐 Copilot 的写法：PowerShell 而不是 powershell） */
 const HL_LABEL={python:'Python',js:'JavaScript',typescript:'TypeScript',json:'JSON',
@@ -954,6 +1019,10 @@ async function applyRuntime(r){
    else{_ae.innerHTML='<div class="md-body">'+mdToHtml(_ans)+'</div>'}
    applyCodePrefs(_ae);     // 回答面板里的代码块同样吃行号/换行偏好
    lastAnsHtml=_ans}
+  // 对话区的"正在生成"气泡：只在真的在流式/等待时显示，完成阶段清掉
+  const _livePhase=String(r.phase||'');
+  const _streaming=['api_sending','api_streaming','waiting','sending'].includes(_livePhase);
+  updateLiveBubble(_streaming?(r.answer_preview||''):'');
   document.getElementById('prompt').textContent=r.prompt_preview||'';
   setPill(r.session_state);setKpis(r);
   // 只在真的等待授权时显示（后端已按 waiting 过滤，这里再兜一层）
@@ -1482,6 +1551,62 @@ function attachPasteHandler(taId,store){
   }
  })}
 
+/* ── 对话区的"正在生成"气泡（流式逐字）──────────────────────────────
+   来源就是 runtime.answer_preview（SSE 推送/轮询都会更新）。它是**临时**气泡：
+   正式的助手消息落库后会经 SSE messages 事件触发重渲染，把它冲掉。
+   样式刻意与正式消息区分（虚线边框 + "临时"标签），避免把流到一半的
+   JSON 动作误当成最终答复。 */
+let liveStreamText='';
+function renderLiveBubble(){
+ const box=document.getElementById('chatlog');if(!box)return;
+ let el=document.getElementById('liveBubble');
+ if(!liveStreamText){
+  if(el)el.remove();
+  return}
+ if(!el){
+  el=document.createElement('div');el.id='liveBubble';el.className='msg assistant live';
+  el.innerHTML='<div class="msg-av">…</div><div class="msg-main">'+
+   '<div class="msg-head"><span class="msg-role">正在生成</span>'+
+   '<span class="msg-time">临时</span></div><div class="md-body" id="liveBubbleBody"></div></div>';
+  box.appendChild(el)}
+ const body=document.getElementById('liveBubbleBody');
+ if(body)body.innerHTML=mdToHtml(liveStreamText);
+ box.appendChild(el);          // 保持在末尾
+ box.scrollTop=box.scrollHeight}
+function updateLiveBubble(text){
+ const t=String(text||'');
+ if(t===liveStreamText)return;
+ liveStreamText=t;
+ renderLiveBubble()}
+/* ── 导出对话为 Markdown ──────────────────────────────────────────── */
+function exportChatMarkdown(){
+ if(!current){toast('请先选择 Session','err');return}
+ const msgs=lastMessages||[];
+ if(!msgs.length){toast('当前没有对话记录','err');return}
+ const title=(document.getElementById('title').textContent||'').trim()||current;
+ let out=`# ${title}\n\n`;
+ out+=`- Session: \`${current}\`\n`;
+ out+=`- 模型: \`${currentModel||'-'}\`\n`;
+ out+=`- 导出时间: ${new Date().toLocaleString('zh-CN')}\n`;
+ out+=`- 消息数: ${msgs.length}\n\n---\n\n`;
+ msgs.forEach(m=>{
+  const who=m.role==='user'?'我':assistantLabel();
+  const ts=m.created?new Date(m.created*1000).toLocaleString('zh-CN'):'';
+  out+=`## ${who}${ts?` · ${ts}`:''}\n\n`;
+  out+=String(m.content||'')+'\n';
+  const atts=m.attachments||[];
+  if(atts.length)out+='\n'+atts.map(n=>`![附件 ${n}](data/uploads/${n})`).join('\n')+'\n';
+  out+='\n'});
+ try{
+  const blob=new Blob([out],{type:'text/markdown;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='cbp-'+current+'-chat-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.md';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  toast('已导出 Markdown（'+msgs.length+' 条消息）','ok');
+ }catch(e){toast('导出失败: '+e,'err')}}
+
 /* ── 消息编辑 / 删除（只改本地历史）────────────────────────────────
    诚实语义：已发给网页 Copilot 的内容无法撤回；提供商会话会同步内存上下文
    （后端 sync_provider_history_message），否则模型下一回合仍看到旧文本。 */
@@ -1925,6 +2050,9 @@ const ACTIONS={
  codeLineSel:(el)=>codeLineSel(el),
  copySelLines:(el)=>copySelLines(el),
  stepView:(el)=>stepView(el),
+ editTag:(el)=>editTag(el),
+ stepFilter:(el)=>stepFilterInput(el),
+ exportChatMarkdown:()=>exportChatMarkdown(),
  editMsg:(el)=>editMsg(el),
  delMsg:(el)=>delMsg(el),
  toggleGlobalSearch:()=>toggleGlobalSearch(),

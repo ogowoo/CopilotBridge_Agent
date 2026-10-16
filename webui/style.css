@@ -258,6 +258,19 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .stoppedbanner .meta{color:var(--muted);font-size:12px}
 .stoppedbanner code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;
   background:var(--panel2);border:1px solid var(--line2);border-radius:5px;padding:0 5px;color:var(--text)}
+/* ── 会话标签分组 + 时间线筛选 + 流式临时气泡 ─────────────────────── */
+.taghead{margin:8px 0 3px;padding:0 10px;font-size:11px;color:var(--muted);
+  letter-spacing:.4px;text-transform:none;display:flex;align-items:center;gap:6px}
+.taghead::after{content:"";flex:1;height:1px;background:var(--line)}
+.sess-tag{flex:none;border:0;background:transparent;color:var(--faint);cursor:pointer;
+  font-size:12px;padding:1px 5px;border-radius:6px;opacity:0;transition:opacity .12s}
+.sess:hover .sess-tag{opacity:1}
+.sess-tag:hover{color:var(--text);background:var(--menu-hover)}
+.stepfilter{font-size:11.5px;padding:1px 4px;margin-right:6px;max-width:150px}
+/* 对话区的"正在生成"气泡：虚线 + 弱化，明确是临时内容 */
+.msg.live .msg-main{border-style:dashed;background:transparent}
+.msg.live .msg-av{opacity:.6}
+.msg.live .msg-role{color:var(--accent2)}
 /* ── 消息编辑/删除图标 + 跨会话搜索跳转高亮 ───────────────────────── */
 .msg-icon{margin-left:2px;border:0;background:transparent;color:var(--faint);font-size:11.5px;
   cursor:pointer;padding:1px 5px;border-radius:5px;opacity:0;transition:opacity .12s}

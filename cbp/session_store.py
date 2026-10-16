@@ -170,6 +170,11 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 con.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
             except Exception:
                 pass  # 列已存在
+            # 迁移：会话标签（自由文本，用于列表分组/筛选；空串视为未打标签）
+            try:
+                con.execute("ALTER TABLE sessions ADD COLUMN tag TEXT")
+            except Exception:
+                pass  # 列已存在
 
     @staticmethod
     def _decode(row):
@@ -212,7 +217,7 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                    "modified_files","pending","last_error","cancel_requested","archived","compact_requested",
                    "rollover_requested","conv_tokens","conv_chars","gate_state",
                    "retry_resume_at","retry_attempt","rate_limited_since","initial_prompt",
-            "pending_steps","approval_pending"}
+            "pending_steps","approval_pending","tag"}
         values = {k:v for k,v in values.items() if k in allowed}
         if "state" in values and values["state"] not in self.STATES: raise ValueError("invalid state")
         for key in ("conversation_urls","summary","recent_steps","modified_files","pending",

@@ -637,6 +637,24 @@ async def session_rollback(sid: str, req: RollbackRequest | None = None):
     return result
 
 
+class SessionTagRequest(BaseModel):
+    tag: str = Field(default="", max_length=40)
+
+
+@app.post("/v1/agent/sessions/{sid}/tag")
+async def set_session_tag(sid: str, req: SessionTagRequest):
+    """给会话打标签（列表按标签分组；空串=取消标签）。
+
+    标签是纯本地的组织手段：不参与 Agent 逻辑，也不影响恢复/续跑。
+    """
+    state = b.AGENT_SESSIONS.get(sid)
+    if not state:
+        raise HTTPException(404, "Session 不存在")
+    tag = (req.tag or "").strip()
+    b.AGENT_SESSIONS.patch(sid, tag=tag)
+    return {"session_id": sid, "tag": tag}
+
+
 @app.post("/v1/agent/sessions/{sid}/model")
 async def set_session_model(sid: str, req: b.SessionModelRequest):
     """切换该会话使用的模型：立即持久化，下一回合生效，服务重启后仍沿用。
