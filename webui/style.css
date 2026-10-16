@@ -248,6 +248,22 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 /* 图片加载失败的占位 */
 .img-broken{display:inline-block;font-size:11.5px;color:var(--faint);
   border:1px dashed var(--line2);border-radius:7px;padding:6px 10px;margin:4px 0}
+/* 终止服务：图标按钮的危险态（悬停才显红，平时保持安静） */
+.iconbtn.danger:hover{color:var(--danger-text);background:var(--danger-bg);
+  border-color:var(--danger-border)}
+/* 服务已终止横幅（置于 body 顶部，静态占位不遮挡内容） */
+.stoppedbanner{display:none;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 16px;
+  background:var(--danger-bg);border-bottom:1px solid var(--danger-border);
+  color:var(--danger-text);font-size:13px}
+.stoppedbanner .meta{color:var(--muted);font-size:12px}
+.stoppedbanner code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;
+  background:var(--panel2);border:1px solid var(--line2);border-radius:5px;padding:0 5px;color:var(--text)}
+/* ── diff / patch 代码块着色（+绿 -红 @@蓝）───────────────────────── */
+.dl-add{color:var(--st);background:rgba(63,185,80,.10);display:block}
+.dl-del{color:var(--red);background:rgba(248,81,73,.10);display:block}
+.dl-hunk{color:var(--blue);display:block}
+.dl-meta{color:var(--faint);font-weight:600;display:block}
+.dl-ctx{color:var(--jv-text);display:block}
 /* 软换行（对齐 Copilot：长行折行，而不是横向滚动） */
 .md-codewrap:not(.no-wrap) .md-code{white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:hidden}
 .md-codewrap:not(.no-wrap) .md-code .cl{white-space:pre-wrap}

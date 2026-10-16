@@ -8,6 +8,7 @@ import hmac
 import json
 import logging
 import re
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -19,6 +20,7 @@ from playwright.async_api import async_playwright
 
 from . import bridge as b
 from . import copilot_delete as cd
+from . import lifecycle
 from .bridge import Message, Request, SessionMessageRequest, AgentRequest
 
 # ── 访问控制 ──
@@ -434,6 +436,24 @@ async def set_browser_mode(payload: dict):
             result["persisted"] = False
             result["persist_error"] = str(exc)
     return result
+
+
+@app.post("/v1/shutdown")
+async def shutdown_service():
+    """终止本服务（WebUI「终止服务/退出」按钮）。
+
+    先返回响应、再延迟触发停机：直接在这里停会让前端拿到"连接被重置"，看起来
+    像操作失败。正在运行的任务会被中断——状态都在 SQLite 里，重启后可恢复。
+    优雅停机拿不到 uvicorn server 时由 cbp/lifecycle.py 退回信号，并始终有
+    "宽限期后硬退出"兜底（按钮必须真的能停掉服务）。
+    """
+    if lifecycle.shutdown_pending():
+        return {"stopping": True, "already": True, "note": "停机已在进行中"}
+    # 用线程定时器而不是 loop.call_later：与事件循环生命周期无关（服务可能由
+    # 不同方式启动/重启），也让"先回响应再停"可被测试观察到。
+    threading.Timer(0.4, lifecycle.request_shutdown).start()
+    return {"stopping": True,
+            "note": "服务即将终止。正在运行的任务会中断（状态已落库，重启后可恢复）。"}
 
 
 @app.get("/v1/uploads/{name}")

@@ -252,7 +252,7 @@ async function toggleBrowser(){
  finally{b.disabled=false}
 }
 
-async function refreshSessions(){try{let d=await api('/v1/agent/sessions');sessCache=d.sessions||[];drawSessions()}catch(e){}}
+async function refreshSessions(){if(serviceStopped)return;try{let d=await api('/v1/agent/sessions');sessCache=d.sessions||[];drawSessions()}catch(e){}}
 /* 列表签名：内容没变就不重建 DOM，避免每秒滚动回顶/点击错位 */
 let sessSig='';
 function drawSessions(){
@@ -303,7 +303,7 @@ function renderMessages(messages,opts){
 /* 语言显示名（对齐 Copilot 的写法：PowerShell 而不是 powershell） */
 const HL_LABEL={python:'Python',js:'JavaScript',typescript:'TypeScript',json:'JSON',
  bash:'Bash',powershell:'PowerShell',sql:'SQL',yaml:'YAML',html:'HTML',css:'CSS',
- code:'代码'};
+ diff:'Diff',code:'代码'};
 function langLabel(lang){
  const k=String(lang||'').toLowerCase();
  return HL_LABEL[HL_ALIAS[k]||k]||HL_LABEL[k]||(k?k.charAt(0).toUpperCase()+k.slice(1):'代码')}
@@ -497,7 +497,7 @@ const HL_ALIAS={py:'python',python:'python',python3:'python',
  json:'json',jsonc:'json',sh:'bash',bash:'bash',shell:'bash',zsh:'bash',console:'bash',
  ps1:'powershell',powershell:'powershell',pwsh:'powershell',
  sql:'sql',yml:'yaml',yaml:'yaml',html:'html',xml:'html',htm:'html',vue:'html',
- css:'css',scss:'css',less:'css'};
+ css:'css',scss:'css',less:'css',diff:'diff',patch:'diff',udiff:'diff'};
 const HL_KW={
  python:'def class return if elif else for while import from as try except finally with lambda yield async await None True False self in not and or is pass raise global nonlocal assert del break continue',
  js:'function const let var return if else for while class new import export from async await try catch finally throw typeof instanceof null undefined true false this extends super of in do switch case break default delete void yield static get set',
@@ -517,6 +517,16 @@ function highlight(raw,lang){
  const fam=HL_ALIAS[String(lang||'').toLowerCase()];
  const text=String(raw==null?'':raw);
  if(!fam)return esc(text);
+ // diff/patch：行首决定颜色（+新增/-删除/@@hunk/--- +++文件头），不做关键字分析
+ if(fam==='diff'){
+  return text.split('\n').map(l=>{
+   let cls='dl-ctx';
+   if(/^\+\+\+|^---/.test(l))cls='dl-meta';
+   else if(l.startsWith('+'))cls='dl-add';
+   else if(l.startsWith('-'))cls='dl-del';
+   else if(l.startsWith('@@'))cls='dl-hunk';
+   else if(/^(diff|index|new file|deleted file|similarity|rename)/.test(l))cls='dl-meta';
+   return '<span class="'+cls+'">'+esc(l)+'</span>'}).join('\n')}
  const store=[],keep=hlWrap(store);
  // HTML 家族反过来：要匹配的是 &lt;tag 这种转义后的形态
  if(fam==='html'){
@@ -846,7 +856,7 @@ async function load(id){
    延迟>1s 时不再堆叠请求；await 返回时若已切到别的会话，丢弃迟到数据 */
 let runtimeInflight=false;
 async function runtime(){
- if(!current||runtimeInflight)return;
+ if(serviceStopped||!current||runtimeInflight)return;
  runtimeInflight=true;
  const myId=current;
  try{let r=await api(`/v1/agent/sessions/${encodeURIComponent(myId)}/runtime`);
@@ -1344,6 +1354,7 @@ function updateChannelUI(){
 
 /* ── 排队消息：查看 / 编辑 / 删除 ── */
 async function refreshQueue(){
+ if(serviceStopped)return;
  let box=document.getElementById('queueBox');if(!box)return;
  if(!current){box.innerHTML='';return}
  try{
@@ -1634,9 +1645,43 @@ function showBoot(state,ready,err){
  document.getElementById('bootText').textContent=txt;
  syncFixedLanes();
 }
+/* ── 终止服务 / 退出 ────────────────────────────────────────────────
+   优雅停机：后端先回响应、再延迟触发 uvicorn 停机（拿不到 server 对象就退回
+   信号，并始终有"宽限期后硬退出"兜底）。停机后本页停止一切轮询，
+   否则满屏失败请求 + 健康检查横幅乱跳。 */
+let serviceStopped=false;
+async function shutdownService(){
+ if(!await dlgConfirm(
+   '即将终止本服务（进程退出）：\n\n'
+   +'· 正在运行的任务会中断（状态已落库，重启后可恢复）\n'
+   +'· 自动化浏览器会被关闭，本页面随即断开\n'
+   +'· 需要时重新运行 start.py 启动服务\n\n'
+   +'确定终止？','终止服务',true))return;
+ try{
+  const d=await api('/v1/shutdown',{method:'POST'});
+  showStopped(d&&d.note);
+ }catch(e){
+  // 连接可能比响应先断：同样视为已停止，不要报"操作失败"
+  showStopped('服务已终止（连接已断开）');
+ }
+}
+function showStopped(note){
+ serviceStopped=true;
+ let el=document.getElementById('stoppedBanner');
+ if(!el){el=document.createElement('div');el.id='stoppedBanner';el.className='stoppedbanner';
+  document.body.insertBefore(el,document.body.firstChild)}
+ el.innerHTML='<b>⏻ 服务已终止</b><span>'+esc(note||'')+'</span>'
+  +'<span class="meta">本页可以关闭了；需要时重新运行 <code>python start.py</code> 启动。</span>';
+ el.style.display='flex';
+ try{hideRetryUI()}catch(e){}
+ try{hideConnBanner()}catch(e){}
+ try{stopEvents()}catch(e){}
+ syncFixedLanes();
+}
 async function pollBoot(){
+ if(serviceStopped)return;
  try{const h=await api('/health');showBoot(h.browser_state,h.copilot_ready,h.browser_error)}
- catch(e){showBoot('failed',false,'健康检查失败')}
+ catch(e){if(!serviceStopped)showBoot('failed',false,'健康检查失败')}
 }
 try{setInterval(pollBoot,8000);setTimeout(pollBoot,1200)}catch(e){}
 
@@ -1732,6 +1777,7 @@ const ACTIONS={
  codeMenu:(el)=>codeMenu(el),
  codeLineSel:(el)=>codeLineSel(el),
  copySelLines:(el)=>copySelLines(el),
+ shutdownService:()=>shutdownService(),
  imgZoom:(el)=>imgZoom(el),
  mCopy:(el)=>{const m=codeMenuEl;if(m)copyText(m.dataset.code||'',el);closeCodeMenu()},
  mDownload:(el)=>{
