@@ -293,7 +293,7 @@ function renderMessages(messages,opts){
  let box=document.getElementById('chatlog');box.innerHTML='';
  lastMessages=messages||[];
  if(!messages.length){box.innerHTML='<div class="meta">当前没有人工续聊记录。下面发送的消息会发给该 Session 正在使用的模型。</div>';return}
- messages.forEach(m=>{box.appendChild(msgEl(m.role,m.content,m.created))});
+ messages.forEach(m=>{box.appendChild(msgEl(m.role,m.content,m.created,{attachments:m.attachments||[]}))});
  // 新到达的消息做一次渐显（纯动画，不改内容；尊重 prefers-reduced-motion）
  if(opts.animateLast&&box.lastElementChild)box.lastElementChild.classList.add('reveal');
  applyMsgFold(box);
@@ -318,8 +318,22 @@ function wrapCodeLines(html){
   const re=/<span class="[^"]*">|<\/span>/g;let m;
   while((m=re.exec(ln))){if(m[0]==='</span>'){open.pop()}else{open.push(m[0])}}
   const tail='</span>'.repeat(open.length);
-  return '<span class="cl"><span class="ln">'+(i+1)+'</span>'+prefix+ln+tail+'</span>'});
+  return '<span class="cl"><span class="ln" data-act="codeLineSel" title="点击选中整行">'+(i+1)+'</span>'+prefix+ln+tail+'</span>'});
  return out.join('')}
+/* 行号点击选中整行（再点取消；可同时选多行，方便对照） */
+function codeLineSel(ln){
+ const row=ln.closest('.cl');if(!row)return;
+ row.classList.toggle('sel')}
+/* 图片放大查看（消息附件与 Markdown 图片共用）：轻量浮层，点击或 Esc 关闭 */
+function imgZoom(el){
+ const src=el.getAttribute('src');if(!src)return;
+ let ov=document.getElementById('imgZoomOv');
+ if(!ov){ov=document.createElement('div');ov.id='imgZoomOv';ov.className='imgzoom';
+  // 浮层是程序创建的，直接挂 onclick（CSP 允许 DOM 属性赋值，不必走 ACTIONS 表）
+  ov.onclick=imgZoomClose;document.body.appendChild(ov)}
+ ov.innerHTML='<img src="'+esc(src)+'" alt="放大查看">';
+ ov.style.display='flex';syncFixedLanes()}
+function imgZoomClose(){const ov=document.getElementById('imgZoomOv');if(ov)ov.style.display='none'}
 /* 代码块"…"菜单：复制 / 下载 / 行号 / 换行 / 折叠。
    CSP 下无内联事件；浮层挂到 body 并固定定位，避免被滚动容器裁掉。
    注意：菜单项的 data-act 必须写成**字面量**（不能 `${变量}` 拼），
@@ -358,7 +372,7 @@ function codeMenu(btn){
  codeMenuEl=el}
 document.addEventListener('click',e=>{
  if(codeMenuEl&&!e.target.closest('.codemenu')&&!e.target.closest('[data-act="codeMenu"]'))closeCodeMenu()});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeCodeMenu()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCodeMenu();imgZoomClose()}});
 /* 行号/换行偏好（记住；默认都开，对齐 Copilot 观感） */
 function codePref(key,def){
  try{const v=localStorage.getItem('cbp-code-'+key);return v===null?def:v==='1'}catch(e){return def}}
@@ -414,7 +428,8 @@ function applyFind(){
  (function walk(n){for(let c=n.firstChild;c;c=c.nextSibling){
    if(c.nodeType===3){if(c.nodeValue&&c.nodeValue.trim())nodes.push(c)}
    else if(c.nodeType===1&&c.tagName!=='BUTTON'&&c.tagName!=='MARK'
-           &&!c.classList.contains('msg-fold'))walk(c)}})(box);
+           &&!c.classList.contains('msg-fold')
+           &&!c.classList.contains('ln'))walk(c)}})(box);
  const q=findQuery.toLowerCase();
  nodes.forEach(node=>{
   const text=node.nodeValue,low=text.toLowerCase();
@@ -567,12 +582,21 @@ function msgEl(role,content,ts,opts){
  let plain=(opts.plain||role==='user');   // 用户/提示类消息不做 Markdown
  let body=plain?`<div class="md-body plain">${esc(content)}</div>`
                :renderAssistantBody(content);
+ // 粘贴的图片/截图附件：缩略图行（点击放大）。文件名经 /v1/uploads 提供，
+ // 配 api_token 时走 ?token=（img 标签不能带请求头）。
+ const atts=(opts.attachments||[]);
+ let attsHtml='';
+ if(atts.length){
+  const tk=apiToken();
+  attsHtml='<div class="msg-atts">'+atts.map(n=>
+   '<img class="msg-att" src="/v1/uploads/'+encodeURIComponent(n)+(tk?'?token='+encodeURIComponent(tk):'')+
+   '" alt="附件" loading="lazy" data-act="imgZoom" data-arg="'+esc(n)+'">').join('')+'</div>'}
  let e=document.createElement('div');e.className='msg '+role;
  e.innerHTML=`<div class="msg-av">${esc(String(who).charAt(0))}</div>`+
   `<div class="msg-main"><div class="msg-head"><span class="msg-role">${esc(who)}</span>`+
   (t?`<span class="msg-time">${t}</span>`:'')+
   `<button class="msg-copy" title="复制这条消息" data-act="copyMsg">复制</button></div>`+
-  body+`</div>`;
+  body+attsHtml+`</div>`;
  e.dataset.raw=content||'';
  return e}
 
@@ -584,6 +608,11 @@ function msgEl(role,content,ts,opts){
 function mdToHtml(src){
  const lines=String(src==null?'':src).replace(/\r\n?/g,'\n').split('\n');
  const inline=(s)=>esc(s)
+  // 图片要在链接之前处理：![alt](url) 里的 [alt](url) 会被链接规则抢先吃掉。
+  // 只允许 https? 与 data:image（且排除 svg——svg 可带脚本）；别的协议（javascript:
+  // 之类）不匹配、原样保留为文本。
+  .replace(/!\[([^\]]*)\]\(((?:https?:\/\/|data:image\/(?:png|jpe?g|gif|webp))[^)\s]*)\)/gi,
+           '<img class="md-img" src="$2" alt="$1" loading="lazy" data-act="imgZoom" title="点击放大">')
   .replace(/`([^`]+)`/g,(m,a)=>`<code class="md-ic">${a}</code>`)
   .replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
   .replace(/(^|[\s（(])\*([^*\n]+)\*/g,'$1<i>$2</i>')
@@ -1675,6 +1704,8 @@ const ACTIONS={
  copyCode:(el)=>copyCode(el),
  copyRaw:(el)=>copyText(el.dataset.raw||'',el),
  codeMenu:(el)=>codeMenu(el),
+ codeLineSel:(el)=>codeLineSel(el),
+ imgZoom:(el)=>imgZoom(el),
  mCopy:(el)=>{const m=codeMenuEl;if(m)copyText(m.dataset.code||'',el);closeCodeMenu()},
  mDownload:(el)=>{
   const m=codeMenuEl;if(!m){return}

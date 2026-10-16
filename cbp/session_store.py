@@ -163,6 +163,13 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 con.execute("ALTER TABLE sessions ADD COLUMN initial_prompt TEXT")
             except Exception:
                 pass  # 列已存在
+            # 迁移：消息携带的附件（粘贴的图片/截图）。只存 data/uploads 下的
+            # **文件名**（JSON 数组），不存绝对路径，服务目录搬家也不受影响；
+            # 前端经 GET /v1/uploads/{name} 取图（鉴权中间件统一管）。
+            try:
+                con.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
+            except Exception:
+                pass  # 列已存在
 
     @staticmethod
     def _decode(row):
@@ -284,12 +291,14 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 result.append(item)
             return result
 
-    def add_message(self, sid: str, role: str, content: str, conversation_index: int = 0):
+    def add_message(self, sid: str, role: str, content: str, conversation_index: int = 0,
+                    attachments: list[str] | None = None):
         if role not in {"user", "assistant", "system"}:
             raise ValueError("invalid role")
+        atts = json.dumps([str(a) for a in (attachments or [])], ensure_ascii=False) if attachments else None
         with self.lock, self._connect() as con:
-            cur = con.execute("INSERT INTO messages(session_id,created,role,content,conversation_index) VALUES(?,?,?,?,?)",
-                              (sid, time.time(), role, content, int(conversation_index)))
+            cur = con.execute("INSERT INTO messages(session_id,created,role,content,conversation_index,attachments) VALUES(?,?,?,?,?,?)",
+                              (sid, time.time(), role, content, int(conversation_index), atts))
             # 事件只记元信息（角色/长度/对话序号），正文留在 messages 表：
             # 事件表要保证轻量，重放对话时按 id 关联即可。
             self.append_event(sid, "message",
@@ -316,8 +325,17 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         with self.lock, self._connect() as con:
             # 按自增 id 排序：同一轮 user/assistant 消息的 created 几乎相同，
             # ORDER BY created 可能把回复排到提问前面。
-            rows=con.execute("SELECT id,created,role,content,conversation_index FROM messages WHERE session_id=? ORDER BY id LIMIT ?",(sid,limit))
-            return [dict(x) for x in rows]
+            rows=con.execute("SELECT id,created,role,content,conversation_index,attachments FROM messages WHERE session_id=? ORDER BY id LIMIT ?",(sid,limit))
+            out = []
+            for x in rows:
+                d = dict(x)
+                raw = d.pop("attachments", None)
+                try:
+                    d["attachments"] = json.loads(raw) if raw else []
+                except Exception:
+                    d["attachments"] = []
+                out.append(d)
+            return out
 
     def add_file_event(self, sid: str, event: dict[str, Any]):
         # 这才是 Agent 任务里文件改动的**真实写路径**（messages 表只服务 WebUI 对话，

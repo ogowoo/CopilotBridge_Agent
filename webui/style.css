@@ -223,6 +223,21 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
   text-align:right;color:var(--faint);background:var(--jv-bg);user-select:none;
   -webkit-user-select:none;font-variant-numeric:tabular-nums}
 .md-codewrap.no-lines .ln{display:none}
+/* 行号点击选中整行（可多行同时选中，便于对照） */
+.md-code .ln{cursor:pointer}
+.md-code .ln:hover{color:var(--accent2)}
+.md-code .cl.sel{background:rgba(88,166,255,.14)}
+.md-code .cl.sel .ln{color:var(--accent2);font-weight:600}
+/* Markdown 图片与消息附件缩略图 */
+.md-img{max-width:min(520px,100%);border-radius:8px;border:1px solid var(--line2);
+  margin:6px 0;cursor:zoom-in;display:block}
+.msg-atts{display:flex;gap:8px;flex-wrap:wrap;margin-top:7px}
+.msg-att{max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--line2);
+  cursor:zoom-in;object-fit:cover}
+.imgzoom{display:none;position:fixed;inset:0;z-index:99;background:var(--mask-bg);
+  align-items:center;justify-content:center;cursor:zoom-out;padding:4vh 4vw}
+.imgzoom img{max-width:100%;max-height:100%;border-radius:10px;
+  box-shadow:0 12px 40px var(--dlg-shadow)}
 /* 软换行（对齐 Copilot：长行折行，而不是横向滚动） */
 .md-codewrap:not(.no-wrap) .md-code{white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:hidden}
 .md-codewrap:not(.no-wrap) .md-code .cl{white-space:pre-wrap}

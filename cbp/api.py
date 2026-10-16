@@ -436,6 +436,23 @@ async def set_browser_mode(payload: dict):
     return result
 
 
+@app.get("/v1/uploads/{name}")
+async def serve_upload(name: str):
+    """给前端供"粘贴附件"图片（聊天区缩略图/放大查看用）。
+
+    文件名是服务端生成的（随机 hex + 扩展名），这里仍做严格校验：
+    只允许 [A-Za-z0-9._-]、禁止路径分隔符与 `..`，并且只允许落在 data/uploads
+    目录内（解析后的真实路径必须以其开头）。
+    """
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) or ".." in name:
+        raise HTTPException(400, "非法文件名")
+    base = (b.BASE / "data" / "uploads").resolve()
+    target = (base / name).resolve()
+    if not str(target).lower().startswith(str(base).lower()) or not target.is_file():
+        raise HTTPException(404, "附件不存在")
+    return FileResponse(str(target))
+
+
 @app.get("/v1/models")
 async def models():
     created = int(time.time())
@@ -780,7 +797,9 @@ async def continue_session_message(sid: str, req: SessionMessageRequest):
     if model_id != (req.model or state.get("model")):
         b.AGENT_SESSIONS.patch(sid, model=model_id)  # 清理会话里遗留的失效模型
     # 先把用户消息落库（历史里立即可见），再入队异步处理，避免阻塞 HTTP 响应。
-    message_id = b.AGENT_SESSIONS.add_message(sid, "user", content, int(state.get("conversation_index", 0)))
+    # 附件只记文件名（data/uploads 下），绝对路径会因服务目录搬家而失效。
+    message_id = b.AGENT_SESSIONS.add_message(sid, "user", content, int(state.get("conversation_index", 0)),
+                                              attachments=[p.name for p in attach_paths])
     b.runtime_update(sid, phase="followup_queued", detail=f"跟进消息已排队：{content[:80]}")
     return await b.enqueue_session_message(sid, content, model_id,
                                            bool(req.agent_mode), attach_paths, message_id)
