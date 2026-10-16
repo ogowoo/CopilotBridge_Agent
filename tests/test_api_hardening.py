@@ -124,6 +124,22 @@ class RedactFilterTests(unittest.TestCase):
 
 
 class RuntimeSnapshotTests(unittest.TestCase):
+    def test_approval_pending_only_exposed_while_waiting(self):
+        """审批残留不得外泄。
+
+        真事：会话跑完（completed）后 `approval_pending` 仍留在状态里，UI 就会把已完成的任务
+        显示成"需要授权"，而且每秒的 runtime 刷新会把它重新弹出来（点"暂不授权"也没用）。
+        现在读取路径只在实际 waiting 时暴露，写入路径（bridge.save）在离开 waiting 时清理。
+        """
+        pend = {"tool": "delete_path", "args_hash": "abc"}
+        waiting = A._runtime_snapshot("sid-x", {"state": "waiting", "approval_pending": pend})
+        self.assertEqual(waiting["approval_pending"], pend, "waiting 时必须暴露，否则无法授权")
+        for st in ("completed", "failed", "cancelled", "running", "ready"):
+            snap = A._runtime_snapshot("sid-x", {"state": st, "approval_pending": pend})
+            self.assertIsNone(snap["approval_pending"], f"{st} 不应暴露审批残留")
+        snap = A._runtime_snapshot("sid-x", {"state": "completed"})
+        self.assertIsNone(snap["approval_pending"])
+
     def test_snapshot_contains_session_fields(self):
         """SSE 与 HTTP 必须给出同一份事实（缺字段会让界面每秒抖动）。"""
         state = {"state": "running", "total_steps": 7, "conversation_steps": 3,

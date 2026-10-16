@@ -74,15 +74,19 @@ function hideConnBanner(){const el=document.getElementById('connBanner');if(el)e
    后端在需要授权时把会话置为 waiting 并写入 approval_pending{tool,args_hash}。
    没有这个入口，用户只能手工 curl —— 审批功能等于不可用。 */
 let approvalSeen=null;
+let approvalDismissed=null;   // 用户点过「暂不授权」的 key：同一个待授权不再自动弹出
 function showApprovalBar(p){
  let el=document.getElementById('approvalBar');
- if(!p||!p.tool){if(el)el.style.display='none';approvalSeen=null;return}
+ if(!p||!p.tool){if(el)el.style.display='none';approvalSeen=null;approvalDismissed=null;return}
  if(!el){el=document.createElement('div');el.id='approvalBar';el.className='approvalbar';
   // **流内**：插到会话视图顶部，占位把内容推开，而不是浮在上面盖住发送按钮/时间线。
   // 实测：作为 fixed 浮层时，窄屏会遮住 #injectBtn/#chatFindToggle 43%、#chatlog 34%。
   const host=document.getElementById('sessionView')||document.body;
   host.insertBefore(el,host.firstChild)}
  const key=(current||'')+'|'+p.tool+'|'+(p.args_hash||'');
+ // 已拒绝过的同一个待授权保持隐藏：此前「暂不授权」只是本地 display:none，
+ // 而 applyRuntime 每秒带着同一个 approval_pending 再调一次 → 横幅自己弹回来。
+ if(approvalDismissed===key){if(el)el.style.display='none';return}
  if(approvalSeen!==key){approvalSeen=key;
   el.innerHTML='';
   const span=document.createElement('span');
@@ -101,7 +105,7 @@ function showApprovalBar(p){
    }catch(e){btn.disabled=false;btn.textContent='授权执行';toast('授权失败: '+(e.text||e),'err')}};
   const no=document.createElement('button');
   no.className='btn ghost';no.type='button';no.textContent='暂不授权';
-  no.onclick=()=>{el.style.display='none'};
+  no.onclick=()=>{el.style.display='none';approvalDismissed=key};   // 记住这次拒绝
   el.appendChild(span);el.appendChild(btn);el.appendChild(no)}
  el.style.display='flex'}
 
@@ -665,7 +669,8 @@ async function applyRuntime(r){
    lastAnsHtml=_ans}
   document.getElementById('prompt').textContent=r.prompt_preview||'';
   setPill(r.session_state);setKpis(r);
-  try{showApprovalBar(r.approval_pending)}catch(e){}
+  // 只在真的等待授权时显示（后端已按 waiting 过滤，这里再兜一层）
+  try{showApprovalBar(r.session_state==='waiting'?r.approval_pending:null)}catch(e){}
   updateRetryCountdown(r);
   if(r.total_steps!==lastTotal||(r.detail||'')!==lastDetail){
    lastDetail=r.detail||'';

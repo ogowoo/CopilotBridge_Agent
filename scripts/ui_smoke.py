@@ -173,6 +173,36 @@ def run(url: str, keep_open: bool) -> int:
                 safe_click('[data-act="closeManual"]', "关闭手册"); page.wait_for_timeout(300)
                 if page.evaluate("document.getElementById('manualMask').classList.contains('open')"):
                     problems.append("点击 关闭（data-act=closeManual）未关闭弹窗")
+        # 3d) 审批横幅回归：点「暂不授权」后，同一个待授权**不得**被下一次刷新弹回来
+        #     （真事：原来"暂不授权"只做 display:none，applyRuntime 每秒再调一次 → 一直弹）
+        #     注意必须在**一次 evaluate 内原子完成**：真实会话的 1s runtime 刷新会带着
+        #     非 waiting 的真实状态调用 showApprovalBar(null)，会把注入的合成待授权重置掉
+        #     （第一次写成多步就出现过 flaky）。
+        res = page.evaluate("""() => {
+          const disp = () => { const b = document.getElementById('approvalBar');
+            return b ? (b.style.display || 'missing') : 'missing'; };
+          const clickNo = () => { const b = [...document.querySelectorAll('#approvalBar button')]
+            .find(x => x.textContent.includes('暂不')); b && b.click(); };
+          showApprovalBar({tool: 'smoke_probe', args_hash: '1'});
+          const shown = disp();
+          clickNo();
+          const afterDismiss = disp();
+          showApprovalBar({tool: 'smoke_probe', args_hash: '1'});   // 同一次待授权（模拟每秒刷新）
+          const afterRepeat = disp();
+          showApprovalBar({tool: 'smoke_probe', args_hash: '2'});   // 换参数哈希 = 新待授权
+          const afterNew = disp();
+          showApprovalBar(null);                                     // 收尾
+          return {shown, afterDismiss, afterRepeat, afterNew};
+        }""")
+        if res["shown"] != "flex":
+            problems.append(f"showApprovalBar 未显示横幅（授权入口失效）: {res['shown']}")
+        elif res["afterDismiss"] != "none":
+            problems.append(f"点「暂不授权」后横幅未隐藏: {res['afterDismiss']}")
+        elif res["afterRepeat"] != "none":
+            problems.append("「暂不授权」没被记住：同一待授权又被弹出来了（用户报的'一直弹'）")
+        elif res["afterNew"] == "none":
+            problems.append("新的待授权未重新提示（拒绝记忆范围过大）")
+
         # 4) SSE 必须带 token（配置 api_token 时否则恒 401）
         if sse_urls and not any("token=" in u for u in sse_urls):
             problems.append(f"SSE 未附加 token: {sse_urls[0][:120]}")

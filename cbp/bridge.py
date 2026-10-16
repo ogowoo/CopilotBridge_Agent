@@ -2805,7 +2805,13 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                     runtime_update(sid, detail="新 Copilot 会话已绑定唯一标识")
                 return ans
         def get(): return AGENT_SESSIONS.get(sid)
-        def save(**kw): return AGENT_SESSIONS.patch(sid,**kw)
+        def save(**kw):
+            # 状态一旦离开 waiting，就清掉审批残留。否则会话跑完（completed/failed）后
+            # approval_pending 还留着，UI 会一直显示「需要授权」横幅——实测：点「暂不授权」
+            # 只是本地隐藏，下一秒 runtime 刷新又把它弹回来；残留也会让巡检/投影看到假状态。
+            if "state" in kw and kw["state"] != "waiting" and "approval_pending" not in kw:
+                kw["approval_pending"] = None
+            return AGENT_SESSIONS.patch(sid,**kw)
         def add_step(x):
             st=get(); AGENT_SESSIONS.add_step(sid,int(x.get("step",st["total_steps"]+1)),int(st["conversation_index"]),x)
         def add_file(x): AGENT_SESSIONS.add_file_event(sid,x)

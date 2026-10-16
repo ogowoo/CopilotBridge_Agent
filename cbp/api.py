@@ -877,8 +877,11 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
         "retry_resume_at": (state or {}).get("retry_resume_at"),
         "retry_attempt": (state or {}).get("retry_attempt", 0),
         "rate_limited_since": (state or {}).get("rate_limited_since"),
-        # 破坏性工具待授权：前端据此显示"授权执行 <tool>"入口（否则用户只能手工 curl）
-        "approval_pending": (state or {}).get("approval_pending"),
+        # 破坏性工具待授权：前端据此显示"授权执行 <tool>"入口（否则用户只能手工 curl）。
+        # 只有真的处于 waiting 才暴露：历史会话可能残留旧值（bridge.save 已负责清理），
+        # 那会让界面把已完成的任务显示成"需要授权"，且每秒重新弹出来。
+        "approval_pending": ((state or {}).get("approval_pending")
+                             if (state or {}).get("state") == "waiting" else None),
     })
     return runtime
 
