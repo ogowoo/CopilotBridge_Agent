@@ -297,8 +297,78 @@ function renderMessages(messages,opts){
  // 新到达的消息做一次渐显（纯动画，不改内容；尊重 prefers-reduced-motion）
  if(opts.animateLast&&box.lastElementChild)box.lastElementChild.classList.add('reveal');
  applyMsgFold(box);
+ applyCodePrefs(box);          // 行号/软换行偏好（可全局开关，记住选择）
  if(findQuery)applyFind();
  box.scrollTop=box.scrollHeight}
+/* 语言显示名（对齐 Copilot 的写法：PowerShell 而不是 powershell） */
+const HL_LABEL={python:'Python',js:'JavaScript',typescript:'TypeScript',json:'JSON',
+ bash:'Bash',powershell:'PowerShell',sql:'SQL',yaml:'YAML',html:'HTML',css:'CSS',
+ code:'代码'};
+function langLabel(lang){
+ const k=String(lang||'').toLowerCase();
+ return HL_LABEL[HL_ALIAS[k]||k]||HL_LABEL[k]||(k?k.charAt(0).toUpperCase()+k.slice(1):'代码')}
+/* 把高亮后的 HTML 按行包成 .cl，并维护跨行 span（多行字符串/块注释不会断色）：
+   每行开始时重新打开上一行未闭合的 span，行尾先关掉它们（但记着下一行再开）。 */
+function wrapCodeLines(html){
+ const lines=String(html==null?'':html).split('\n');
+ const open=[];
+ const out=lines.map((ln,i)=>{
+  let prefix='';
+  for(const tag of open)prefix+=tag;
+  const re=/<span class="[^"]*">|<\/span>/g;let m;
+  while((m=re.exec(ln))){if(m[0]==='</span>'){open.pop()}else{open.push(m[0])}}
+  const tail='</span>'.repeat(open.length);
+  return '<span class="cl"><span class="ln">'+(i+1)+'</span>'+prefix+ln+tail+'</span>'});
+ return out.join('')}
+/* 代码块"…"菜单：复制 / 下载 / 行号 / 换行 / 折叠。
+   CSP 下无内联事件；浮层挂到 body 并固定定位，避免被滚动容器裁掉。
+   注意：菜单项的 data-act 必须写成**字面量**（不能 `${变量}` 拼），
+   否则 cbp/invariants.py 的"data-act 与 ACTIONS 一一对应"静态核对看不见它，
+   会把 mCopy 等当成未引用的死代码。 */
+const CODE_EXT={python:'py',js:'js',typescript:'ts',json:'json',bash:'sh',
+                powershell:'ps1',sql:'sql',yaml:'yml',html:'html',css:'css'};
+let codeMenuEl=null;
+let lastCodeMenuTarget=null;
+function closeCodeMenu(){if(codeMenuEl){codeMenuEl.remove();codeMenuEl=null}}
+function codeMenu(btn){
+ closeCodeMenu();
+ const wrap=btn.closest('.md-codewrap');if(!wrap)return;
+ lastCodeMenuTarget=wrap;
+ const code=wrap.querySelector('code');
+ const raw=code?code.textContent:'';
+ const label=wrap.querySelector('.md-lang');
+ const lang=(label?label.textContent:'').toLowerCase();
+ const noLines=wrap.classList.contains('no-lines');
+ const noWrap=wrap.classList.contains('no-wrap');
+ const folded=wrap.classList.contains('collapsed');
+ const items=[
+  ['📋 复制代码','data-act="mCopy"',false],
+  ['⬇ 下载为文件','data-act="mDownload"',false],
+  ['# '+(noLines?'显示行号':'隐藏行号'),'data-act="mLines"',noLines],
+  ['↩ '+(noWrap?'自动换行':'关闭换行'),'data-act="mWrap"',noWrap],
+  ['⌃ '+(folded?'展开全部':'折叠代码'),'data-act="mFold"',folded]];
+ const el=document.createElement('div');
+ el.className='codemenu';
+ el.innerHTML=items.map(it=>`<button type="button" class="cmitem${it[2]?' off':''}" ${it[1]}>${esc(it[0])}</button>`).join('');
+ el.dataset.code=raw;el.dataset.lang=lang;
+ document.body.appendChild(el);
+ const r=btn.getBoundingClientRect();
+ el.style.top=Math.round(r.bottom+4)+'px';
+ el.style.left=Math.round(Math.max(8,Math.min(r.right-el.offsetWidth,window.innerWidth-el.offsetWidth-8)))+'px';
+ codeMenuEl=el}
+document.addEventListener('click',e=>{
+ if(codeMenuEl&&!e.target.closest('.codemenu')&&!e.target.closest('[data-act="codeMenu"]'))closeCodeMenu()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeCodeMenu()});
+/* 行号/换行偏好（记住；默认都开，对齐 Copilot 观感） */
+function codePref(key,def){
+ try{const v=localStorage.getItem('cbp-code-'+key);return v===null?def:v==='1'}catch(e){return def}}
+function setCodePref(key,val){try{localStorage.setItem('cbp-code-'+key,val?'1':'0')}catch(e){}}
+function applyCodePrefs(scope){
+ const noWrap=!codePref('wrap',true);
+ const noLines=!codePref('lines',true);
+ (scope||document).querySelectorAll('.md-codewrap').forEach(w=>{
+  w.classList.toggle('no-wrap',noWrap);
+  w.classList.toggle('no-lines',noLines)})}
 /* 复制整条消息 / 复制代码块 */
 function copyMsg(btn){let m=btn.closest('.msg');if(!m)return;
  try{navigator.clipboard.writeText(m.dataset.raw||'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
@@ -532,22 +602,24 @@ function mdToHtml(src){
    closeLists(0);
    const rawCode=buf.join('\n');
    // ```json 代码块直接用 JSON 视图（键值着色 + 可滚），比纯文本好读
-   if(/^(json|jsonc)$/i.test(String(lang))){ 
+   if(/^(json|jsonc)$/i.test(String(lang))){
     const parsed=tryParseJson(rawCode);
     if(parsed){out.push('<div class="md-codewrap"><div class="md-codebar">'+
-      '<span class="md-lang">json</span>'+
-      '<button class="md-copy" data-act="copyRaw" data-raw="'+esc(rawCode)+'">复制</button></div>'+
+      '<span class="md-ico">⟨/⟩</span><span class="md-lang">JSON</span>'+
+      '<button type="button" class="md-icon" title="复制代码" data-act="copyRaw" data-raw="'+esc(rawCode)+'">⧉</button>'+
+      '<button type="button" class="md-icon" title="更多" data-act="codeMenu">…</button></div>'+
       jsonViewBox(parsed)+'</div>');continue}}
    // 高亮内部会先分词再转义（入参是原始代码，不要预先 esc）
    const codeHtml=highlight(rawCode,lang);
    const long=buf.length>22;
    out.push(`<div class="md-codewrap${long?' foldable collapsed':''}"><div class="md-codebar">`+
-            `<span class="md-lang">${esc(lang)}</span>`+
+            `<span class="md-ico">⟨/⟩</span><span class="md-lang">${esc(langLabel(lang))}</span>`+
             (long?`<span class="md-lines">${buf.length} 行</span>`:'')+
-            `<button class="md-copy" data-act="copyCode">复制</button>`+
-            (long?`<button class="md-fold" data-act="toggleCodeFold">展开</button>`:'')+
+            `<button type="button" class="md-icon" title="复制代码" data-act="copyCode">⧉</button>`+
+            `<button type="button" class="md-icon" title="更多" data-act="codeMenu">…</button>`+
+            (long?`<button type="button" class="md-fold" data-act="toggleCodeFold">展开</button>`:'')+
             `</div>`+
-            `<pre class="md-code"><code>${codeHtml}</code></pre></div>`);
+            `<pre class="md-code"><code>${wrapCodeLines(codeHtml)}</code></pre></div>`);
    continue}
   // 表格：本行含 | 且下一行是分隔行
   if(line.includes('|')&&i+1<lines.length&&/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i+1])&&/-/.test(lines[i+1])){
@@ -747,6 +819,7 @@ async function applyRuntime(r){
   if(_ans!==lastAnsHtml){   // 仅内容变化才重建：保住代码块展开状态与滚动位置
    if(_pj&&typeof _pj==='object'){_ae.innerHTML='<div class="jsonview">'+jv(_pj)+'</div>'}
    else{_ae.innerHTML='<div class="md-body">'+mdToHtml(_ans)+'</div>'}
+   applyCodePrefs(_ae);     // 回答面板里的代码块同样吃行号/换行偏好
    lastAnsHtml=_ans}
   document.getElementById('prompt').textContent=r.prompt_preview||'';
   setPill(r.session_state);setKpis(r);
@@ -1601,6 +1674,36 @@ const ACTIONS={
  copyMsg:(el)=>copyMsg(el),
  copyCode:(el)=>copyCode(el),
  copyRaw:(el)=>copyText(el.dataset.raw||'',el),
+ codeMenu:(el)=>codeMenu(el),
+ mCopy:(el)=>{const m=codeMenuEl;if(m)copyText(m.dataset.code||'',el);closeCodeMenu()},
+ mDownload:(el)=>{
+  const m=codeMenuEl;if(!m){return}
+  const text=m.dataset.code||'';
+  const ext=CODE_EXT[m.dataset.lang]||'txt';
+  try{
+   const blob=new Blob([text],{type:'text/plain;charset=utf-8'});
+   const a=document.createElement('a');
+   a.href=URL.createObjectURL(blob);a.download='code.'+ext;
+   document.body.appendChild(a);a.click();a.remove();
+   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  }catch(e){}
+  closeCodeMenu()},
+ mLines:()=>{
+  // 偏好作用于所有代码块，不能只改当前块
+  setCodePref('lines',!codePref('lines',true));
+  applyCodePrefs();
+  closeCodeMenu()},
+ mWrap:()=>{
+  setCodePref('wrap',!codePref('wrap',true));
+  applyCodePrefs();
+  closeCodeMenu()},
+ mFold:()=>{
+  const wrap=lastCodeMenuTarget;
+  closeCodeMenu();
+  if(!wrap)return;
+  const folded=wrap.classList.toggle('collapsed');
+  const b=wrap.querySelector('.md-fold');
+  if(b)b.textContent=folded?'展开':'收起'},
  toggleCodeFold:(el)=>toggleCodeFold(el),
  removeAttachment:(el)=>removeAttachment(el.dataset.store,Number(el.dataset.arg)),
 };

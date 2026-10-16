@@ -207,10 +207,33 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .md-list li{margin:1px 0}
 .md-quote{border-left:3px solid var(--line2);padding:2px 0 2px 10px;margin:4px 0;color:var(--muted)}
 .md-codewrap{margin:7px 0;border:1px solid var(--jv-border);border-radius:9px;overflow:hidden;background:var(--jv-bg)}
-.md-codebar{display:flex;align-items:center;gap:8px;padding:4px 9px;background:var(--panel2);border-bottom:1px solid var(--jv-border)}
-.md-lang{font-size:11px;color:var(--faint);font-family:Consolas,"Cascadia Mono",monospace}
+.md-codebar{display:flex;align-items:center;gap:6px;padding:5px 9px;background:var(--panel2);border-bottom:1px solid var(--jv-border)}
+.md-ico{font-family:Consolas,"Cascadia Mono",monospace;font-size:11px;color:var(--faint);
+  border:1px solid var(--line2);border-radius:5px;padding:0 4px;line-height:15px}
+.md-lang{font-size:11.5px;color:var(--muted);font-weight:600}
+.md-icon{border:0;background:transparent;color:var(--muted);font-size:13px;
+  cursor:pointer;padding:1px 6px;border-radius:6px;line-height:1.3}
+.md-icon:hover{color:var(--text);background:var(--menu-hover)}
+.md-codebar .md-icon:first-of-type{margin-left:auto}
 .md-copy{margin-left:auto;border:0;background:transparent;color:var(--muted);font-size:11px;cursor:pointer;padding:1px 7px;border-radius:5px}
 .md-copy:hover{color:var(--text);background:var(--menu-hover)}
+/* 代码行号（.cl 每行一个块；行号 sticky 在左侧，横向滚动时不会跑掉） */
+.md-code .cl{display:block;white-space:pre}
+.md-code .ln{position:sticky;left:0;display:inline-block;width:2.6em;margin-right:10px;
+  text-align:right;color:var(--faint);background:var(--jv-bg);user-select:none;
+  -webkit-user-select:none;font-variant-numeric:tabular-nums}
+.md-codewrap.no-lines .ln{display:none}
+/* 软换行（对齐 Copilot：长行折行，而不是横向滚动） */
+.md-codewrap:not(.no-wrap) .md-code{white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:hidden}
+.md-codewrap:not(.no-wrap) .md-code .cl{white-space:pre-wrap}
+.md-codewrap:not(.no-wrap) .ln{position:static}
+/* 代码块"…"菜单（挂 body、固定定位，不被滚动容器裁掉） */
+.codemenu{position:fixed;z-index:90;min-width:170px;background:var(--panel);border:1px solid var(--line2);
+  border-radius:9px;box-shadow:0 8px 26px var(--menu-shadow);padding:5px;display:flex;flex-direction:column}
+.codemenu .cmitem{border:0;background:transparent;color:var(--text);text-align:left;font-size:12.5px;
+  padding:6px 9px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.codemenu .cmitem:hover{background:var(--menu-hover)}
+.codemenu .cmitem.off{color:var(--muted)}
 .md-code{margin:0;padding:9px 11px;overflow:auto;max-height:420px;background:var(--jv-bg);color:var(--jv-text);font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.6;white-space:pre}
 .md-tablewrap{overflow:auto;margin:7px 0}
 .md-table{border-collapse:collapse;font-size:12.5px;min-width:60%}
