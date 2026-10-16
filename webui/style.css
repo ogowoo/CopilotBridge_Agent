@@ -36,7 +36,9 @@ button,input,textarea,select{font:inherit;color:inherit}
 .listhead{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;
   padding:14px 16px 8px;font-size:11px;letter-spacing:1.5px;color:var(--faint)}
 .listhead input{flex:1 1 90px;min-width:0;padding:5px 9px;font-size:12px;letter-spacing:0}
-.listacts{flex:1 1 100%;display:flex;justify-content:flex-end;align-items:center;gap:6px;min-width:0}
+/* 图标行用**分散对齐**：铺满整行并与下方会话列表的左右边缘对齐
+   （右对齐时 7 个图标挤在右侧、左边留一大片空白）。 */
+.listacts{flex:1 1 100%;display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0}
 .sesslist{flex:1;overflow:auto;padding:0 8px 12px}
 .sess{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;cursor:pointer;border:1px solid transparent}
 .sess:hover{background:var(--sess-hover)}
