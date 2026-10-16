@@ -448,3 +448,26 @@ def _ui_assets_whitelisted() -> None:
     stale = sorted(a2 for a2 in allowed if a2 not in local)
     if stale:
         raise InvariantError(f"白名单里有页面未引用的条目（可能已废弃）: {stale}")
+
+
+@invariant("i18n 调用没有被写成字符串字面量")
+def _i18n_calls_not_literals() -> None:
+    """防"批量替换做坏"这一真实事故。
+
+    并发工作里有人把中文串批量包成了 `'tr(重试浏览器)'` **字符串字面量**而不是调用
+    `tr('重试浏览器')`——共 61 处，用户看到的直接是按钮上的 "tr(重试浏览器)"、
+    toast 里的 "tr(会话模型已切换为 )"。这类错误语法合法、单测也不覆盖，只有静态核对能拦住。
+    """
+    bad = []
+    for f in sorted((ROOT / "webui").glob("*.js")):
+        text = f.read_text(encoding="utf-8")
+        for i, line in enumerate(text.splitlines(), 1):
+            if re.search(r"""['"`]tr\(""", line):
+                bad.append(f"{f.name}:{i}")
+    if bad:
+        raise InvariantError(f"这些位置把 tr(...) 写成了字符串字面量: {bad[:8]}")
+    # 反向：文件里必须真的有 tr( 调用，否则说明 i18n 接线被整体回退了
+    total = sum(len(re.findall(r"\btr\(", (ROOT / "webui" / n).read_text(encoding="utf-8")))
+                for n in ("app.js", "i18n.js"))
+    if total < 30:
+        raise InvariantError(f"tr() 调用总数异常偏少（{total}），i18n 接线可能被回退")

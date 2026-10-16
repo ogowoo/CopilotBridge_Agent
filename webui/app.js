@@ -90,21 +90,21 @@ function showApprovalBar(p){
  if(approvalSeen!==key){approvalSeen=key;
   el.innerHTML='';
   const span=document.createElement('span');
-  span.textContent='tr(需要授权：)'+p.tool+' 属于不可回滚操作；授权仅对这一次执行有效（用后即焚）';
+  span.textContent=tr('需要授权：')+p.tool+' 属于不可回滚操作；授权仅对这一次执行有效（用后即焚）';
   const btn=document.createElement('button');
   btn.className='btn accent';btn.type='button';btn.textContent='授权执行';
   btn.onclick=async()=>{
-   btn.disabled=true;btn.textContent='tr(授权中…)';
+   btn.disabled=true;btn.textContent=tr('授权中…');
    try{
     await api(`/v1/agent/sessions/${encodeURIComponent(current)}/approvals`,
               {method:'POST',headers:{'Content-Type':'application/json'},
                body:JSON.stringify({tool:p.tool,args_hash:p.args_hash||''})});
     await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/resume`,{method:'POST'});
-    toast('tr(已授权并继续执行（该授权仅对这一次操作有效）)','ok');
+    toast(tr('已授权并继续执行（该授权仅对这一次操作有效）'),'ok');
     el.style.display='none';approvalSeen=null;await runtime();
-   }catch(e){btn.disabled=false;btn.textContent='tr(授权执行)';toast('tr(授权失败: )'+(e.text||e),'err')}};
+   }catch(e){btn.disabled=false;btn.textContent=tr('授权执行');toast(tr('授权失败: ')+(e.text||e),'err')}};
   const no=document.createElement('button');
-  no.className='btn ghost';no.type='button';no.textContent='tr(暂不授权)';
+  no.className='btn ghost';no.type='button';no.textContent=tr('暂不授权');
   no.onclick=()=>{el.style.display='none';approvalDismissed=key};   // 记住这次拒绝
   el.appendChild(span);el.appendChild(btn);el.appendChild(no)}
  el.style.display='flex'}
@@ -121,7 +121,7 @@ async function api(u,o={}){
     if(!tokenPrompting){
       tokenPrompting=(async()=>{
         try{
-          const tk=await dlgPrompt('tr(本服务启用了 api_token，请输入访问令牌（只保存在本机浏览器）)',apiToken(),'','需要访问令牌');
+          const tk=await dlgPrompt(tr('本服务启用了 api_token，请输入访问令牌（只保存在本机浏览器）'),apiToken(),'','需要访问令牌');
           if(tk){try{localStorage.setItem('cbp-token',tk);tokenPromptCancelled=false}catch(e){}}
           else{tokenPromptCancelled=true;showConnBanner('未授权：已取消令牌输入（点此重新输入）',true)}
           return tk;
@@ -132,6 +132,9 @@ async function api(u,o={}){
     if(tk)r=await call(tk);
   }
   let t=await r.text();if(!r.ok)throw new ApiError(r.status,t,u);return t?JSON.parse(t):{}}
+/* tr() 由 i18n.js 提供（该文件在 app.js 之前加载）。若它加载失败，这里兜底成"原样返回"，
+   否则每个用了 tr() 的交互都会抛 ReferenceError。 */
+if (typeof tr !== 'function') { window.tr = (k) => String(k == null ? '' : k); }
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 /* ── 通道无关的显示名 ──────────────────────────────────────────────
    服务现在既支持 Copilot 网页，也支持 API 提供商（deepseek/… 等），
@@ -224,20 +227,20 @@ async function setSessionModel(model){
   let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/model`,
                   {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model})});
   currentModel=d.model||model;
-  toast('tr(会话模型已切换为 )'+(d.model||model)+(d.note?'（'+d.note+'）':'')+'，下一回合生效', d.note?'':'ok')
- }catch(e){toast('tr(切换模型失败: )'+(e.text||e),'err');refreshSessModelOptions()}}
+  toast(tr('会话模型已切换为 ')+(d.model||model)+(d.note?'（'+d.note+'）':'')+'，下一回合生效', d.note?'':'ok')
+ }catch(e){toast(tr('切换模型失败: ')+(e.text||e),'err');refreshSessModelOptions()}}
 async function refreshModels(){
- if(DEMO){toast('tr(演示模式（API 未连接）：无法刷新模型列表)','err');return}
+ if(DEMO){toast(tr('演示模式（API 未连接）：无法刷新模型列表'),'err');return}
  let btn=document.getElementById('refreshModelsBtn');
  if(btn){btn.disabled=true;btn.textContent='…'}
  try{
   let d=await api('/v1/models/refresh',{method:'POST'});
   await loadModels();
-  if(!d.scanned){toast('tr(模型菜单未能扫描：)'+(d.reason||'未知原因'),'err');return}
+  if(!d.scanned){toast(tr('模型菜单未能扫描：')+(d.reason||'未知原因'),'err');return}
   let n=(d.labels||[]).length;
-  if(d.added&&d.added.length)toast('tr(发现新模型: )'+d.added.join(', '),'ok');
-  else toast('tr(已重新扫描（)'+n+' 个菜单项，无新增）','');
- }catch(e){toast('tr(模型菜单读取失败: )'+e,'err')}
+  if(d.added&&d.added.length)toast(tr('发现新模型: ')+d.added.join(', '),'ok');
+  else toast(tr('已重新扫描（')+n+' 个菜单项，无新增）','');
+ }catch(e){toast(tr('模型菜单读取失败: ')+e,'err')}
  finally{if(btn){btn.disabled=false;btn.textContent='↻'}}}
 
 /* ── 浏览器窗口显示/隐藏（headless 是启动参数，切换会带登录态重启浏览器上下文） ── */
@@ -245,11 +248,11 @@ function drawBrowserBtn(h){let b=document.getElementById('browserBtn');b.textCon
 async function browserState(){if(DEMO)return;try{let d=await api('/v1/agent/browser');drawBrowserBtn(d.headless)}catch(e){}}
 async function toggleBrowser(){
  if(DEMO)return;
- let b=document.getElementById('browserBtn');b.disabled=true;b.textContent='tr(切换中…)';
+ let b=document.getElementById('browserBtn');b.disabled=true;b.textContent=tr('切换中…');
  try{let cur=await api('/v1/agent/browser');
   let d=await api('/v1/agent/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({headless:!cur.headless})});
   drawBrowserBtn(d.headless);
-  if(d.fallback)toast('tr(无头模式启动失败，已回退为有窗口模式（旧版 Edge 或安全策略不支持无头持久化）)','err')}catch(e){toast('tr(切换失败: )'+e,'err');browserState()}
+  if(d.fallback)toast(tr('无头模式启动失败，已回退为有窗口模式（旧版 Edge 或安全策略不支持无头持久化）'),'err')}catch(e){toast(tr('切换失败: ')+e,'err');browserState()}
  finally{b.disabled=false}
 }
 
@@ -294,7 +297,7 @@ async function editTag(btn){
  const sid=btn.dataset.arg;
  if(!sid)return;
  const cur=((sessCache||[]).find(s=>s.id===sid)||{}).tag||'';
- const tag=await dlgPrompt('tr(设置会话标签（列表按标签分组；留空取消标签）)',cur,tr('保存'),tr('会话标签'));
+ const tag=await dlgPrompt(tr('设置会话标签（列表按标签分组；留空取消标签）'),cur,tr('保存'),tr('会话标签'));
  if(tag===null)return;
  try{
   await api(`/v1/agent/sessions/${encodeURIComponent(sid)}/tag`,
@@ -378,8 +381,8 @@ function renderSteps(steps,force){
  if(rebuild){box.innerHTML='';renderedSteps=0}
  else if(!shown.length){box.innerHTML=''}
  document.getElementById('stepCount').textContent=
-  filtered?`${shown.length}/${lastSteps.length} 条（筛选）`
-          :(lastSteps.length?lastSteps.length+' 条':'');
+  filtered?`${shown.length}/${lastSteps.length}`+tr(' 条（筛选）')
+          :(lastSteps.length?lastSteps.length+tr(' 条'):'');
  fillStepTools();
  shown.slice(renderedSteps).forEach(s=>{
   let cls=s.status==='ok'?'ok':(s.status==='error'||s.status==='invalid_action'?'error':'info');
@@ -536,7 +539,7 @@ function applyCodePrefs(scope){
 function copyMsg(btn){let m=btn.closest('.msg');if(!m)return;
  try{navigator.clipboard.writeText(m.dataset.raw||'');btn.textContent=tr('已复制 ✓');setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
 function copyCode(btn){let w=btn.closest('.md-codewrap');if(!w)return;let c=w.querySelector('code');
- try{navigator.clipboard.writeText(c?c.textContent:'');btn.textContent=tr('已复制 ✓');setTimeout(()=>btn.textContent='tr(复制)',900)}catch(e){}}
+ try{navigator.clipboard.writeText(c?c.textContent:'');btn.textContent=tr('已复制 ✓');setTimeout(()=>btn.textContent=tr('复制'),900)}catch(e){}}
 /* 复制任意文本（JSON 代码块等）：按钮文案短暂反馈 */
 function copyText(text,btn){
  try{navigator.clipboard.writeText(text||'');
@@ -556,7 +559,7 @@ function applyMsgFold(scope){
   m.dataset.foldReady='1';
   if((m.textContent||'').length<=MSG_FOLD_CHARS)return;
   m.classList.add('foldable','collapsed');
-  let b=document.createElement('button');b.className='msg-fold';b.textContent='tr(展开全文)';
+  let b=document.createElement('button');b.className='msg-fold';b.textContent=tr('展开全文');
   b.onclick=()=>{let c=m.classList.toggle('collapsed');b.textContent=tr(c?'展开全文':'收起')};
   m.appendChild(b)})}
 /* 搜索：输入即高亮命中，Enter/Shift+Enter 或按钮在命中之间跳转 */
@@ -874,7 +877,7 @@ async function exportTimeline(){
   a.download='cbp-'+current+'-timeline-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.json';
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),3000);
-  toast('tr(时间线已导出（)'+((payload.steps||[]).length)+' 步）','ok')}catch(e){toast('导出失败: '+e,'err')}}
+  toast(tr('时间线已导出（')+((payload.steps||[]).length)+' 步）','ok')}catch(e){toast('导出失败: '+e,'err')}}
 
 /* ── 页面内通知（toast）与通用模态层（替代原生 alert/confirm/prompt） ── */
 function toast(msg,type=''){let box=document.getElementById('toasts'),e=document.createElement('div');
@@ -957,7 +960,7 @@ function resetView(){
  setPill('');
  setKpis({total_steps:0,conversation_steps:0,conversation_index:0,estimated_tokens:0});
  document.getElementById('steps').innerHTML='';renderedSteps=0;lastStepCount=-1;lastDetail='';
- document.getElementById('answer').textContent='tr(等待回答…)';
+ document.getElementById('answer').textContent=tr('等待回答…');
  document.getElementById('prompt').textContent='—';
  renderMessages([])}
 
@@ -1085,8 +1088,8 @@ async function refreshChat(){
 
 /* ── 操作 ── */
 async function control(a){if(!current)return;try{let r=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/${a}`,{method:'POST'});if(a==='resume')toast(noteText(r, r.runner_started?tr('已恢复，正在续跑任务'):tr('已恢复')), r.note_kind==='err'?'err':'ok');await load(current)}catch(e){toast(tr('操作失败: ')+e,'err')}}
-async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;toast('tr(已将自动化 Edge 切换到该会话)','ok')}catch(e){toast(tr('操作失败: ')+e,'err')}}
-function openCopilot(){if(currentUrl){if(!/^https?:\/\//i.test(currentUrl)){toast('tr(地址不是 http(s)，已拒绝打开)','err');return}window.open(currentUrl,'_blank','noopener,noreferrer')}
+async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;toast(tr('已将自动化 Edge 切换到该会话'),'ok')}catch(e){toast(tr('操作失败: ')+e,'err')}}
+function openCopilot(){if(currentUrl){if(!/^https?:\/\//i.test(currentUrl)){toast(tr('地址不是 http(s)，已拒绝打开'),'err');return}window.open(currentUrl,'_blank','noopener,noreferrer')}
  else toast(isProviderModel(currentModel)?'该会话用的是 API 提供商模型，没有可打开的网页对话':'该 Session 暂无网页会话地址','err')}
 async function removeSession(remote){
  if(!current)return;
@@ -1162,7 +1165,7 @@ async function rollbackSession(){
  try{
   let s=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/snapshots');
   let files=s.files||[];
-  if(!files.length){toast('tr(该任务没有可回滚的文件改动)','err');return}
+  if(!files.length){toast(tr('该任务没有可回滚的文件改动'),'err');return}
   let versions=s.versions||[];
   let version=null;
   if(versions.length>1){
@@ -1192,12 +1195,12 @@ async function rollbackSession(){
   let tail=d.failed?`，失败 ${d.failed}`:'';
   toast(`回滚完成：还原 ${d.restored}、删除 ${d.deleted}${tail}`, d.failed?'err':'ok');
   await load(current)
- }catch(e){toast('tr(回滚失败: )'+(e.text||e),'err')}}
+ }catch(e){toast(tr('回滚失败: ')+(e.text||e),'err')}}
 /* ── 回滚服务自升级：还原 CopilotBridge 自身代码（需重启服务生效） ── */
 async function rollbackSelfUpgrade(){
  try{
   let st=await api('/v1/agent/self/status');
-  if(!st.snapshot_scopes||!st.snapshot_scopes.length){toast('tr(没有可回滚的自升级记录)','err');return}
+  if(!st.snapshot_scopes||!st.snapshot_scopes.length){toast(tr('没有可回滚的自升级记录'),'err');return}
   let list=[];
   for(const scope of st.snapshot_scopes.slice(0,5)){
    try{let s=await api('/v1/agent/self/snapshots?sid='+encodeURIComponent(scope.replace(/^_self_/,'')));list.push(`${scope}：${(s.files||[]).length} 个文件`)}catch(e){}
@@ -1206,7 +1209,7 @@ async function rollbackSelfUpgrade(){
   if(!await dlgConfirm(msg,'回滚服务自升级',true))return;
   let d=await api('/v1/agent/self/rollback?last=true',{method:'POST'});
   toast(`自升级已回滚：还原 ${d.restored||0}、删除 ${d.deleted||0}${d.failed?`，失败 ${d.failed}`:''} · 请重启服务`, d.failed?'err':'ok');
- }catch(e){toast('tr(自升级回滚失败: )'+e,'err')}}
+ }catch(e){toast(tr('自升级回滚失败: ')+e,'err')}}
 /* ── 删除结果可视化弹窗 ── */
 let lastDeleteResult=null;
 function showDeleteResult(d){
@@ -1220,7 +1223,7 @@ function showDeleteResult(d){
   e.innerHTML=`<div class="rhead"><span class="ric">${r.deleted?'✓':'✗'}</span><span class="ttl" title="${esc(r.expected_title||'')}">${esc(r.expected_title||'(无标记)')}</span><span class="mth">${esc(r.method||'')}</span></div>`+
    (r.url?`<div class="url" title="点击复制完整 URL">${esc(r.url)}</div>`:'')+
    (r.error?`<div class="err">${esc(r.error)}</div>`:'');
-  if(r.url)e.querySelector('.url').onclick=ev=>{try{navigator.clipboard.writeText(r.url);ev.target.textContent='tr(已复制 ✓  )'+r.url}catch(_){dlgAlert(r.url,'链接')}};
+  if(r.url)e.querySelector('.url').onclick=ev=>{try{navigator.clipboard.writeText(r.url);ev.target.textContent=tr('已复制 ✓  ')+r.url}catch(_){dlgAlert(r.url,'链接')}};
   box.appendChild(e)});
  document.getElementById('dlgForce').style.display=fail?'':'none';
  openMask('dlgMask')}
@@ -1228,11 +1231,11 @@ function closeDlg(){closeMask('dlgMask')}
 document.getElementById('dlgCopy').onclick=()=>{if(!lastDeleteResult)return;try{navigator.clipboard.writeText(JSON.stringify(lastDeleteResult,null,2))}catch(e){}};
 document.getElementById('dlgForce').onclick=()=>forceDeleteLocal();
 async function forceDeleteLocal(){
- if(!current)return;let b=document.getElementById('dlgForce');b.disabled=true;b.textContent='tr(处理中…)';
+ if(!current)return;let b=document.getElementById('dlgForce');b.disabled=true;b.textContent=tr('处理中…');
  try{let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'?delete_remote=true&force_local=true',{method:'DELETE'});
   if(d.deleted){closeDlg();current=null;document.getElementById('sessionView').style.display='none';document.getElementById('emptyState').style.display='flex';await refreshSessions()}
-  else showDeleteResult(d)}catch(e){toast('tr(强制清理失败: )'+e,'err')}
- finally{b.disabled=false;b.textContent='tr(重试远程并强制清理本地记录)'}}
+  else showDeleteResult(d)}catch(e){toast(tr('强制清理失败: ')+e,'err')}
+ finally{b.disabled=false;b.textContent=tr('重试远程并强制清理本地记录')}}
 /* ── 使用手册 ── */
 const MANUAL_HTML=`<h3>快速上手</h3>
 <ul>
@@ -1397,7 +1400,12 @@ function enhanceManual(){
  });
 }
 
-function openManual(){document.getElementById('manualBody').innerHTML=MANUAL_HTML;enhanceManual();openMask('manualMask')}
+function openManual(){const body=document.getElementById('manualBody');
+ body.innerHTML=MANUAL_HTML;enhanceManual();
+ // 手册是动态注入的：注入后再走一遍翻译。章节标题有英文条目，正文按取舍保持中文
+ // （长文档整篇翻译成本高且易失真，该取舍写在 README 的 i18n 说明里）。
+ try{if(typeof applyI18n==='function')applyI18n(body)}catch(e){}
+ openMask('manualMask')}
 function closeManual(){closeMask('manualMask')}
 function openTask(){openMask('taskMask')}
 function closeTask(){closeMask('taskMask')}
@@ -1436,10 +1444,10 @@ async function showPromptView(){
   body.textContent=t;
   if(d.rebuild_error)body.textContent=t+'\n\n(重建失败: '+d.rebuild_error+')';
   document.getElementById('liveMask').classList.add('open')
- }catch(e){toast('tr(读取初始提示词失败: )'+(e.text||e),'err')}}
+ }catch(e){toast(tr('读取初始提示词失败: ')+(e.text||e),'err')}}
 async function continueAgent(){
  if(!current){toast(tr('请先选择 Session'),'err');return}
- let instruction=await dlgPrompt('tr(请输入要继续执行的任务)','继续执行当前任务，从未完成事项开始','继续执行','继续执行');
+ let instruction=await dlgPrompt(tr('请输入要继续执行的任务'),'继续执行当前任务，从未完成事项开始','继续执行','继续执行');
  if(!instruction)return;
  document.getElementById('followup').value=instruction;
  setFollowupMode('agent');
@@ -1449,7 +1457,7 @@ async function sendFollowup(){
  let box=document.getElementById('followup'),content=box.value.trim();
  if(!content&&!IMG_STORES.follow.length){toast(tr('消息不能为空'),'err');return}
  let atts=IMG_STORES.follow.map(a=>a.dataUrl);
- let btn=document.getElementById('sendFollowup');btn.disabled=true;btn.textContent='tr(发送中)';
+ let btn=document.getElementById('sendFollowup');btn.disabled=true;btn.textContent=tr('发送中');
  liveTab('chat');  // 发送后确保停留在对话页看回复
  let log=document.getElementById('chatlog');
  let label=content+(atts.length?`\n（附 ${atts.length} 张图片）`:'');
@@ -1471,7 +1479,7 @@ async function sendFollowup(){
     // 正确做法：重载会话，把刚落库的新消息渲染出来。
     await load(current)}
  }catch(e){log.appendChild(msgEl('assistant',tr('发送失败: ')+e,null,{plain:true,who:tr('错误')}))}
- finally{btn.disabled=false;btn.textContent='tr(发送)'}}
+ finally{btn.disabled=false;btn.textContent=tr('发送')}}
 
 /* 队列模式：跟进消息入队后轮询会话消息，助理回复一出现就刷新聊天区 */
 async function awaitFollowupReply(sid,baseAssistants){
@@ -1518,18 +1526,18 @@ async function editQueueItem(itemId){
  if(!current)return;
  let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/queue');
  let it=(d.pending||[]).find(x=>x.id===itemId);if(!it)return;
- let content=await dlgPrompt('tr(修改排队消息)',it.content,'保存');
+ let content=await dlgPrompt(tr('修改排队消息'),it.content,'保存');
  if(content===null)return;
  try{
   await api(`/v1/agent/sessions/${encodeURIComponent(current)}/queue/${itemId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
-  toast('tr(已更新排队消息)','ok');refreshQueue()}catch(e){toast('tr(更新失败: )'+(e.text||e),'err')}}
+  toast(tr('已更新排队消息'),'ok');refreshQueue()}catch(e){toast(tr('更新失败: ')+(e.text||e),'err')}}
 
 async function removeQueueItem(itemId){
  if(!current)return;
- if(!await dlgConfirm('tr(删除这条排队中的消息？此操作不可撤销。)','删除排队消息',true))return;
+ if(!await dlgConfirm(tr('删除这条排队中的消息？此操作不可撤销。'),'删除排队消息',true))return;
  try{
   await api(`/v1/agent/sessions/${encodeURIComponent(current)}/queue/${itemId}`,{method:'DELETE'});
-  toast('tr(已删除排队消息)','ok');refreshQueue();load(current)}catch(e){toast('删除失败: '+e,'err')}}
+  toast(tr('已删除排队消息'),'ok');refreshQueue();load(current)}catch(e){toast('删除失败: '+e,'err')}}
 /* ── 粘贴图片/截图附件 ── */
 const IMG_STORES={task:[],follow:[]};
 
@@ -1550,8 +1558,8 @@ function attachPasteHandler(taId,store){
    if(it.kind==='file'&&it.type&&it.type.startsWith('image/')){
     e.preventDefault();
     let f=it.getAsFile();if(!f)continue;
-    if(f.size>8*1024*1024){toast('tr(图片超过 8MB，已忽略)','err');continue}
-    if(IMG_STORES[store].length>=4){toast('tr(最多附加 4 张图片)','err');continue}
+    if(f.size>8*1024*1024){toast(tr('图片超过 8MB，已忽略'),'err');continue}
+    if(IMG_STORES[store].length>=4){toast(tr('最多附加 4 张图片'),'err');continue}
     let r=new FileReader();
     r.onload=()=>{IMG_STORES[store].push({dataUrl:r.result});renderThumbs()};
     r.readAsDataURL(f);
@@ -1607,7 +1615,7 @@ function updateLiveBubble(text,inFlight){
 function exportChatMarkdown(){
  if(!current){toast(tr('请先选择 Session'),'err');return}
  const msgs=lastMessages||[];
- if(!msgs.length){toast('tr(当前没有对话记录)','err');return}
+ if(!msgs.length){toast(tr('当前没有对话记录'),'err');return}
  const title=(document.getElementById('title').textContent||'').trim()||current;
  let out=`# ${title}\n\n`;
  out+=`- Session: \`${current}\`\n`;
@@ -1629,18 +1637,18 @@ function exportChatMarkdown(){
   a.download='cbp-'+current+'-chat-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.md';
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-  toast('tr(已导出 Markdown（)'+msgs.length+' 条消息）','ok');
- }catch(e){toast('tr(导出失败: )'+e,'err')}}
+  toast(tr('已导出 Markdown（')+msgs.length+' 条消息）','ok');
+ }catch(e){toast(tr('导出失败: ')+e,'err')}}
 
 /* ── 消息编辑 / 删除（只改本地历史）────────────────────────────────
    诚实语义：已发给网页 Copilot 的内容无法撤回；提供商会话会同步内存上下文
    （后端 sync_provider_history_message），否则模型下一回合仍看到旧文本。 */
 async function editMsg(btn){
  const wrap=btn.closest('.msg');const id=wrap&&wrap.dataset.mid;
- if(!id){toast('tr(这条消息还没有落库，无法编辑)','err');return}
+ if(!id){toast(tr('这条消息还没有落库，无法编辑'),'err');return}
  const old=wrap.dataset.raw||'';
  const text=await dlgPrompt(
-  'tr(编辑这条消息的内容（只改本地历史；已发给网页 Copilot 的内容无法撤回）)',
+  tr('编辑这条消息的内容（只改本地历史；已发给网页 Copilot 的内容无法撤回）'),
   old,tr('保存'),tr('编辑消息'));
  if(text===null)return;
  const v=String(text).trim();
@@ -1706,7 +1714,7 @@ async function jumpToMessage(sid,mid){
    el.classList.add('flash');
    setTimeout(()=>el.classList.remove('flash'),2200);
    toggleGlobalSearch();   // 跳过去后收起搜索面板
-  }else toast('tr(这条消息不在最近加载的记录里（可能超出 500 条上限）)','err');
+  }else toast(tr('这条消息不在最近加载的记录里（可能超出 500 条上限）'),'err');
  }catch(e){toast(tr('跳转失败: ')+(e.text||e),'err')}}
 
 document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();sendFollowup()}});
@@ -1759,7 +1767,7 @@ async function runTask(){
  let title=(task.split('\n')[0]||'').trim().slice(0,120)||current;
  document.getElementById('title').textContent=title;
  let _sc=document.getElementById('sidChip');
- if(_sc){_sc.textContent=current;_sc.onclick=()=>{try{navigator.clipboard.writeText(current);toast('tr(已复制会话 ID: )'+current,'ok')}catch(e){toast(current)}}}
+ if(_sc){_sc.textContent=current;_sc.onclick=()=>{try{navigator.clipboard.writeText(current);toast(tr('已复制会话 ID: ')+current,'ok')}catch(e){toast(current)}}}
  fillModelSelect(document.getElementById('sessModel'), modelCache.map(id=>({id})), currentModel);
  refreshSessModelOptions();
  document.getElementById('status').textContent=(taskMode==='agent'?'Agent 执行':'普通对话')
@@ -1773,7 +1781,7 @@ async function runTask(){
     if(!d)throw Error('HTTP 响应为空');
     current=d.session_id;await load(current)})
    .catch(e=>{current=null;document.getElementById('sessionView').style.display='none';
-    document.getElementById('emptyState').style.display='flex';toast('tr(任务启动失败: )'+(e.text||e),'err')});
+    document.getElementById('emptyState').style.display='flex';toast(tr('任务启动失败: ')+(e.text||e),'err')});
  waitSessionReady(current);
  setTimeout(refreshSessions,700)}
 
@@ -1900,10 +1908,10 @@ async function loadMemory(){
    <div class="mem-text">${esc(m.text)}</div>
   </div>`).join('');
   box.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
-  if(!await dlgConfirm('tr(删除这条长期记忆？删除后不再参与检索。)','删除记忆',true))return;
+  if(!await dlgConfirm(tr('删除这条长期记忆？删除后不再参与检索。'),'删除记忆',true))return;
   try{await api('/v1/agent/memory/'+b.dataset.del+'?scope='+encodeURIComponent(memScope),{method:'DELETE'});
-   toast('tr(已删除记忆 #)'+b.dataset.del,'ok');loadMemory()}
-  catch(e){toast('tr(删除失败: )'+e,'err')}});
+   toast(tr('已删除记忆 #')+b.dataset.del,'ok');loadMemory()}
+  catch(e){toast(tr('删除失败: ')+e,'err')}});
  box.querySelectorAll('[data-pin]').forEach(b=>b.onclick=async()=>{
   const want=b.dataset.v!=='1';
   try{await api('/v1/agent/memory/'+b.dataset.pin+'/pin?pinned='+want+'&scope='+encodeURIComponent(memScope),{method:'POST'});
@@ -1920,10 +1928,10 @@ function bootBanner(){
   el.innerHTML='<span id="bootText"></span><button class="btn ghost" id="bootRetry" style="padding:2px 10px;font-size:12px">重试浏览器</button>';
   document.body.appendChild(el);
   el.querySelector('#bootRetry').onclick=async()=>{
-   const b=el.querySelector('#bootRetry');b.disabled=true;b.textContent='tr(启动中…)';
-   try{await api('/v1/agent/browser/retry',{method:'POST'});toast('tr(已请求启动浏览器，稍后自动复查)','ok')}
-   catch(e){toast('tr(请求失败: )'+e,'err')}
-   finally{b.disabled=false;b.textContent='tr(重试浏览器)'}};
+   const b=el.querySelector('#bootRetry');b.disabled=true;b.textContent=tr('启动中…');
+   try{await api('/v1/agent/browser/retry',{method:'POST'});toast(tr('已请求启动浏览器，稍后自动复查'),'ok')}
+   catch(e){toast(tr('请求失败: ')+e,'err')}
+   finally{b.disabled=false;b.textContent=tr('重试浏览器')}};
  }
  return el;
 }
@@ -1932,12 +1940,13 @@ function showBoot(state,ready,err){
  if(ready){el.style.display='none';syncFixedLanes();return}
  el.style.display='flex';   // 先写文字再 syncFixedLanes：否则量到的是空框高度，
                             // 内容会在 1.5s 心跳重算时跳一下（截图抓到过空框）
- const map={idle:'浏览器未启动（首次使用 Copilot 时自动启动）',
-            starting:'浏览器启动中…',
-            browser_up:'浏览器已启动，等待 Copilot 就绪（可能需要在自动化窗口登录）',
-            needs_login:'需要在自动化窗口完成 Microsoft 登录',
-            failed:'浏览器启动失败'};
- const txt='Copilot 未就绪：'+(map[state]||state||'未知')+(err?('（'+(err+'').slice(0,120)+'）'):'')+'　提供商模型不受影响，可直接使用。';
+ // 这条提示在 i18n 的动态容器跳过名单里（#bootText），所以必须自己查表
+ const map={idle:tr('浏览器未启动（首次使用 Copilot 时自动启动）'),
+            starting:tr('浏览器启动中…'),
+            browser_up:tr('浏览器已启动，等待 Copilot 就绪（可能需要在自动化窗口登录）'),
+            needs_login:tr('需要在自动化窗口完成 Microsoft 登录'),
+            failed:tr('浏览器启动失败')};
+ const txt=tr('Copilot 未就绪：')+(map[state]||state||tr('未知'))+(err?('（'+(err+'').slice(0,120)+'）'):'')+tr('　提供商模型不受影响，可直接使用。');
  document.getElementById('bootText').textContent=txt;
  syncFixedLanes();
 }
@@ -1983,8 +1992,8 @@ try{setInterval(pollBoot,8000);setTimeout(pollBoot,1200)}catch(e){}
 
 try{const _rs=document.getElementById('btnRefreshSess');if(_rs)_rs.onclick=async()=>{
  if(_rs.disabled)return;_rs.disabled=true;_rs.style.opacity=.5;
- try{await refreshModels();refreshSessModelOptions();toast('tr(模型列表已刷新)','ok')}
- catch(e){toast('tr(刷新失败: )'+e,'err')}
+ try{await refreshModels();refreshSessModelOptions();toast(tr('模型列表已刷新'),'ok')}
+ catch(e){toast(tr('刷新失败: ')+e,'err')}
  finally{_rs.disabled=false;_rs.style.opacity=1}};}catch(e){}
 
 
@@ -2006,7 +2015,7 @@ attachPasteHandler('followup','follow');
   else{showConnBanner('加载会话失败：'+(e.text||e),false)}
   if(location.search.includes('demo=1')){DEMO=true;
    document.getElementById('demoBadge').style.display='block';
-   document.getElementById('demoBadge').textContent='tr(演示模式（?demo=1）——数据为本地假数据)'}
+   document.getElementById('demoBadge').textContent=tr('演示模式（?demo=1）——数据为本地假数据')}
   }
  applyI18n(document);   // 静态界面按当前语言渲染（data-i18n + 静态 DOM 直译）
  applyLangButton();

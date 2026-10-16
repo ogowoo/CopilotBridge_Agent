@@ -1,0 +1,184 @@
+# -*- coding: utf-8 -*-
+"""i18n 覆盖率审计：三语言逐面切换，列出未翻译/漏 key/原始 key 泄漏。
+
+**为什么需要**：用户实测发现「未就绪」提示在英文模式下仍是中文、按钮上直接显示 `tr(重试浏览器)`
+（源码里把 `tr(...)` 写成了字符串字面量）。这类问题肉眼很难穷尽——界面有几十个按钮、若干弹窗，
+而且**切语言后动态生成的内容不会自动重翻**。
+
+扫描范围刻意只覆盖**界面外壳**（按钮/标签/标签页/表头/提示/弹窗标题/placeholder 等），
+**排除数据容器**（会话列表标题、对话记录、时间线、回答、提示词）——那里的中文是用户数据与
+模型输出，不该被当成"未翻译"。
+
+用法:
+    python scripts/ui_i18n_audit.py            # 有问题退出码 1
+    python scripts/ui_i18n_audit.py --json
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+BASE = Path(__file__).resolve().parent.parent
+LANGS = [("zh", "简体"), ("tw", "繁体"), ("en", "English")]
+
+# 只扫界面外壳；数据容器一律排除（含用户中文标题、模型输出）
+CHROME_JS = r"""
+() => {
+  const DATA_SKIP = new Set(['sessions','chatlog','steps','answer','prompt','activity','queueBox',
+                             'gsResults','liveBody','toasts','bootText','memList']);
+  const inData = el => { for (let p = el; p; p = p.parentElement) if (p.id && DATA_SKIP.has(p.id)) return true;
+                         return false; };
+  const out = [];
+  const sels = ['button', '.tab', '.kpi span', '.chead', '.hint', '.listhead span', 'label',
+                'summary', '.dhead b', '.dfoot button', '.seg', '.pill', 'th', 'option'];
+  document.querySelectorAll(sels.join(',')).forEach(el => {
+    if (inData(el) || !el.offsetParent) return;
+    const t = (el.textContent || '').trim();
+    if (t) out.push({kind: 'text', tag: el.tagName.toLowerCase(), id: el.id || '',
+                     cls: (typeof el.className === 'string' ? el.className : '').slice(0, 20), text: t.slice(0, 90)});
+  });
+  // 属性型文案：title / placeholder / aria-label
+  document.querySelectorAll('[title],[placeholder],[aria-label]').forEach(el => {
+    if (inData(el) || !el.offsetParent) return;
+    ['title', 'placeholder', 'aria-label'].forEach(a => {
+      const v = el.getAttribute(a);
+      if (v && v.trim()) out.push({kind: a, tag: el.tagName.toLowerCase(), id: el.id || '',
+                                   cls: '', text: v.trim().slice(0, 90)});
+    });
+  });
+  return out;
+}
+"""
+
+CJK = re.compile(r"[\u4e00-\u9fff]")
+
+
+KNOWN_S2T = {
+ "浏": "瀏", "览": "覽", "业": "業", "记": "記", "忆": "憶", "国": "國", "报": "報", "挂": "掛",
+ "拦": "攔", "检": "檢", "极": "極", "环": "環", "现": "現", "画": "畫", "离": "離", "种": "種",
+ "积": "積", "竖": "豎", "竞": "競", "紧": "緊", "纯": "純", "细": "細", "经": "經", "绑": "綁",
+ "绕": "繞", "绘": "繪", "给": "給", "绝": "絕", "继": "繼", "绪": "緒", "维": "維", "缀": "綴",
+ "缘": "緣", "联": "聯", "节": "節", "获": "獲", "蓝": "藍", "虚": "虛", "补": "補", "装": "裝",
+ "许": "許", "访": "訪", "评": "評", "识": "識", "诉": "訴", "诚": "誠", "详": "詳", "调": "調",
+ "谱": "譜", "负": "負", "责": "責", "账": "賬", "质": "質", "贴": "貼", "费": "費", "赋": "賦",
+ "赖": "賴", "车": "車", "轮": "輪", "轻": "輕", "较": "較", "辞": "辭", "迟": "遲", "邮": "郵",
+ "术": "術", "专": "專", "转": "轉", "软": "軟", "载": "載", "输": "輸", "资": "資", "态": "態",
+ "标": "標", "签": "簽", "简": "簡", "双": "雙", "对": "對", "导": "導", "层": "層", "归": "歸",
+ "显": "顯", "单": "單", "关": "關", "设": "設", "计": "計", "时": "時", "间": "間", "门": "門",
+ "长": "長", "开": "開", "员": "員", "应": "應", "该": "該", "无": "無", "见": "見", "观": "觀",
+ "规": "規", "则": "則", "处": "處", "议": "議", "论": "論", "验": "驗", "类": "類", "页": "頁",
+ "顶": "頂", "项": "項", "须": "須", "预": "預", "领": "領", "题": "題", "键": "鍵", "盘": "盤",
+ "终": "終", "约": "約", "续": "續", "断": "斷", "义": "義", "众": "眾", "产": "產", "场": "場",
+ "边": "邊", "过": "過", "进": "進", "远": "遠", "还": "還", "连": "連", "运": "運", "达": "達",
+ "适": "適", "选": "選", "逻": "邏", "辑": "輯", "钥": "鑰", "锁": "鎖", "错": "錯", "钟": "鐘",
+ "银": "銀", "钱": "錢", "额": "額", "频": "頻", "风": "風", "飞": "飛", "饰": "飾", "饭": "飯",
+ "饮": "飲", "馆": "館", "骑": "騎", "驱": "驅", "骤": "驟", "鲜": "鮮", "鸣": "鳴", "鸦": "鴉",
+ "龄": "齡", "齐": "齊", "齿": "齒", "龙": "龍", "龟": "龜", "机": "機", "强": "強", "册": "冊",
+ "复": "復", "汇": "匯", "内": "內", "启": "啟", "确": "確", "谢": "謝", "彻": "徹", "厉": "厲",
+ "严": "嚴", "够": "夠", "图": "圖", "团": "團", "换": "換",
+}
+
+
+def s2t_simplified_chars() -> set[str]:
+    """检测集合 = **独立维护的可靠对照表** ∪ i18n.js 转换表里"简繁不同形"的键。
+
+    为什么不用 i18n.js 的表当唯一来源：表里没有的字它自然检测不到——真实事故正是如此，
+    「浏」不在表里，TW 模式渲染出混排的「重試浏覽器」，而用表自身当检测集时完全看不出来。
+    """
+    text = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
+    block = text[text.find("const S2T_CHARS"):text.find("const map = new Map(pairs);")]
+    pairs = re.findall(r'\["([^"])","([^"])"\]', block)
+    # 表里还有一批 ["放","放"] 同形占位对，只取不同形的
+    return set(KNOWN_S2T) | {a for a, b in pairs if a != b}
+
+
+BAD = re.compile(r"\btr\(|data-i18n|undefined|NaN|\[object Object\]|%s|\{state\}|\{err\}")
+
+
+def audit(url: str, as_json: bool) -> int:
+    from playwright.sync_api import sync_playwright
+
+    S2T_SIMP = s2t_simplified_chars()
+    report: dict = {}
+    problems: list[str] = []
+    with sync_playwright() as p:
+        browser = None
+        for kwargs in ({"channel": "msedge"}, {}, {"channel": "chrome"}):
+            try:
+                browser = p.chromium.launch(headless=True, **kwargs)
+                break
+            except Exception as exc:
+                last = exc
+        if browser is None:
+            print(f"无法启动浏览器：{last}")
+            return 2
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        for code, name in LANGS:
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(700)
+            # 选一个会话，让 KPI/标签页/工具栏都渲染出来
+            sid = page.evaluate(
+                "async()=>{try{const d=await (await fetch('/v1/agent/sessions')).json();"
+                "return (d.sessions&&d.sessions[0]&&d.sessions[0].id)||''}catch(e){return ''}}")
+            if sid:
+                page.evaluate(f"load({json.dumps(sid)})")
+            page.wait_for_timeout(900)
+            page.evaluate(f"setLang({json.dumps(code)})")
+            page.wait_for_timeout(500)
+            items = page.evaluate(CHROME_JS)
+            # 再开一次"使用手册"与"新任务"弹窗（大字面量，最容易漏）
+            for act in ("openManual", "openTask"):
+                try:
+                    page.evaluate(f"{act}()")
+                    page.wait_for_timeout(400)
+                    items += page.evaluate(CHROME_JS)
+                    page.evaluate("document.querySelectorAll('.mask.open').forEach(m=>m.classList.remove('open'))")
+                except Exception:
+                    pass
+            report[name] = items
+            if code == "en":
+                for it in items:
+                    if CJK.search(it["text"]):
+                        problems.append(f"[en 未翻译] {it['tag']}#{it['id'] or it['cls']} {it['kind']}: {it['text']}")
+            if code == "tw":
+                for it in items:
+                    miss = sorted({c for c in it["text"] if c in S2T_SIMP})
+                    if miss:
+                        problems.append(f"[tw 繁化漏字] {it['tag']}#{it['id'] or it['cls']} "
+                                        f"{it['kind']}: {it['text']}（漏字 {' '.join(miss)}）")
+            for it in items:
+                if BAD.search(it["text"]):
+                    problems.append(f"[{name} 原始 key/占位符泄漏] {it['tag']}#{it['id'] or it['cls']} "
+                                    f"{it['kind']}: {it['text']}")
+        browser.close()
+
+    if as_json:
+        print(json.dumps(report, ensure_ascii=False, indent=1))
+    else:
+        for code, name in LANGS:
+            print(f"{name}: 扫描到 {len(report[name])} 条外壳文案")
+    if problems:
+        uniq = sorted(set(problems))
+        print(f"\n发现 {len(uniq)} 类问题：")
+        for x in uniq[:60]:
+            print("  ✗", x)
+        if len(uniq) > 60:
+            print(f"  … 另有 {len(uniq) - 60} 类")
+        return 1
+    print("\n三语言外壳文案全部覆盖，无原始 key 泄漏")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--url", default="http://127.0.0.1:8765/ui")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+    return audit(args.url, args.json)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

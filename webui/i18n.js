@@ -228,6 +228,82 @@ const I18N_EN = {
   "note.inject_turn": "Inserted and the current turn was interrupted: the agent continues with the new instruction",
   "note.inject_idle": "Session is idle, so it was queued as a follow-up (immediate only applies while running)",
   "note.approval_granted": "Authorized once; this authorization is single-use",
+  // ── 覆盖率审计（scripts/ui_i18n_audit.py）发现的长尾补充 ──
+  "重试浏览器":
+    "Retry browser",
+  "需要在自动化窗口完成 Microsoft 登录":
+    "Sign in to Microsoft in the automation window",
+  "启动任务":
+    "Start task",
+  "Agent 执行":
+    "Agent run",
+  "重新读取 Copilot 模型菜单":
+    "Re-read the Copilot model menu",
+  "Session ID（可留空）":
+    "Session ID (optional)",
+  "工作目录":
+    "Workspace directory",
+  "工作目录（可留空）":
+    "Workspace directory (optional)",
+  "新任务使用的模型":
+    "Model used by the new task",
+  "任务内容":
+    "Task content",
+  "任务内容，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图":
+    "Task content, e.g. analyse the project under workspace and produce a TODO; you can paste screenshots directly",
+  "工作区不允许指向服务安装目录（除非已开启自升级）——否则普通文件工具即可改服务代码，绕过权限门。":
+    "The workspace must not point at the service installation directory (unless self-upgrade is enabled) — otherwise ordinary file tools could modify the service code and bypass the permission gate.",
+  "按状态筛选":
+    "Filter by status",
+  "只看某个工具的步骤":
+    "Show one tool's steps only",
+  "Esc 关闭":
+    "Esc to close",
+  "未知":
+    "unknown",
+  " 条":
+    " items",
+  " 条（筛选）":
+    " items (filtered)",
+  "语言 / 語言 / Language：":
+    "Language: ",
+  "（点击切换）":
+    " (click to switch)",
+  "快速上手":
+    "Quick start",
+  "浏览器按需启动（无 Copilot 也能用）":
+    "On-demand browser (usable without Copilot)",
+  "会话控制":
+    "Session control",
+  "任务快照与回滚":
+    "Snapshots and rollback",
+  "回滚到指定版本":
+    "Roll back to a specific version",
+  "跟进对话":
+    "Follow-up conversation",
+  "跟进消息队列":
+    "Follow-up message queue",
+  "粘贴图片 / 截图":
+    "Pasting images / screenshots",
+  "模型列表刷新":
+    "Refreshing the model list",
+  "限流倒计时":
+    "Rate-limit countdown",
+  "长任务机制":
+    "Long-task mechanics",
+  "批量动作（省 Copilot 回合）":
+    "Batch actions (fewer Copilot turns)",
+  "长期记忆（跨会话）":
+    "Long-term memory (across sessions)",
+  "技能自沉淀（skills）":
+    "Self-accumulating skills",
+  "界面":
+    "Interface",
+  "服务自升级（默认关闭）":
+    "Service self-upgrade (off by default)",
+  "常见问题":
+    "FAQ",
+
 };
 
 /* 把后端返回的 {note_code, note_vars} 本地化；没有对应翻译时回落后端中文原文 */
@@ -507,6 +583,73 @@ const S2T_CHARS = (() => {
     ["龄","齡"],["齐","齊"],["齿","齒"],["龙","龍"],["龟","龜"],["龄","齡"],["龟","龜"],
     ["机","機"],["强","強"],["册","冊"],["复","復"],["汇","匯"],["内","內"],["为","為"],
     ["启","啟"],["确","確"],["谢","謝"],["彻","徹"],["厉","厲"],["严","嚴"],["够","夠"],
+    // 覆盖率审计发现的缺口（例如「览」：用户实测「重試浏覽器」）
+    ["业","業"],
+    ["记","記"],
+    ["忆","憶"],
+    ["国","國"],
+    ["报","報"],
+    ["挂","掛"],
+    ["拦","攔"],
+    ["检","檢"],
+    ["极","極"],
+    ["环","環"],
+    ["现","現"],
+    ["画","畫"],
+    ["离","離"],
+    ["种","種"],
+    ["积","積"],
+    ["竖","豎"],
+    ["竞","競"],
+    ["紧","緊"],
+    ["纯","純"],
+    ["细","細"],
+    ["经","經"],
+    ["绑","綁"],
+    ["绕","繞"],
+    ["绘","繪"],
+    ["给","給"],
+    ["绝","絕"],
+    ["继","繼"],
+    ["绪","緒"],
+    ["维","維"],
+    ["缀","綴"],
+    ["缘","緣"],
+    ["联","聯"],
+    ["节","節"],
+    ["获","獲"],
+    ["蓝","藍"],
+    ["虚","虛"],
+    ["补","補"],
+    ["装","裝"],
+    ["许","許"],
+    ["访","訪"],
+    ["评","評"],
+    ["识","識"],
+    ["诉","訴"],
+    ["诚","誠"],
+    ["详","詳"],
+    ["调","調"],
+    ["谱","譜"],
+    ["负","負"],
+    ["责","責"],
+    ["账","賬"],
+    ["质","質"],
+    ["贴","貼"],
+    ["费","費"],
+    ["赋","賦"],
+    ["赖","賴"],
+    ["车","車"],
+    ["轮","輪"],
+    ["轻","輕"],
+    ["较","較"],
+    ["辞","辭"],
+    ["迟","遲"],
+    ["邮","郵"],
+    ["术","術"],
+    ["专","專"],
+    ["资","資"],
+    ["浏","瀏"],
   ];
   const map = new Map(pairs);
   return map;
@@ -609,7 +752,7 @@ function applyI18n(root) {
   });
   // 静态 DOM 直译
   const all = scope.querySelectorAll(
-    "[title],[placeholder],[aria-label],button,summary,option,label,th,span,div,b,small,code,kbd");
+    "[title],[placeholder],[aria-label],button,summary,option,label,th,span,div,b,small,code,kbd,h1,h2,h3,h4,p,li");
   all.forEach((el) => {
     if (i18nSkipped(el)) return;
     ["title", "placeholder", "aria-label"].forEach((a) => {
@@ -622,7 +765,8 @@ function applyLangButton() {
   const b = document.getElementById("langBtn");
   if (b) {
     b.textContent = I18N[currentLang()].label;
-    b.title = "语言 / 語言 / Language：" + I18N[currentLang()].name + "（点击切换）";
+    // 提示语也要走 tr()：原来直接拼中文，英文模式下这条 title 一直是中文
+  b.title = tr("语言 / 語言 / Language：") + I18N[currentLang()].name + tr("（点击切换）");
   }
 }
 /* 切语言后重画动态区域（这些区域的内容是 JS 生成的，不在 data-i18n 覆盖内） */

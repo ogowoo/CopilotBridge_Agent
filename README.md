@@ -422,8 +422,19 @@ python scripts/rollback.py --list            # 查看可回滚的任务与自升
    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`。
    **`script-src` 不含 `'unsafe-inline'`，这是硬约束**：
    - 页面里**不允许**再写内联事件处理器（`onclick="..."`）：一律用 `data-act="名称"`（输入类用 `data-act-input`，键盘类用 `data-act-key`），并在 `webui/app.js` 的 `ACTIONS` 表里注册实现——分发器会按 `data-act` 调用。写错名字不会报错、只是"点了没反应"，所以有第 14 条不变量**双向核对** `data-act` ↔ `ACTIONS`（缺实现 / 有死条目都会失败）。
-   - 也**不允许**内联 `<script>`：首屏主题初始化已外置为 `webui/boot.js`；新增静态资源必须加进 `cbp/api.py` 里 `/ui/{asset}` 的白名单（目前是 `style.css` / `app.js` / `boot.js`）。
+   - 也**不允许**内联 `<script>`：首屏主题初始化已外置为 `webui/boot.js`；新增静态资源必须加进 `cbp/api.py` 里 `/ui/{asset}` 的白名单（目前是 `style.css` / `app.js` / `boot.js` / `i18n.js`）。第 15 条不变量会核对"页面引用 ⊂ 白名单"，漏加会立刻失败。
    - `style-src` 仍保留 `'unsafe-inline'`：页面大量使用 `style="..."` 属性与动态注入的 `<style>`，影响面小于脚本，暂不收紧。
+
+## 界面多语言（简 / 繁 / EN）
+
+侧栏工具栏的「简 / 繁 / EN」按钮循环切换，选择存在 `localStorage.cbp-lang`。实现要点与**约束**：
+
+- **以中文原文当 key**：`tr('取消任务')` 查 `webui/i18n.js` 的 `I18N_EN` 表；缺翻译时**回落中文**，不会出现空白或 `key.not.found`。繁体由「短语覆盖表 + 字形转换表」自动生成。
+- **静态界面**：给元素加 `data-i18n` / `data-i18n-title` / `data-i18n-ph` / `data-i18n-aria`；此外还有一遍“DOM 直译”（叶子节点文本与 `title/placeholder/aria-label` 按字典替换）。
+- **动态内容必须自己调 `tr()`**：对话、时间线、回答、日志等容器在 `I18N_SKIP_IDS` 里被排除（其中可能有模型输出或用户输入，恰好等于某个 key 就会被误翻）；切语言后由 `rerenderForLang()` 重画动态区域。
+- **禁止把 `tr(...)` 写成字符串字面量**：`'tr(重试浏览器)'` 会让界面直接显示 `tr(重试浏览器)`。这类错误**语法合法、单测也覆盖不到**，因此加了第 16 条不变量静态拦截（`cbp/invariants.py`）。
+- **覆盖率审计**：`python scripts/ui_i18n_audit.py` 三语言逐面扫描界面外壳（按钮/标签/页签/表头/提示/弹窗/占位符），报告三类问题：英文模式仍含中文、`tr(`/`data-i18n` 等原始 key 泄漏、**繁化漏字**（用独立维护的简繁对照表检测，不依赖 i18n.js 自己的表——真实事故里「浏」不在表内，用表自身当检测集完全看不出来）。
+- **已知取舍**：使用手册（`MANUAL_HTML`，约 5.5KB 长文）**章节标题翻，正文保持中文**；后端与 Agent 协议文案（系统提示词、工具描述、步骤 reason/错误原文）一律保持中文，它们与协议和评测绑定。繁体是**字形级**自动转换，专有名词可能不完美，需要精修时往 `I18N_TW_OVERRIDE` 短语表里加。
 
 ## 已知限制
 
