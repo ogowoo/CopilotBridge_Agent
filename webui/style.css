@@ -30,8 +30,13 @@ button,input,textarea,select{font:inherit;color:inherit}
 .iconbtn{width:26px;height:26px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;display:grid;place-items:center;flex:none}
 .iconbtn:hover{background:var(--panel2);color:var(--text);border-color:var(--line2)}
 .railtop{padding:12px 12px 4px;flex:none}
-.listhead{display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-size:11px;letter-spacing:1.5px;color:var(--faint)}
-.listhead input{flex:1;padding:5px 9px;font-size:12px;letter-spacing:0}
+/* 会话栏两行布局：实测一行放不下——标签 60 + 筛选框 + **7 个图标按钮** 共需 342px，
+   而侧栏可用宽 317px → 溢出 25px 被 .rail{overflow:hidden} 裁掉（截图里筛选框被压成 20px 空椭圆）。
+   现在第 1 行 = 标签 + 筛选框，第 2 行 = 图标右对齐。 */
+.listhead{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;
+  padding:14px 16px 8px;font-size:11px;letter-spacing:1.5px;color:var(--faint)}
+.listhead input{flex:1 1 90px;min-width:0;padding:5px 9px;font-size:12px;letter-spacing:0}
+.listacts{flex:1 1 100%;display:flex;justify-content:flex-end;align-items:center;gap:6px;min-width:0}
 .sesslist{flex:1;overflow:auto;padding:0 8px 12px}
 .sess{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;cursor:pointer;border:1px solid transparent}
 .sess:hover{background:var(--sess-hover)}

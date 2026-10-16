@@ -1839,7 +1839,8 @@ function memBtn(){
  b.title='长期记忆：查看 / 检索 / 置顶 / 删除（点击打开面板）';
  // 放到顶部工具栏：优先贴着手册按钮，其次常见工具栏容器，最后才退回 body
  // 与「使用手册 / 主题」按钮同一行：左侧栏 .listhead 内（排在手册按钮后面）
- const bar=document.querySelector('.listhead');
+ // 图标容器可能是 .listacts（两行布局后的图标行），退回 .listhead
+ const bar=document.querySelector('.listacts')||document.querySelector('.listhead');
  if(bar){bar.appendChild(b)}
  else{const a=document.getElementById('btnRefreshSess')||document.querySelector('.trow');
   if(a&&a.parentElement){a.parentElement.insertBefore(b,a.nextSibling)}else{document.body.appendChild(b)}}

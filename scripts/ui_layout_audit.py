@@ -22,7 +22,7 @@ MEASURE_JS = r"""
 () => {
   const de = document.documentElement;
   const res = {inner: window.innerWidth, scrollW: de.scrollWidth, bodyScrollW: document.body.scrollWidth,
-               offenders: [], overlaps: [], clippedText: [], scrollOwners: [], byDesignTruncated: [], edgeOverlaps: []};
+               offenders: [], overlaps: [], clippedText: [], scrollOwners: [], byDesignTruncated: [], edgeOverlaps: [], clippedOverflow: []};
   const vw = window.innerWidth, vh = window.innerHeight;
 
   const describe = el => ({
@@ -107,6 +107,21 @@ MEASURE_JS = r"""
         if (reallyCovered) res.occlusions.push(item); else res.edgeOverlaps.push(item);
       });
     });
+  });
+
+  // 3c) **被裁掉的溢出**：容器 overflow:hidden 时子元素溢出既没有滚动条、也可能不出现在
+  //     offenders 里（bbox 仍在视口内）——这次会话栏溢出 25px 就是这样藏住的
+  //     （截图里筛选框被压成一个空椭圆）。
+  res.clippedOverflow = [];
+  document.querySelectorAll('body *').forEach(el => {
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return;
+    if (!/hidden/.test(cs.overflow + cs.overflowX)) return;
+    if (el.clientWidth < 40) return;
+    if (cs.textOverflow === 'ellipsis') return;   // 省略号截断是设计内行为（会话标题等）
+    if (el.children.length === 0) return;         // 只看**容器**（子元素溢出），不看纯文本叶
+    const over = el.scrollWidth - el.clientWidth;
+    if (over > 2) res.clippedOverflow.push({...describe(el), over, cw: el.clientWidth});
   });
 
   // 4) 文字被裁剪（元素内文字超出其可视宽度且未换行）
@@ -195,6 +210,9 @@ def audit(widths: list[tuple[int, int]], url: str, stress: bool = False) -> int:
             for ov in m["overlaps"]:
                 problems.append(f"{w}x{h}: 固定元素重叠 {ov['a']} × {ov['b']} ({ov['overlap']}, "
                                 f"z={ov['za']}/{ov['zb']})")
+            for co in m.get("clippedOverflow", []):
+                problems.append(f"{w}x{h}: 容器 {co['id'] or co['cls']} 内溢出被裁 {co['over']}px "
+                                f"(内容 {co['cw'] + co['over']} / 可用 {co['cw']})")
             if m.get("edgeOverlaps"):
                 report.setdefault("edge_overlaps", []).append(
                     {"width": w, "items": m["edgeOverlaps"]})
