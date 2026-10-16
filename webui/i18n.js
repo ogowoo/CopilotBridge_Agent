@@ -1,6 +1,6 @@
 /* ── i18n：简 / 繁 / 英 ────────────────────────────────────────────────
    设计取舍：
-   1. **以中文原文当 key**（t('取消任务')）。代码保持可读，缺翻译时自然回落中文，
+   1. **以中文原文当 key**（tr('取消任务')）。代码保持可读，缺翻译时自然回落中文，
       也不会出现"key 对不上导致界面空白"这种 i18n 常见事故。
    2. 英文手写；**繁体由简繁转换自动生成**（短语表优先、字符表兜底），
       另加台湾用语覆盖表（記憶體/檔案/設定/網路…）——比逐条手写省一半工作量，
@@ -235,7 +235,7 @@ function noteText(data, fallback) {
   const code = data && data.note_code;
   if (!code) return (data && data.note) || fallback || "";
   const key = "note." + code;
-  const val = t(key, (data && data.note_vars) || {});
+  const val = tr(key, (data && data.note_vars) || {});
   return val === key ? ((data && data.note) || fallback || "") : val;
 }
 
@@ -351,7 +351,7 @@ function cycleLang() {
   setLang(I18N_ORDER[(I18N_ORDER.indexOf(cur) + 1) % I18N_ORDER.length]);
 }
 /* 取词：中文原文当 key；缺翻译回落原文（永不出现空白/占位符） */
-function t(key, vars) {
+function tr(key, vars) {
   const lang = currentLang();
   let s = String(key == null ? "" : key);
   if (lang === "en") s = I18N_EN[s] || s;
@@ -390,7 +390,7 @@ function i18nSwapText(el, attr) {
   const src = store[attr];
   const key = String(src || "").trim();
   if (!key || !i18nKnown(key)) return;
-  const val = t(key);
+  const val = tr(key);
   if (attr === "text") {
     const next = src.replace(key, val);
     if (el.textContent !== next) el.textContent = next;
@@ -401,13 +401,13 @@ function i18nSwapText(el, attr) {
 function applyI18n(root) {
   const scope = root || document;
   scope.querySelectorAll("[data-i18n]").forEach((el) => {
-    const v = t(el.dataset.i18n);
+    const v = tr(el.dataset.i18n);
     if (el.textContent !== v) el.textContent = v;
   });
-  scope.querySelectorAll("[data-i18n-title]").forEach((el) => { el.title = t(el.dataset.i18nTitle); });
-  scope.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
+  scope.querySelectorAll("[data-i18n-title]").forEach((el) => { el.title = tr(el.dataset.i18nTitle); });
+  scope.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = tr(el.dataset.i18nPh); });
   scope.querySelectorAll("[data-i18n-aria]").forEach((el) => {
-    el.setAttribute("aria-label", t(el.dataset.i18nAria));
+    el.setAttribute("aria-label", tr(el.dataset.i18nAria));
   });
   // 静态 DOM 直译
   const all = scope.querySelectorAll(
