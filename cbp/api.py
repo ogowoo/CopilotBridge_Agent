@@ -591,7 +591,7 @@ async def web_ui_index():
 @app.get("/ui/{asset}", include_in_schema=False)
 async def web_ui_asset(asset: str):
     # 静态资产白名单，禁止路径穿越
-    if asset not in ("style.css", "app.js", "boot.js"):
+    if asset not in ("style.css", "app.js", "boot.js", "i18n.js"):
         raise HTTPException(404, "Not Found")
     return FileResponse(b.BASE / "webui" / asset, headers={"Cache-Control": "no-cache, must-revalidate"})
 

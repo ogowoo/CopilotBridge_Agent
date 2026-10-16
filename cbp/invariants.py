@@ -419,3 +419,32 @@ def _ui_actions_wired() -> None:
     extra = sorted(defined - used)
     if extra:
         raise InvariantError(f"ACTIONS 里有未被引用的条目（死代码或拼错）: {extra}")
+
+
+@invariant("页面引用的静态资源都在白名单内")
+def _ui_assets_whitelisted() -> None:
+    """防止"新增前端文件但忘了加白名单"。
+
+    真事：并发工作里新增了 `webui/i18n.js` 并在 index.html 里引用，但 `/ui/{asset}` 的白名单
+    仍是 `style.css/app.js/boot.js` → 该文件 404，三语言界面直接不可用，而**控制台只是一条
+    资源加载失败**，很容易被忽略。这里把"页面引用"与"白名单"做静态比对。
+    """
+    web = ROOT / "webui"
+    html = (web / "index.html").read_text(encoding="utf-8")
+    api = (HERE / "api.py").read_text(encoding="utf-8")
+    m = re.search(r'if asset not in \(([^)]*)\):', api)
+    if not m:
+        raise InvariantError("api.py 里找不到 /ui/{asset} 白名单")
+    allowed = {x.strip().strip('"\'') for x in m.group(1).split(",") if x.strip()}
+    refs = set(re.findall(r'<(?:script|link)[^>]*?(?:src|href)="([^"]+)"', html))
+    local = {r.split("?")[0] for r in refs
+             if not r.startswith(("http://", "https://", "data:", "//"))}
+    missing = sorted(x for x in local if x not in allowed)
+    if missing:
+        raise InvariantError(f"index.html 引用了未加白名单的资源（会 404）: {missing}")
+    absent = sorted(x for x in local if not (web / x).is_file())
+    if absent:
+        raise InvariantError(f"index.html 引用了不存在的文件: {absent}")
+    stale = sorted(a2 for a2 in allowed if a2 not in local)
+    if stale:
+        raise InvariantError(f"白名单里有页面未引用的条目（可能已废弃）: {stale}")

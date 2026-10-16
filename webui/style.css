@@ -669,3 +669,13 @@ section.card:has(#stepCount){margin-top:14px}
 @media(max-width:640px){
   .menuList{left:0;right:auto;min-width:min(210px,86vw)}
 }
+
+/* ── 对话工具栏按钮行必须能折行 ────────────────────────────────────────
+   实测：合并进的"⬇ 导出 MD / 🔍 搜索 / ⚡ 强行插入"加入后，480px 宽下这一行
+   溢出视口 12px（span 里是 display:flex 且不换行）。这里允许折行并允许收缩。 */
+.chatbar{flex-wrap:wrap;row-gap:6px}
+.chatbar>span{flex-wrap:wrap;gap:6px;min-width:0}
+@media(max-width:640px){
+  .chatbar>span{width:100%}
+  .chatbar>span .btn{flex:1 1 auto;min-width:0}
+}
