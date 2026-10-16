@@ -119,10 +119,40 @@ def s2t_simplified_chars() -> set[str]:
 BAD = re.compile(r"\btr\(|data-i18n|undefined|NaN|\[object Object\]|%s|\{state\}|\{err\}")
 
 
+def en_sentence_values() -> list[str]:
+    """英文表里"句子级"的译文（长度 ≥15 且含空格），用于检测**中文模式混入英文**。
+
+    真事故：以英文重载页面后切回中文，DOM 直译拿"已经翻成英文的缓存原文"覆盖了
+    data-i18n 设好的中文，界面变成中英混杂——而此前审计只查"英文模式仍含中文"，
+    对这个反方向完全不看。
+    """
+    text = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
+    block = text[text.find("const I18N_EN = {"): text.find("\n};", text.find("const I18N_EN = {"))]
+    vals: list[str] = []
+    lines = block.splitlines()
+    for idx, line in enumerate(lines):
+        m = re.match(r'\s*"[^"]+":\s*(.*)$', line)
+        if not m:
+            continue
+        rest = m.group(1).strip()
+        if not rest:
+            for nxt in lines[idx + 1:]:
+                if nxt.strip():
+                    rest = nxt.strip()
+                    break
+        vm = re.match(r'"((?:[^"\\]|\\.)*)"', rest)
+        if vm:
+            v = vm.group(1).replace('\\"', '"')
+            if len(v) >= 15 and " " in v:
+                vals.append(v)
+    return vals
+
+
 def audit(url: str, as_json: bool) -> int:
     from playwright.sync_api import sync_playwright
 
     S2T_SIMP = s2t_simplified_chars()
+    EN_VALUES = en_sentence_values()
     report: dict = {}
     problems: list[str] = []
     with sync_playwright() as p:
@@ -139,6 +169,14 @@ def audit(url: str, as_json: bool) -> int:
         page = browser.new_page(viewport={"width": 1440, "height": 900})
         for code, name in LANGS:
             page.goto(url, wait_until="domcontentloaded")
+            # 关键：让页面**以英文加载**一次。真实事故的复现条件是"页面以英文加载 →
+            # 切回中文"，此时 DOM 直译已经把英文当"原文"缓存下来，会把中文覆盖掉。
+            # 只在同一次加载里 setLang('en')→setLang('zh') 是复现不出来的。
+            try:
+                page.evaluate("localStorage.setItem('cbp-lang','en')")
+                page.reload(wait_until="domcontentloaded")
+            except Exception:
+                pass
             page.wait_for_timeout(700)
             # 选一个会话，让 KPI/标签页/工具栏都渲染出来
             sid = page.evaluate(
@@ -147,6 +185,9 @@ def audit(url: str, as_json: bool) -> int:
             if sid:
                 page.evaluate(f"load({json.dumps(sid)})")
             page.wait_for_timeout(900)
+            # **确定性**地先切到英文、再切到目标语言：真实的"中英混杂"只在**从别的语言切回来**
+            # 时出现（DOM 直译会把已翻成英文的文本当成"原文"缓存下来）。若只做全新加载，
+            # 是否复现取决于 localStorage 残留 —— 那样审计会时灵时不灵。
             page.evaluate(f"setLang({json.dumps(code)})")
             page.wait_for_timeout(500)
             items = page.evaluate(CHROME_JS)
@@ -179,6 +220,13 @@ def audit(url: str, as_json: bool) -> int:
                 for it in items:
                     if CJK.search(it["text"]):
                         problems.append(f"[en 未翻译] {it['tag']}#{it['id'] or it['cls']} {it['kind']}: {it['text']}")
+            if code == "zh":
+                # 中文模式不该出现英文句子（短词如 Token/Session 是合法的，故限长且含空格）
+                for it in items:
+                    leak = [v for v in EN_VALUES if v in it["text"]]
+                    if leak:
+                        problems.append(f"[zh 混入英文] {it['tag']}#{it['id'] or it['cls']} "
+                                        f"{it['kind']}: {it['text'][:60]} ← {leak[0][:40]}")
             if code == "tw":
                 for it in items:
                     miss = sorted({c for c in it["text"] if c in S2T_SIMP})

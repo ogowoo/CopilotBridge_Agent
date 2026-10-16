@@ -767,9 +767,17 @@ function applyI18n(root) {
     "[title],[placeholder],[aria-label],button,summary,option,label,th,span,div,b,small,code,kbd,h1,h2,h3,h4,p,li");
   all.forEach((el) => {
     if (i18nSkipped(el)) return;
+    // **显式 key 优先**：带 data-i18n* 的元素由上面的处理决定文案，DOM 直译不得覆盖它。
+    // 真事故：以英文重载页面时，DOM 直译把"已经翻成英文"的文本cache 成了"原文"，
+    // 于是切回中文时它又拿英文原文覆盖掉 data-i18n 设好的中文 → 界面中英混杂。
     ["title", "placeholder", "aria-label"].forEach((a) => {
-      if (el.hasAttribute(a)) i18nSwapText(el, a);
+      if (!el.hasAttribute(a)) return;
+      if (a === "title" && el.hasAttribute("data-i18n-title")) return;
+      if (a === "placeholder" && el.hasAttribute("data-i18n-ph")) return;
+      if (a === "aria-label" && el.hasAttribute("data-i18n-aria")) return;
+      i18nSwapText(el, a);
     });
+    if (el.hasAttribute("data-i18n")) return;
     if (el.children.length === 0 && el.textContent && el.textContent.trim()) i18nSwapText(el, "text");
   });
 }
