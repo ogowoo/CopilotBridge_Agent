@@ -198,7 +198,11 @@ CREATE TABLE IF NOT EXISTS conv_stats (
             return self._decode(con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone())
 
     def list(self, include_archived: bool = False):
-        query = "SELECT * FROM sessions" + ("" if include_archived else " WHERE archived=0") + " ORDER BY updated DESC"
+        # attachment_count：该会话带图片附件的消息数，供会话列表显示 📎 角标。
+        query = ("SELECT s.*, (SELECT COUNT(*) FROM messages m WHERE m.session_id=s.id "
+                 "AND m.attachments IS NOT NULL AND m.attachments NOT IN ('[]','')) AS attachment_count "
+                 "FROM sessions s" + ("" if include_archived else " WHERE s.archived=0")
+                 + " ORDER BY s.updated DESC")
         with self.lock, self._connect() as con:
             return [self._decode(x) for x in con.execute(query)]
 

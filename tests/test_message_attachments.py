@@ -95,6 +95,16 @@ class MessageAttachmentStoreTests(unittest.TestCase):
         paths = b.save_image_attachments(items)
         self.assertEqual(len(paths), 1)
 
+    def test_attachment_count_in_session_list(self):
+        """会话列表要带附件计数（📎 角标的数据来源）。"""
+        paths = b.save_image_attachments([f"data:image/png;base64,{PNG_1PX}"])
+        b.AGENT_SESSIONS.add_message("s1", "user", "带图", 0, attachments=[paths[0].name])
+        b.AGENT_SESSIONS.add_message("s1", "assistant", "不带图", 0)
+        b.AGENT_SESSIONS.create("s2", "无附件会话", str(self.ws), "copilot-auto")
+        rows = {s["id"]: s for s in b.AGENT_SESSIONS.list()}
+        self.assertEqual(rows["s1"].get("attachment_count"), 1)
+        self.assertEqual(rows["s2"].get("attachment_count"), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

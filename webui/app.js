@@ -259,14 +259,14 @@ function drawSessions(){
  let q=(document.getElementById('sessFilter').value||'').toLowerCase();
  let box=document.getElementById('sessions');
  let list=sessCache.filter(s=>!q||(s.title||'').toLowerCase().includes(q)||(s.id||'').toLowerCase().includes(q)||(s.state||'').includes(q));
- let sig=q+'|'+list.map(s=>s.id+s.state+s.total_steps+s.estimated_tokens+(s.conversation_index??'')+(s.title||'')).join('|')+'|'+current;
+ let sig=q+'|'+list.map(s=>s.id+s.state+s.total_steps+s.estimated_tokens+(s.conversation_index??'')+(s.title||'')+(s.attachment_count??'')).join('|')+'|'+current;
  if(sig===sessSig)return;
  sessSig=sig;
  box.innerHTML='';
  if(!list.length){box.innerHTML='<div class="sess-empty">没有匹配的 Session</div>';return}
  list.forEach(s=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
-  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>步骤 ${esc(s.total_steps??0)} · 会话 ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(STATE_TEXT[s.state]||s.state)}</span>`;
+  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>步骤 ${esc(s.total_steps??0)} · 会话 ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(STATE_TEXT[s.state]||s.state)}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}`;
   let chip=e.querySelector('.sid');
   if(chip)chip.onclick=ev=>{ev.stopPropagation();try{navigator.clipboard.writeText(s.id);chip.textContent='已复制 ✓';setTimeout(()=>chip.textContent=s.id,900)}catch(_){}};
   e.onclick=()=>load(s.id);
@@ -323,7 +323,20 @@ function wrapCodeLines(html){
 /* 行号点击选中整行（再点取消；可同时选多行，方便对照） */
 function codeLineSel(ln){
  const row=ln.closest('.cl');if(!row)return;
- row.classList.toggle('sel')}
+ row.classList.toggle('sel');
+ // 同一块里的"复制选中行"按钮随选择数显隐/更新
+ const wrap=row.closest('.md-codewrap');if(!wrap)return;
+ const n=wrap.querySelectorAll('.cl.sel').length;
+ const b=wrap.querySelector('.md-copsel');
+ if(b){b.style.display=n?'':'none';b.textContent=`复制选中 ${n} 行`}}
+function copySelLines(btn){
+ const wrap=btn.closest('.md-codewrap');if(!wrap)return;
+ const rows=[...wrap.querySelectorAll('.cl.sel')];
+ if(!rows.length)return;
+ // 行文本 = 行内容去掉行号列；保持文档顺序
+ const text=rows.map(r=>{const ln=r.querySelector('.ln');
+  const t=r.textContent||'';return ln?t.slice((ln.textContent||'').length):t}).join('\n');
+ copyText(text,btn)}
 /* 图片放大查看（消息附件与 Markdown 图片共用）：轻量浮层，点击或 Esc 关闭 */
 function imgZoom(el){
  const src=el.getAttribute('src');if(!src)return;
@@ -334,6 +347,18 @@ function imgZoom(el){
  ov.innerHTML='<img src="'+esc(src)+'" alt="放大查看">';
  ov.style.display='flex';syncFixedLanes()}
 function imgZoomClose(){const ov=document.getElementById('imgZoomOv');if(ov)ov.style.display='none'}
+/* 图片加载失败的安静降级：外链断链时显示占位提示，而不是浏览器的破图图标。
+   error 事件不冒泡但可以捕获（capture=true）。 */
+document.addEventListener('error',e=>{
+ const t=e.target;
+ if(t&&t.tagName==='IMG'&&(t.classList.contains('md-img')||t.classList.contains('msg-att'))
+    &&!t.dataset.broken){
+  t.dataset.broken='1';
+  const chip=document.createElement('span');chip.className='img-broken';
+  chip.textContent='图片加载失败';
+  const src=t.getAttribute('src')||'';
+  if(src)chip.title=src.length>120?src.slice(0,120)+'…':src;
+  t.replaceWith(chip)}},true)
 /* 代码块"…"菜单：复制 / 下载 / 行号 / 换行 / 折叠。
    CSP 下无内联事件；浮层挂到 body 并固定定位，避免被滚动容器裁掉。
    注意：菜单项的 data-act 必须写成**字面量**（不能 `${变量}` 拼），
@@ -644,6 +669,7 @@ function mdToHtml(src){
    out.push(`<div class="md-codewrap${long?' foldable collapsed':''}"><div class="md-codebar">`+
             `<span class="md-ico">⟨/⟩</span><span class="md-lang">${esc(langLabel(lang))}</span>`+
             (long?`<span class="md-lines">${buf.length} 行</span>`:'')+
+            `<button type="button" class="md-copsel" data-act="copySelLines" style="display:none">复制选中 0 行</button>`+
             `<button type="button" class="md-icon" title="复制代码" data-act="copyCode">⧉</button>`+
             `<button type="button" class="md-icon" title="更多" data-act="codeMenu">…</button>`+
             (long?`<button type="button" class="md-fold" data-act="toggleCodeFold">展开</button>`:'')+
@@ -1705,6 +1731,7 @@ const ACTIONS={
  copyRaw:(el)=>copyText(el.dataset.raw||'',el),
  codeMenu:(el)=>codeMenu(el),
  codeLineSel:(el)=>codeLineSel(el),
+ copySelLines:(el)=>copySelLines(el),
  imgZoom:(el)=>imgZoom(el),
  mCopy:(el)=>{const m=codeMenuEl;if(m)copyText(m.dataset.code||'',el);closeCodeMenu()},
  mDownload:(el)=>{

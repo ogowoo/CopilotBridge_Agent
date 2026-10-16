@@ -238,6 +238,16 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
   align-items:center;justify-content:center;cursor:zoom-out;padding:4vh 4vw}
 .imgzoom img{max-width:100%;max-height:100%;border-radius:10px;
   box-shadow:0 12px 40px var(--dlg-shadow)}
+/* 行号选中后的"复制选中 N 行"按钮 */
+.md-copsel{border:0;background:transparent;color:var(--accent2);font-size:11px;
+  cursor:pointer;padding:1px 7px;border-radius:5px;white-space:nowrap}
+.md-copsel:hover{background:var(--menu-hover)}
+/* 会话列表附件角标 */
+.attchip{align-self:center;font-size:11px;color:var(--muted);background:var(--panel2);
+  border:1px solid var(--line2);border-radius:999px;padding:1px 7px;white-space:nowrap;flex:none}
+/* 图片加载失败的占位 */
+.img-broken{display:inline-block;font-size:11.5px;color:var(--faint);
+  border:1px dashed var(--line2);border-radius:7px;padding:6px 10px;margin:4px 0}
 /* 软换行（对齐 Copilot：长行折行，而不是横向滚动） */
 .md-codewrap:not(.no-wrap) .md-code{white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:hidden}
 .md-codewrap:not(.no-wrap) .md-code .cl{white-space:pre-wrap}
