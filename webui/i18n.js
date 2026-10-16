@@ -304,6 +304,18 @@ const I18N_EN = {
   "常见问题":
     "FAQ",
 
+  // ── 空态与列表元信息 ──
+  "步骤":
+    "Steps",
+  " 可展开结构化 JSON":
+    " expands the structured JSON",
+
+  // ── 弹窗标题 ──
+  "发起新任务":
+    "New task",
+  "📖 使用手册":
+    "📖 Manual",
+
 };
 
 /* 把后端返回的 {note_code, note_vars} 本地化；没有对应翻译时回落后端中文原文 */
@@ -776,5 +788,9 @@ function rerenderForLang() {
   try { if (typeof renderSteps === "function" && lastSteps.length) renderSteps(lastSteps, true); } catch (e) {}
   try { if (typeof refreshQueue === "function") refreshQueue(); } catch (e) {}
   try { if (lastRuntime && typeof applyRuntime === "function") applyRuntime(lastRuntime); } catch (e) {}
+  // #bootText 在跳过名单里（内容是动态拼的），所以切语言必须主动重画一次，
+  // 否则要等下一次 pollBoot（最多 8 秒）才会变成新语言。
+  try { if (typeof showBoot === "function" && typeof _lastBoot !== "undefined" && _lastBoot)
+          showBoot(_lastBoot[0], _lastBoot[1], _lastBoot[2]); } catch (e) {}
   try { if (typeof fillStepTools === "function") fillStepTools(); } catch (e) {}
 }

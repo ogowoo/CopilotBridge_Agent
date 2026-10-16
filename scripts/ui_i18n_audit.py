@@ -27,22 +27,43 @@ LANGS = [("zh", "简体"), ("tw", "繁体"), ("en", "English")]
 # 只扫界面外壳；数据容器一律排除（含用户中文标题、模型输出）
 CHROME_JS = r"""
 () => {
+  // 这些容器里是用户数据 / 模型输出 / 按取舍保持中文的长文档，不参与覆盖率判定
   const DATA_SKIP = new Set(['sessions','chatlog','steps','answer','prompt','activity','queueBox',
-                             'gsResults','liveBody','toasts','bootText','memList']);
-  const inData = el => { for (let p = el; p; p = p.parentElement) if (p.id && DATA_SKIP.has(p.id)) return true;
-                         return false; };
+                             'gsResults','liveBody','toasts','memList','manualBody',
+                             'stepTool','stepStatus','title','sidChip','status']);
+  // 会话列表里"标题/ID"是用户数据要排除，但同一行的元信息（步骤/会话/Token）是界面文案
+  const CHROME_ALLOW = '.smeta small';
+  const skipNode = el => {
+    for (let p = el; p; p = p.parentElement) if (p.id && DATA_SKIP.has(p.id)) return true;
+    return false;
+  };
+  const containsData = el => {
+    for (const id of DATA_SKIP) if (el.querySelector && el.querySelector('#' + id)) return true;
+    return false;
+  };
+  // 混合容器只取**直接文本节点**：既避开子元素里的用户数据，又能抓到
+  // "裸文本节点"这一类漏翻（真实事故：「步骤时间线」就在这种位置）。
+  const ownText = el => {
+    let s = '';
+    for (const n of el.childNodes) if (n.nodeType === 3) s += n.textContent;
+    return s.replace(/\s+/g, ' ').trim();
+  };
   const out = [];
   const sels = ['button', '.tab', '.kpi span', '.chead', '.hint', '.listhead span', 'label',
-                'summary', '.dhead b', '.dfoot button', '.seg', '.pill', 'th', 'option'];
+                'summary', '.dhead b', '.dfoot button', '.seg', '.pill', 'th', 'option',
+                'span', 'small', 'b', 'div', 'kbd', 'p', 'li', 'h1', 'h2', 'h3', 'h4'];
   document.querySelectorAll(sels.join(',')).forEach(el => {
-    if (inData(el) || !el.offsetParent) return;
-    const t = (el.textContent || '').trim();
-    if (t) out.push({kind: 'text', tag: el.tagName.toLowerCase(), id: el.id || '',
-                     cls: (typeof el.className === 'string' ? el.className : '').slice(0, 20), text: t.slice(0, 90)});
+    if (!el.offsetParent) return;
+    if (skipNode(el) || containsData(el)) return;
+    const allowed = el.closest && el.closest(CHROME_ALLOW);
+    const t = el.children.length === 0 ? (el.textContent || '').replace(/\s+/g, ' ').trim() : ownText(el);
+    if (!t || (skipNode(el) && !allowed)) return;
+    if (!t) return;
+    out.push({kind: 'text', tag: el.tagName.toLowerCase(), id: el.id || '',
+              cls: (typeof el.className === 'string' ? el.className : '').slice(0, 20), text: t.slice(0, 90)});
   });
-  // 属性型文案：title / placeholder / aria-label
   document.querySelectorAll('[title],[placeholder],[aria-label]').forEach(el => {
-    if (inData(el) || !el.offsetParent) return;
+    if (!el.offsetParent || skipNode(el) || containsData(el)) return;
     ['title', 'placeholder', 'aria-label'].forEach(a => {
       const v = el.getAttribute(a);
       if (v && v.trim()) out.push({kind: a, tag: el.tagName.toLowerCase(), id: el.id || '',
@@ -129,6 +150,21 @@ def audit(url: str, as_json: bool) -> int:
             page.evaluate(f"setLang({json.dumps(code)})")
             page.wait_for_timeout(500)
             items = page.evaluate(CHROME_JS)
+            # 空态（未选会话时显示的引导文案）与"Copilot 未就绪"浮层此前都扫不到：
+            # 前者在选中会话后被隐藏，后者是懒创建的浮层。
+            try:
+                page.evaluate("showBoot('needs_login', false, '')")
+                page.wait_for_timeout(300)
+                items += page.evaluate(CHROME_JS)
+            except Exception:
+                pass
+            try:
+                page.evaluate("current=null;document.getElementById('sessionView').style.display='none';"
+                              "document.getElementById('emptyState').style.display='flex'")
+                page.wait_for_timeout(300)
+                items += page.evaluate(CHROME_JS)
+            except Exception:
+                pass
             # 再开一次"使用手册"与"新任务"弹窗（大字面量，最容易漏）
             for act in ("openManual", "openTask"):
                 try:

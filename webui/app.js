@@ -177,7 +177,7 @@ function stateClass(s){return s==='running'?'run':(s==='paused'||s==='waiting')?
 function setPill(s){let e=document.getElementById('statepill');e.textContent=stateText(s);e.className='pill '+stateClass(s)}
 function setKpis(o){
  if(o.token_budget){budget=o.token_budget;document.getElementById('kpiBudget').textContent=' / '+Number(budget).toLocaleString()}
- document.getElementById('kpiState').textContent=STATE_TEXT[o.state||o.session_state]||o.state||o.session_state||'—';
+ document.getElementById('kpiState').textContent=stateText(o.state||o.session_state);
  document.getElementById('kpiSteps').textContent=o.total_steps??0;
  document.getElementById('kpiConv').textContent=o.conversation_steps??0;
  document.getElementById('kpiRoll').textContent=o.conversation_index??0;
@@ -275,7 +275,7 @@ function drawSessions(){
  if(groups.has(''))keys.push('');
  const renderCard=(s)=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
-  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>步骤 ${esc(s.total_steps??0)} · 会话 ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(stateText(s.state))}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
+  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(stateText(s.state))}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
   let chip=e.querySelector('.sid');
   if(chip)chip.onclick=ev=>{ev.stopPropagation();try{navigator.clipboard.writeText(s.id);chip.textContent=tr('已复制 ✓');setTimeout(()=>chip.textContent=s.id,900)}catch(_){}};
   e.onclick=()=>load(s.id);
@@ -397,7 +397,7 @@ function renderSteps(steps,force){
     `<div class="stepview" data-mode="render">${stepResultRender(s)}</div>`+
     `<div class="stepview" data-mode="json" style="display:none"><div class="jsonview">${jv(s.result)}</div></div>`+
     `</details>`}
-  e.innerHTML=`<div class="head"><b>步骤 ${esc(s.step??'-')} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(s.reason||s.error||'')}</div>${detail}`;
+  e.innerHTML=`<div class="head"><b>${tr('步骤')} ${esc(s.step??'-')} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(s.reason||s.error||'')}</div>${detail}`;
   box.prepend(e)});
  renderedSteps=shown.length;
  if(!shown.length&&!box.innerHTML.trim())
@@ -1927,6 +1927,9 @@ function bootBanner(){
   el=document.createElement('div');el.id='bootBar';
   el.innerHTML='<span id="bootText"></span><button class="btn ghost" id="bootRetry" style="padding:2px 10px;font-size:12px">重试浏览器</button>';
   document.body.appendChild(el);
+  // 这个浮层是**按需创建**的（第一次 pollBoot 才建），而 applyI18n 在页面加载时就跑完了
+  // ——所以它的静态中文永远不会被扫到。建好立刻自己翻一次。
+  try{if(typeof applyI18n==='function')applyI18n(el)}catch(e){}
   el.querySelector('#bootRetry').onclick=async()=>{
    const b=el.querySelector('#bootRetry');b.disabled=true;b.textContent=tr('启动中…');
    try{await api('/v1/agent/browser/retry',{method:'POST'});toast(tr('已请求启动浏览器，稍后自动复查'),'ok')}
@@ -1935,7 +1938,9 @@ function bootBanner(){
  }
  return el;
 }
+let _lastBoot=null;   // 记住最近一次的未就绪状态：切语言后要立刻重画这条提示
 function showBoot(state,ready,err){
+ _lastBoot=[state,ready,err];
  const el=bootBanner();
  if(ready){el.style.display='none';syncFixedLanes();return}
  el.style.display='flex';   // 先写文字再 syncFixedLanes：否则量到的是空框高度，
