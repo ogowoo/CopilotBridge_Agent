@@ -448,12 +448,14 @@ async def shutdown_service():
     "宽限期后硬退出"兜底（按钮必须真的能停掉服务）。
     """
     if lifecycle.shutdown_pending():
-        return {"stopping": True, "already": True, "note": "停机已在进行中"}
+        return {"stopping": True, "already": True, "note": "停机已在进行中",
+            "note_code": "shutdown_pending"}
     # 用线程定时器而不是 loop.call_later：与事件循环生命周期无关（服务可能由
     # 不同方式启动/重启），也让"先回响应再停"可被测试观察到。
     threading.Timer(0.4, lifecycle.request_shutdown).start()
     return {"stopping": True,
-            "note": "服务即将终止。正在运行的任务会中断（状态已落库，重启后可恢复）。"}
+            "note": "服务即将终止。正在运行的任务会中断（状态已落库，重启后可恢复）。",
+            "note_code": "shutdown_soon"}
 
 
 @app.get("/v1/uploads/{name}")
@@ -670,7 +672,8 @@ async def set_session_model(sid: str, req: b.SessionModelRequest):
     b.AGENT_SESSIONS.patch(sid, model=model_id)
     updated = b.AGENT_SESSIONS.get(sid)
     note = "" if model_id == requested else f"{requested} 已失效，回退为 {model_id}"
-    return {**updated, "applies": "下一回合生效（服务重启后仍沿用）", "note": note}
+    return {**updated, "applies": "下一回合生效（服务重启后仍沿用）",
+            "applies_code": "next_turn", "note": note}
 
 
 # ── 自升级（修改服务自身代码）───────────────────────────────────
@@ -748,7 +751,8 @@ async def control(sid: str, action: str):
             # 终态会话（completed/cancelled/archived）不改成 ready 也不拉起
             started = False
             return {**b.AGENT_SESSIONS.get(sid), "runner_started": False,
-                    "note": f"会话状态为 {prev_state}，不支持恢复", "note_kind": "err"}
+                    "note": f"会话状态为 {prev_state}，不支持恢复", "note_kind": "err",
+                    "note_code": "resume_terminal", "note_vars": {"state": str(prev_state)}}
         result = dict(b.AGENT_SESSIONS.get(sid) or {})
         result["runner_started"] = started
         if started:
@@ -952,7 +956,8 @@ async def inject_session_message(sid: str, req: InjectRequest):
             b.runtime_update(sid, detail=f"已插入紧急指令（next-step）：{content[:80]}")
             return {"session_id": sid, "injected": True, "running": True, "queued": False,
                     "interrupted": True, "queue": "step", "pending_steps": len(pending_steps),
-                    "note": "已插入 next-step 队列：立即生效，且批量中的剩余动作会被放弃"}
+                    "note": "已插入 next-step 队列：立即生效，且批量中的剩余动作会被放弃",
+                    "note_code": "inject_step"}
         pending = [str(x) for x in (state.get("pending") or []) if str(x).strip()]
         pending.append(content)
         b.AGENT_SESSIONS.patch(sid, pending=pending)
@@ -962,14 +967,16 @@ async def inject_session_message(sid: str, req: InjectRequest):
         b.runtime_update(sid, detail=f"已插入指令并中断当前回合：{content[:80]}")
         return {"session_id": sid, "injected": True, "running": True, "queued": False,
                 "interrupted": True, "pending": len(pending),
-                "note": "已插入并中断当前回合：Agent 会立即按新指令继续"}
+                "note": "已插入并中断当前回合：Agent 会立即按新指令继续",
+                "note_code": "inject_turn"}
     # 空闲会话：pending 不会有人消费 -> 走队列起一轮（等同普通跟进）
     queued = await b.enqueue_session_message(
         sid, content, b.normalize_model_soft(state.get("model") or b.DEFAULT_MODEL),
         True, None, None)
     return {"session_id": sid, "injected": True, "running": False, "queued": True,
             "position": queued.get("position"),
-            "note": "会话当前空闲，已按跟进排队执行（运行中插入才会即时生效）"}
+            "note": "会话当前空闲，已按跟进排队执行（运行中插入才会即时生效）",
+            "note_code": "inject_idle"}
 
 
 def _runtime_snapshot(sid: str, state: dict) -> dict:
@@ -1220,7 +1227,8 @@ async def grant_approval(sid: str, payload: dict):
     except Exception:
         pass
     return {"ok": True, "tool": tool, "args_hash": args_hash,
-            "note": "已授权一次；该授权用后即焚，下次同类操作需重新授权。"}
+            "note": "已授权一次；该授权用后即焚，下次同类操作需重新授权。",
+            "note_code": "approval_granted"}
 
 
 @app.get("/v1/agent/spans")

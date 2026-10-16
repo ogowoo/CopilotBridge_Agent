@@ -141,7 +141,7 @@ const BRAND={deepseek:'DeepSeek',kimi:'Kimi',openai:'OpenAI',grok:'Grok',moonsho
 function isProviderModel(m){return String(m||'').indexOf('/')>=0}
 function assistantLabel(model){
  const m=String(model==null?(currentModel||''):model);
- if(!m)return '助手';
+ if(!m)return t('助手');
  if(isProviderModel(m)){
   const p=m.split('/')[0].toLowerCase();
   return BRAND[p]||(p.charAt(0).toUpperCase()+p.slice(1))}
@@ -169,8 +169,9 @@ function jv(v,key){
 
 /* ── 状态呈现 ── */
 const STATE_TEXT={running:'运行中',paused:'已暂停',waiting:'等待服务',ready:'就绪',completed:'已完成',failed:'失败',cancelled:'已取消',expired:'已过期',archived:'已归档'};
+function stateText(s){return t(STATE_TEXT[s]||s||'—')}
 function stateClass(s){return s==='running'?'run':(s==='paused'||s==='waiting')?'warn':(s==='failed')?'bad':(s==='completed')?'done':''}
-function setPill(s){let e=document.getElementById('statepill');e.textContent=STATE_TEXT[s]||s||'—';e.className='pill '+stateClass(s)}
+function setPill(s){let e=document.getElementById('statepill');e.textContent=stateText(s);e.className='pill '+stateClass(s)}
 function setKpis(o){
  if(o.token_budget){budget=o.token_budget;document.getElementById('kpiBudget').textContent=' / '+Number(budget).toLocaleString()}
  document.getElementById('kpiState').textContent=STATE_TEXT[o.state||o.session_state]||o.state||o.session_state||'—';
@@ -263,7 +264,7 @@ function drawSessions(){
  if(sig===sessSig)return;
  sessSig=sig;
  box.innerHTML='';
- if(!list.length){box.innerHTML='<div class="sess-empty">没有匹配的 Session</div>';return}
+ if(!list.length){box.innerHTML='<div class="sess-empty">'+esc(t('没有匹配的 Session'))+'</div>';return}
  // 按标签分组（有标签的在前、组内保持 updated 倒序；未打标签的收在最后）
  const groups=new Map();
  list.forEach(s=>{const t=(s.tag||'').trim();if(!groups.has(t))groups.set(t,[]);groups.get(t).push(s)});
@@ -271,9 +272,9 @@ function drawSessions(){
  if(groups.has(''))keys.push('');
  const renderCard=(s)=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
-  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>步骤 ${esc(s.total_steps??0)} · 会话 ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(STATE_TEXT[s.state]||s.state)}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
+  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>步骤 ${esc(s.total_steps??0)} · 会话 ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(stateText(s.state))}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
   let chip=e.querySelector('.sid');
-  if(chip)chip.onclick=ev=>{ev.stopPropagation();try{navigator.clipboard.writeText(s.id);chip.textContent='已复制 ✓';setTimeout(()=>chip.textContent=s.id,900)}catch(_){}};
+  if(chip)chip.onclick=ev=>{ev.stopPropagation();try{navigator.clipboard.writeText(s.id);chip.textContent=t('已复制 ✓');setTimeout(()=>chip.textContent=s.id,900)}catch(_){}};
   e.onclick=()=>load(s.id);
   // 键盘可达：会话切换是主入口，纯 div+onclick 对键盘用户等于不可用
   e.tabIndex=0;
@@ -282,8 +283,8 @@ function drawSessions(){
  keys.forEach(k=>{
   if(keys.length>1||k){
    const h=document.createElement('div');h.className='taghead';
-   h.textContent=k||'未分组';
-   if(k)h.title='标签：'+k;
+   h.textContent=k||t('未分组');
+   if(k)h.title=t('标签：')+k;
    box.appendChild(h)}
   groups.get(k).forEach(renderCard)})}
 
@@ -292,15 +293,15 @@ async function editTag(btn){
  const sid=btn.dataset.arg;
  if(!sid)return;
  const cur=((sessCache||[]).find(s=>s.id===sid)||{}).tag||'';
- const tag=await dlgPrompt('设置会话标签（列表按标签分组；留空取消标签）',cur,'保存','会话标签');
+ const tag=await dlgPrompt('设置会话标签（列表按标签分组；留空取消标签）',cur,t('保存'),t('会话标签'));
  if(tag===null)return;
  try{
   await api(`/v1/agent/sessions/${encodeURIComponent(sid)}/tag`,
    {method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({tag:String(tag).trim()})});
-  toast(tag.trim()?'标签已设为「'+tag.trim()+'」':'已取消标签','ok');
+  toast(tag.trim()?(t('标签已设为')+'「'+tag.trim()+'」'):t('已取消标签'),'ok');
   await refreshSessions();
- }catch(e){toast('设置标签失败: '+(e.text||e),'err')}}
+ }catch(e){toast(t('设置标签失败: ')+(e.text||e),'err')}}
 
 /* ── 时间线：增量渲染，不重建已有 DOM，展开状态不丢失 ── */
 /* 工具结果的语言猜测：优先按参数里的文件扩展名，其次按工具名 */
@@ -338,7 +339,7 @@ function stepResultRender(s){
   const isJson=/^(json|jsonc)$/i.test(lang)||/^[[{]/.test(String(v).trim());
   out+=`<div class="sectlabel">${esc(k)}</div>`+
        codeBlockHtml(v,isJson?'json':lang,{label:langLabel(lang)})});
- if(!out)out='<div class="meta">（没有可渲染的字段）</div>';
+ if(!out)out='<div class="meta">'+esc(t('（没有可渲染的字段）'))+'</div>';
  return out}
 /* 时间线筛选：按工具名与状态分组过滤。
    默认（无筛选）仍走增量渲染，展开状态不丢；一旦筛选就整表重建——
@@ -356,7 +357,7 @@ function fillStepTools(){
  const sel=document.getElementById('stepTool');if(!sel)return;
  const tools=[...new Set((lastSteps||[]).map(s=>String(s.tool||'').trim()).filter(Boolean))].sort();
  const cur=sel.value;
- sel.innerHTML='<option value="">全部工具</option>'+tools.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+ sel.innerHTML='<option value="">'+esc(t('全部工具'))+'</option>'+tools.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
  if(tools.includes(cur))sel.value=cur}
 function stepFilterInput(el){
  const which=el.dataset.arg;
@@ -396,7 +397,7 @@ function renderSteps(steps,force){
   box.prepend(e)});
  renderedSteps=shown.length;
  if(!shown.length&&!box.innerHTML.trim())
-  box.innerHTML='<div class="sess-empty">没有符合筛选条件的步骤</div>';
+  box.innerHTML='<div class="sess-empty">'+esc(t('没有符合筛选条件的步骤'))+'</div>';
  applyCodePrefs(box)}
 /* 工具结果：渲染 / JSON 双视图切换 */
 function stepView(btn){
@@ -412,7 +413,7 @@ function renderMessages(messages,opts){
  opts=opts||{};
  let box=document.getElementById('chatlog');box.innerHTML='';
  lastMessages=messages||[];
- if(!messages.length){box.innerHTML='<div class="meta">当前没有人工续聊记录。下面发送的消息会发给该 Session 正在使用的模型。</div>';return}
+ if(!messages.length){box.innerHTML='<div class="meta">'+esc(t('当前没有人工续聊记录。下面发送的消息会发给该 Session 正在使用的模型。'))+'</div>';return}
  messages.forEach(m=>{box.appendChild(msgEl(m.role,m.content,m.created,{attachments:m.attachments||[],id:m.id}))});
  // 新到达的消息做一次渐显（纯动画，不改内容；尊重 prefers-reduced-motion）
  if(opts.animateLast&&box.lastElementChild)box.lastElementChild.classList.add('reveal');
@@ -439,7 +440,7 @@ function wrapCodeLines(html){
   const re=/<span class="[^"]*">|<\/span>/g;let m;
   while((m=re.exec(ln))){if(m[0]==='</span>'){open.pop()}else{open.push(m[0])}}
   const tail='</span>'.repeat(open.length);
-  return '<span class="cl"><span class="ln" data-act="codeLineSel" title="点击选中整行">'+(i+1)+'</span>'+prefix+ln+tail+'</span>'});
+  return '<span class="cl"><span class="ln" data-act="codeLineSel" title="'+esc(t('点击选中整行'))+'">'+(i+1)+'</span>'+prefix+ln+tail+'</span>'});
  return out.join('')}
 /* 行号点击选中整行（再点取消；可同时选多行，方便对照） */
 function codeLineSel(ln){
@@ -476,7 +477,7 @@ document.addEventListener('error',e=>{
     &&!t.dataset.broken){
   t.dataset.broken='1';
   const chip=document.createElement('span');chip.className='img-broken';
-  chip.textContent='图片加载失败';
+  chip.textContent=t('图片加载失败');
   const src=t.getAttribute('src')||'';
   if(src)chip.title=src.length>120?src.slice(0,120)+'…':src;
   t.replaceWith(chip)}},true)
@@ -531,18 +532,18 @@ function applyCodePrefs(scope){
   w.classList.toggle('no-lines',noLines)})}
 /* 复制整条消息 / 复制代码块 */
 function copyMsg(btn){let m=btn.closest('.msg');if(!m)return;
- try{navigator.clipboard.writeText(m.dataset.raw||'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
+ try{navigator.clipboard.writeText(m.dataset.raw||'');btn.textContent=t('已复制 ✓');setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
 function copyCode(btn){let w=btn.closest('.md-codewrap');if(!w)return;let c=w.querySelector('code');
- try{navigator.clipboard.writeText(c?c.textContent:'');btn.textContent='已复制 ✓';setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
+ try{navigator.clipboard.writeText(c?c.textContent:'');btn.textContent=t('已复制 ✓');setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
 /* 复制任意文本（JSON 代码块等）：按钮文案短暂反馈 */
 function copyText(text,btn){
  try{navigator.clipboard.writeText(text||'');
-     if(btn){const old=btn.textContent;btn.textContent='已复制 ✓';
+     if(btn){const old=btn.textContent;btn.textContent=t('已复制 ✓');
       setTimeout(()=>btn.textContent=old,900)}}catch(e){}}
 function toggleCodeFold(btn){
  let w=btn.closest('.md-codewrap');if(!w)return;
  let folded=w.classList.toggle('collapsed');
- btn.textContent=folded?'展开':'收起'}
+ btn.textContent=t(folded?'展开':'收起')}
 /* ── 长消息折叠 + 消息内搜索 ────────────────────────────────────────
    折叠按**文本长度**判定（不依赖布局高度：会话页可能在未激活的页签里，
    此时 scrollHeight 为 0，测高会失效）。 */
@@ -554,7 +555,7 @@ function applyMsgFold(scope){
   if((m.textContent||'').length<=MSG_FOLD_CHARS)return;
   m.classList.add('foldable','collapsed');
   let b=document.createElement('button');b.className='msg-fold';b.textContent='展开全文';
-  b.onclick=()=>{let c=m.classList.toggle('collapsed');b.textContent=c?'展开全文':'收起'};
+  b.onclick=()=>{let c=m.classList.toggle('collapsed');b.textContent=t(c?'展开全文':'收起')};
   m.appendChild(b)})}
 /* 搜索：输入即高亮命中，Enter/Shift+Enter 或按钮在命中之间跳转 */
 let findHits=[],findCur=-1,findQuery='';
@@ -733,7 +734,7 @@ function renderAssistantBody(content){
  return '<div class="md-body">'+mdToHtml(raw)+'</div>'}
 function msgEl(role,content,ts,opts){
  opts=opts||{};
- let who=opts.who||(role==='user'?'你':assistantLabel());
+ let who=opts.who||(role==='user'?t('你'):assistantLabel());
  let t=fmtStamp(ts||Math.floor(Date.now()/1000));
  let plain=(opts.plain||role==='user');   // 用户/提示类消息不做 Markdown
  let body=plain?`<div class="md-body plain">${esc(content)}</div>`
@@ -756,7 +757,7 @@ function msgEl(role,content,ts,opts){
  e.innerHTML=`<div class="msg-av">${esc(String(who).charAt(0))}</div>`+
   `<div class="msg-main"><div class="msg-head"><span class="msg-role">${esc(who)}</span>`+
   (t?`<span class="msg-time">${t}</span>`:'')+
-  `<button class="msg-copy" title="复制这条消息" data-act="copyMsg">复制</button>`+mid+`</div>`+
+  `<button class="msg-copy" title="'+esc(t('复制这条消息'))+'" data-act="copyMsg">'+esc(t('复制'))+'</button>`+mid+`</div>`+
   body+attsHtml+`</div>`;
  e.dataset.raw=content||'';
  return e}
@@ -773,8 +774,8 @@ function codeBlockHtml(rawCode,lang,opts){
   const parsed=tryParseJson(text);
   if(parsed)return '<div class="md-codewrap"><div class="md-codebar">'+
    '<span class="md-ico">⟨/⟩</span><span class="md-lang">JSON</span>'+
-   `<button type="button" class="md-icon" title="复制代码" data-act="copyRaw" data-raw="${esc(text)}">⧉</button>`+
-   '<button type="button" class="md-icon" title="更多" data-act="codeMenu">…</button></div>'+
+   `<button type="button" class="md-icon" title="'+esc(t('复制代码'))+'" data-act="copyRaw" data-raw="${esc(text)}">⧉</button>`+
+   '<button type="button" class="md-icon" title="'+esc(t('更多'))+'" data-act="codeMenu">…</button></div>'+
    jsonViewBox(parsed)+'</div>'}
  const codeHtml=highlight(text,lang2);
  const n=text.split('\n').length;
@@ -783,8 +784,8 @@ function codeBlockHtml(rawCode,lang,opts){
   `<span class="md-ico">⟨/⟩</span><span class="md-lang">${esc(opts.label||langLabel(lang2))}</span>`+
   (long?`<span class="md-lines">${n} 行</span>`:'')+
   `<button type="button" class="md-copsel" data-act="copySelLines" style="display:none">复制选中 0 行</button>`+
-  `<button type="button" class="md-icon" title="复制代码" data-act="copyCode">⧉</button>`+
-  `<button type="button" class="md-icon" title="更多" data-act="codeMenu">…</button>`+
+  `<button type="button" class="md-icon" title="'+esc(t('复制代码'))+'" data-act="copyCode">⧉</button>`+
+  `<button type="button" class="md-icon" title="'+esc(t('更多'))+'" data-act="codeMenu">…</button>`+
   (long?`<button type="button" class="md-fold" data-act="toggleCodeFold">展开</button>`:'')+
   `</div><pre class="md-code"><code>${wrapCodeLines(codeHtml)}</code></pre></div>`}
 
@@ -860,7 +861,7 @@ function mdToHtml(src){
 
 /* 导出完整时间线：调试/复盘用，含每步原始参数、结果与 invalid_action 的 raw_tail */
 async function exportTimeline(){
- if(!current){toast('请先选择 Session','err');return}
+ if(!current){toast(t('请先选择 Session'),'err');return}
  try{
   let d=await api('/v1/agent/sessions/'+encodeURIComponent(current));
   let payload={exported_at:new Date().toISOString(),app:'CopilotBridge Agent',
@@ -973,7 +974,7 @@ async function load(id){
  document.getElementById('title').textContent=s.title;
  let _sc=document.getElementById('sidChip');
  if(_sc){_sc.textContent=s.id;_sc.onclick=()=>{try{navigator.clipboard.writeText(s.id);toast('已复制会话 ID: '+s.id,'ok')}catch(e){toast(s.id)}}}
- document.getElementById('status').textContent=(STATE_TEXT[s.state]||s.state)+' · '+s.workspace;
+ document.getElementById('status').textContent=stateText(s.state)+' · '+s.workspace;
  setPill(s.state);setKpis(s);
  document.getElementById('steps').innerHTML='';renderedSteps=0;lastDetail='';
  renderSteps(d.steps);lastStepCount=d.steps.length;
@@ -1077,8 +1078,8 @@ async function refreshChat(){
   lastAssistantCount=as}catch(e){}}
 
 /* ── 操作 ── */
-async function control(a){if(!current)return;try{let r=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/${a}`,{method:'POST'});if(a==='resume')toast(r.note||(r.runner_started?'已恢复，正在续跑任务':'已恢复'), r.note_kind==='err'?'err':'ok');await load(current)}catch(e){toast('操作失败: '+e,'err')}}
-async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;toast('已将自动化 Edge 切换到该会话','ok')}catch(e){toast('操作失败: '+e,'err')}}
+async function control(a){if(!current)return;try{let r=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/${a}`,{method:'POST'});if(a==='resume')toast(noteText(r, r.runner_started?t('已恢复，正在续跑任务'):t('已恢复')), r.note_kind==='err'?'err':'ok');await load(current)}catch(e){toast(t('操作失败: ')+e,'err')}}
+async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;toast('已将自动化 Edge 切换到该会话','ok')}catch(e){toast(t('操作失败: ')+e,'err')}}
 function openCopilot(){if(currentUrl){if(!/^https?:\/\//i.test(currentUrl)){toast('地址不是 http(s)，已拒绝打开','err');return}window.open(currentUrl,'_blank','noopener,noreferrer')}
  else toast(isProviderModel(currentModel)?'该会话用的是 API 提供商模型，没有可打开的网页对话':'该 Session 暂无网页会话地址','err')}
 async function removeSession(remote){
@@ -1093,7 +1094,7 @@ async function removeSession(remote){
   current=null;
   document.getElementById('sessionView').style.display='none';
   document.getElementById('emptyState').style.display='flex';
-  await refreshSessions()}catch(e){toast('删除失败: '+(e.text||e),'err')}}
+  await refreshSessions()}catch(e){toast(t('删除失败: ')+(e.text||e),'err')}}
 /* ── 限流倒计时：居中卡片，可收起为右下角小标 ── */
 let retryDismissedAt=null;   // 用户已收起的那个终点时间戳（新一轮限流会自动再展开）
 let lastRuntime=null;        // 最近一次 runtime 响应，供小标展开时立即重绘
@@ -1151,7 +1152,7 @@ setInterval(()=>{
 
 /* ── 回滚任务改动：按 Copilot 回合的版本回滚工作区 ── */
 async function rollbackSession(){
- if(!current){toast('请先选择 Session','err');return}
+ if(!current){toast(t('请先选择 Session'),'err');return}
  try{
   let s=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/snapshots');
   let files=s.files||[];
@@ -1418,7 +1419,7 @@ document.getElementById('liveCopy').onclick=()=>{try{navigator.clipboard.writeTe
 /* 查看该会话的初始提示词（首回合发给模型的完整内容）。
    未落库的旧会话由后端按当前工作区近似重建，这里明确标注。 */
 async function showPromptView(){
- if(!current){toast('请先选择 Session','err');return}
+ if(!current){toast(t('请先选择 Session'),'err');return}
  try{
   let d=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/prompt');
   let t=d.initial_prompt||'(空：该会话还没有发出过回合)';
@@ -1431,16 +1432,16 @@ async function showPromptView(){
   document.getElementById('liveMask').classList.add('open')
  }catch(e){toast('读取初始提示词失败: '+(e.text||e),'err')}}
 async function continueAgent(){
- if(!current){toast('请先选择 Session','err');return}
+ if(!current){toast(t('请先选择 Session'),'err');return}
  let instruction=await dlgPrompt('请输入要继续执行的任务','继续执行当前任务，从未完成事项开始','继续执行','继续执行');
  if(!instruction)return;
  document.getElementById('followup').value=instruction;
  setFollowupMode('agent');
  await sendFollowup()}
 async function sendFollowup(){
- if(!current){toast('请先选择 Session','err');return}
+ if(!current){toast(t('请先选择 Session'),'err');return}
  let box=document.getElementById('followup'),content=box.value.trim();
- if(!content&&!IMG_STORES.follow.length){toast('消息不能为空','err');return}
+ if(!content&&!IMG_STORES.follow.length){toast(t('消息不能为空'),'err');return}
  let atts=IMG_STORES.follow.map(a=>a.dataUrl);
  let btn=document.getElementById('sendFollowup');btn.disabled=true;btn.textContent='发送中';
  liveTab('chat');  // 发送后确保停留在对话页看回复
@@ -1454,7 +1455,7 @@ async function sendFollowup(){
   if(d&&d.queued){
    let note=msgEl('assistant',
      d.position>1?`已排队（前面还有 ${d.position-1} 条）`:'已排队，等待处理…',
-     null,{plain:true,who:'队列'});
+     null,{plain:true,who:t('队列')});
    log.appendChild(note);log.scrollTop=log.scrollHeight;
    refreshQueue();
    awaitFollowupReply(current,baseAssistants);
@@ -1463,7 +1464,7 @@ async function sendFollowup(){
     // 从不返回 content/url —— 原实现在这里读不存在的字段，会渲染一个空气泡。
     // 正确做法：重载会话，把刚落库的新消息渲染出来。
     await load(current)}
- }catch(e){log.appendChild(msgEl('assistant','发送失败: '+e,null,{plain:true,who:'错误'}))}
+ }catch(e){log.appendChild(msgEl('assistant',t('发送失败: ')+e,null,{plain:true,who:t('错误')}))}
  finally{btn.disabled=false;btn.textContent='发送'}}
 
 /* 队列模式：跟进消息入队后轮询会话消息，助理回复一出现就刷新聊天区 */
@@ -1580,7 +1581,7 @@ function updateLiveBubble(text){
  renderLiveBubble()}
 /* ── 导出对话为 Markdown ──────────────────────────────────────────── */
 function exportChatMarkdown(){
- if(!current){toast('请先选择 Session','err');return}
+ if(!current){toast(t('请先选择 Session'),'err');return}
  const msgs=lastMessages||[];
  if(!msgs.length){toast('当前没有对话记录','err');return}
  const title=(document.getElementById('title').textContent||'').trim()||current;
@@ -1590,7 +1591,7 @@ function exportChatMarkdown(){
  out+=`- 导出时间: ${new Date().toLocaleString('zh-CN')}\n`;
  out+=`- 消息数: ${msgs.length}\n\n---\n\n`;
  msgs.forEach(m=>{
-  const who=m.role==='user'?'我':assistantLabel();
+  const who=m.role==='user'?t('我'):assistantLabel();
   const ts=m.created?new Date(m.created*1000).toLocaleString('zh-CN'):'';
   out+=`## ${who}${ts?` · ${ts}`:''}\n\n`;
   out+=String(m.content||'')+'\n';
@@ -1616,26 +1617,26 @@ async function editMsg(btn){
  const old=wrap.dataset.raw||'';
  const text=await dlgPrompt(
   '编辑这条消息的内容（只改本地历史；已发给网页 Copilot 的内容无法撤回）',
-  old,'保存','编辑消息');
+  old,t('保存'),t('编辑消息'));
  if(text===null)return;
  const v=String(text).trim();
  if(!v||v===old)return;
  try{
   const d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages/${id}`,
    {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:v})});
-  toast(d.note||'已更新','ok');
+  toast(noteText(d,'已更新'),'ok');
   await refreshChat();
- }catch(e){toast('编辑失败: '+(e.text||e),'err')}}
+ }catch(e){toast(t('编辑失败: ')+(e.text||e),'err')}}
 async function delMsg(btn){
  const wrap=btn.closest('.msg');const id=wrap&&wrap.dataset.mid;
  if(!id)return;
  if(!await dlgConfirm('删除这条消息？\n\n只影响本地历史，不会撤回已发给网页 Copilot 的内容。',
-                      '删除消息',true))return;
+                      t('删除消息'),true))return;
  try{
   await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages/${id}`,{method:'DELETE'});
-  toast('已删除','ok');
+  toast(t('已删除'),'ok');
   await refreshChat();
- }catch(e){toast('删除失败: '+(e.text||e),'err')}}
+ }catch(e){toast(t('删除失败: ')+(e.text||e),'err')}}
 
 /* ── 跨会话搜索 ─────────────────────────────────────────────────────
    后端 /v1/search 搜 messages 正文；点结果即跳转到该会话，并把那条消息
@@ -1656,11 +1657,11 @@ async function runGlobalSearch(){
  const box=document.getElementById('gsResults');if(!box)return;
  const q=(document.getElementById('gsInput').value||'').trim();
  if(!q){box.innerHTML='';return}
- box.innerHTML='<div class="meta">搜索中…</div>';
+ box.innerHTML='<div class="meta">'+esc(t('搜索中…'))+'</div>';
  try{
   const d=await api('/v1/search?q='+encodeURIComponent(q));
   const list=d.results||[];
-  if(!list.length){box.innerHTML='<div class="meta">没有匹配的对话内容</div>';return}
+  if(!list.length){box.innerHTML='<div class="meta">'+esc(t('没有匹配的对话内容'))+'</div>';return}
   box.innerHTML='';
   list.forEach(r=>{
    const e=document.createElement('div');e.className='gsrow';
@@ -1670,7 +1671,7 @@ async function runGlobalSearch(){
     `<div class="gssnip">${esc(r.snippet||'')}</div>`;
    e.onclick=()=>jumpToMessage(r.session_id,r.message_id);
    box.appendChild(e)});
- }catch(e){box.innerHTML='<div class="meta">搜索失败：'+esc(e.text||e)+'</div>'}}
+ }catch(e){box.innerHTML='<div class="meta">'+esc(t('搜索失败：'))+esc(e.text||e)+'</div>'}}
 async function jumpToMessage(sid,mid){
  try{
   await load(sid);
@@ -1682,16 +1683,16 @@ async function jumpToMessage(sid,mid){
    setTimeout(()=>el.classList.remove('flash'),2200);
    toggleGlobalSearch();   // 跳过去后收起搜索面板
   }else toast('这条消息不在最近加载的记录里（可能超出 500 条上限）','err');
- }catch(e){toast('跳转失败: '+(e.text||e),'err')}}
+ }catch(e){toast(t('跳转失败: ')+(e.text||e),'err')}}
 
 document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();sendFollowup()}});
 /* 强行插入指令（像 DSH 的 Ctrl+J）：运行中立即生效，Agent 下一回合优先执行；
    与"排队跟进"不同——后者要等当前这轮跑完才起新一轮。 */
 async function injectMessage(){
- if(!current){toast('请先选择 Session','err');return}
+ if(!current){toast(t('请先选择 Session'),'err');return}
  let pick=await dlgInjectPrompt(
   '插入指令（运行中即时生效，会立即中断当前回合后按新指令继续）。插入方式决定语义：',
-  '', '强行插入','step');
+  '', t('强行插入'),'step');
  if(pick===null)return;
  let content=String(pick.text||'').trim();
  if(!content)return;
@@ -1701,15 +1702,15 @@ async function injectMessage(){
   let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/inject`,
                   {method:'POST',headers:{'Content-Type':'application/json'},
                    body:JSON.stringify({content,queue})});
-  toast(d.note||'已插入', d.running?'ok':'');
+  toast(noteText(d,'已插入'), d.running?'ok':'');
   liveTab('chat');
   // 让聊天区尽快看到这条指令（标"插入",与普通发送区分）
   let log=document.getElementById('chatlog');
   log.appendChild(msgEl('user',content,null,
-    {who:queue==='step'?'你（插入·立即遵守）':'你（插入·整轮重排）'}));
+    {who:t('你')+'（'+t(queue==='step'?'立即遵守':'整轮重排')+'）'}));
   log.scrollTop=log.scrollHeight;
   refreshSessions();
- }catch(e){toast('插入失败: '+(e.text||e),'err')}}
+ }catch(e){toast(t('插入失败: ')+(e.text||e),'err')}}
 document.addEventListener('keydown',e=>{
  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='j'||e.key==='J')){e.preventDefault();injectMessage()}});
 /* ── 新任务模式：Agent 执行 / 普通对话 ── */
@@ -1882,7 +1883,7 @@ async function loadMemory(){
   const want=b.dataset.v!=='1';
   try{await api('/v1/agent/memory/'+b.dataset.pin+'/pin?pinned='+want+'&scope='+encodeURIComponent(memScope),{method:'POST'});
    toast(want?'已置顶（检索时恒定注入）':'已取消置顶','ok');loadMemory()}
-  catch(e){toast('操作失败: '+e,'err')}});
+  catch(e){toast(t('操作失败: ')+e,'err')}});
 }
 try{memBtn()}catch(e){}
 /* ── Copilot 未就绪提示条（按需启动后：没有 Copilot 也能用提供商模型）── */
@@ -1926,10 +1927,10 @@ async function shutdownService(){
    +'· 正在运行的任务会中断（状态已落库，重启后可恢复）\n'
    +'· 自动化浏览器会被关闭，本页面随即断开\n'
    +'· 需要时重新运行 start.py 启动服务\n\n'
-   +'确定终止？','终止服务',true))return;
+   +'确定终止？',t('终止服务'),true))return;
  try{
   const d=await api('/v1/shutdown',{method:'POST'});
-  showStopped(d&&d.note);
+  showStopped(d?noteText(d,''):'');
  }catch(e){
   // 连接可能比响应先断：同样视为已停止，不要报"操作失败"
   showStopped('服务已终止（连接已断开）');
@@ -1940,8 +1941,8 @@ function showStopped(note){
  let el=document.getElementById('stoppedBanner');
  if(!el){el=document.createElement('div');el.id='stoppedBanner';el.className='stoppedbanner';
   document.body.insertBefore(el,document.body.firstChild)}
- el.innerHTML='<b>⏻ 服务已终止</b><span>'+esc(note||'')+'</span>'
-  +'<span class="meta">本页可以关闭了；需要时重新运行 <code>python start.py</code> 启动。</span>';
+ el.innerHTML='<b>⏻ '+esc(t('服务已终止'))+'</b><span>'+esc(note||'')+'</span>'
+  +'<span class="meta">'+esc(t('本页可以关闭了；需要时重新运行'))+' <code>python start.py</code> '+esc(t('启动'))+'。</span>';
  el.style.display='flex';
  try{hideRetryUI()}catch(e){}
  try{hideConnBanner()}catch(e){}
@@ -1982,6 +1983,8 @@ attachPasteHandler('followup','follow');
    document.getElementById('demoBadge').style.display='block';
    document.getElementById('demoBadge').textContent='演示模式（?demo=1）——数据为本地假数据'}
   }
+ applyI18n(document);   // 静态界面按当前语言渲染（data-i18n + 静态 DOM 直译）
+ applyLangButton();
  loadModels();browserState();
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();
@@ -2009,6 +2012,7 @@ const ACTIONS={
  openManual:()=>openManual(),
  toggleBrowser:()=>toggleBrowser(),
  toggleTheme:()=>toggleTheme(),
+ cycleLang:()=>cycleLang(),
  drawSessions:()=>drawSessions(),
  chatFindInput:()=>chatFindInput(),
  gsInput:()=>gsInput(),
@@ -2086,7 +2090,7 @@ const ACTIONS={
   if(!wrap)return;
   const folded=wrap.classList.toggle('collapsed');
   const b=wrap.querySelector('.md-fold');
-  if(b)b.textContent=folded?'展开':'收起'},
+  if(b)b.textContent=t(folded?'展开':'收起')},
  toggleCodeFold:(el)=>toggleCodeFold(el),
  removeAttachment:(el)=>removeAttachment(el.dataset.store,Number(el.dataset.arg)),
 };
