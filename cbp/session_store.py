@@ -311,6 +311,38 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                                "message_id": cur.lastrowid}, con=con)
             return cur.lastrowid
 
+    def search_messages(self, keyword: str, limit: int = 30) -> list[dict]:
+        """跨会话搜索对话正文；返回命中消息 + 其会话标题/状态（供点开跳转）。
+
+        LIKE 通配符要转义：用户搜 "100%" 或 "_" 不应变成通配（否则结果莫名其妙）。
+        命中片段在 Python 侧截取（SQLite 没有内置的子串定位/高亮）。
+        """
+        kw = str(keyword or "")
+        if not kw:
+            return []
+        esc = kw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{esc}%"
+        with self.lock, self._connect() as con:
+            rows = con.execute(
+                "SELECT m.id, m.session_id, m.role, m.content, m.created, s.title, s.state "
+                "FROM messages m JOIN sessions s ON s.id = m.session_id "
+                "WHERE m.content LIKE ? ESCAPE '\\' AND s.archived = 0 "
+                "ORDER BY m.created DESC LIMIT ?", (pattern, int(limit)))
+            out = []
+            low = kw.lower()
+            for mid, sid, role, content, created, title, state in rows:
+                text = str(content or "")
+                idx = text.lower().find(low)
+                if idx < 0:
+                    idx = 0
+                start = max(0, idx - 60)
+                snippet = text[start:start + 240]
+                out.append({"message_id": mid, "session_id": sid, "role": role,
+                            "created": created, "title": title, "state": state,
+                            "snippet": ("…" if start > 0 else "") + snippet
+                                       + ("…" if start + 240 < len(text) else "")})
+            return out
+
     def update_message(self, sid: str, message_id: int, content: str) -> bool:
         """更新一条消息内容（供队列中待处理消息的编辑）。"""
         with self.lock, self._connect() as con:

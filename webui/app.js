@@ -276,6 +276,43 @@ function drawSessions(){
   box.appendChild(e)})}
 
 /* ── 时间线：增量渲染，不重建已有 DOM，展开状态不丢失 ── */
+/* 工具结果的语言猜测：优先按参数里的文件扩展名，其次按工具名 */
+function guessResultLang(s){
+ const byExt={py:'python',pyw:'python',js:'js',mjs:'js',ts:'ts',json:'json',jsonc:'json',
+  html:'html',htm:'html',css:'css',md:'markdown',yml:'yaml',yaml:'yaml',sh:'bash',
+  ps1:'powershell',sql:'sql',diff:'diff',patch:'diff',txt:'text',log:'text',csv:'text'};
+ const args=(s&&s.arguments)||{};
+ const p=String(args.path||args.file||args.source||args.destination||'');
+ const ext=(p.match(/\.([A-Za-z0-9]+)$/)||[])[1];
+ if(ext&&byExt[ext.toLowerCase()])return byExt[ext.toLowerCase()];
+ const tool=String((s&&s.tool)||'');
+ if(/python|unittest/.test(tool))return 'python';
+ if(/excel/.test(tool))return 'text';
+ return 'text'}
+/* 工具结果的"渲染视图"：短标量排成键值行，长文本/对象用同一套代码块渲染
+   （语言标签、高亮、行号、折叠、复制全都一致）；JSON 视图另有一个页签。 */
+function stepResultRender(s){
+ const r=(s&&s.result)||{};
+ if(typeof r!=='object'||r===null)return codeBlockHtml(String(r),guessResultLang(s));
+ const scalars=[],blocks=[];
+ Object.keys(r).forEach(k=>{
+  const v=r[k];
+  if(typeof v==='string'){
+   const multi=v.includes('\n')||v.length>160;
+   if(multi)blocks.push([k,v]);else scalars.push([k,v])}
+  else if(v===null||['number','boolean'].includes(typeof v))scalars.push([k,String(v)]);
+  else blocks.push([k,JSON.stringify(v,null,1)])});
+ let out='';
+ if(scalars.length){
+  out+='<div class="kvlist">'+scalars.map(([k,v])=>
+   `<div class="kvline"><span class="kvk">${esc(k)}</span><span class="kvv">${esc(v)}</span></div>`).join('')+'</div>'}
+ const lang=guessResultLang(s);
+ blocks.forEach(([k,v])=>{
+  const isJson=/^(json|jsonc)$/i.test(lang)||/^[[{]/.test(String(v).trim());
+  out+=`<div class="sectlabel">${esc(k)}</div>`+
+       codeBlockHtml(v,isJson?'json':lang,{label:langLabel(lang)})});
+ if(!out)out='<div class="meta">（没有可渲染的字段）</div>';
+ return out}
 function renderSteps(steps){
  let box=document.getElementById('steps');
  document.getElementById('stepCount').textContent=steps.length?steps.length+' 条':'';
@@ -284,16 +321,35 @@ function renderSteps(steps){
   let cls=s.status==='ok'?'ok':(s.status==='error'||s.status==='invalid_action'?'error':'info');
   let e=document.createElement('div');e.className='step '+cls;
   let tm=s._time?new Date(s._time*1000).toLocaleTimeString('zh-CN',{hour12:false}):'';
-  e.innerHTML=`<div class="head"><b>步骤 ${esc(s.step??'-')} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(s.reason||s.error||'')}</div>${s.result?`<details><summary>查看结果</summary><div class="jsonview">${jv(s.result)}</div></details>`:''}`;
+  let detail='';
+  if(s.result!==undefined&&s.result!==null){
+   detail=`<details><summary>查看结果</summary>`+
+    `<div class="stepviewbar">`+
+    `<button type="button" class="btn seg on" data-act="stepView" data-arg="render">渲染</button>`+
+    `<button type="button" class="btn seg" data-act="stepView" data-arg="json">JSON</button></div>`+
+    `<div class="stepview" data-mode="render">${stepResultRender(s)}</div>`+
+    `<div class="stepview" data-mode="json" style="display:none"><div class="jsonview">${jv(s.result)}</div></div>`+
+    `</details>`}
+  e.innerHTML=`<div class="head"><b>步骤 ${esc(s.step??'-')} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(s.reason||s.error||'')}</div>${detail}`;
   box.prepend(e)});
- renderedSteps=steps.length}
+ renderedSteps=steps.length;
+ applyCodePrefs(box)}
+/* 工具结果：渲染 / JSON 双视图切换 */
+function stepView(btn){
+ const bar=btn.closest('.stepviewbar');if(!bar)return;
+ const wrap=bar.parentElement;
+ const mode=btn.dataset.arg==='json'?'json':'render';
+ [...bar.querySelectorAll('button')].forEach(b=>b.classList.toggle('on',b===btn));
+ [...wrap.querySelectorAll(':scope > .stepview')].forEach(v=>{
+  v.style.display=(v.dataset.mode===mode)?'':'none'});
+ applyCodePrefs(wrap)}
 
 function renderMessages(messages,opts){
  opts=opts||{};
  let box=document.getElementById('chatlog');box.innerHTML='';
  lastMessages=messages||[];
  if(!messages.length){box.innerHTML='<div class="meta">当前没有人工续聊记录。下面发送的消息会发给该 Session 正在使用的模型。</div>';return}
- messages.forEach(m=>{box.appendChild(msgEl(m.role,m.content,m.created,{attachments:m.attachments||[]}))});
+ messages.forEach(m=>{box.appendChild(msgEl(m.role,m.content,m.created,{attachments:m.attachments||[],id:m.id}))});
  // 新到达的消息做一次渐显（纯动画，不改内容；尊重 prefers-reduced-motion）
  if(opts.animateLast&&box.lastElementChild)box.lastElementChild.classList.add('reveal');
  applyMsgFold(box);
@@ -627,13 +683,45 @@ function msgEl(role,content,ts,opts){
    '<img class="msg-att" src="/v1/uploads/'+encodeURIComponent(n)+(tk?'?token='+encodeURIComponent(tk):'')+
    '" alt="附件" loading="lazy" data-act="imgZoom" data-arg="'+esc(n)+'">').join('')+'</div>'}
  let e=document.createElement('div');e.className='msg '+role;
+ if(opts.id!==undefined&&opts.id!==null)e.dataset.mid=opts.id;
+ // 编辑/删除：只对库里有 id 的消息显示（乐观显示的临时消息没有 id）
+ const mid=(opts.id!==undefined&&opts.id!==null)
+   ?`<button class="msg-icon" title="编辑这条消息（只改本地历史）" data-act="editMsg">✎</button>`+
+    `<button class="msg-icon del" title="删除这条消息（只改本地历史）" data-act="delMsg">🗑</button>`:'';
  e.innerHTML=`<div class="msg-av">${esc(String(who).charAt(0))}</div>`+
   `<div class="msg-main"><div class="msg-head"><span class="msg-role">${esc(who)}</span>`+
   (t?`<span class="msg-time">${t}</span>`:'')+
-  `<button class="msg-copy" title="复制这条消息" data-act="copyMsg">复制</button></div>`+
+  `<button class="msg-copy" title="复制这条消息" data-act="copyMsg">复制</button>`+mid+`</div>`+
   body+attsHtml+`</div>`;
  e.dataset.raw=content||'';
  return e}
+
+/* ── 可复用的代码块渲染 ─────────────────────────────────────────────
+   Markdown 围栏与时间线的工具结果共用同一套：语言标签、语法高亮、行号、
+   软换行、复制/下载/「…」菜单、超长折叠。抽出来是为了两处**行为一致**。 */
+function codeBlockHtml(rawCode,lang,opts){
+ opts=opts||{};
+ const lang2=String(lang||'code');
+ const text=String(rawCode==null?'':rawCode);
+ // ```json 直接用 JSON 视图（键值着色 + 可滚），比纯文本好读
+ if(/^(json|jsonc)$/i.test(lang2)&&opts.jsonView!==false){
+  const parsed=tryParseJson(text);
+  if(parsed)return '<div class="md-codewrap"><div class="md-codebar">'+
+   '<span class="md-ico">⟨/⟩</span><span class="md-lang">JSON</span>'+
+   `<button type="button" class="md-icon" title="复制代码" data-act="copyRaw" data-raw="${esc(text)}">⧉</button>`+
+   '<button type="button" class="md-icon" title="更多" data-act="codeMenu">…</button></div>'+
+   jsonViewBox(parsed)+'</div>'}
+ const codeHtml=highlight(text,lang2);
+ const n=text.split('\n').length;
+ const long=opts.fold!==false&&n>22;
+ return `<div class="md-codewrap${long?' foldable collapsed':''}"><div class="md-codebar">`+
+  `<span class="md-ico">⟨/⟩</span><span class="md-lang">${esc(opts.label||langLabel(lang2))}</span>`+
+  (long?`<span class="md-lines">${n} 行</span>`:'')+
+  `<button type="button" class="md-copsel" data-act="copySelLines" style="display:none">复制选中 0 行</button>`+
+  `<button type="button" class="md-icon" title="复制代码" data-act="copyCode">⧉</button>`+
+  `<button type="button" class="md-icon" title="更多" data-act="codeMenu">…</button>`+
+  (long?`<button type="button" class="md-fold" data-act="toggleCodeFold">展开</button>`:'')+
+  `</div><pre class="md-code"><code>${wrapCodeLines(codeHtml)}</code></pre></div>`}
 
 /* ── 轻量 Markdown 渲染（零依赖、离线可用）─────────────────────────
    安全前提：**先整体转义**再插入我们自己的标签；链接只允许 http(s)，
@@ -664,27 +752,7 @@ function mdToHtml(src){
    i++;
    while(i<lines.length&&!/^\s*```\s*$/.test(lines[i])){buf.push(lines[i]);i++}
    closeLists(0);
-   const rawCode=buf.join('\n');
-   // ```json 代码块直接用 JSON 视图（键值着色 + 可滚），比纯文本好读
-   if(/^(json|jsonc)$/i.test(String(lang))){
-    const parsed=tryParseJson(rawCode);
-    if(parsed){out.push('<div class="md-codewrap"><div class="md-codebar">'+
-      '<span class="md-ico">⟨/⟩</span><span class="md-lang">JSON</span>'+
-      '<button type="button" class="md-icon" title="复制代码" data-act="copyRaw" data-raw="'+esc(rawCode)+'">⧉</button>'+
-      '<button type="button" class="md-icon" title="更多" data-act="codeMenu">…</button></div>'+
-      jsonViewBox(parsed)+'</div>');continue}}
-   // 高亮内部会先分词再转义（入参是原始代码，不要预先 esc）
-   const codeHtml=highlight(rawCode,lang);
-   const long=buf.length>22;
-   out.push(`<div class="md-codewrap${long?' foldable collapsed':''}"><div class="md-codebar">`+
-            `<span class="md-ico">⟨/⟩</span><span class="md-lang">${esc(langLabel(lang))}</span>`+
-            (long?`<span class="md-lines">${buf.length} 行</span>`:'')+
-            `<button type="button" class="md-copsel" data-act="copySelLines" style="display:none">复制选中 0 行</button>`+
-            `<button type="button" class="md-icon" title="复制代码" data-act="copyCode">⧉</button>`+
-            `<button type="button" class="md-icon" title="更多" data-act="codeMenu">…</button>`+
-            (long?`<button type="button" class="md-fold" data-act="toggleCodeFold">展开</button>`:'')+
-            `</div>`+
-            `<pre class="md-code"><code>${wrapCodeLines(codeHtml)}</code></pre></div>`);
+   out.push(codeBlockHtml(buf.join('\n'),lang));
    continue}
   // 表格：本行含 | 且下一行是分隔行
   if(line.includes('|')&&i+1<lines.length&&/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i+1])&&/-/.test(lines[i+1])){
@@ -1414,6 +1482,83 @@ function attachPasteHandler(taId,store){
   }
  })}
 
+/* ── 消息编辑 / 删除（只改本地历史）────────────────────────────────
+   诚实语义：已发给网页 Copilot 的内容无法撤回；提供商会话会同步内存上下文
+   （后端 sync_provider_history_message），否则模型下一回合仍看到旧文本。 */
+async function editMsg(btn){
+ const wrap=btn.closest('.msg');const id=wrap&&wrap.dataset.mid;
+ if(!id){toast('这条消息还没有落库，无法编辑','err');return}
+ const old=wrap.dataset.raw||'';
+ const text=await dlgPrompt(
+  '编辑这条消息的内容（只改本地历史；已发给网页 Copilot 的内容无法撤回）',
+  old,'保存','编辑消息');
+ if(text===null)return;
+ const v=String(text).trim();
+ if(!v||v===old)return;
+ try{
+  const d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages/${id}`,
+   {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:v})});
+  toast(d.note||'已更新','ok');
+  await refreshChat();
+ }catch(e){toast('编辑失败: '+(e.text||e),'err')}}
+async function delMsg(btn){
+ const wrap=btn.closest('.msg');const id=wrap&&wrap.dataset.mid;
+ if(!id)return;
+ if(!await dlgConfirm('删除这条消息？\n\n只影响本地历史，不会撤回已发给网页 Copilot 的内容。',
+                      '删除消息',true))return;
+ try{
+  await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages/${id}`,{method:'DELETE'});
+  toast('已删除','ok');
+  await refreshChat();
+ }catch(e){toast('删除失败: '+(e.text||e),'err')}}
+
+/* ── 跨会话搜索 ─────────────────────────────────────────────────────
+   后端 /v1/search 搜 messages 正文；点结果即跳转到该会话，并把那条消息
+   滚到视野中间高亮一下。 */
+let gsTimer=null;
+function toggleGlobalSearch(){
+ const box=document.getElementById('gSearch');
+ if(!box)return;
+ // 打开时要写 'flex'（不能写空串：空串会被下一次调用当成"未初始化"而永远关不上）
+ const show=(box.style.display==='none'||box.style.display==='');
+ box.style.display=show?'flex':'none';
+ if(show){const i=document.getElementById('gsInput');i.focus();i.select()}
+ else{const r=document.getElementById('gsResults');if(r)r.innerHTML=''}}
+function gsInput(){
+ clearTimeout(gsTimer);
+ gsTimer=setTimeout(runGlobalSearch,320)}
+async function runGlobalSearch(){
+ const box=document.getElementById('gsResults');if(!box)return;
+ const q=(document.getElementById('gsInput').value||'').trim();
+ if(!q){box.innerHTML='';return}
+ box.innerHTML='<div class="meta">搜索中…</div>';
+ try{
+  const d=await api('/v1/search?q='+encodeURIComponent(q));
+  const list=d.results||[];
+  if(!list.length){box.innerHTML='<div class="meta">没有匹配的对话内容</div>';return}
+  box.innerHTML='';
+  list.forEach(r=>{
+   const e=document.createElement('div');e.className='gsrow';
+   const when=fmtStamp(r.created);
+   e.innerHTML=`<div class="gstop"><b>${esc(r.title||r.session_id)}</b>`+
+    `<span class="gsmeta">${r.role==='user'?'我':'模型'} · ${when}</span></div>`+
+    `<div class="gssnip">${esc(r.snippet||'')}</div>`;
+   e.onclick=()=>jumpToMessage(r.session_id,r.message_id);
+   box.appendChild(e)});
+ }catch(e){box.innerHTML='<div class="meta">搜索失败：'+esc(e.text||e)+'</div>'}}
+async function jumpToMessage(sid,mid){
+ try{
+  await load(sid);
+  liveTab('chat');
+  const el=document.querySelector(`#chatlog .msg[data-mid="${mid}"]`);
+  if(el){
+   el.scrollIntoView({block:'center',behavior:'smooth'});
+   el.classList.add('flash');
+   setTimeout(()=>el.classList.remove('flash'),2200);
+   toggleGlobalSearch();   // 跳过去后收起搜索面板
+  }else toast('这条消息不在最近加载的记录里（可能超出 500 条上限）','err');
+ }catch(e){toast('跳转失败: '+(e.text||e),'err')}}
+
 document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();sendFollowup()}});
 /* 强行插入指令（像 DSH 的 Ctrl+J）：运行中立即生效，Agent 下一回合优先执行；
    与"排队跟进"不同——后者要等当前这轮跑完才起新一轮。 */
@@ -1741,7 +1886,9 @@ const ACTIONS={
  toggleTheme:()=>toggleTheme(),
  drawSessions:()=>drawSessions(),
  chatFindInput:()=>chatFindInput(),
+ gsInput:()=>gsInput(),
  findStepKey:(el,e)=>{if(e.key==='Enter'){e.preventDefault();findStep(e.shiftKey?-1:1)}},
+ gsKey:(el,e)=>{if(e.key==='Escape'){e.preventDefault();toggleGlobalSearch()}},
  findStep:(el)=>findStep(Number(el.dataset.arg||1)),
  control:(el)=>control(el.dataset.arg),
  continueAgent:()=>continueAgent(),
@@ -1777,6 +1924,10 @@ const ACTIONS={
  codeMenu:(el)=>codeMenu(el),
  codeLineSel:(el)=>codeLineSel(el),
  copySelLines:(el)=>copySelLines(el),
+ stepView:(el)=>stepView(el),
+ editMsg:(el)=>editMsg(el),
+ delMsg:(el)=>delMsg(el),
+ toggleGlobalSearch:()=>toggleGlobalSearch(),
  shutdownService:()=>shutdownService(),
  imgZoom:(el)=>imgZoom(el),
  mCopy:(el)=>{const m=codeMenuEl;if(m)copyText(m.dataset.code||'',el);closeCodeMenu()},

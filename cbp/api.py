@@ -800,6 +800,66 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
     }
 
 
+class MessageEditRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=200000)
+
+
+@app.patch("/v1/agent/sessions/{sid}/messages/{mid}")
+async def edit_session_message(sid: str, mid: int, req: MessageEditRequest):
+    """编辑一条已入库的消息（WebUI 对话里的铅笔按钮）。
+
+    ⚠ 语义要说清：只改本地历史。**已发给网页 Copilot 的内容无法撤回**；提供商
+    会话则会把内存里的对话历史一并同步（否则模型下一回合仍看到旧文本）。
+    """
+    state = b.AGENT_SESSIONS.get(sid)
+    if not state:
+        raise HTTPException(404, "Session 不存在")
+    msgs = {m["id"]: m for m in b.AGENT_SESSIONS.messages(sid)}
+    old = msgs.get(int(mid))
+    if old is None:
+        raise HTTPException(404, "消息不存在")
+    content = req.content.strip()
+    if not content:
+        raise HTTPException(400, "内容不能为空")
+    if not b.AGENT_SESSIONS.update_message(sid, int(mid), content):
+        raise HTTPException(500, "写入失败")
+    patched = b.sync_provider_history_message(sid, str(old.get("content") or ""), content)
+    note = ("已更新本地历史"
+            + ("；提供商会话的上下文也已同步" if patched else "")
+            + ("；已发给网页 Copilot 的内容无法撤回" if old.get("role") == "user" else ""))
+    return {"updated": True, "message_id": int(mid), "history_synced": patched, "note": note}
+
+
+@app.delete("/v1/agent/sessions/{sid}/messages/{mid}")
+async def delete_session_message(sid: str, mid: int):
+    """删除一条已入库的消息（只影响本地历史，语义同上）。"""
+    state = b.AGENT_SESSIONS.get(sid)
+    if not state:
+        raise HTTPException(404, "Session 不存在")
+    msgs = {m["id"]: m for m in b.AGENT_SESSIONS.messages(sid)}
+    old = msgs.get(int(mid))
+    if old is None:
+        raise HTTPException(404, "消息不存在")
+    if not b.AGENT_SESSIONS.delete_message(sid, int(mid)):
+        raise HTTPException(500, "删除失败")
+    patched = b.sync_provider_history_message(sid, str(old.get("content") or ""), None)
+    return {"deleted": True, "message_id": int(mid), "history_synced": patched}
+
+
+@app.get("/v1/search")
+async def search_messages(q: str = "", limit: int = 30):
+    """跨会话搜索对话内容（WebUI 侧栏的"全局搜索"）。
+
+    只搜 messages.content（对话正文）；标题过滤由前端本地做，因此这里不重复。
+    返回命中消息 + 其会话的标题/状态，供点开跳转。
+    """
+    keyword = (q or "").strip()
+    if len(keyword) < 1:
+        raise HTTPException(400, "搜索词不能为空")
+    hits = b.AGENT_SESSIONS.search_messages(keyword, limit=max(1, min(int(limit), 100)))
+    return {"query": keyword, "count": len(hits), "results": hits}
+
+
 @app.post("/v1/agent/sessions/{sid}/messages")
 async def continue_session_message(sid: str, req: SessionMessageRequest):
     state = b.AGENT_SESSIONS.get(sid)

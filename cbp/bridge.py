@@ -2295,6 +2295,31 @@ def discard_provider_agent_history(sid: str) -> None:
     _PROVIDER_AGENT_HISTORY.pop(sid, None)
 
 
+def sync_provider_history_message(sid: str, old: str, new: str | None) -> bool:
+    """把"编辑/删除了一条消息"同步到提供商的内存对话历史。
+
+    为什么必须做：提供商路径的上下文来自 `_PROVIDER_AGENT_HISTORY`（增量累积），
+    不是每回合从 messages 表重建——只改库不同步内存，模型**下一回合仍会看到旧文本**。
+
+    匹配策略：从后往前找第一条 content 与 old 相同的条目（最近的更可能是它）。
+    找不到就返回 False（例如该回合已被上下文裁剪掉），由调用方如实告知用户。
+    """
+    hist = _PROVIDER_AGENT_HISTORY.get(sid)
+    if not hist:
+        return False
+    for i in range(len(hist) - 1, -1, -1):
+        item = hist[i]
+        if not isinstance(item, dict) or item.get("role") == "system":
+            continue
+        if str(item.get("content") or "") == str(old or ""):
+            if new is None:
+                hist.pop(i)
+            else:
+                item["content"] = new
+            return True
+    return False
+
+
 # ── 强行插入指令的"立即中断"信号 ────────────────────────────────────
 # 用户 Ctrl+J 插入指令时置位。提供商路径用它取消底层 HTTP 调用（取消即"这轮
 # 没发生"）；网页路径只在"本回合还没产出内容"时中止等待（见 wait_agent_answer）。
