@@ -194,7 +194,7 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `max_parse_failures` | `5` | 连续解析失败多少次后强制压缩上下文 |
 | `max_actions_per_turn` | `4` | 一次回答里最多执行几个动作（批量协议，硬顶 12）；调大能省回合但更容易被 Copilot 输出上限截断 |
 | `allow_copilot_file` | `true` | 是否开放 `copilot_file`（让 Copilot 直接生成文件并下载进工作区，内容不走聊天消息、不受输出上限约束）。**注意**：`copilot_file` 与 `copilot_attach` 依赖 Copilot 网页会话，因此在使用 API 提供商模型（如 `deepseek/…`）的会话里**自动禁用**（既不注入也不执行，避免白烧回合） |
-| `max_service_unavailable` | `30` | 限流退避重试上限，超过后转入安全暂停 |
+| `copilot_file_model` | `""` | `copilot_file` 生成文件时用的具体模型。会话模型是 `Auto` 时，Auto 通常只聊天、不生成下载入口（实测），配置此项（如 `copilot-gpt-5-6-sol-think-deeper`）即可自动改用；留空则沿用会话模型并在失败时明确提示原因 || `max_service_unavailable` | `30` | 限流退避重试上限，超过后转入安全暂停 |
 | `service_retry_base_seconds` / `service_retry_max_seconds` | `30` / `600` | 限流指数退避的起始/上限 |
 | `service_retry_window_seconds` | `3660` | **Copilot 网页**的限流窗口：首次超限后到可再次使用大致要等这么久（实测约 1 小时，多加 1 分钟余量），**居中倒计时卡片**锚定"首次超限 + 该窗口"。**API 提供商不用这个窗口**（它们的 429/5xx/网络抖动通常几秒~几分钟就恢复，套 1 小时会误导），而是按本轮退避显示"下次重试"；卡片标题按当前模型通道分别显示"Copilot 限流/不可用"或"API 服务限流/不可用" |
 | `max_read_chars` / `max_write_chars` | `120000` / `200000` | 工具单次读写上限 |
@@ -381,6 +381,7 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 - 桥接会认 `blob:`/`data:` 链接与"下载"按钮两种入口；多个入口时按文件名优先
 - 落盘前照常存原像（可回滚）；`.py/.json/.html` 仍需 `validate_python` + `run_unittest` 通过才算完成
 - 关掉它：`agent.allow_copilot_file: false`
+- **模型要求**：生成下载入口需要**非 Auto** 模型（Auto 通常只在聊天里回答）。会话模型是 Auto 时，配置 `agent.copilot_file_model`（例如 `copilot-gpt-5-6-sol-think-deeper`）会自动改用；没配则工具会明确报"Auto 不产生下载入口"，Agent 可据此回退分块写入。
 - 报"没有找到下载入口"时看服务目录的 `last_answer.html`（回答区现场快照），把结构发维护者；同时 Agent 会自动改用分块写入
 
 **什么时候用哪个**：内容由 Copilot 生成（新写一个大文件/Office 文档）→ `copilot_file` 最省；内容来自本地已有材料、需要精确控制（逐字节一致的改写、二进制搬运）→ 本地工具 + 批量动作（`{"type":"actions",...}`,一次回答多个小动作）更稳。

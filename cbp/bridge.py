@@ -1813,6 +1813,13 @@ async def _copilot_file(path: str, instruction: str) -> dict:
         st = AGENT_SESSIONS.get(ACTIVE_SESSION_ID)
         if st and st.get("model"):
             model = st["model"]
+    # 生成可下载文件需要**非 Auto** 模型：实测 Auto 只在聊天里回答、不提供下载入口。
+    # 会话模型是 auto 时，改用 agent.copilot_file_model 指定的具体模型（没配则不换，
+    # 失败时下文会明确提示原因）。
+    _file_model = str(AGENT_CFG.get("copilot_file_model") or "").strip()
+    _auto_models = ("copilot-auto", "copilot-chat-basic-web")
+    if _file_model and model in _auto_models:
+        model = _file_model
     prompt = (f"请把结果生成为一个可下载的文件，文件名：{filename}\n"
               f"要求：只生成文件并提供下载入口，不要在回答里粘贴文件正文或大段内容。\n"
               f"内容要求：{instruction}")
@@ -1826,8 +1833,14 @@ async def _copilot_file(path: str, instruction: str) -> dict:
             (BASE / "last_answer.html").write_text(dump[:400000], encoding="utf-8")
         except Exception:
             pass
+        _hint = ""
+        if model in _auto_models:
+            _hint = ("当前模型是 Auto：它通常只在聊天里回答、不生成下载入口。"
+                     "请选择具体模型（如 GPT-5.6 Sol Think deeper），"
+                     "或配置 agent.copilot_file_model。")
         raise ToolError("Copilot 回答里没有找到下载入口（已存 last_answer.html 供排查）；"
-                        "可改用 write_text_b64/append_text_b64 分块写入")
+                        + _hint
+                        + "可改用 write_text_b64/append_text_b64 分块写入")
 
     chosen = None
     stem = Path(filename).stem.lower()
