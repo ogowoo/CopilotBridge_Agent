@@ -993,10 +993,39 @@ window.__cbp_html2md = function(root){
     if(node.nodeType !== 1) return '';                           // 非元素
     const tag = node.tagName;
     if(SKIP.has(tag)) return '';                                 // UI 元素不进文本
+    // 代码块头部（语言名 + 复制按钮）：它的下一个兄弟才是代码编辑器
+    if (node.nextElementSibling && node.nextElementSibling.querySelector
+        && node.nextElementSibling.querySelector('[data-virtualized-code-find-root]')) return '';
     const cls = (node.className && String(node.className)) || '';
     if(SKIP_CLASS.some(c => cls.toLowerCase().includes(c))) return '';
     // 跳过 Copilot 的"思考了 X 秒"头与引用角标
     if(/reasoned|thinking|思考了/i.test(cls)) return '';
+    // Copilot 自绘代码块（不是 <pre>）：带 data-virtualized-code-find-root 的容器。
+    // 代码行在 data-line-index 的 div 里，行号在 data-line-number（空）里。
+    // 语言标签在它前面的兄弟节点（header）里。
+    // 只处理**恰好含一个**代码块的容器；含多个的是包装容器，让子节点各自处理
+    const codeRoots = node.querySelector ? node.querySelectorAll('[data-virtualized-code-find-root]') : [];
+    if (codeRoots.length === 1) {
+      const codeLines = [...node.querySelectorAll('[data-line-index]')].map(el => el.textContent);
+      // 语言标签：从前面兄弟里找，但要排除按钮/引用里的 span（否则会把 "+1"、"gnu"
+      // 之类的引用标记当成语言名）；且必须是已知的语言名才认。
+      const KNOWN_LANGS = new Set(['python','javascript','typescript','js','ts','powershell',
+        'shell','bash','sh','zsh','json','yaml','yml','xml','html','css','sql','go','rust',
+        'java','c','cpp','csharp','cs','ruby','php','swift','kotlin','scala','r','lua',
+        'perl','dockerfile','makefile','ini','toml','markdown','md','text','plain']);
+      let lang = '';
+      let p = node.previousElementSibling;
+      while (p && !lang) {
+        const spans = p.querySelectorAll ? p.querySelectorAll('span') : [];
+        for (const s of spans) {
+          if (s.closest('button') || s.closest('[class*="citation" i]')) continue;  // 引用/按钮里的不算
+          const cand = s.textContent.trim().split(/\s/)[0].toLowerCase();
+          if (KNOWN_LANGS.has(cand)) { lang = cand; break; }
+        }
+        p = p.previousElementSibling;
+      }
+      return '\n```' + lang + '\n' + codeLines.join('\n') + '\n```\n\n';
+    }
     const kids = [...node.childNodes].map(walk).join('');
     switch(tag){
       case 'H1': return '\n# '+kids.trim()+'\n\n';
