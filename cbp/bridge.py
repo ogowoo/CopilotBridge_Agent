@@ -1081,20 +1081,44 @@ def extract_latest_answer(text):
     return "\n".join(lines).strip()
 
 
-async def answer_markdown() -> str:
+async def answer_markdown(plain: str = "") -> str:
     """把最近一条 Copilot 回答的 DOM 转成 Markdown（保留代码块/列表/标题/粗体）。
 
     之前用 `innerText` 提取 → 所有格式被拍平，聊天区拿到的"原文"就没有格式可渲染。
-    失败时回退到纯文本路径（保证 agent 协议不受影响——解析器自己剥 ``` 围栏）。
+    **不猜 Copilot 的 class 名**（它经常改）：用纯文本答案的**首行 + 末行**同时定位，
+    取"同时包含两者的最深容器"——那就是整个答案区域（只拿首行会只得到第一段）。
+    失败时回退纯文本路径（Agent 协议不受影响——解析器自己剥 ``` 围栏）。
     """
     try:
-        await page.evaluate(MD_JS)          # 确保转换器已注入
-        loc = page.locator('[data-content="ai-message"], [class*="ai-message" i], '
-                           '[class*="assistant" i], article')
-        count = await loc.count()
-        if not count:
+        await page.evaluate(MD_JS)
+        first, last = "", ""
+        if plain:
+            lines_ = [l.strip() for l in plain.splitlines()
+                      if l.strip() and not l.strip().startswith(("CBP-", "[CBP"))]
+            if lines_:
+                first = lines_[0][:50]
+                last = lines_[-1][-50:] if len(lines_) > 1 else first
+        if not first:
             return ""
-        return (await loc.nth(count - 1).evaluate("el => window.__cbp_html2md(el)")).strip()
+        js = """(args) => {
+          const first = args[0], last = args[1] || args[0];
+          const cands = document.querySelectorAll('article,section,div,main,[role="main"],[role="group"]');
+          let best = null;
+          for (const el of cands) {
+            const t = el.textContent || '';
+            if (!t.includes(first) || !t.includes(last)) continue;
+            const r = el.getBoundingClientRect();
+            if (r.height < 30 || r.width < 150) continue;
+            if (!best || (best !== el && best.contains(el))) best = el;   // 最深的（被别的候选包含的）
+          }
+          if (!best) return '';
+          // 诊断：把找到的容器结构存下来，方便对照真实 Copilot DOM
+          try {
+            window.__cbp_last_answer_dom = best.outerHTML.slice(0, 300000);
+          } catch (e) {}
+          return window.__cbp_html2md(best);
+        }"""
+        return (await page.evaluate(js, [first, last])).strip()
     except Exception:
         return ""
 
@@ -3052,7 +3076,7 @@ async def plain_chat_turn(sid: str, content: str, model_id: str, attach_paths: l
             answer = (await wait_agent_answer(previous)).strip()
             # 显示/存储用 markdown（保留代码块/列表/标题/粗体）；纯文本只用于回合判定。
             # 失败时回退纯文本，保证对话总能落库。
-            display = (await answer_markdown()) or answer
+            display = (await answer_markdown(answer)) or answer
             current = AGENT_SESSIONS.get(sid)
             if not current:
                 raise RuntimeError("会话在执行期间被删除")
