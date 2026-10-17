@@ -783,7 +783,7 @@ function codeBlockHtml(rawCode,lang,opts){
  if(/^(json|jsonc)$/i.test(lang2)&&opts.jsonView!==false){
   const parsed=tryParseJson(text);
   if(parsed)return '<div class="md-codewrap"><div class="md-codebar">'+
-   '<span class="md-ico">⟨/⟩</span><span class="md-lang">JSON</span>'+
+   '<span class="md-lang">JSON</span>'+
    '<span class="md-actions">'+
    `<button type="button" class="md-icon" title="${esc(tr('复制代码'))}" data-act="copyRaw" data-raw="${esc(text)}">⧉</button>`+
    '<button type="button" class="md-icon" title="'+esc(tr('更多'))+'" data-act="codeMenu">…</button></span></div>'+
@@ -792,7 +792,7 @@ function codeBlockHtml(rawCode,lang,opts){
  const n=text.split('\n').length;
  const long=opts.fold!==false&&n>22;
  return `<div class="md-codewrap${long?' foldable collapsed':''}"><div class="md-codebar">`+
-  `<span class="md-ico">⟨/⟩</span><span class="md-lang">${esc(opts.label||langLabel(lang2))}</span>`+
+  `<span class="md-lang">${esc(opts.label||langLabel(lang2))}</span>`+
   (long?`<span class="md-lines">${n} 行</span>`:'')+
   '<span class="md-actions">'+
   `<button type="button" class="md-copsel" data-act="copySelLines" style="display:none">复制选中 0 行</button>`+
