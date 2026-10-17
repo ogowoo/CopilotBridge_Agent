@@ -784,8 +784,9 @@ function codeBlockHtml(rawCode,lang,opts){
   const parsed=tryParseJson(text);
   if(parsed)return '<div class="md-codewrap"><div class="md-codebar">'+
    '<span class="md-ico">⟨/⟩</span><span class="md-lang">JSON</span>'+
+   '<span class="md-actions">'+
    `<button type="button" class="md-icon" title="${esc(tr('复制代码'))}" data-act="copyRaw" data-raw="${esc(text)}">⧉</button>`+
-   '<button type="button" class="md-icon" title="'+esc(tr('更多'))+'" data-act="codeMenu">…</button></div>'+
+   '<button type="button" class="md-icon" title="'+esc(tr('更多'))+'" data-act="codeMenu">…</button></span></div>'+
    jsonViewBox(parsed)+'</div>'}
  const codeHtml=highlight(text,lang2);
  const n=text.split('\n').length;
@@ -793,11 +794,12 @@ function codeBlockHtml(rawCode,lang,opts){
  return `<div class="md-codewrap${long?' foldable collapsed':''}"><div class="md-codebar">`+
   `<span class="md-ico">⟨/⟩</span><span class="md-lang">${esc(opts.label||langLabel(lang2))}</span>`+
   (long?`<span class="md-lines">${n} 行</span>`:'')+
+  '<span class="md-actions">'+
   `<button type="button" class="md-copsel" data-act="copySelLines" style="display:none">复制选中 0 行</button>`+
   `<button type="button" class="md-icon" title="${esc(tr('复制代码'))}" data-act="copyCode">⧉</button>`+
   `<button type="button" class="md-icon" title="${esc(tr('更多'))}" data-act="codeMenu">…</button>`+
   (long?`<button type="button" class="md-fold" data-act="toggleCodeFold">展开</button>`:'')+
-  `</div><pre class="md-code"><code>${wrapCodeLines(codeHtml)}</code></pre></div>`}
+  `</span></div><pre class="md-code"><code>${wrapCodeLines(codeHtml)}</code></pre></div>`}
 
 /* ── 轻量 Markdown 渲染（零依赖、离线可用）─────────────────────────
    安全前提：**先整体转义**再插入我们自己的标签；链接只允许 http(s)，

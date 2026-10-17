@@ -218,14 +218,16 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .md-list li{margin:1px 0}
 .md-quote{border-left:3px solid var(--line2);padding:2px 0 2px 10px;margin:4px 0;color:var(--muted)}
 .md-codewrap{margin:7px 0;border:1px solid var(--jv-border);border-radius:9px;overflow:hidden;background:var(--jv-bg)}
-.md-codebar{display:flex;align-items:center;gap:6px;padding:5px 9px;background:var(--panel2);border-bottom:1px solid var(--jv-border)}
+/* 对齐 DSH：justify-content:space-between —— 左边语言名、右边按钮组。
+   此前按钮靠左是因为 :first-of-type 选中了隐藏的"复制选中行"按钮（它是第一个 button），
+   真正的复制按钮没拿到 margin-left:auto。 */
+.md-codebar{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:9px 14px;background:var(--panel2);border-bottom:1px solid var(--jv-border)}
 .md-ico{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:11px;color:var(--faint);
   border:1px solid var(--line2);border-radius:5px;padding:0 4px;line-height:15px}
 .md-lang{font-size:11.5px;color:var(--muted);font-weight:600}
 .md-icon{border:0;background:transparent;color:var(--muted);font-size:13px;
   cursor:pointer;padding:1px 6px;border-radius:6px;line-height:1.3}
 .md-icon:hover{color:var(--text);background:var(--menu-hover)}
-.md-codebar .md-icon:first-of-type{margin-left:auto}
 .md-copy{margin-left:auto;border:0;background:transparent;color:var(--muted);font-size:11px;cursor:pointer;padding:1px 7px;border-radius:5px}
 .md-copy:hover{color:var(--text);background:var(--menu-hover)}
 /* 代码行号（.cl 每行一个块；行号 sticky 在左侧，横向滚动时不会跑掉） */
@@ -698,3 +700,4 @@ section.card:has(#stepCount){margin-top:14px}
    计数是固定格式（数字+单位），不允许换行。 */
 #stepCount{white-space:nowrap}
 .chead .hint>span{white-space:nowrap}
+.md-actions{display:flex;align-items:center;gap:6px;flex:none}
