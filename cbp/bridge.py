@@ -1110,6 +1110,32 @@ def extract_latest_answer(text):
     return "\n".join(lines).strip()
 
 
+async def _wait_dom_stable(timeout: float = 8.0, interval: float = 0.6) -> None:
+    """等答案区域的 DOM 稳定。
+
+    Copilot 的代码块是**异步渲染**的：`innerText` 先稳定（wait_agent_answer 返回），
+    但代码编辑器（`data-virtualized-code-find-root`）可能还要几百毫秒才出现。
+    不等它就直接取 markdown，代码块会缺失——实测过：存储的消息里代码块是纯文本，
+    而等 DOM 渲染完再取的诊断文件里代码块齐全。
+    """
+    last = -1
+    stable = 0
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            n = await page.locator("body").evaluate("el => el.innerHTML.length")
+        except Exception:
+            break
+        if n == last:
+            stable += 1
+            if stable >= 2:
+                return
+        else:
+            stable = 0
+            last = n
+        await asyncio.sleep(interval)
+
+
 async def answer_markdown(plain: str = "") -> str:
     """把最近一条 Copilot 回答的 DOM 转成 Markdown（保留代码块/列表/标题/粗体）。
 
@@ -3118,6 +3144,8 @@ async def plain_chat_turn(sid: str, content: str, model_id: str, attach_paths: l
             answer = (await wait_agent_answer(previous)).strip()
             # 显示/存储用 markdown（保留代码块/列表/标题/粗体）；纯文本只用于回合判定。
             # 失败时回退纯文本，保证对话总能落库。
+            # 先等 DOM 稳定：否则代码块还没渲染出来，取到的 markdown 缺代码块
+            await _wait_dom_stable()
             display = (await answer_markdown(answer)) or answer
             current = AGENT_SESSIONS.get(sid)
             if not current:
