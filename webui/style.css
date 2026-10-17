@@ -692,3 +692,9 @@ section.card:has(#stepCount){margin-top:14px}
   .chatbar>span{width:100%}
   .chatbar>span .btn{flex:1 1 auto;min-width:0}
 }
+
+/* ── 时间线计数不换行 ────────────────────────────────────────────────
+   "22 条" 里的空格允许换行 → "条" 掉到下一行（实测截图）。
+   计数是固定格式（数字+单位），不允许换行。 */
+#stepCount{white-space:nowrap}
+.chead .hint>span{white-space:nowrap}
