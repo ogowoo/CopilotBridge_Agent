@@ -1112,13 +1112,18 @@ async def answer_markdown(plain: str = "") -> str:
             if (!best || (best !== el && best.contains(el))) best = el;   // 最深的（被别的候选包含的）
           }
           if (!best) return '';
-          // 诊断：把找到的容器结构存下来，方便对照真实 Copilot DOM
-          try {
-            window.__cbp_last_answer_dom = best.outerHTML.slice(0, 300000);
-          } catch (e) {}
-          return window.__cbp_html2md(best);
+          return {md: window.__cbp_html2md(best), dom: best.outerHTML.slice(0, 300000)};
         }"""
-        return (await page.evaluate(js, [first, last])).strip()
+        res = await page.evaluate(js, [first, last])
+        if not res or not isinstance(res, dict):
+            return ""
+        md = (res.get("md") or "").strip()
+        if res.get("dom"):
+            try:
+                (BASE / "data" / "answer_dom.html").write_text(res["dom"], encoding="utf-8")
+            except Exception:
+                pass
+        return md
     except Exception:
         return ""
 
@@ -2005,6 +2010,10 @@ async def _process_queued_message(sid: str, item: dict):
             answer = result.content
         except Exception as exc:
             answer = f"[错误] {exc}"
+        # run_agent 只返回 content 不存消息 → 这里存
+        AGENT_SESSIONS.add_message(sid, "assistant", answer, conv_idx)
+        runtime_update(sid, phase="followup_completed", answer_preview=answer[-12000:],
+                       detail="跟进消息处理完成")
     else:
         pm = providers_mod.split_provider_model(model_id)
         try:
@@ -2012,11 +2021,15 @@ async def _process_queued_message(sid: str, item: dict):
                 answer = (await provider_session_chat(sid, content, model_id))["content"]
             else:
                 answer = (await plain_chat_turn(sid, content, model_id, attach_paths=attach_paths))["content"]
+            # 内层（plain_chat_turn / provider_session_chat）已存消息并设了 answer_preview
+            # ——且对话模式存的是 markdown 版——这里**不再重复存**、也不覆盖 answer_preview。
+            # 此前外层 L2017 又存了一次：同一回复出现两条（一条 markdown、一条纯文本）。
+            runtime_update(sid, phase="followup_completed", detail="跟进消息处理完成")
         except Exception as exc:
             answer = f"[错误] {exc}"
-    AGENT_SESSIONS.add_message(sid, "assistant", answer, conv_idx)
-    runtime_update(sid, phase="followup_completed", answer_preview=answer[-12000:],
-                   detail="跟进消息处理完成")
+            AGENT_SESSIONS.add_message(sid, "assistant", answer, conv_idx)
+            runtime_update(sid, phase="followup_completed", answer_preview=answer[-12000:],
+                           detail="跟进消息处理完成")
     publish_event(sid, "messages")     # 新回复：通知前端立即刷新对话
 
 
