@@ -244,16 +244,21 @@ async function refreshModels(){
  finally{if(btn){btn.disabled=false;btn.textContent='↻'}}}
 
 /* ── 浏览器窗口显示/隐藏（headless 是启动参数，切换会带登录态重启浏览器上下文） ── */
-function drawBrowserBtn(h){let b=document.getElementById('browserBtn');b.textContent='▣';b.title=h?'当前为无头模式（窗口隐藏），点击显示自动化窗口':'当前显示自动化窗口，点击切换为无头模式（隐藏窗口）'}
+function drawBrowserBtn(h){let b=document.getElementById('browserBtn');
+ // 只更新提示，不动内容——之前 b.textContent='▣' 把 SVG 图标替换成了文字，
+ // 按钮里显示"切换"两个字（26px 宽塞不下，竖排成两行）。
+ b.title=h?'当前为无头模式（窗口隐藏），点击显示自动化窗口':'当前显示自动化窗口，点击切换为无头模式（隐藏窗口）';
+ b.style.color=h?'var(--muted)':'';  // 无头时淡一点，有窗口时正常
+}
 async function browserState(){if(DEMO)return;try{let d=await api('/v1/agent/browser');drawBrowserBtn(d.headless)}catch(e){}}
 async function toggleBrowser(){
  if(DEMO)return;
- let b=document.getElementById('browserBtn');b.disabled=true;b.textContent=tr('切换中…');
+ let b=document.getElementById('browserBtn');b.disabled=true;b.style.opacity=.5;
  try{let cur=await api('/v1/agent/browser');
   let d=await api('/v1/agent/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({headless:!cur.headless})});
   drawBrowserBtn(d.headless);
   if(d.fallback)toast(tr('无头模式启动失败，已回退为有窗口模式（旧版 Edge 或安全策略不支持无头持久化）'),'err')}catch(e){toast(tr('切换失败: ')+e,'err');browserState()}
- finally{b.disabled=false}
+ finally{b.disabled=false;b.style.opacity=1}
 }
 
 async function refreshSessions(){if(serviceStopped)return;try{let d=await api('/v1/agent/sessions');sessCache=d.sessions||[];drawSessions()}catch(e){}}
