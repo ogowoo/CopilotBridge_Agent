@@ -1006,6 +1006,12 @@ window.__cbp_html2md = function(root){
     // 只处理**恰好含一个**代码块的容器；含多个的是包装容器，让子节点各自处理
     const codeRoots = node.querySelector ? node.querySelectorAll('[data-virtualized-code-find-root]') : [];
     if (codeRoots.length === 1) {
+      // Copilot 有时把编号列表塞进代码编辑器（实测过："1. 验证输入" 在 data-line-index 里）。
+      // 识别：所有"代码行"都是"N. xxx"编号 → 转回有序列表，不当代码块。
+      const _lines = [...node.querySelectorAll('[data-line-index]')].map(el => el.textContent.trim());
+      if (_lines.length && _lines.every((t, i) => new RegExp('^' + (i + 1) + '\\.\\s').test(t))) {
+        return _lines.map(t => t + '\n').join('') + '\n';
+      }
       const codeLines = [...node.querySelectorAll('[data-line-index]')].map(el => el.textContent);
       // 语言标签：从前面兄弟里找，但要排除按钮/引用里的 span（否则会把 "+1"、"gnu"
       // 之类的引用标记当成语言名）；且必须是已知的语言名才认。

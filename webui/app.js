@@ -400,8 +400,13 @@ function renderSteps(steps,force){
   e.innerHTML=`<div class="head"><b>${tr('步骤')} ${esc(s.step??'-')} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(s.reason||s.error||'')}</div>${detail}`;
   box.prepend(e)});
  renderedSteps=shown.length;
- if(!shown.length&&!box.innerHTML.trim())
-  box.innerHTML='<div class="sess-empty">'+esc(tr('没有符合筛选条件的步骤'))+'</div>';
+ if(!shown.length&&!box.innerHTML.trim()){
+  // 区分两种情况：真的没有步骤（普通对话），还是有步骤但被筛选掉了
+  const hasMsgs=(lastMessages||[]).length>0;
+  const emptyMsg = lastSteps.length===0 && hasMsgs
+    ? tr('普通对话没有 Agent 步骤，见「继续对话」页')
+    : (filtered ? tr('没有符合筛选条件的步骤') : tr('该会话还没有 Agent 步骤'));
+  box.innerHTML='<div class="sess-empty">'+esc(emptyMsg)+'</div>'}
  applyCodePrefs(box);try{translateAttrs(box)}catch(e){}}
 /* 工具结果：渲染 / JSON 双视图切换 */
 function stepView(btn){
@@ -982,7 +987,15 @@ async function load(id){
  document.getElementById('status').textContent=stateText(s.state)+' · '+s.workspace;
  setPill(s.state);setKpis(s);
  document.getElementById('steps').innerHTML='';renderedSteps=0;lastDetail='';
- renderSteps(d.steps);lastStepCount=d.steps.length;
+ // 普通对话没有 Agent 步骤：把时间线显示为对话消息（比"没有符合筛选条件的步骤"有用）
+ if(!d.steps.length && (d.messages||[]).length){
+  const asSteps=d.messages.map((m,i)=>({step:i+1,conversation_index:m.conversation_index??0,
+   tool:m.role==='user'?'你':'助手',status:'ok',reason:(m.content||'').slice(0,80),
+   created:m.created}));
+  renderSteps(asSteps);lastStepCount=asSteps.length;
+ }else{
+  renderSteps(d.steps);lastStepCount=d.steps.length;
+ }
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
  // 守卫已前移到 await 之后（见函数开头）
