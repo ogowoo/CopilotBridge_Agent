@@ -123,5 +123,52 @@ class FirstTurnCopilotHintTests(unittest.TestCase):
         self.assertNotIn("首轮提示", prompts[1], "只有首轮才提示，避免每回合烧 token")
 
 
+class OneShotProtocolTests(unittest.TestCase):
+    def setUp(self):
+        self.ws = Path(tempfile.mkdtemp(prefix="cbp_oneshot_"))
+
+    def _runner(self, web_tools=True):
+        tools = ToolRegistry(self.ws, {"max_total_steps": 5})
+        tools.set_web_copilot_tools(web_tools)
+        if web_tools:
+            _register_copilot_file(tools)
+        r = AgentRunner(tools, lambda *a, **k: None, {"max_total_steps": 5},
+                        state_getter=lambda: {"state": "ready"},
+                        state_saver=lambda **k: None, step_saver=lambda s: None,
+                        file_event_saver=lambda e: None)
+        r._task_text = "生成一个 demo"
+        return r
+    """协议层：新文件优先 copilot_file 一次生成 + 本地闭环。
+
+    用户实测：逐段 write_text_b64 拼文件 + 每步都回问 Copilot，几百回合也出不来
+    可用的东西。改为"首轮一次成型 -> 本地验证 -> 本地修 -> 只定向问"。
+    """
+
+    def test_browser_prompt_prefers_copilot_file_for_new_files(self):
+        """浏览器通道的系统提示里才有 copilot_file 优先（provider 会话没有该工具）。"""
+        self.assertIn("优先用 copilot_file", self._runner(web_tools=True)._system_prompt())
+        provider_prompt = self._runner(web_tools=False)._system_prompt()
+        # provider 提示里只应"声明不可用"，不能出现"优先用 copilot_file"的引导
+        self.assertNotIn("优先用 copilot_file", provider_prompt,
+                         "provider 会话不能引导模型去用 copilot_file（工具不存在）")
+        self.assertIn("不可用", provider_prompt, "provider 提示里应明确说明 copilot 工具不可用")
+
+    def test_protocol_requires_local_loop(self):
+        from cbp.prompt import AGENT_PROTOCOL
+        self.assertIn("本地闭环", AGENT_PROTOCOL)
+        self.assertIn("1~3 个回合", AGENT_PROTOCOL)
+
+    def test_first_turn_hint_is_one_shot(self):
+        """首轮提示必须写明"一次生成完整文件 + 本地验证 + 先本地修"。"""
+        tools = _register_copilot_file(ToolRegistry(Path(tempfile.mkdtemp()), {"max_total_steps": 5}))
+        tools.set_web_copilot_tools(True)
+        r = AgentRunner(tools, lambda *a, **k: None, {"max_total_steps": 5},
+                        state_getter=lambda: {"state": "ready"},
+                        state_saver=lambda **k: None, step_saver=lambda s: None,
+                        file_event_saver=lambda e: None)
+        r._task_text = "生成一个 demo"
+        self.assertTrue(r._first_turn_copilot_hint())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -148,6 +148,10 @@ class AgentRunner:
         if getattr(self.tools, "allow_web_copilot_tools", True):
             _routing = ("只需分析（总结/找问题/提取信息）的大文件（约 20000 字符以上）优先用 "
                         "copilot_attach 丢给 Copilot 分析，一个回合搞定，不要逐段翻页；\n"
+                        "产出**新文件**（脚本/页面/工具/demo/文档）优先用 copilot_file(path, instruction) "
+                        "一次生成完整文件（多文件就多次调用，连续调用，不要写一段就停下来汇报），"
+                        "不要用 write_text_b64 分块拼；分块写只用于 copilot_file 不可用、改写已有文件"
+                        "或内容很短需要逐块校验时；\n"
                         "需要精确修改的文件必须本地工具操作；大文件只需看局部时用 read_text 的 "
                         "offset/limit 读目标段。")
         else:
@@ -1194,12 +1198,18 @@ class AgentRunner:
                 # 截断）。这里只在首轮、且确实有这个工具时给一次建议，不写进系统
                 # 提示词（系统提示词要保持逐字稳定，prompt cache 依赖它）。
                 if self._first_turn_copilot_hint():
-                    prompt += ("\n\n首轮提示（新话题）：若任务要**产出新文件**（文档/代码/"
-                               "数据/页面），优先一次调用 copilot_file(path, instruction) "
-                               "让 Copilot 直接生成文件并下载到工作区——一个大文件一个"
-                               "回合即可拿到，比 write_text_b64 分块写更快也不易截断；"
-                               "只有需要精确修改**已有**文件、或内容很短需要逐块校验时，"
-                               "才用 write_text_b64/append_text_b64/replace_text。")
+                    prompt += ("\n\n首轮提示（新话题·一次成型）：本轮是新会话第一轮，目标是"
+                               "**尽快拿到可运行的结果**，不是逐步探索。若任务要产出新的东西"
+                               "（脚本/页面/小工具/demo/文档）：\n"
+                               "1) 不要先逐个 list/read 探索，也不要 write_text_b64 分块拼；"
+                               "直接用 copilot_file(path, instruction) 让 Copilot **一次生成完整文件**"
+                               "（instruction 写全功能、入口、依赖、示例；多文件就多次调用，连续调用，"
+                               "不要写一段就停下来汇报）。\n"
+                               "2) 文件拿到后**本地**立刻验证：run_python / validate_python / run_unittest。\n"
+                               "3) 出错**先本地修**（read_text 定位 + replace_text 改）；本地修两轮仍不行，"
+                               "才带着具体报错定向问 Copilot（只改出错那一处，不要整篇重生成）。\n"
+                               "目标：一次任务 1~3 个 Copilot 回合交付。只有需要精确修改**已有**文件、"
+                               "或内容很短需要逐块校验时，才用 write_text_b64/append_text_b64/replace_text。")
                 force_new = not chat_active
             else:
                 pending_now = [str(x) for x in (state.get("pending") or []) if str(x).strip()]
