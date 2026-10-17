@@ -53,13 +53,13 @@ button,input,textarea,select{font:inherit;color:inherit}
 .smeta b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .smeta small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;font-variant-numeric:tabular-nums}
 /* 会话标识：标题可能相似或被 Copilot 改名，删除前要能对上号 */
-.sid{font-family:Consolas,"Cascadia Mono",monospace;font-size:11px;color:var(--sid-fg,var(--faint));cursor:copy;border-bottom:1px dotted var(--line2)}
+.sid{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:11px;color:var(--sid-fg,var(--faint));cursor:copy;border-bottom:1px dotted var(--line2)}
 .sid:hover{color:var(--accent2)}
-.sidbig{flex:none;font-family:Consolas,"Cascadia Mono",monospace;font-size:11.5px;color:var(--sid-fg,var(--faint));border:1px solid var(--line2);border-radius:6px;padding:2px 8px;cursor:copy;white-space:nowrap}
+.sidbig{flex:none;font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:11.5px;color:var(--sid-fg,var(--faint));border:1px solid var(--line2);border-radius:6px;padding:2px 8px;cursor:copy;white-space:nowrap}
 .sidbig:empty{display:none}
 .sidbig:hover{color:var(--accent2);border-color:var(--accent)}
 /* 会话页模型选择器：宽屏贴右，窄屏随 trow 换行 */
-.sessmodel{margin-left:auto;flex:none;width:auto;max-width:230px;padding:4px 8px;font-size:12px;font-family:Consolas,"Cascadia Mono",monospace}
+.sessmodel{margin-left:auto;flex:none;width:auto;max-width:230px;padding:4px 8px;font-size:12px;font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace}
 .stag{flex:none;font-size:10.5px;color:var(--muted);border:1px solid var(--line2);border-radius:20px;padding:2px 8px}
 .sess-empty{color:var(--faint);text-align:center;padding:26px 10px;font-size:12.5px}
 
@@ -128,7 +128,7 @@ textarea{resize:vertical}
 .chead .hint{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;justify-content:flex-end;
   flex-shrink:0;                    /* 不被压缩：实测它被压到 166px 导致两个下拉框竖着叠 */
   margin-left:auto;font-weight:400;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
-.term{margin:0;padding:12px 15px;background:var(--term-bg);border-radius:0 0 11px 11px;color:var(--term-text);font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;min-height:64px;max-height:40vh;overflow:auto}
+.term{margin:0;padding:12px 15px;background:var(--term-bg);border-radius:0 0 11px 11px;color:var(--term-text);font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;min-height:64px;max-height:40vh;overflow:auto}
 
 /* 实时面板选项卡（执行状态/当前回答/发送内容/继续对话共用面板体） */
 .tabs{display:flex;gap:6px;flex-wrap:wrap}
@@ -162,7 +162,7 @@ details{margin-top:7px}
 details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select:none}
 
 /* JSON 树 */
-.jsonview{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.65;background:var(--jv-bg);color:var(--jv-text);border:1px solid var(--jv-border);border-radius:9px;padding:10px 13px;overflow:auto;max-height:460px;white-space:normal}
+.jsonview{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:12.5px;line-height:1.65;background:var(--jv-bg);color:var(--jv-text);border:1px solid var(--jv-border);border-radius:9px;padding:10px 13px;overflow:auto;max-height:460px;white-space:normal}
 .jsonview .ind{padding-left:20px;border-left:1px dotted var(--jv-ind)}
 .jsonview .ky{color:var(--ky);font-weight:600}
 .jsonview .st{color:var(--st);white-space:pre-wrap;word-break:break-word}
@@ -182,7 +182,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .queuebox{display:flex;flex-direction:column;gap:6px;padding:8px 12px 0;border-top:1px solid var(--line)}
 .queuebox:empty{display:none}
 .qitem{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
-.qitem .qpos{flex:none;font-family:Consolas,"Cascadia Mono",monospace;color:var(--accent2);font-weight:600}
+.qitem .qpos{flex:none;font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;color:var(--accent2);font-weight:600}
 .qitem .qtext{flex:1;min-width:0;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qitem .qmode{flex:none;color:var(--faint);font-size:11px}
 .qitem button{flex:none;border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 6px;border-radius:5px}
@@ -213,13 +213,13 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .md-hr{border:0;border-top:1px solid var(--line2);margin:9px 0}
 .md-a{color:var(--accent2);text-decoration:none;border-bottom:1px solid var(--line2)}
 .md-a:hover{border-bottom-color:var(--accent2)}
-.md-ic{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:var(--term-bg);border:1px solid var(--jv-border);border-radius:5px;padding:1px 5px;color:var(--term-text)}
+.md-ic{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:12.5px;background:var(--term-bg);border:1px solid var(--jv-border);border-radius:5px;padding:1px 5px;color:var(--term-text)}
 .md-list{margin:3px 0 3px 4px;padding-left:20px}
 .md-list li{margin:1px 0}
 .md-quote{border-left:3px solid var(--line2);padding:2px 0 2px 10px;margin:4px 0;color:var(--muted)}
 .md-codewrap{margin:7px 0;border:1px solid var(--jv-border);border-radius:9px;overflow:hidden;background:var(--jv-bg)}
 .md-codebar{display:flex;align-items:center;gap:6px;padding:5px 9px;background:var(--panel2);border-bottom:1px solid var(--jv-border)}
-.md-ico{font-family:Consolas,"Cascadia Mono",monospace;font-size:11px;color:var(--faint);
+.md-ico{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:11px;color:var(--faint);
   border:1px solid var(--line2);border-radius:5px;padding:0 4px;line-height:15px}
 .md-lang{font-size:11.5px;color:var(--muted);font-weight:600}
 .md-icon{border:0;background:transparent;color:var(--muted);font-size:13px;
@@ -267,7 +267,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
   background:var(--danger-bg);border-bottom:1px solid var(--danger-border);
   color:var(--danger-text);font-size:13px}
 .stoppedbanner .meta{color:var(--muted);font-size:12px}
-.stoppedbanner code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;
+.stoppedbanner code{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:12px;
   background:var(--panel2);border:1px solid var(--line2);border-radius:5px;padding:0 5px;color:var(--text)}
 /* ── 会话标签分组 + 时间线筛选 + 流式临时气泡 ─────────────────────── */
 .taghead{margin:8px 0 3px;padding:0 10px;font-size:11px;color:var(--muted);
@@ -308,10 +308,10 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .kvlist{display:flex;flex-direction:column;gap:1px;margin:2px 0 6px;
   border:1px solid var(--jv-border);border-radius:8px;padding:5px 8px;background:var(--jv-bg)}
 .kvline{display:flex;gap:10px;font-size:12.5px;line-height:1.7}
-.kvk{color:var(--ky);font-family:Consolas,"Cascadia Mono",monospace;flex:none;min-width:110px}
+.kvk{color:var(--ky);font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;flex:none;min-width:110px}
 .kvv{color:var(--jv-text);word-break:break-word;min-width:0}
 .sectlabel{font-size:11.5px;color:var(--muted);margin:6px 0 -2px;
-  font-family:Consolas,"Cascadia Mono",monospace}
+  font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace}
 /* ── diff / patch 代码块着色（+绿 -红 @@蓝）───────────────────────── */.dl-add{color:var(--st);background:rgba(63,185,80,.10);display:block}
 .dl-del{color:var(--red);background:rgba(248,81,73,.10);display:block}
 .dl-hunk{color:var(--blue);display:block}
@@ -328,7 +328,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
   padding:6px 9px;border-radius:6px;cursor:pointer;white-space:nowrap}
 .codemenu .cmitem:hover{background:var(--menu-hover)}
 .codemenu .cmitem.off{color:var(--muted)}
-.md-code{margin:0;padding:9px 11px;overflow:auto;max-height:420px;background:var(--jv-bg);color:var(--jv-text);font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.6;white-space:pre}
+.md-code{margin:0;padding:9px 11px;overflow:auto;max-height:420px;background:var(--jv-bg);color:var(--jv-text);font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:12.5px;line-height:1.6;white-space:pre}
 .md-tablewrap{overflow:auto;margin:7px 0}
 .md-table{border-collapse:collapse;font-size:12.5px;min-width:60%}
 .md-table th,.md-table td{border:1px solid var(--line2);padding:4px 9px;text-align:left}
@@ -343,7 +343,7 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .act-head{display:flex;align-items:center;gap:7px;padding:5px 9px;background:var(--panel2);
   border-bottom:1px solid var(--line2);flex-wrap:wrap}
 .act-ico{font-size:12px}
-.act-tool{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;font-weight:600;color:var(--accent2)}
+.act-tool{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:12px;font-weight:600;color:var(--accent2)}
 .act-why{font-size:11.5px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
 .act-card .jsonview{border:0;border-radius:0;max-height:300px}
 /* ── 对话框内的"插入方式"单选（强行插入用）───────────────────────── */
@@ -396,10 +396,10 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 .retry-fab .rc-x{position:absolute;top:5px;right:7px;border:0;background:transparent;color:var(--muted);font-size:17px;line-height:1;cursor:pointer;padding:2px 7px;border-radius:6px}
 .retry-fab .rc-x:hover{color:var(--text);background:var(--menu-hover)}
 .retry-fab .rc-title{font-size:12.5px;color:var(--muted);margin-bottom:4px}
-.retry-fab .rc-count{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent2);line-height:1.1;font-family:Consolas,"Cascadia Mono",monospace}
+.retry-fab .rc-count{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent2);line-height:1.1;font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace}
 .retry-fab .rc-sub{font-size:11.5px;color:var(--faint);margin-top:6px}
 /* 收起后的小标（右下角，不挡顶部控件） */
-.retry-chip{position:fixed;left:calc((100vw + 318px) / 2);right:auto;bottom:16px;transform:translateX(-50%);z-index:78;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;font-family:Consolas,"Cascadia Mono",monospace;color:var(--accent2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+.retry-chip{position:fixed;left:calc((100vw + 318px) / 2);right:auto;bottom:16px;transform:translateX(-50%);z-index:78;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;color:var(--accent2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}
 .retry-chip:hover{border-color:var(--accent2)}
 
 /* ── 删除结果弹窗 ── */
@@ -416,9 +416,9 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 .ric{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700}
 .dres.ok .ric{background:#3fb95022;color:#7ee787;border:1px solid #2ea04366}
 .dres.fail .ric{background:#f8514922;color:#ffa198;border:1px solid #f8514966}
-.dres .ttl{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;border:1px solid var(--line2);border-radius:6px;padding:2px 8px;color:var(--accent2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dres .ttl{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:12px;border:1px solid var(--line2);border-radius:6px;padding:2px 8px;color:var(--accent2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dres .mth{margin-left:auto;flex:none;font-size:10.5px;color:var(--faint);border:1px solid var(--line2);border-radius:20px;padding:1px 8px;white-space:nowrap}
-.dres .url{font-family:Consolas,"Cascadia Mono",monospace;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:copy}
+.dres .url{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:copy}
 .dres .url:hover{color:var(--accent2);text-decoration:underline}
 .dres .err{font-size:12.5px;color:#ffa198;background:#f8514912;border:1px solid #f8514933;border-radius:8px;padding:7px 10px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
 .dfoot{display:flex;gap:9px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
