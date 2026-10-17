@@ -1752,7 +1752,16 @@ async def _download_candidates():
                     if not await el.is_visible():
                         continue
                     href = await el.get_attribute("href") or ""
-                    name = ((await el.get_attribute("download")) or ""
+                    # 排除误报：会话/引用链接（实测 [class*=file i] a[href] 会匹配到
+                    # 引用角标，把 /chat/conversation/... 当成下载入口；若被选中会把
+                    # 对话页 HTML 写进目标文件，比报错更糟）。
+                    if "/chat/conversation" in href or href in ("#", "/"):
+                        continue
+                    is_dl_href = href.startswith(("blob:", "data:"))
+                    dl_attr = await el.get_attribute("download")
+                    if not is_dl_href and not dl_attr and sel.startswith('[class*="file" i]'):
+                        continue          # 文件卡片里的普通链接：没有下载语义，跳过
+                    name = ((dl_attr or "")
                             + " " + ((await el.inner_text()) or "")[:60]
                             + " " + ((await el.get_attribute("aria-label")) or ""))
                     candidates.append({"el": el, "href": href, "text": name.strip()})
@@ -1784,6 +1793,43 @@ def _resolve_href(href: str) -> str:
     except Exception:
         pass
     return ""
+
+
+def pathlib_basename(text: str) -> str:
+    """从文案里取出文件名（去掉路径分隔与多余字符），用于诊断落盘。"""
+    import re as _re
+    m = _re.search(r"([\w\-\u4e00-\u9fff]+\.[A-Za-z0-9]{1,8})", str(text or ""))
+    return m.group(1) if m else ""
+
+
+async def debug_download_now(stem_hint: str = "") -> dict:
+    """诊断：把当前页面第一个 blob:/data: 下载候选立刻落盘到 data/debug-download/。
+
+    用于验证"页面里明明有下载入口、工具却拿不到"的问题；不经过 Agent 回合。
+    """
+    out = {"url": getattr(page, "url", "") if page else "", "saved": None, "candidates": []}
+    cands = await _download_candidates()
+    out["candidates"] = [{"href": c.get("href") or "", "text": (c.get("text") or "")[:100]}
+                         for c in cands]
+    dl = [c for c in cands if (c.get("href") or "").startswith(("blob:", "data:"))]
+    pick = None
+    for c in dl:
+        if stem_hint and stem_hint.lower() in (c.get("text") or "").lower():
+            pick = c
+            break
+    pick = pick or (dl[0] if dl else None)
+    if pick is None:
+        out["error"] = "页面里没有 blob:/data: 下载候选"
+        return out
+    target = BASE / "data" / "debug-download" / (pathlib_basename(pick.get("text")) or "download.bin")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        size = await _save_from_href(_resolve_href(pick["href"]), target)
+        out["saved"] = {"path": str(target), "bytes": size,
+                        "head": target.read_text(encoding="utf-8", errors="replace")[:300]}
+    except Exception as exc:
+        out["error"] = f"下载失败: {exc}"
+    return out
 
 
 async def debug_page_snapshot() -> dict:
@@ -1890,11 +1936,19 @@ async def _copilot_file(path: str, instruction: str) -> dict:
 
     chosen = None
     stem = Path(filename).stem.lower()
-    for cand in candidates:
-        text = (cand["text"] + " " + cand["href"]).lower()
-        if stem and stem in text:
+    # 优先级：① href 是 blob:/data: 且文案含文件名 → ② blob:/data: →
+    #         ③ 文案含文件名 → ④ 第一个候选
+    _dl = [c for c in candidates if (c.get("href") or "").startswith(("blob:", "data:"))]
+    for cand in _dl:
+        if stem and stem in (cand["text"] + " " + cand["href"]).lower():
             chosen = cand
             break
+    chosen = chosen or (_dl[0] if _dl else None)
+    if chosen is None:
+        for cand in candidates:
+            if stem and stem in (cand["text"] + " " + cand["href"]).lower():
+                chosen = cand
+                break
     chosen = chosen or candidates[0]
 
     # 诊断：把本次识别到的下载入口记下来（href 是否可用、文案是否匹配），

@@ -400,6 +400,13 @@ async def health():
     }
 
 
+@app.post("/v1/agent/debug/download")
+async def agent_debug_download(payload: dict | None = None):
+    """诊断：立即把当前页面的第一个下载候选存到 data/debug-download/。"""
+    stem = str((payload or {}).get("stem") or "")
+    return await b.debug_download_now(stem)
+
+
 @app.get("/v1/agent/debug/page")
 async def agent_debug_page():
     """诊断：当前自动化页面截图 + 下载入口（只读，排障用）。"""
