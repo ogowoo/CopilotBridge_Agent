@@ -400,6 +400,12 @@ async def health():
     }
 
 
+@app.get("/v1/agent/debug/page")
+async def agent_debug_page():
+    """诊断：当前自动化页面截图 + 下载入口（只读，排障用）。"""
+    return await b.debug_page_snapshot()
+
+
 @app.get("/v1/agent/browser")
 async def browser_state():
     return {"headless": b.HEADLESS_CURRENT,

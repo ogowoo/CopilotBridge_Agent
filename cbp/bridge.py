@@ -1763,6 +1763,52 @@ async def _download_candidates():
     return candidates
 
 
+def _resolve_href(href: str) -> str:
+    """把下载候选的 href 规范成可 fetch 的绝对 URL；不可用的返回空串。
+
+    实测故障：`[class*="file" i] a[href]` 会匹配到 `<a href="#">` / 相对路径，
+    直接 `ctx.request.get()` 会抛 "Invalid URL"（错误信息完全看不出是这个原因）。
+    """
+    href = (href or "").strip()
+    if not href or href in ("#", "/"):
+        return ""
+    if href.startswith(("blob:", "data:", "http://", "https://")):
+        return href
+    # 相对 URL：用当前页面地址补全
+    try:
+        from urllib.parse import urljoin
+        base = page.url or ""
+        if base.startswith(("http://", "https://")):
+            joined = urljoin(base, href)
+            return joined if joined.startswith(("http://", "https://")) else ""
+    except Exception:
+        pass
+    return ""
+
+
+async def debug_page_snapshot() -> dict:
+    """诊断：当前自动化页面截图（base64 PNG）+ 识别到的下载入口。
+
+    只给排障用（用户手动在自动化窗口操作时，从外部看页面现场）：
+    截图看 Copilot 回答里有没有"下载/保存"入口，candidates 看提取到的元素。
+    """
+    out = {"url": getattr(page, "url", "") if page else "", "candidates": [], "png": ""}
+    try:
+        if page:
+            raw = await page.screenshot(full_page=False)
+            out["png"] = base64.b64encode(raw).decode()
+    except Exception as exc:
+        out["error"] = f"screenshot: {exc}"
+    try:
+        for c in await _download_candidates():
+            href = c.get("href") or ""
+            out["candidates"].append({"href": href, "resolved": _resolve_href(href),
+                                      "text": (c.get("text") or "")[:120]})
+    except Exception as exc:
+        out["error_candidates"] = str(exc)
+    return out
+
+
 async def _save_from_href(href: str, target: Path) -> int:
     """把 blob:/data:/http(s) 内容写入目标文件，返回字节数。
 
@@ -1851,13 +1897,23 @@ async def _copilot_file(path: str, instruction: str) -> dict:
             break
     chosen = chosen or candidates[0]
 
+    # 诊断：把本次识别到的下载入口记下来（href 是否可用、文案是否匹配），
+    # 排查"Invalid URL / 下载到 0 字节"时对照真实页面结构。
+    try:
+        (BASE / "data" / "copilot_file_candidates.json").write_text(
+            json.dumps([{"href": c.get("href") or "", "resolved": _resolve_href(c.get("href") or ""),
+                         "text": c.get("text") or ""} for c in candidates],
+                       ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
     AGENT_TOOLS._snap("copilot_file", path, target)   # 覆盖前存原像，可回滚
     before = AGENT_TOOLS._hash(target)
     size = 0
-    if chosen["href"]:
-        size = await _save_from_href(chosen["href"], target)
+    _href = _resolve_href(chosen.get("href") or "")
+    if _href:
+        size = await _save_from_href(_href, target)
     else:
-        # 按钮型入口：点它并把浏览器下载事件接住
+        # 按钮型入口，或 href 无效（#/相对路径等）：点它并把浏览器下载事件接住
         try:
             async with page.expect_download(timeout=120000) as dl_info:
                 await chosen["el"].click(timeout=8000)
