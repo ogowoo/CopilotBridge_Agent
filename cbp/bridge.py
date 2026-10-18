@@ -15,6 +15,7 @@ from .agent import (AGENT_ACTION_SCHEMA, AgentRunner, AgentPaused, AgentInterrup
                     CopilotRateLimited, CopilotSendFailed, CopilotServiceUnavailable,
                     CopilotConversationFull, validate_token_budget)
 from . import providers as providers_mod
+from .tools_extra import register_extra_tools, ExtraToolError
 from .memory import MemoryStore
 from .session_store import SessionStore
 from .snapshots import SnapshotStore
@@ -1461,6 +1462,50 @@ AGENT_WORKSPACE = (BASE / AGENT_CFG.get("workspace", "workspace")).resolve()
 AGENT_TOOLS = ToolRegistry(AGENT_WORKSPACE, AGENT_CFG)
 # 全局作用域：服务安装目录的 AGENT.md / skills 对所有工作区生效
 AGENT_TOOLS.set_global_root(BASE)
+
+# ── 扩展工具（解耦模块 cbp/tools_extra.py）：搜索/网页/命令/任务清单/图片/提问 ──
+# 视觉与提问需要桥接层注入回调；没有 Copilot 网页时会优雅降级。
+EXTRA_ANSWERS: dict[str, "asyncio.Future[str]"] = {}
+
+
+async def _vision_via_copilot(path: str, question: str) -> dict:
+    """read_image 的视觉后端：把图片上传给 Copilot 并返回它的描述。"""
+    target = AGENT_TOOLS._path(path)
+    if not target.is_file():
+        raise ToolError(f"文件不存在: {path}")
+    await attach_file_to_copilot(target)
+    model = DEFAULT_MODEL
+    if ACTIVE_SESSION_ID:
+        st = AGENT_SESSIONS.get(ACTIVE_SESSION_ID)
+        if st and st.get("model"):
+            model = st["model"]
+    answer = await agent_chat_once(question, model, False)
+    return {"path": path, "answer": answer}
+
+
+async def _ask_user_via_webui(question: str, options: list[str]) -> dict:
+    """ask_user_question 的提问后端：注册 Future 等 /answer 端点回填。"""
+    sid = ACTIVE_SESSION_ID or ""
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future[str] = loop.create_future()
+    EXTRA_ANSWERS[sid] = fut
+    try:
+        runtime_update(phase="waiting_question", detail=question,
+                       question={"text": question, "options": options})
+        timeout = float(AGENT_CFG.get("question_timeout_seconds", 600))
+        try:
+            answer = await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            return {"answer": "", "unanswered": True,
+                    "detail": f"用户 {timeout:.0f} 秒内未回答；请按最合理假设继续并说明"}
+        return {"answer": answer}
+    finally:
+        EXTRA_ANSWERS.pop(sid, None)
+
+
+TOOLS_EXTRA = register_extra_tools(AGENT_TOOLS, AGENT_CFG,
+                                   vision_fn=_vision_via_copilot,
+                                   ask_fn=_ask_user_via_webui)
 # 新任务缺省工作区：POST /v1/agent/workspace 会更新它
 DEFAULT_WORKSPACE = str(AGENT_WORKSPACE)
 # 与 AgentRunner.__init__ 的默认值保持一致，供 WebUI 显示真实 Token 预算。

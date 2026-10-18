@@ -1,0 +1,495 @@
+"""扩展工具集（解耦模块，便于独立升级/更新/移除）。
+
+**为什么单独成文件**：`cbp/tools.py` 是文件读写这类"核心工具"，改动风险高；
+本模块放"可选、可独立演进"的工具，通过 `register_extra_tools(registry, config)`
+挂到 ToolRegistry 上（与 bridge.py 注册 copilot_attach 的方式一致）。
+删掉本文件 + 取消 bridge 里的一行调用即可整体下线，不影响核心工具。
+
+参考 DSH（DeepSeek Harness）的工具面，按组提供、可逐组开关
+（config.agent.tools_extra 下的布尔项）：
+
+- `search`  `grep`                   按内容正则搜索（find_files 只按文件名）
+- `web`     `web_fetch`              抓网页正文（HTML→纯文本）
+- `shell`   `pwsh`                   执行 PowerShell 命令
+            `job_list/job_output/job_kill`  后台任务（pwsh 的 run_in_background）
+- `plan`    `todo_write`             任务清单
+            `present`               交付物声明
+- `vision`  `read_image`             图片元数据 + 可选交给 Copilot 视觉描述
+- `ask`     `ask_user_question`      任务中途向用户提问（阻塞等待回答）
+
+安全默认：
+- `pwsh` 默认开启但**需要一次性审批**（approuval_policy=ask 时 WebUI 逐次授权）；
+  `allow_shell=false` 可整体关闭。
+- `web_fetch` 默认拒绝内网/本地地址（SSRF），`allow_private_web=true` 放开。
+- `read_image`/`ask_user_question` 的智能部分依赖桥接层注入的回调；没有回调时
+  优雅降级（只返回元数据 / 明确报错），不假装成功。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import html as html_mod
+import ipaddress
+import json
+import re
+import shutil
+import socket
+import time
+import urllib.parse
+import uuid
+from pathlib import Path
+from typing import Any, Awaitable, Callable
+
+try:  # httpx 是 FastAPI 的既有依赖；缺失时 web 组降级为 urllib
+    import httpx
+except Exception:  # pragma: no cover
+    httpx = None  # type: ignore[assignment]
+
+
+class ExtraToolError(RuntimeError):
+    """扩展工具的可预期错误（与核心 ToolError 同语义，桥接层会转成工具错误结果）。"""
+
+
+_MAX_GREP_FILE_BYTES = 1_000_000      # 单文件超过 1MB 不搜（二进制/超大文件）
+_MAX_GREP_FILES = 5000                # 一次最多扫 5000 个文件
+_MAX_OUTPUT = 20000                   # 命令输出截断阈值
+_DEFAULT_QUESTION_TIMEOUT = 600       # ask_user_question 默认等待秒数
+
+
+# ────────────────────────── 工具实现 ──────────────────────────
+
+class _Extra:
+    """扩展工具的实现集合；每个公开方法对应一个工具。"""
+
+    def __init__(self, registry: Any, config: dict[str, Any],
+                 vision_fn: Callable[[str, str], Awaitable[dict]] | None = None,
+                 ask_fn: Callable[[str, list[str]], Awaitable[dict]] | None = None) -> None:
+        self.reg = registry
+        self.config = config or {}
+        self.vision_fn = vision_fn
+        self.ask_fn = ask_fn
+        self.allow_shell = bool(self.config.get("allow_shell", True))
+        self.allow_web = bool(self.config.get("allow_web", True))
+        self.allow_private_web = bool(self.config.get("allow_private_web", False))
+        self.shell_timeout = float(self.config.get("shell_timeout_seconds", 120))
+        self.question_timeout = float(
+            self.config.get("question_timeout_seconds", _DEFAULT_QUESTION_TIMEOUT))
+        self.jobs: dict[str, dict[str, Any]] = {}
+        self.todos: list[dict[str, Any]] = []
+        self.deliverables: list[dict[str, Any]] = []
+        self.pending_question: dict[str, Any] | None = None
+
+    # ── 通用 ──
+    def _path(self, path: str) -> Path:
+        """复用核心注册表的路径沙箱。"""
+        return self.reg._path(path)  # noqa: SLF001（同包内复用，避免重复实现沙箱）
+
+    def _rel(self, target: Path) -> str:
+        try:
+            return str(target.resolve().relative_to(self.reg.root))
+        except (ValueError, OSError):
+            return str(target)
+
+    # ── search：按内容搜索 ──
+    async def grep(self, pattern: str, path: str = ".", include: str = "",
+                   max_results: int = 100) -> dict[str, Any]:
+        """按内容正则搜索工作区文件，返回 文件:行号:内容。"""
+        pattern = str(pattern or "").strip()
+        if not pattern:
+            raise ExtraToolError("pattern 不能为空")
+        try:
+            rx = re.compile(pattern)
+        except re.error as exc:
+            raise ExtraToolError(f"正则表达式无效: {exc}") from exc
+        limit = max(1, min(int(max_results or 100), 500))
+        target = self._path(path or ".")
+        files: list[Path] = []
+        if target.is_file():
+            files = [target]
+        elif target.is_dir():
+            for item in target.rglob(include or "*"):
+                if item.is_file():
+                    files.append(item)
+                    if len(files) >= _MAX_GREP_FILES:
+                        break
+        else:
+            raise ExtraToolError(f"路径不存在: {path}")
+
+        matches: list[dict[str, Any]] = []
+        truncated = False
+        for f in files:
+            try:
+                if f.stat().st_size > _MAX_GREP_FILE_BYTES:
+                    continue
+                text = f.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            for no, line in enumerate(text.splitlines(), 1):
+                if rx.search(line):
+                    matches.append({"path": self._rel(f), "line": no, "text": line[:300]})
+                    if len(matches) >= limit:
+                        truncated = True
+                        break
+            if truncated:
+                break
+        return {"pattern": pattern, "count": len(matches), "matches": matches,
+                "truncated": truncated, "scanned_files": len(files)}
+
+    # ── web：抓网页正文 ──
+    @staticmethod
+    def _host_is_private(url: str) -> bool:
+        try:
+            host = urllib.parse.urlparse(url).hostname or ""
+        except Exception:
+            return True
+        if not host:
+            return True
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except OSError:
+            return False
+        for info in infos:
+            try:
+                ip = ipaddress.ip_address(info[4][0])
+            except (ValueError, IndexError):
+                continue
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_multicast):
+                return True
+        return False
+
+    @staticmethod
+    def _html_to_text(raw: str) -> str:
+        """HTML → 纯文本（去脚本/样式/标签，解实体；无第三方依赖）。"""
+        text = re.sub(r"(?is)<(script|style|noscript|svg)[^>]*>.*?</\1>", " ", raw)
+        text = re.sub(r"(?s)<!--.*?-->", " ", text)
+        text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+        text = re.sub(r"(?i)</(p|div|li|h[1-6]|tr|section|article)>", "\n", text)
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        text = html_mod.unescape(text)
+        text = re.sub(r"[ \t\r\f\v]+", " ", text)
+        text = re.sub(r"\n[ \t]+", "\n", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
+    async def web_fetch(self, url: str, max_chars: int = 20000) -> dict[str, Any]:
+        """抓取 HTTP(S) URL 并返回纯文本（默认拒绝内网地址）。"""
+        if not self.allow_web:
+            raise ExtraToolError("web_fetch 已禁用（agent.tools_extra.web=false）")
+        url = str(url or "").strip()
+        if not re.match(r"^https?://", url, re.I):
+            raise ExtraToolError("只支持 http(s) URL")
+        if not self.allow_private_web and self._host_is_private(url):
+            raise ExtraToolError(
+                "拒绝访问内网/本地地址（SSRF 防护）；如确需访问请设 agent.tools_extra.allow_private_web=true")
+        cap = max(1000, min(int(max_chars or 20000), 60000))
+        headers = {"User-Agent": "CopilotBridgeAgent/1.0 (+local agent)"}
+        try:
+            if httpx is not None:
+                async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+                    resp = await client.get(url, headers=headers)
+                status = resp.status_code
+                ctype = resp.headers.get("content-type", "")
+                raw = resp.text
+                final_url = str(resp.url)
+            else:  # 极简降级：无 httpx 时用 urllib（阻塞在线程里）
+                import urllib.request
+
+                def _fetch() -> tuple[int, str, str, str]:
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        return (r.status, r.headers.get("content-type", ""),
+                                r.read(2_000_000).decode("utf-8", "replace"), r.geturl())
+
+                status, ctype, raw, final_url = await asyncio.to_thread(_fetch)
+        except Exception as exc:
+            raise ExtraToolError(f"抓取失败: {exc}") from exc
+        low = (ctype or "").lower()
+        if "html" in low or raw.lstrip()[:1] == "<":
+            text = self._html_to_text(raw)
+        elif "json" in low:
+            try:
+                text = json.dumps(json.loads(raw), ensure_ascii=False, indent=1)
+            except Exception:
+                text = raw
+        else:
+            text = raw
+        total = len(text)
+        return {"url": final_url, "status": status, "content_type": ctype,
+                "chars": total, "truncated": total > cap, "text": text[:cap]}
+
+    # ── shell：执行命令 + 后台任务 ──
+    def _shell_exe(self) -> str:
+        for name in ("pwsh", "powershell"):
+            exe = shutil.which(name)
+            if exe:
+                return exe
+        raise ExtraToolError("找不到 pwsh/powershell 可执行文件")
+
+    def _spawn(self, command: str, cwd: Path) -> asyncio.subprocess.Process:
+        exe = self._shell_exe()
+        return asyncio.create_subprocess_exec(
+            exe, "-NoProfile", "-NonInteractive", "-Command", command,
+            cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+
+    async def pwsh(self, command: str, workdir: str = "", timeout_seconds: float | None = None,
+                   run_in_background: bool = False) -> dict[str, Any]:
+        """执行 PowerShell 命令。run_in_background=true 时返回 job_id（用 job_output 取输出）。"""
+        if not self.allow_shell:
+            raise ExtraToolError("pwsh 已禁用（agent.allow_shell=false）")
+        command = str(command or "").strip()
+        if not command:
+            raise ExtraToolError("command 不能为空")
+        cwd = self._path(workdir) if workdir else self.reg.root
+        if not cwd.is_dir():
+            raise ExtraToolError(f"工作目录不存在: {workdir}")
+        timeout = float(timeout_seconds or self.shell_timeout)
+        try:
+            proc = await self._spawn(command, cwd)
+        except ExtraToolError:
+            raise
+        except Exception as exc:
+            raise ExtraToolError(f"启动命令失败: {exc}") from exc
+
+        if run_in_background:
+            job_id = uuid.uuid4().hex[:10]
+            job: dict[str, Any] = {"id": job_id, "command": command, "cwd": str(cwd),
+                                   "proc": proc, "out": [], "err": [],
+                                   "done": False, "exit_code": None, "started": time.time()}
+            self.jobs[job_id] = job
+
+            async def _pump(stream: Any, buf: list[str]) -> None:
+                while True:
+                    chunk = await stream.read(4096)
+                    if not chunk:
+                        return
+                    buf.append(chunk.decode("utf-8", "replace"))
+
+            asyncio.create_task(_pump(proc.stdout, job["out"]))
+            asyncio.create_task(_pump(proc.stderr, job["err"]))
+
+            async def _wait() -> None:
+                job["exit_code"] = await proc.wait()
+                job["done"] = True
+
+            asyncio.create_task(_wait())
+            return {"job_id": job_id, "command": command, "status": "running",
+                    "hint": "用 job_output 取输出，job_kill 终止"}
+
+        try:
+            out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            raise ExtraToolError(f"命令超时（>{timeout:.0f}s），已终止: {command[:120]}")
+        except Exception as exc:
+            raise ExtraToolError(f"执行失败: {exc}") from exc
+        out = (out_b or b"").decode("utf-8", "replace")
+        err = (err_b or b"").decode("utf-8", "replace")
+        return {"exit_code": proc.returncode, "stdout": out[:_MAX_OUTPUT],
+                "stderr": err[:_MAX_OUTPUT],
+                "truncated": len(out) > _MAX_OUTPUT or len(err) > _MAX_OUTPUT,
+                "command": command}
+
+    def _job_text(self, job: dict[str, Any], since: int = 0) -> dict[str, Any]:
+        out = "".join(job["out"])
+        err = "".join(job["err"])
+        return {"job_id": job["id"], "command": job["command"], "status":
+                "done" if job["done"] else "running",
+                "exit_code": job["exit_code"],
+                "stdout": out[since:since + _MAX_OUTPUT],
+                "stderr": err[since:since + _MAX_OUTPUT],
+                "chars": len(out) + len(err)}
+
+    async def job_list(self) -> dict[str, Any]:
+        """列出后台任务。"""
+        return {"jobs": [{"job_id": j["id"], "command": j["command"][:120],
+                          "status": "done" if j["done"] else "running",
+                          "exit_code": j["exit_code"]}
+                         for j in self.jobs.values()]}
+
+    async def job_output(self, job_id: str, wait: bool = False,
+                         timeout_seconds: float = 30) -> dict[str, Any]:
+        """读取后台任务输出（wait=true 时等到结束或超时）。"""
+        job = self.jobs.get(str(job_id))
+        if not job:
+            raise ExtraToolError(f"没有这个后台任务: {job_id}")
+        if wait and not job["done"]:
+            deadline = time.monotonic() + float(timeout_seconds)
+            while time.monotonic() < deadline and not job["done"]:
+                await asyncio.sleep(0.2)
+        return self._job_text(job)
+
+    async def job_kill(self, job_id: str) -> dict[str, Any]:
+        """终止后台任务。"""
+        job = self.jobs.get(str(job_id))
+        if not job:
+            raise ExtraToolError(f"没有这个后台任务: {job_id}")
+        if not job["done"]:
+            try:
+                job["proc"].kill()
+            except ProcessLookupError:
+                pass
+        return {"job_id": job["id"], "status": "killed", "exit_code": job["exit_code"]}
+
+    # ── plan：任务清单 / 交付物 ──
+    async def todo_write(self, todos: list[Any]) -> dict[str, Any]:
+        """写入任务清单（整体替换；最多 50 项）。"""
+        if not isinstance(todos, list):
+            raise ExtraToolError("todos 必须是数组")
+        clean: list[dict[str, Any]] = []
+        for item in todos[:50]:
+            if isinstance(item, dict):
+                content = str(item.get("content") or "").strip()
+                status = str(item.get("status") or "pending").strip()
+            else:
+                content = str(item).strip()
+                status = "pending"
+            if not content:
+                continue
+            if status not in ("pending", "in_progress", "completed"):
+                status = "pending"
+            clean.append({"content": content[:200], "status": status})
+        self.todos = clean
+        return {"todos": clean, "count": len(clean),
+                "pending": sum(1 for t in clean if t["status"] != "completed")}
+
+    async def present(self, files: list[Any]) -> dict[str, Any]:
+        """声明交付物（最多 4 个；只记录，不复制文件）。"""
+        if not isinstance(files, list):
+            raise ExtraToolError("files 必须是数组")
+        items: list[dict[str, Any]] = []
+        for item in files[:4]:
+            if not isinstance(item, dict):
+                continue
+            path = str(item.get("path") or "").strip()
+            if not path:
+                continue
+            target = self._path(path)
+            items.append({"path": path, "description": str(item.get("description") or "")[:200],
+                          "exists": target.is_file(), "bytes":
+                          target.stat().st_size if target.is_file() else 0})
+        self.deliverables = items
+        return {"presented": items, "count": len(items)}
+
+    # ── vision：图片 ──
+    @staticmethod
+    def _image_meta(target: Path) -> dict[str, Any]:
+        """不依赖 Pillow 的轻量图片元数据（格式/尺寸/大小）。"""
+        data = target.read_bytes()[:64]
+        fmt, dims = "", None
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            fmt = "png"
+            if len(data) >= 24:
+                dims = (int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big"))
+        elif data[:2] == b"\xff\xd8":
+            fmt = "jpeg"          # 尺寸解析较重，跳过（交给 Copilot 视觉）
+        elif data[:6] in (b"GIF87a", b"GIF89a"):
+            fmt = "gif"
+            if len(data) >= 10:
+                dims = (int.from_bytes(data[6:8], "little"), int.from_bytes(data[8:10], "little"))
+        elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            fmt = "webp"
+        else:
+            fmt = target.suffix.lstrip(".").lower() or "unknown"
+        return {"format": fmt, "dimensions": dims, "bytes": target.stat().st_size}
+
+    async def read_image(self, path: str, question: str = "",
+                         analyze: bool = True) -> dict[str, Any]:
+        """读取图片元数据；analyze=true 时交给 Copilot 视觉描述（需要回调）。"""
+        target = self._path(path)
+        if not target.is_file():
+            raise ExtraToolError(f"文件不存在: {path}")
+        if target.stat().st_size > 20 * 1024 * 1024:
+            raise ExtraToolError("图片超过 20MB，请先压缩")
+        meta = self._image_meta(target)
+        result: dict[str, Any] = {"path": path, **meta}
+        if analyze:
+            if self.vision_fn is None:
+                result["error"] = ("当前通道没有视觉能力（需要 Copilot 网页会话）；"
+                                   "已返回元数据，如需描述请改用 copilot_attach 上传")
+            else:
+                try:
+                    ans = await self.vision_fn(path, question or
+                                               "描述这张图片的内容；如果里面有文字，请提取文字。")
+                    result["analysis"] = ans
+                except Exception as exc:
+                    result["error"] = f"视觉分析失败: {exc}"
+        return result
+
+    # ── ask：向用户提问 ──
+    async def ask_user_question(self, question: str, options: list[Any] | None = None) -> dict[str, Any]:
+        """向用户提问并阻塞等待回答（超时返回 unanswered）。"""
+        question = str(question or "").strip()
+        if not question:
+            raise ExtraToolError("question 不能为空")
+        opts = [str(o).strip() for o in (options or []) if str(o).strip()][:6]
+        if self.ask_fn is None:
+            raise ExtraToolError("当前通道不支持向用户提问（需要 WebUI 会话）")
+        self.pending_question = {"question": question, "options": opts, "asked": time.time()}
+        try:
+            return await self.ask_fn(question, opts)
+        finally:
+            self.pending_question = None
+
+
+# ────────────────────────── 注册入口 ──────────────────────────
+
+_GROUPS: dict[str, tuple[str, ...]] = {
+    "search": ("grep",),
+    "web": ("web_fetch",),
+    "shell": ("pwsh", "job_list", "job_output", "job_kill"),
+    "plan": ("todo_write", "present"),
+    "vision": ("read_image",),
+    "ask": ("ask_user_question",),
+}
+
+_DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
+    "grep": ("按内容正则搜索工作区文件（find_files 只按文件名），返回 文件:行号:内容",
+             {"pattern": "正则表达式", "path": "搜索目录或文件，默认 .",
+              "include": "文件名 glob 过滤，例如 *.py", "max_results": "最多返回条数，默认 100"}),
+    "web_fetch": ("抓取 HTTP(S) URL 并返回纯文本（HTML 自动去标签；默认拒绝内网地址）",
+                  {"url": "http(s) URL", "max_chars": "最多返回字符数，默认 20000"}),
+    "pwsh": ("执行 PowerShell 命令（默认需要一次性审批）；run_in_background=true 时返回 job_id",
+             {"command": "要执行的命令", "workdir": "工作目录（相对工作区），默认工作区根",
+              "timeout_seconds": "超时秒数，默认 120", "run_in_background": "后台执行，默认 false"}),
+    "job_list": ("列出后台任务", {}),
+    "job_output": ("读取后台任务输出（wait=true 等到结束或超时）",
+                   {"job_id": "任务 id", "wait": "是否等待完成", "timeout_seconds": "等待上限秒数，默认 30"}),
+    "job_kill": ("终止后台任务", {"job_id": "任务 id"}),
+    "todo_write": ("写入任务清单（整体替换，最多 50 项）；长任务用它跟踪进度",
+                   {"todos": "数组；每项 {content, status=pending|in_progress|completed}"}),
+    "present": ("声明交付物（最多 4 个文件，只记录供 WebUI 展示，不复制文件）",
+                {"files": "数组；每项 {path, description}"}),
+    "read_image": ("读取图片元数据（格式/尺寸/大小）；analyze=true 时交给 Copilot 视觉描述",
+                   {"path": "图片相对路径", "question": "要问 Copilot 的问题（可选）",
+                    "analyze": "是否调用视觉分析，默认 true"}),
+    "ask_user_question": ("任务中途向用户提问并等待回答（适合需要用户决策/补充信息时，避免瞎猜）",
+                          {"question": "要问用户的问题", "options": "可选项列表（可选）"}),
+}
+
+
+def register_extra_tools(registry: Any, config: dict[str, Any] | None = None,
+                         vision_fn: Callable[[str, str], Awaitable[dict]] | None = None,
+                         ask_fn: Callable[[str, list[str]], Awaitable[dict]] | None = None
+                         ) -> "_Extra":
+    """把扩展工具注册到 ToolRegistry；返回实现对象（桥接层可读 todos/deliverables）。
+
+    逐组开关：config["tools_extra"] = {"search": true, "web": true, ...}；
+    未配置的组默认开启（vision/ask 还需要传入回调才真正可用）。
+    """
+    cfg = config or {}
+    impl = _Extra(registry, cfg, vision_fn=vision_fn, ask_fn=ask_fn)
+    groups = cfg.get("tools_extra") if isinstance(cfg.get("tools_extra"), dict) else {}
+    enabled: set[str] = set()
+    for group, names in _GROUPS.items():
+        if groups.get(group, True):
+            enabled.update(names)
+    for name in sorted(enabled):
+        fn = getattr(impl, name)
+        desc, args = _DESCRIPTIONS.get(name, (name, {}))
+        registry.register(name, fn, desc, args)
+    impl.registered = sorted(enabled)
+    return impl

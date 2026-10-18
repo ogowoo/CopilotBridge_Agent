@@ -109,6 +109,41 @@ function showApprovalBar(p){
   el.appendChild(span);el.appendChild(btn);el.appendChild(no)}
  el.style.display='flex'}
 
+/* ── Agent 中途提问（ask_user_question 的 UI 入口）────────────────────
+   工具阻塞等待 /answer；用户在这里填答案时任务暂停，提交后继续。 */
+let questionSeen=null;
+function showQuestionBar(q){
+ let el=document.getElementById('questionBar');
+ if(!q||!q.text){if(el)el.style.display='none';questionSeen=null;return}
+ if(!el){el=document.createElement('div');el.id='questionBar';el.className='questionbar';
+  const host=document.getElementById('sessionView')||document.body;
+  host.insertBefore(el,host.firstChild)}
+ const key=(current||'')+'|'+q.text;
+ if(questionSeen!==key){questionSeen=key;
+  el.innerHTML='';
+  const span=document.createElement('span');span.className='qtext';
+  span.textContent=tr('Agent 提问：')+q.text;
+  const inp=document.createElement('input');inp.type='text';inp.className='qinput';
+  inp.placeholder=tr('输入你的回答…');
+  (q.options&&q.options.length?q.options:[]).forEach(o=>{
+   const chip=document.createElement('button');chip.type='button';chip.className='btn ghost qchip';
+   chip.textContent=o;chip.onclick=()=>{inp.value=o;inp.focus()};el.appendChild(chip)});
+  const ok=document.createElement('button');ok.type='button';ok.className='btn accent';
+  ok.textContent=tr('提交回答');
+  const submit=async()=>{
+   ok.disabled=true;ok.textContent=tr('提交中…');
+   try{
+    await api(`/v1/agent/sessions/${encodeURIComponent(current)}/answer`,
+              {method:'POST',headers:{'Content-Type':'application/json'},
+               body:JSON.stringify({answer:inp.value})});
+    toast(tr('已提交回答，任务继续'),'ok');
+    el.style.display='none';questionSeen=null;await runtime();
+   }catch(e){ok.disabled=false;ok.textContent=tr('提交回答');toast(tr('提交失败: ')+(e.text||e),'err')}};
+  ok.onclick=submit;
+  inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();submit()}};
+  el.appendChild(span);el.appendChild(inp);el.appendChild(ok)}
+ el.style.display='flex'}
+
 async function api(u,o={}){
   if(DEMO)return demoApi(u,o);
   const call=tk=>{const opt=Object.assign({},o);opt.headers=Object.assign({},o.headers||{});
@@ -1057,6 +1092,7 @@ async function applyRuntime(r){
   setPill(r.session_state);setKpis(r);
   // 只在真的等待授权时显示（后端已按 waiting 过滤，这里再兜一层）
   try{showApprovalBar(r.session_state==='waiting'?r.approval_pending:null)}catch(e){}
+  try{showQuestionBar(r.question||null)}catch(e){}
   updateRetryCountdown(r);
   if(r.total_steps!==lastTotal||(r.detail||'')!==lastDetail){
    lastDetail=r.detail||'';

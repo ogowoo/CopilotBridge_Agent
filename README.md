@@ -395,6 +395,40 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 
 目标是一次任务 **1~3 个 Copilot 回合**交付。协议里也加了"本地闭环"规则：运行、测试、小修这类本地能做的事不回问 Copilot。系统提示词本身保持逐字稳定（prompt cache），首轮提示只加在当轮用户消息里。
 
+### 6. 扩展工具（参考 DSH 的工具面，独立模块）
+
+`cbp/tools_extra.py` 是**解耦的扩展工具模块**（删掉文件 + 取消 bridge 里一行调用即可整体下线），
+按组合并提供逐组开关（`agent.tools_extra`）：
+
+| 组 | 工具 | 说明 |
+|---|---|---|
+| `search` | `grep` | 按**内容**正则搜索（`find_files` 只按文件名），返回 `文件:行号:内容` |
+| `web` | `web_fetch` | 抓 HTTP(S) URL 正文（HTML 自动去标签）；默认**拒绝内网/本地地址**（SSRF 防护） |
+| `shell` | `pwsh` | 执行 PowerShell 命令（默认**需要一次性审批**）；`run_in_background=true` 起后台任务 |
+| `shell` | `job_list` / `job_output` / `job_kill` | 后台任务列表 / 读输出（可等待）/ 终止 |
+| `plan` | `todo_write` | 任务清单（长任务跟踪进度） |
+| `plan` | `present` | 声明交付物（最多 4 个文件，供 WebUI 展示） |
+| `vision` | `read_image` | 图片元数据（格式/尺寸/大小）+ 交给 Copilot 视觉描述 |
+| `ask` | `ask_user_question` | 任务中途向用户提问并**阻塞等待**；WebUI 会弹提问条，提交后继续 |
+
+配置（`config.json` → `agent`）：
+
+```json
+{
+  "allow_shell": true,             // pwsh 总开关（false 整体禁用）
+  "shell_timeout_seconds": 120,
+  "allow_web": true,               // web_fetch 总开关
+  "allow_private_web": false,      // true 才允许抓内网/本地地址
+  "question_timeout_seconds": 600, // ask_user_question 等待上限
+  "tools_extra": {"search": true, "web": true, "shell": true,
+                  "plan": true, "vision": true, "ask": true}
+}
+```
+
+安全约定：`pwsh` 与 `delete_path`/`outlook_send`/`run_python` 一样走**一次性审批**
+（`approval_policy: "ask"` 时 WebUI 逐次授权，用后即焚）；`read_image` 的视觉分析与
+`ask_user_question` 依赖 Copilot 网页/WebUI，没有对应通道时优雅降级（返回元数据/明确报错）。
+
 ### 6. 常用运维命令
 ```powershell
 python start.py                              # 启动服务（默认 127.0.0.1:8765）

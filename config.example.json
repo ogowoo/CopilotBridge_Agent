@@ -91,7 +91,20 @@
       "AGENT.md",
       "README.md",
       "config.example.json"
-    ]
+    ],
+    "allow_shell": true,
+    "shell_timeout_seconds": 120,
+    "allow_web": true,
+    "allow_private_web": false,
+    "question_timeout_seconds": 600,
+    "tools_extra": {
+      "search": true,
+      "web": true,
+      "shell": true,
+      "plan": true,
+      "vision": true,
+      "ask": true
+    }
   },
   "models": {},
   "providers": {

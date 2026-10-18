@@ -413,6 +413,12 @@ Object.assign(I18N_EN, {
     "Automation window visible — click to switch to headless (hidden)",
   "当前没有对话记录": "No conversation yet",
   "授权中…": "Authorizing…",
+ "Agent 提问：": "Agent asks: ",
+ "输入你的回答…": "Type your answer…",
+ "提交回答": "Submit answer",
+ "提交中…": "Submitting…",
+ "已提交回答，任务继续": "Answer submitted; the task continues",
+ "提交失败: ": "Submit failed: ",
   "授权失败: ": "Authorization failed: ",
   "排队跟进": "Queued follow-up",
   "插入指令（运行中即时生效，会立即中断当前回合后按新指令继续）。插入方式决定语义：":

@@ -1058,6 +1058,17 @@ async def session_events(sid: str):
                                       "X-Accel-Buffering": "no"})
 
 
+@app.post("/v1/agent/sessions/{sid}/answer")
+async def agent_answer(sid: str, payload: dict | None = None):
+    """回答 Agent 的中途提问（ask_user_question 阻塞等待的就是这里）。"""
+    fut = b.EXTRA_ANSWERS.get(sid)
+    if fut is None or fut.done():
+        raise HTTPException(404, "该会话没有等待回答的问题")
+    answer = str((payload or {}).get("answer") or "")
+    fut.set_result(answer)
+    return {"ok": True, "session_id": sid, "answer": answer}
+
+
 @app.get("/v1/agent/sessions/{sid}/runtime")
 async def session_runtime(sid: str):
     state = b.AGENT_SESSIONS.get(sid)

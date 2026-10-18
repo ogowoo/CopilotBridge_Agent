@@ -699,3 +699,13 @@ section.card:has(#stepCount){margin-top:14px}
 #stepCount{white-space:nowrap}
 .chead .hint>span{white-space:nowrap}
 .md-actions{display:flex;align-items:center;gap:6px;flex:none}
+
+/* ── Agent 中途提问条（ask_user_question）──────────────────────────
+   与 .approvalbar 同一定位策略：流内、占位推开内容，不做浮层。 */
+.questionbar{display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0;
+  padding:8px 12px;border:1px solid var(--accent);border-radius:9px;
+  background:var(--panel2);font-size:12.5px}
+.questionbar .qtext{flex:1 1 220px;min-width:0;line-height:1.5}
+.questionbar .qinput{flex:1 1 200px;min-width:120px;padding:5px 8px;border-radius:6px;
+  border:1px solid var(--line2);background:var(--bg);color:var(--text);font:inherit}
+.questionbar .qchip{font-size:11.5px;padding:2px 8px}

@@ -168,10 +168,10 @@ class _ComWorker:
 # 破坏性/不可回滚操作：默认需要用户**一次性**授权（fail-closed）。
 # 与 DSH 一致：只有 allowed-once，没有 allow-always、也没有撤销存储——
 # 授权用完即焚，下一次同类操作要重新授权。
-APPROVAL_REQUIRED_TOOLS = ("delete_path", "outlook_send", "run_python")
+APPROVAL_REQUIRED_TOOLS = ("delete_path", "outlook_send", "run_python", "pwsh")
 
 # 一次调用可能已经产生副作用、但我们**拿不到结果**的动作：禁止原样重试。
-NON_IDEMPOTENT_TOOLS = ("outlook_send", "delete_path", "move_path", "append_text",
+NON_IDEMPOTENT_TOOLS = ("pwsh", "outlook_send", "delete_path", "move_path", "append_text",
                         "append_text_b64", "copy_path")
 
 # 只读动作：它们成功即说明"当前真实状态"已核对过，可以解除上面的封锁。
@@ -181,6 +181,8 @@ READ_ONLY_TOOLS = ("read_text", "list_directory", "find_files", "outlook_unread"
 
 class ToolRegistry:
     def __init__(self, root: Path, config: dict[str, Any]):
+        # 保留原始配置：扩展工具的开关（tools_extra/allow_shell）与审批判定要读它
+        self.config = dict(config or {})
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.max_read = int(config.get("max_read_chars", 120000))
@@ -789,6 +791,10 @@ class ToolRegistry:
             return self.allow_python
         if name == "outlook_send":
             return self.allow_outlook_send
+        if name == "pwsh":
+            # 扩展工具的开关由 tools_extra 读取；这里保守地默认开启时需要审批
+            extra = self.config.get("tools_extra") or {}
+            return bool(self.config.get("allow_shell", True)) and bool(extra.get("shell", True))
         return True
 
     def _sandbox_denied(self, code: str, target: str, reason: str) -> str:

@@ -229,7 +229,7 @@ def _approval_contract() -> None:
     """三类破坏性工具必须默认要求审批，且授权是"消费式"的（allowed-once）。"""
     from .tools import APPROVAL_REQUIRED_TOOLS, ToolRegistry
 
-    expected = {"delete_path", "outlook_send", "run_python"}
+    expected = {"delete_path", "outlook_send", "run_python", "pwsh"}
     if set(APPROVAL_REQUIRED_TOOLS) != expected:
         raise InvariantError(f"审批工具集合变化了: {sorted(APPROVAL_REQUIRED_TOOLS)}（需同步文档与测试）")
     tmp = Path(tempfile.mkdtemp(prefix="cbp_inv_appr_"))
