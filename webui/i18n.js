@@ -415,6 +415,16 @@ Object.assign(I18N_EN, {
   "当前没有对话记录": "No conversation yet",
   "授权中…": "Authorizing…",
  "Agent 提问：": "Agent asks: ",
+ "深研": "Deep research",
+ "多角度搜索 + 抓正文，生成带来源的调研报告（新会话）":
+   "Multi-angle search + page fetching, produces a sourced research report (new session)",
+ "开始深研": "Start research",
+ "输入研究问题：会用多角度搜索 + 抓取正文，生成带来源的调研报告（约 20-60 秒）":
+   "Enter a research question: multi-angle search + page fetching, then a sourced report (~20-60s)",
+ "深研中…（多角度搜索 + 抓正文）": "Researching… (multi-angle search + fetching)",
+ "深研完成：已打开报告会话": "Research done: report session opened",
+ "深研完成": "Research done",
+ "深研失败: ": "Research failed: ",
  "插件管理": "Plugins",
  "已启用": "Enabled",
  "已禁用": "Disabled",

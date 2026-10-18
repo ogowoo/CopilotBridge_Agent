@@ -415,6 +415,20 @@ async def agent_debug_download(payload: dict | None = None):
     return await b.debug_download_now(stem)
 
 
+@app.post("/v1/agent/deep-research")
+async def agent_deep_research(payload: dict | None = None):
+    """一键深研：research 插件收集证据 → Agent 综合成带来源的报告（新会话）。"""
+    data = payload or {}
+    query = str(data.get("query") or "").strip()
+    if not query:
+        raise HTTPException(400, "query 不能为空")
+    try:
+        return await b.deep_research_task(query, str(data.get("model") or ""),
+                                          int(data.get("angles") or 3))
+    except b.ToolError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @app.get("/v1/plugins")
 async def list_plugins():
     """插件列表：名称/版本/状态/权限/贡献点（与 DSH 插件语义兼容）。"""

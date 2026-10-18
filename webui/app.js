@@ -179,6 +179,8 @@ function renderSubagents(list){
   const dot=document.createElement('span');
   dot.className=s.state==='running'?'dot-on':(s.state==='failed'?'dot-bad':'dot-off');
   const desc=document.createElement('span');desc.className='sa-desc';
+  // 子代理描述是模型给的任务文本（数据），不参与 i18n 覆盖率判定
+  desc.setAttribute('data-i18n-skip','1');
   desc.textContent=s.description||s.task||s.id;
   const meta=document.createElement('span');meta.className='sa-meta';
   meta.textContent=stateText(s.state)+' · '+s.steps+' '+tr('步')+(s.phase?' · '+s.phase:'');
@@ -227,6 +229,24 @@ async function openPlugins(){
   box.appendChild(row)});
 }
 function closePlugins(){closeMask('pluginsMask')}
+
+/* ── 深研一键命令（research 插件 + 模型综合）────────────────────────
+   点「深研」→ 输入问题 → 后端收集证据包 → Agent 写成带来源的报告 → 打开新会话。 */
+async function deepResearchNow(){
+ const q=await dlgPrompt(
+   tr('输入研究问题：会用多角度搜索 + 抓取正文，生成带来源的调研报告（约 20-60 秒）'),
+   '', tr('开始深研'), tr('深研'));
+ if(!q||!String(q).trim())return;
+ toast(tr('深研中…（多角度搜索 + 抓正文）'),'ok');
+ try{
+  const model=currentModel||'';
+  const d=await api('/v1/agent/deep-research',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({query:String(q).trim(),model})});
+  if(d&&d.session_id){ await load(d.session_id); toast(tr('深研完成：已打开报告会话'),'ok'); }
+  else{ toast(tr('深研完成'),'ok') }
+ }catch(e){ toast(tr('深研失败: ')+(e.text||e),'err') }
+}
 
 async function api(u,o={}){
   if(DEMO)return demoApi(u,o);
@@ -2213,6 +2233,7 @@ const ACTIONS={
  liveTab:(el)=>liveTab(el.dataset.arg),
  openSubagent:(el)=>load(el.dataset.arg),
  openPlugins:()=>openPlugins(),
+ deepResearch:()=>deepResearchNow(),
  closePlugins:()=>closePlugins(),
  refreshSubagents:()=>refreshSubagents(true),
  showPromptView:()=>showPromptView(),

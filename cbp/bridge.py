@@ -3409,6 +3409,90 @@ def save_workspace_file(rel: str, data: bytes) -> str:
         return str(target)
 
 
+# ── 深研一键任务（WebUI「深研」按钮）──────────────────────────────────
+async def deep_research_task(query: str, model: str = "", angles: int = 3,
+                             fetch_top: int = 3) -> dict:
+    """一键深研：插件收集证据包 → **一次直接调用模型**综合成带来源的报告。
+
+    为什么不走 Agent 循环：实测走循环时模型会把"写报告"变成**分块写文件**
+    （16 步、11 分钟）。深研的综合是一次性文本生成，直连模型即可（提供商走
+    complete，Copilot 网页走单个聊天回合），并把结果落成会话 + 工作区 md 文件。
+    """
+    query = str(query or "").strip()
+    if not query:
+        raise ToolError("研究问题不能为空")
+    fn = PLUGINS.plugin_function("research", "deep_research")
+    if fn is None:
+        raise ToolError("research 插件未启用：WebUI → 更多 → 插件管理 里启用它")
+    try:
+        pack = await fn(query, angles=max(1, min(int(angles or 3), 5)),
+                        fetch_top=max(0, min(int(fetch_top or 3), 8)))
+    except Exception as exc:
+        raise ToolError(f"证据收集失败: {exc}") from exc
+    sources = pack.get("sources") or []
+    if not sources:
+        raise ToolError("没有搜到可用来源；请换个说法或稍后重试")
+    evidence = json.dumps(sources[:12], ensure_ascii=False)
+    if len(evidence) > 40000:
+        evidence = evidence[:40000] + "…（截断）"
+    prompt = (
+        "你是一位严谨的调研员。下面是 deep_research 收集到的证据包"
+        "（JSON：title/url/snippet/excerpt）。\n"
+        f"调研问题：{query}\n\n"
+        f"证据包：\n{evidence}\n\n"
+        "请直接输出一份 Markdown 调研报告：\n"
+        "1) 开头 3-5 句结论摘要；\n"
+        "2) 分点展开，每个要点标注来源链接；\n"
+        "3) 结尾「来源」清单（标题 + URL）；\n"
+        "4) 证据不足处明确说明，不要编造。\n"
+        "只输出报告正文，不要写文件、不要调用工具。")
+
+    use_model = normalize_model_soft(model or DEFAULT_MODEL)
+    pm = providers_mod.split_provider_model(use_model)
+    sid = "research-" + uuid.uuid4().hex[:10]
+    AGENT_SESSIONS.create(sid, f"[深研] {query}", str(AGENT_TOOLS.root), use_model)
+    AGENT_SESSIONS.add_message(sid, "user", f"[深研] {query}", 0)
+    AGENT_SESSIONS.patch(sid, state="running")
+    t0 = time.time()
+    try:
+        if pm and pm[0] in PROVIDERS:
+            text = await asyncio.wait_for(
+                PROVIDERS[pm[0]].complete(pm[1], [{"role": "user", "content": prompt}]),
+                timeout=float(AGENT_CFG.get("research_timeout_seconds", 300)))
+        else:
+            text = await asyncio.wait_for(
+                agent_chat_once(prompt, use_model, True),
+                timeout=float(AGENT_CFG.get("research_timeout_seconds", 600)))
+            try:
+                await _wait_dom_stable()
+                md = await answer_markdown(text)
+                if md:
+                    text = md
+            except Exception:
+                pass
+    except Exception as exc:
+        AGENT_SESSIONS.patch(sid, state="failed", last_error=str(exc)[:500])
+        raise ToolError(f"综合失败: {exc}") from exc
+    report = (text or "").strip()
+    if not report:
+        AGENT_SESSIONS.patch(sid, state="failed", last_error="模型返回为空")
+        raise ToolError("综合失败：模型返回为空")
+    elapsed = round(time.time() - t0, 1)
+    AGENT_SESSIONS.add_message(sid, "assistant", report, 0)
+    AGENT_SESSIONS.patch(sid, state="completed",
+                         summary={"research": True, "sources": len(sources),
+                                  "elapsed": elapsed})
+    # 同时落一份 md 到工作区，方便直接取用
+    try:
+        fname = f"research-{time.strftime('%Y%m%d-%H%M%S')}.md"
+        save_workspace_file(fname, report.encode("utf-8"))
+    except Exception:
+        fname = ""
+    return {"query": query, "session_id": sid, "report": report,
+            "sources": sources, "queries": pack.get("queries") or [],
+            "file": fname, "elapsed": elapsed, "error": None}
+
+
 # ── 插件跑任务（定时任务/生图等插件用）────────────────────────────────
 async def run_plugin_task(task: str, model: str = "", workspace: str = "",
                           prefix: str = "cron") -> dict:

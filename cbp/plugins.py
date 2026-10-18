@@ -410,6 +410,13 @@ class PluginHost:
                                         "error": str(exc), "loaded_at": None}
 
     # ── 查询 ──
+    def plugin_function(self, plugin: str, fn_name: str) -> Callable[..., Any] | None:
+        """取已加载插件的模块级函数（桥接层复用插件能力用，如 research.deep_research）。"""
+        rec = self.records.get(plugin) or {}
+        module = rec.get("module")
+        fn = getattr(module, fn_name, None) if module is not None else None
+        return fn if callable(fn) else None
+
     def describe(self, name: str) -> dict[str, Any]:
         rec = self.records.get(name) or {}
         manifest: PluginManifest | None = rec.get("manifest")
