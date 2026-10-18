@@ -104,7 +104,8 @@
       "plan": true,
       "vision": true,
       "ask": true
-    }
+    },
+    "approval_scope": "once"
   },
   "models": {},
   "providers": {

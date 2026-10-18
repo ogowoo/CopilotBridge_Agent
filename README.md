@@ -534,6 +534,26 @@ curl -X POST -H "Content-Type: application/json" \
 `waiting`（并在 runtime 里写 `approval_pending`），然后停下等你授权；授权后点继续即可。
 把 `approval_policy` 设为 `"never"` 表示你明确承担这些操作的风险（不推荐）。
 
+### 授权范围：once / session
+
+实测痛点：`pwsh` 被拦后模型改了命令措辞，参数哈希变化 → 又弹一次授权（逐参数太碎）。
+
+`agent.approval_scope` 控制授权范围：
+
+| 值 | 含义 | 适用 |
+|---|---|---|
+| `"once"`（默认） | 精确到「工具 + 参数」，**用后即焚** | 最严格；破坏性操作少时 |
+| `"session"` | 一次授权后，**该工具在本会话内**都放行（会话结束即失效；不跨会话、不跨工具） | 连续 shell 任务，比 `never` 安全 |
+
+```powershell
+# 本会话级授权（scope=session 时 WebUI 按钮自动走这条）
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"pwsh","scope":"session"}' http://127.0.0.1:8765/v1/agent/sessions/<sid>/approvals
+```
+
+WebUI 的授权横幅会按 `approval_scope` 显示不同措辞（"仅对这一次执行有效" /
+"仅对本会话有效"）；runtime 快照里带 `approval_scope` 供前端判断。
+
 ## 沙箱拒绝是结构化的
 
 越界/敏感路径不再只回一句"拒绝访问"，而是给出错误码（`FS_SANDBOX_ESCAPE` /

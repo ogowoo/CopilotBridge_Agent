@@ -75,7 +75,7 @@ function hideConnBanner(){const el=document.getElementById('connBanner');if(el)e
    没有这个入口，用户只能手工 curl —— 审批功能等于不可用。 */
 let approvalSeen=null;
 let approvalDismissed=null;   // 用户点过「暂不授权」的 key：同一个待授权不再自动弹出
-function showApprovalBar(p){
+function showApprovalBar(p,scope){
  let el=document.getElementById('approvalBar');
  if(!p||!p.tool){if(el)el.style.display='none';approvalSeen=null;approvalDismissed=null;return}
  if(!el){el=document.createElement('div');el.id='approvalBar';el.className='approvalbar';
@@ -90,7 +90,10 @@ function showApprovalBar(p){
  if(approvalSeen!==key){approvalSeen=key;
   el.innerHTML='';
   const span=document.createElement('span');
-  span.textContent=tr('需要授权：')+p.tool+' 属于不可回滚操作；授权仅对这一次执行有效（用后即焚）';
+  const _sess=scope==='session';
+  span.textContent=tr('需要授权：')+p.tool+( _sess
+    ? ' 属于不可回滚操作；授权仅对本会话有效（会话结束即失效）'
+    : ' 属于不可回滚操作；授权仅对这一次执行有效（用后即焚）');
   const btn=document.createElement('button');
   btn.className='btn accent';btn.type='button';btn.textContent='授权执行';
   btn.onclick=async()=>{
@@ -98,7 +101,7 @@ function showApprovalBar(p){
    try{
     await api(`/v1/agent/sessions/${encodeURIComponent(current)}/approvals`,
               {method:'POST',headers:{'Content-Type':'application/json'},
-               body:JSON.stringify({tool:p.tool,args_hash:p.args_hash||''})});
+               body:JSON.stringify({tool:p.tool,args_hash:p.args_hash||'',scope:_sess?'session':'once'})});
     await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/resume`,{method:'POST'});
     toast(tr('已授权并继续执行（该授权仅对这一次操作有效）'),'ok');
     el.style.display='none';approvalSeen=null;await runtime();
@@ -1091,7 +1094,7 @@ async function applyRuntime(r){
   document.getElementById('prompt').textContent=r.prompt_preview||'';
   setPill(r.session_state);setKpis(r);
   // 只在真的等待授权时显示（后端已按 waiting 过滤，这里再兜一层）
-  try{showApprovalBar(r.session_state==='waiting'?r.approval_pending:null)}catch(e){}
+  try{showApprovalBar(r.session_state==='waiting'?r.approval_pending:null,r.approval_scope)}catch(e){}
   try{showQuestionBar(r.question||null)}catch(e){}
   updateRetryCountdown(r);
   if(r.total_steps!==lastTotal||(r.detail||'')!==lastDetail){

@@ -492,9 +492,33 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                         (sid, tool, args_hash, time.time()))
             self.append_event(sid, "approval_granted", {"tool": tool, "args_hash": args_hash}, con=con)
 
-    def take_approval(self, sid: str, tool: str, args_hash: str) -> bool:
-        """消费式取用：命中且未消费 → 标记已消费并返回 True；否则 False（fail-closed）。"""
+    def grant_session_approval(self, sid: str, tool: str) -> None:
+        """本会话级授权：该工具在本会话内的后续调用都放行（args_hash='*'）。
+
+        比 approval_policy=never 安全（只影响单个会话 + 单个工具，会话结束即失效），
+        比逐参数 allowed-once 省事（模型换个命令措辞不再反复弹授权）。
+        """
         with self.lock, self._connect() as con:
+            con.execute("INSERT INTO approvals(session_id,tool,args_hash,created,consumed) "
+                        "VALUES(?,?,?,?,0) ON CONFLICT(session_id,tool,args_hash) "
+                        "DO UPDATE SET created=excluded.created, consumed=0",
+                        (sid, tool, "*", time.time()))
+            self.append_event(sid, "approval_granted", {"tool": tool, "scope": "session"}, con=con)
+
+    def take_approval(self, sid: str, tool: str, args_hash: str) -> bool:
+        """取用授权：先精确匹配（消费式），再回退到本会话级（不消费）。
+
+        fail-closed：两种都查不到才返回 False。
+        """
+        with self.lock, self._connect() as con:
+            # ① 会话级授权（不消费，整场有效）
+            row = con.execute("SELECT consumed FROM approvals WHERE session_id=? AND tool=? AND args_hash='*'",
+                              (sid, tool)).fetchone()
+            if row and int(row["consumed"] or 0) == 0:
+                con.execute("UPDATE approvals SET consumed=0 WHERE session_id=? AND tool=? AND args_hash='*'",
+                            (sid, tool))
+                return True
+            # ② 精确匹配的 allowed-once
             row = con.execute("SELECT consumed FROM approvals WHERE session_id=? AND tool=? AND args_hash=?",
                               (sid, tool, args_hash)).fetchone()
             if not row or int(row["consumed"] or 0) == 1:

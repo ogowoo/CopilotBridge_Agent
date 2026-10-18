@@ -1019,6 +1019,8 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
         # 那会让界面把已完成的任务显示成"需要授权"，且每秒重新弹出来。
         "approval_pending": ((state or {}).get("approval_pending")
                              if (state or {}).get("state") == "waiting" else None),
+        # 授权范围：once（逐参数）/ session（本会话内该工具都放行），前端据此措辞
+        "approval_scope": str(b.AGENT_CFG.get("approval_scope", "once")).lower(),
     })
     return runtime
 
@@ -1242,7 +1244,16 @@ async def grant_approval(sid: str, payload: dict):
             args_hash = str(pend["args_hash"])
     if not tool or not args_hash:
         raise HTTPException(400, "需要 tool 与 args_hash（或先用 approval_pending 记录）")
-    b.AGENT_SESSIONS.grant_approval(sid, tool, args_hash)
+    # 授权范围：once（逐参数，用后即焚，默认）/ session（本会话内该工具都放行）
+    scope = str(payload.get("scope") or b.AGENT_CFG.get("approval_scope", "once")).lower()
+    if scope == "session":
+        b.AGENT_SESSIONS.grant_session_approval(sid, tool)
+        note = "已授予本会话级授权；该工具在本会话内不再逐次询问"
+        note_code = "approval_session_granted"
+    else:
+        b.AGENT_SESSIONS.grant_approval(sid, tool, args_hash)
+        note = "已授权一次；该授权用后即焚，下次同类操作需重新授权。"
+        note_code = "approval_granted"
     # SessionStore 没有 update()（只有 patch()）：原先这里抛 AttributeError → 授权接口 500，
     # 也就是"审批功能在 UI/API 侧根本走不通"。端到端验证才发现。
     try:
@@ -1251,8 +1262,7 @@ async def grant_approval(sid: str, payload: dict):
     except Exception:
         pass
     return {"ok": True, "tool": tool, "args_hash": args_hash,
-            "note": "已授权一次；该授权用后即焚，下次同类操作需重新授权。",
-            "note_code": "approval_granted"}
+            "scope": scope, "note": note, "note_code": note_code}
 
 
 @app.get("/v1/agent/spans")
