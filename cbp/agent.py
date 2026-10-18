@@ -772,7 +772,7 @@ class AgentRunner:
         if recovered:
             return recovered
 
-        raise ValueError('Copilot 未返回完整、可解析的 Agent JSON 动作')
+        raise ValueError('未返回完整、可解析的 Agent JSON 动作')
 
 
     @staticmethod
@@ -1052,6 +1052,10 @@ class AgentRunner:
             pass
 
     async def run(self, task: str, model: str) -> AgentResult:
+        # 解析失败的措辞要**按来源**：provider 模型 id 形如 `kimi-coding/k3`（带斜杠），
+        # Copilot 网页模型是 `copilot-*`（不带）。此前硬编码 "Copilot 未返回…"，
+        # 用 Kimi 跑的时候时间线会误导成"Copilot 的问题"（用户实测抓到的文案 bug）。
+        self._model_source = "提供商模型" if "/" in str(model or "") else "Copilot"
         state = self.state_getter()
         history = list(state.get("recent_steps") or [])
         all_steps: list[dict[str, Any]] = []
@@ -1444,7 +1448,12 @@ class AgentRunner:
                     self.state_saver(retry_resume_at=None, retry_attempt=0, rate_limited_since=None)
             except Exception as exc:
                 parse_failures += 1
-                step = {"step": total + 1, "status": "invalid_action", "error": str(exc), "raw_tail": (raw or "")[-2000:]}
+                _src = getattr(self, "_model_source", "模型")
+                _msg = str(exc)
+                if not _msg.startswith(_src):
+                    _msg = f"{_src}{_msg}"
+                step = {"step": total + 1, "status": "invalid_action", "error": _msg,
+                        "raw_tail": (raw or "")[-2000:]}
                 history.append(step); all_steps.append(step); self.step_saver(step)
                 self.state_saver(total_steps=total + 1, conversation_steps=conv_steps + 1,
                                  estimated_tokens=tokens + used_tokens, estimated_chars=chars + used_chars,
@@ -1454,7 +1463,7 @@ class AgentRunner:
                     # 连续解析失败是回答格式问题，不是上下文耗尽：压缩后继续用当前会话。
                     # 不新建 Copilot 会话，也不覆盖用户可能已请求的 paused 状态。
                     self.state_saver(compact_requested=True, rollover_requested=False,
-                                     last_error=str(exc))
+                                     last_error=_msg)
                     force_rollover = False
                     parse_failures = 0
                 continue
