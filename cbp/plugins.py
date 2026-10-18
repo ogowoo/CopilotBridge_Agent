@@ -170,6 +170,18 @@ class PluginContext:
         self.host.routes[(self.name, method.upper(), path.lstrip("/"))] = handler
         self.registered["api"].append(key)
 
+    # ── 落盘 ──
+    def save_file(self, rel: str, data: bytes) -> str:
+        """把二进制写进**工作区**（生图等插件用），返回工作区相对路径。"""
+        if "files" not in self.manifest.permissions:
+            raise PluginError(f"{self.name}: 未声明 'files' 权限")
+        return self.host.save_file(rel, data)
+
+    # ── 跑任务 ──
+    async def run_task(self, task: str, model: str = "", workspace: str = "",
+                       prefix: str = "plugin") -> dict[str, Any]:
+        return await self.host.run_task(task, model, workspace, prefix)
+
     # ── 事件 ──
     def on(self, event: str, handler: Callable[..., Any]) -> None:
         if "events" not in self.manifest.permissions:
@@ -217,6 +229,10 @@ class PluginHost:
         self.providers = providers if providers is not None else {}
         # 由桥接层注入：把配置构造成 ApiProvider 实例再放进 PROVIDERS
         self.provider_factory = provider_factory
+        # 由桥接层注入：跑一个新会话的 Agent 任务（定时任务等）
+        self.run_task_fn: Callable[..., Awaitable[dict[str, Any]]] | None = None
+        # 由桥接层注入：把二进制写进工作区（生图等）
+        self.save_file_fn: Callable[[str, bytes], str] | None = None
         self.log_fn = log_fn or (lambda m: print(m, flush=True))
         self.routes: dict[tuple[str, str, str], Callable[..., Any]] = {}
         self.listeners: list[tuple[str, str, Callable[..., Any]]] = []
@@ -250,6 +266,18 @@ class PluginHost:
         st.update(kw)
         entry["state"] = st
         self._save_state_file()
+
+    def save_file(self, rel: str, data: bytes) -> str:
+        if self.save_file_fn is None:
+            raise PluginError("当前宿主没有注入 save_file 能力")
+        return self.save_file_fn(rel, data)
+
+    async def run_task(self, task: str, model: str = "", workspace: str = "",
+                       prefix: str = "cron") -> dict[str, Any]:
+        """跑一个独立 Agent 任务（由桥接层注入实现；定时任务/生图等插件用）。"""
+        if self.run_task_fn is None:
+            raise PluginError("当前宿主没有注入 run_task 能力")
+        return await self.run_task_fn(task, model, workspace, prefix)
 
     def add_provider(self, name: str, cfg: dict[str, Any]) -> None:
         """注册/覆盖一个 API 提供商（走桥接层注入的工厂）。"""

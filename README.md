@@ -472,6 +472,21 @@ def teardown(ctx): ...
 `GET /v1/plugins`、`POST /v1/plugins/{name}/{enable|disable|reload}`。
 启停记录在 `data/plugins.json`，**不需要重启服务**（禁用即摘掉工具/提供商/路由/事件）。
 
+**内置插件（现代 bot 的核心能力，按需启用）**
+
+| 插件 | 能力 | 依赖 |
+|---|---|---|
+| `web-search` | `web_search` 联网搜索 | DuckDuckGo 免 key；可选 BRAVE/TAVILY/SERPER_API_KEY |
+| `research` | `deep_research` 多角度并行搜索 + 抓正文，返回证据包 | 无 |
+| `schedule` | `schedule_add/list/remove/run` 定时任务（every / daily / once），到点在**独立新会话**跑任务 | 无 |
+| `image-gen` | `image_generate` 文生图，落盘到 `workspace/generated/` | DASHSCOPE_API_KEY 或 OPENAI_API_KEY |
+
+**Combined = Grok 式 bot**：实时搜索（web-search）+ 深研（research）+ 定时任务（schedule）+
+生图（image-gen）+ 跨会话记忆（memory）+ 子代理/编排（subagent/ralph/workflow）。
+
+> 生图需要**有效的** API key：本机现有 `DASHSCOPE_API_KEY` 实测 401（无效），
+> 换一个有效 key 或改用 `OPENAI_API_KEY` 即可；插件会返回结构化错误而不是 500。
+
 **内置示例：`web-search`**（现代 bot 的核心能力）
 - 工具 `web_search(query, max_results=6)`：DuckDuckGo 免 key；配了
   `BRAVE_API_KEY` / `TAVILY_API_KEY` / `SERPER_API_KEY` 会自动优选

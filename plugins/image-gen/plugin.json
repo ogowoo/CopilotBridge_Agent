@@ -1,0 +1,21 @@
+{
+  "name": "image-gen",
+  "version": "0.1.0",
+  "description": "文生图：通义万相（DASHSCOPE_API_KEY）或 OpenAI（OPENAI_API_KEY），生成后落盘到工作区 generated/",
+  "dsh": {
+    "bundle": {"patch": "./cordis.patch.yml"}
+  },
+  "cbp": {
+    "entry": "plugin.py",
+    "permissions": ["tools", "api", "files"],
+    "contributes": {
+      "tools": ["image_generate"],
+      "api": ["POST api/generate"]
+    },
+    "config": {
+      "backend": "auto",
+      "size": "1024*1024",
+      "model": ""
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "research",
+  "version": "0.1.0",
+  "description": "深度检索：多角度并行搜索 + 抓取正文，返回证据包供模型综合（Grok/Perplexity 式深研底座）",
+  "dsh": {
+    "bundle": {"patch": "./cordis.patch.yml"}
+  },
+  "cbp": {
+    "entry": "plugin.py",
+    "permissions": ["tools", "api"],
+    "contributes": {
+      "tools": ["deep_research"],
+      "api": ["GET api/query"]
+    },
+    "config": {
+      "angles": 3,
+      "per_angle": 4,
+      "fetch_top": 3,
+      "max_excerpt": 1800
+    }
+  }
+}

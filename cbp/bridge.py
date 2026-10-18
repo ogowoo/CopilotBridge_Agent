@@ -1525,6 +1525,11 @@ PLUGINS = PluginHost(BASE, registry=AGENT_TOOLS, providers=PROVIDERS,
                      provider_factory=lambda name, cfg: providers_mod.ApiProvider(name, cfg)
                      if hasattr(providers_mod, "ApiProvider") else cfg,
                      log_fn=lambda m: print(f"[{datetime.now():%H:%M:%S}] {m}", flush=True))
+# 延迟解析：run_plugin_task 定义在文件后部
+PLUGINS.run_task_fn = lambda task, model="", workspace="", prefix="cron": run_plugin_task(
+    task, model, workspace, prefix)
+# 延迟解析：save_workspace_file 定义在文件后部
+PLUGINS.save_file_fn = lambda rel, data: save_workspace_file(rel, data)
 # 新任务缺省工作区：POST /v1/agent/workspace 会更新它
 DEFAULT_WORKSPACE = str(AGENT_WORKSPACE)
 # 与 AgentRunner.__init__ 的默认值保持一致，供 WebUI 显示真实 Token 预算。
@@ -3391,6 +3396,38 @@ async def plain_completions(req: AgentRequest):
             "choices": [{"index": 0, "message": {"role": "assistant", "content": result["content"]},
                          "finish_reason": "stop"}],
             "session_id": sid, "mode": "chat"}
+
+
+def save_workspace_file(rel: str, data: bytes) -> str:
+    """把二进制写进工作区（插件用；复用路径沙箱），返回相对路径。"""
+    target = AGENT_TOOLS.sandbox_path(str(rel or ""))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    try:
+        return str(target.relative_to(AGENT_TOOLS.root))
+    except ValueError:
+        return str(target)
+
+
+# ── 插件跑任务（定时任务/生图等插件用）────────────────────────────────
+async def run_plugin_task(task: str, model: str = "", workspace: str = "",
+                          prefix: str = "cron") -> dict:
+    """跑一个独立 Agent 任务并返回结果（供插件调用；新会话，不打断当前任务）。"""
+    task = str(task or "").strip()
+    if not task:
+        raise ToolError("task 不能为空")
+    sid = f"{prefix}-{uuid.uuid4().hex[:10]}"
+    use_model = normalize_model_soft(model or DEFAULT_MODEL)
+    req = AgentRequest(model=use_model,
+                       messages=[Message(role="user", content=task)],
+                       stream=False, session_id=sid,
+                       workspace=workspace or None)
+    try:
+        result, real_sid = await run_agent(req)
+        return {"session_id": real_sid, "content": (result.content or "")[:4000],
+                "steps": len(result.steps), "error": None}
+    except Exception as exc:
+        return {"session_id": sid, "content": "", "steps": 0, "error": str(exc)}
 
 
 # ── 子代理引擎（subagent / ralph / workflow 的底座）────────────────────
