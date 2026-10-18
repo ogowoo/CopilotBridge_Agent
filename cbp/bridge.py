@@ -1516,7 +1516,10 @@ TOOLS_EXTRA = register_extra_tools(
     # 引擎定义在文件后部：用 lambda 延迟解析，避免前向引用
     subagent_fn=lambda *a, **k: run_subagent(*a, **k),
     ralph_fn=lambda *a, **k: run_ralph(*a, **k),
-    workflow_fn=lambda *a, **k: run_workflow(*a, **k))
+    workflow_fn=lambda *a, **k: run_workflow(*a, **k),
+    subagent_send_fn=lambda *a, **k: continue_subagent(*a, **k),
+    subagent_fork_fn=lambda *a, **k: fork_subagent(*a, **k),
+    subagent_list_fn=lambda *a, **k: list_subagents(*a, **k))
 
 # 会话状态钩子：扩展工具用它读写当前会话的 goal/todos（Agent 循环据此续轮）
 AGENT_TOOLS.state_getter = lambda: (AGENT_SESSIONS.get(ACTIVE_SESSION_ID) or {})
@@ -3676,9 +3679,29 @@ async def run_subagent(task: str, description: str = "", model: str = "",
         AGENT_SESSIONS.copy_session_approvals(parent_sid, child_sid)
     except Exception as exc:
         log(f"子会话继承父授权失败（不影响运行）：{exc}")
+    return await _drive_child(child_sid, task, child_model, max_steps,
+                              description=description, parent_sid=parent_sid,
+                              parent_root=parent_root, is_provider=is_provider)
+
+
+async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
+                        description: str = "", parent_sid: str = "",
+                        parent_root: str = "", is_provider: bool = False) -> dict:
+    """在**已存在**的子会话上跑一轮 Agent（run_subagent 与 continue_subagent 共用）。
+
+    注意不能走 run_agent：父回合正持着全局锁，再进 run_agent 会抢同一把锁而死锁
+    （实测：subagent_send 卡了 600 秒直到客户端超时）。
+    """
+    global ACTIVE_SESSION_ID
     _SUBAGENT_DEPTH["depth"] += 1
     try:
         AGENT_SESSIONS.patch(child_sid, state="running")
+        # 子会话也要有对话记录：否则面板点进去只有步骤时间线、看不到"问了什么答了什么"
+        try:
+            AGENT_SESSIONS.add_message(child_sid, "user", task,
+                                       _conv_index(child_sid))
+        except Exception:
+            pass
         ACTIVE_SESSION_ID = child_sid
         AGENT_TOOLS.current_session_id = child_sid
         AGENT_TOOLS.set_web_copilot_tools(not is_provider)
@@ -3739,21 +3762,109 @@ async def run_subagent(task: str, description: str = "", model: str = "",
                              approval_check=lambda tool, h: AGENT_SESSIONS.take_approval(
                                  child_sid, tool, h))
         try:
-            result = await runner.run(task, child_model)
+            result = await runner.run(task, model_id)
+            try:
+                AGENT_SESSIONS.add_message(child_sid, "assistant",
+                                           str(result.content or ""), _conv_index(child_sid))
+            except Exception:
+                pass
             AGENT_SESSIONS.patch(child_sid, state="completed")
             return {"agent_id": child_sid, "description": (description or task)[:120],
                     "content": result.content, "steps": len(result.steps),
-                    "model": child_model, "error": None}
+                    "model": model_id, "error": None}
         except Exception as exc:
             AGENT_SESSIONS.patch(child_sid, state="failed", last_error=str(exc))
             return {"agent_id": child_sid, "description": (description or task)[:120],
-                    "content": "", "steps": 0, "model": child_model, "error": str(exc)}
+                    "content": "", "steps": 0, "model": model_id, "error": str(exc)}
     finally:
         _SUBAGENT_DEPTH["depth"] -= 1
         ACTIVE_SESSION_ID = parent_sid
         AGENT_TOOLS.current_session_id = parent_sid or ""
         AGENT_TOOLS.set_root(parent_root, False)
         AGENT_TOOLS.set_web_copilot_tools(True)
+
+
+async def continue_subagent(session_id: str, message: str, model: str = "",
+                            max_steps: int = 40) -> dict:
+    """继续一个已存在的子代理会话（同一上下文，追加一轮）。
+
+    与 subagent 的区别：subagent 每次新建会话；这里**复用**子会话，模型能接着说，
+    适合"先让它查，再根据结果追问"的两段式协作。
+    """
+    sid = str(session_id or "").strip()
+    child = AGENT_SESSIONS.get(sid)
+    if not child:
+        raise ToolError(f"没有会话 {sid}")
+    if not str(child.get("parent_id") or "").strip():
+        raise ToolError(f"{sid} 不是子代理会话（parent_id 为空），请用普通任务继续它")
+    msg = str(message or "").strip()
+    if not msg:
+        raise ToolError("message 不能为空")
+    if _SUBAGENT_DEPTH["depth"] >= _SUBAGENT_MAX_DEPTH:
+        raise ToolError("子代理不能在子代理里继续（防止递归）")
+    model_id = normalize_model_soft((model or child.get("model") or DEFAULT_MODEL).strip())
+    pm = providers_mod.split_provider_model(model_id)
+    is_provider = bool(pm and pm[0] in PROVIDERS)
+    # 关键：**不能**调 run_agent——父回合持着全局锁，再抢锁会死锁
+    # （实测 subagent_send 卡 600 秒）。走与 run_subagent 相同的 _drive_child。
+    return await _drive_child(sid, msg, model_id, max_steps,
+                              description=str(child.get("description") or ""),
+                              parent_sid=str(child.get("parent_id") or ""),
+                              parent_root=str(AGENT_TOOLS.root),
+                              is_provider=is_provider)
+
+
+async def fork_subagent(session_id: str, description: str = "",
+                        keep_messages: int = 60) -> dict:
+    """从某个会话派生出新的子代理（复制最近的对话，用于"另一个方案"分支）。
+
+    新会话的 parent_id 指向源会话的父（若源本身就是顶层会话，则指向源本身），
+    因此它仍出现在子代理面板里，不会污染父会话上下文。
+    """
+    src_sid = str(session_id or "").strip()
+    src = AGENT_SESSIONS.get(src_sid)
+    if not src:
+        raise ToolError(f"没有会话 {src_sid}")
+    new_sid = "sub-" + uuid.uuid4().hex[:10]
+    keep = max(0, min(int(keep_messages or 60), 400))
+    msgs = AGENT_SESSIONS.messages(src_sid, limit=keep)
+    AGENT_SESSIONS.create(new_sid,
+                          src.get("original_task") or f"fork of {src_sid}",
+                          src.get("workspace") or str(AGENT_TOOLS.root),
+                          src.get("model") or DEFAULT_MODEL)
+    AGENT_SESSIONS.patch(new_sid,
+                         parent_id=str(src.get("parent_id") or src_sid),
+                         description=(description or f"分叉自 {src_sid}")[:120])
+    copied = 0
+    for item in msgs:
+        role = str(item.get("role") or "")
+        if role not in {"user", "assistant", "system"}:
+            continue
+        try:
+            AGENT_SESSIONS.add_message(new_sid, role, str(item.get("content") or ""),
+                                       int(item.get("conversation_index") or 0))
+            copied += 1
+        except Exception:
+            continue
+    try:
+        AGENT_SESSIONS.copy_session_approvals(src_sid, new_sid)
+    except Exception:
+        pass
+    return {"agent_id": new_sid, "source": src_sid, "messages": copied,
+            "description": description or f"分叉自 {src_sid}"}
+
+
+async def list_subagents(parent_id: str = "", limit: int = 50) -> dict:
+    """列出子代理会话（可按父会话过滤），带状态与步数。"""
+    rows = AGENT_SESSIONS.list_subagents(parent_id or None,
+                                         limit=max(1, min(int(limit or 50), 200)))
+    return {"subagents": [
+        {"agent_id": x.get("id"), "parent_id": x.get("parent_id"),
+         "description": x.get("description"), "state": x.get("state"),
+         "model": x.get("model"), "total_steps": x.get("total_steps"),
+         "updated": x.get("updated")}
+        for x in rows]}
+
 
 
 async def run_ralph(objective: str, max_rounds: int = 5, model: str = "",

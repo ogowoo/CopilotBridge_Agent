@@ -73,7 +73,10 @@ class _Extra:
                  session_getter: Callable[[], str] | None = None,
                  subagent_fn: Callable[..., Awaitable[dict]] | None = None,
                  ralph_fn: Callable[..., Awaitable[dict]] | None = None,
-                 workflow_fn: Callable[..., Awaitable[dict]] | None = None) -> None:
+                 workflow_fn: Callable[..., Awaitable[dict]] | None = None,
+                 subagent_send_fn: Callable[..., Awaitable[dict]] | None = None,
+                 subagent_fork_fn: Callable[..., Awaitable[dict]] | None = None,
+                 subagent_list_fn: Callable[..., Awaitable[dict]] | None = None) -> None:
         self.reg = registry
         self.config = config or {}
         self.vision_fn = vision_fn
@@ -83,6 +86,9 @@ class _Extra:
         # 子代理编排引擎（桥接层注入：真正跑子会话的逻辑在 bridge.run_subagent 等）
         self.subagent_fn = subagent_fn
         self.ralph_fn = ralph_fn
+        self.subagent_send_fn = subagent_send_fn
+        self.subagent_fork_fn = subagent_fork_fn
+        self.subagent_list_fn = subagent_list_fn
         self.workflow_fn = workflow_fn
         self.allow_shell = bool(self.config.get("allow_shell", True))
         self.allow_web = bool(self.config.get("allow_web", True))
@@ -469,6 +475,34 @@ class _Extra:
             raise ExtraToolError("task 不能为空")
         return await self.subagent_fn(task, description, model, max_steps)
 
+    async def subagent_send(self, session_id: str = "", message: str = "",
+                            model: str = "", max_steps: int = 40,
+                            agent_id: str = "") -> dict[str, Any]:
+        """继续一个已有子代理会话（同一上下文追加一轮）。
+
+        `agent_id` 是 `subagent` 返回值里的字段名，`session_id` 是工具参数名；
+        两个都收，避免模型按返回值字段名传参时报参数错误。
+        """
+        if self.subagent_send_fn is None:
+            raise ExtraToolError("当前通道不支持继续子代理")
+        target = str(session_id or agent_id or "").strip()
+        if not target:
+            raise ExtraToolError("需要 session_id（子代理返回的 agent_id）")
+        return await self.subagent_send_fn(target, str(message or ""), model, max_steps)
+
+    async def subagent_fork(self, session_id: str, description: str = "",
+                            keep_messages: int = 60) -> dict[str, Any]:
+        """从某个会话分叉出新的子代理（复制最近对话）。"""
+        if self.subagent_fork_fn is None:
+            raise ExtraToolError("当前通道不支持分叉子代理")
+        return await self.subagent_fork_fn(str(session_id or ""), description, keep_messages)
+
+    async def subagent_list(self, parent_id: str = "", limit: int = 50) -> dict[str, Any]:
+        """列出子代理会话。"""
+        if self.subagent_list_fn is None:
+            raise ExtraToolError("当前通道不支持列出子代理")
+        return await self.subagent_list_fn(str(parent_id or ""), limit)
+
     async def ralph(self, objective: str, max_rounds: int = 5, model: str = "") -> dict[str, Any]:
         """目标迭代：每轮用全新子代理推进目标，直到声明完成或用尽轮次。"""
         if self.ralph_fn is None:
@@ -569,7 +603,8 @@ _GROUPS: dict[str, tuple[str, ...]] = {
     "vision": ("read_image",),
     "ask": ("ask_user_question",),
     "goal": ("create_goal", "get_goal", "update_goal"),
-    "team": ("subagent", "ralph", "workflow"),
+    "team": ("subagent", "subagent_send", "subagent_fork", "subagent_list",
+             "ralph", "workflow"),
 }
 
 _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
@@ -602,6 +637,15 @@ _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
     "subagent": ("把独立子任务交给子代理（独立会话、独立上下文），返回它的结果；适合并行调研、隔离上下文",
                  {"task": "子任务描述（要自足）", "description": "3-5 词标签（可选）",
                   "model": "子代理模型（默认跟随父会话）", "max_steps": "子任务步数上限，默认 40"}),
+    "subagent_send": ("继续一个已有子代理会话（同一上下文追加一轮）；适合先查后追问",
+                       {"session_id": "子代理会话 ID（即 subagent 返回的 agent_id；也可用 agent_id 传）",
+                        "message": "要追加的话", "model": "模型（默认沿用子会话）",
+                        "max_steps": "本轮步数上限，默认 40"}),
+    "subagent_fork": ("从某个会话分叉出新的子代理（复制最近对话），用于并行试另一个方案",
+                      {"session_id": "源会话 ID", "description": "3-5 词标签（可选）",
+                       "keep_messages": "复制最近多少条消息，默认 60"}),
+    "subagent_list": ("列出子代理会话（可按父会话过滤）与状态/步数",
+                      {"parent_id": "父会话 ID（可选）", "limit": "最多条数，默认 50"}),
     "ralph": ("目标迭代：每轮用全新子代理推进目标，直到子代理声明 GOAL_COMPLETE 或用尽轮次",
               {"objective": "目标", "max_rounds": "最多轮次，默认 5", "model": "模型（默认跟随父会话）"}),
     "workflow": ("按阶段编排多个子代理（顺序执行；浏览器通道只有一个页面，不能真并发）",
@@ -618,7 +662,10 @@ def register_extra_tools(registry: Any, config: dict[str, Any] | None = None,
                          session_getter: Callable[[], str] | None = None,
                          subagent_fn: Callable[..., Awaitable[dict]] | None = None,
                          ralph_fn: Callable[..., Awaitable[dict]] | None = None,
-                         workflow_fn: Callable[..., Awaitable[dict]] | None = None
+                         workflow_fn: Callable[..., Awaitable[dict]] | None = None,
+                         subagent_send_fn: Callable[..., Awaitable[dict]] | None = None,
+                         subagent_fork_fn: Callable[..., Awaitable[dict]] | None = None,
+                         subagent_list_fn: Callable[..., Awaitable[dict]] | None = None
                          ) -> "_Extra":
     """把扩展工具注册到 ToolRegistry；返回实现对象（桥接层可读 todos/deliverables）。
 
@@ -628,7 +675,9 @@ def register_extra_tools(registry: Any, config: dict[str, Any] | None = None,
     cfg = config or {}
     impl = _Extra(registry, cfg, vision_fn=vision_fn, ask_fn=ask_fn,
                   session_getter=session_getter,
-                  subagent_fn=subagent_fn, ralph_fn=ralph_fn, workflow_fn=workflow_fn)
+                  subagent_fn=subagent_fn, ralph_fn=ralph_fn, workflow_fn=workflow_fn,
+                  subagent_send_fn=subagent_send_fn, subagent_fork_fn=subagent_fork_fn,
+                  subagent_list_fn=subagent_list_fn)
     groups = cfg.get("tools_extra") if isinstance(cfg.get("tools_extra"), dict) else {}
     enabled: set[str] = set()
     for group, names in _GROUPS.items():

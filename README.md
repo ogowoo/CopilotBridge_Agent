@@ -575,6 +575,23 @@ curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C
 
 > 尚未接入：旧版 **HTTP+SSE 双端点**传输（2024-11-05 老规范，只支持 streamable HTTP）。
 
+### 5.4 子代理：新建 / 继续 / 分叉
+
+| 工具 | 作用 |
+|---|---|
+| `subagent(task, description, model, max_steps)` | 新建子代理（独立会话/独立上下文），跑完返回结果 |
+| `subagent_send(session_id, message, ...)` | **继续**已有子代理（同一上下文追加一轮；也接受 `agent_id`） |
+| `subagent_fork(session_id, description, keep_messages)` | 从某会话**分叉**出新子代理（复制最近对话，试另一条路） |
+| `subagent_list(parent_id, limit)` | 列出子代理（状态/步数/标签） |
+
+- 子会话记录 user/assistant 消息，面板点进去能看到"问了什么、答了什么"
+- 子代理深度上限 1（子代理里不能再开子代理，防递归）
+- 继承父会话的会话级授权（不重复弹审批）
+- HTTP：`POST /v1/agent/subagents/{sid}/send`、`POST /v1/agent/subagents/{sid}/fork`
+
+> 实现注意：`subagent_send` **不能**走 `run_agent`——父回合正持全局锁，再抢锁会死锁
+> （实测卡满 600 秒客户端超时）；它与 `subagent` 共用 `_drive_child` 自建 runner。
+
 ### 5.5 子代理面板（看有哪些子代理、在跑什么）
 
 用 `subagent` / `ralph` / `workflow` 派生出的子代理会以 `sub-xxxxxxxxxx` 独立会话运行。

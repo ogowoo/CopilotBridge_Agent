@@ -489,6 +489,31 @@ async def plugin_api(plugin: str, path: str, request: HttpRequest):
         raise HTTPException(404, str(exc))
 
 
+@app.post("/v1/agent/subagents/{sid}/send")
+async def subagent_send(sid: str, payload: dict | None = None):
+    """继续一个子代理会话（追加一轮）。"""
+    data = payload or {}
+    msg = str(data.get("message") or "").strip()
+    if not msg:
+        raise HTTPException(400, "message 不能为空")
+    try:
+        return await b.continue_subagent(sid, msg, str(data.get("model") or ""),
+                                         int(data.get("max_steps") or 40))
+    except b.ToolError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/v1/agent/subagents/{sid}/fork")
+async def subagent_fork(sid: str, payload: dict | None = None):
+    """从某个会话分叉出新的子代理（复制最近对话）。"""
+    data = payload or {}
+    try:
+        return await b.fork_subagent(sid, str(data.get("description") or ""),
+                                     int(data.get("keep_messages") or 60))
+    except b.ToolError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @app.get("/v1/agent/subagents")
 async def list_subagents(parent: str | None = None, limit: int = 50):
     """子代理列表：id / 任务 / 状态 / 进度 / 父会话（供 WebUI 子代理面板）。"""
