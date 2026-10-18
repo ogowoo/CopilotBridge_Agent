@@ -2064,14 +2064,53 @@ async function waitSessionReady(sid){
 function toggleMore(e){e.stopPropagation();document.getElementById('moreMenu').classList.toggle('open')}
 document.addEventListener('click',e=>{let m=document.getElementById('moreMenu');if(m&&m.classList.contains('open')&&!e.target.closest('#moreBtn'))m.classList.remove('open')});
 
-const THEMES=[["","深色"],["amber","琥珀"],["light","浅色"],["solarized","护眼米"],["mint","薄荷"]];
+/* 主题：选择（choice）与解析（resolved）分开——
+   choice='auto' 表示**跟随系统**（默认），resolved 才落到具体主题 id。
+   之前只有 toggleTheme 写 localStorage，加载靠 boot.js；现在两边同一套语义。 */
+const THEMES=[["auto","跟随系统"],["","深色"],["amber","琥珀"],["light","浅色"],["solarized","护眼米"],["mint","薄荷"]];
+const THEME_IDS=THEMES.map(x=>x[0]);
+function themeChoice(){
+ try{
+  const t=localStorage.getItem('cbp-theme');
+  if(t===null||t===''||t==='auto')return 'auto';
+  if(t==='dark')return '';
+  return THEME_IDS.indexOf(t)>=0?t:'auto';
+ }catch(e){return 'auto'}
+}
+function resolveTheme(c){
+ if(c!=='auto')return c;
+ try{return (window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':''}catch(e){return ''}
+}
+function applyTheme(c,persist){
+ const r=resolveTheme(c);
+ if(r){document.documentElement.dataset.theme=r}else{document.documentElement.removeAttribute('data-theme')}
+ document.documentElement.dataset.themeChoice=c;
+ if(persist){try{localStorage.setItem('cbp-theme',c===''?'dark':c)}catch(e){}}
+ const btn=document.getElementById('themeBtn');
+ if(btn){
+  // 名称与括号都必须过 tr()：标题是**拼出来的**，i18n 的 DOM 直译只会按整串精确匹配，
+  // 拼串里夹着中文就会在英文界面漏出来（实测：Theme: 跟随系统（current 浅色…））
+  const nm=tr((THEMES.find(x=>x[0]===c)||THEMES[0])[1]);
+  const cur=tr((THEMES.find(x=>x[0]===r)||{1:'深色'})[1]);
+  btn.title=c==='auto'
+   ?tr('主题：{n}（当前 {c}，点击切换）',{n:nm,c:cur})
+   :tr('主题：{n}（点击切换）',{n:nm});
+ }
+}
 function toggleTheme(){
- let cur=document.documentElement.dataset.theme||'';
- let i=THEMES.findIndex(x=>x[0]===cur);if(i<0)i=0;
- let n=THEMES[(i+1)%THEMES.length];
- if(n[0]){document.documentElement.dataset.theme=n[0]}else{document.documentElement.removeAttribute('data-theme')}
- try{localStorage.setItem('cbp-theme',n[0]||'dark')}catch(e){}
- document.getElementById('themeBtn').title='主题：'+n[1]+'（点击切换）'}
+ const cur=themeChoice();
+ const i=Math.max(0,THEME_IDS.indexOf(cur));
+ applyTheme(THEME_IDS[(i+1)%THEME_IDS.length],true);
+}
+/* 系统主题变化时实时跟随（仅当 choice==='auto'） */
+function watchSystemTheme(){
+ try{
+  const mq=window.matchMedia('(prefers-color-scheme: light)');
+  const on=()=>{if(themeChoice()==='auto')applyTheme('auto',false)};
+  if(mq.addEventListener)mq.addEventListener('change',on);
+  else if(mq.addListener)mq.addListener(on);
+ }catch(e){}
+}
 /* ── 左侧栏折叠（归零只剩边缘拉手） ── */
 function toggleRail(){let r=document.documentElement,c=r.dataset.rail==='closed';
  if(c){delete r.dataset.rail}else{r.dataset.rail='closed'}
@@ -2271,7 +2310,7 @@ try{const _rs=document.getElementById('btnRefreshSess');if(_rs)_rs.onclick=async
 
 
 
-try{let cur=document.documentElement.dataset.theme||'',i=THEMES.findIndex(x=>x[0]===cur);document.getElementById('themeBtn').title='主题：'+THEMES[i<0?0:i][1]+'（点击切换）'}catch(e){}
+try{applyTheme(themeChoice(),false);watchSystemTheme()}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
 document.getElementById('sessModel').onchange=e=>setSessionModel(e.target.value);
 attachPasteHandler('task','task');

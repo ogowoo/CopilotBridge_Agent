@@ -3,7 +3,17 @@
  * script-src 'unsafe-inline'，而内联脚本/内联事件处理器正是 XSS 的主要放大器。
  * 必须在样式表之前执行，否则会看到暗→亮闪烁。 */
 try {
-  const t = localStorage.getItem("cbp-theme");
-  if (t && t !== "dark") document.documentElement.dataset.theme = t;
+  // 主题取值：null/auto = 跟随系统；"" / "dark" = 深色；其余为主题 id
+  const KNOWN = ["amber", "light", "solarized", "mint"];
+  let t = localStorage.getItem("cbp-theme");
+  if (t === null || t === "" || t === "auto") {
+    // 跟随系统：系统偏好浅色就用浅色，否则用默认深色
+    t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "";
+  } else if (t === "dark") {
+    t = "";
+  } else if (KNOWN.indexOf(t) < 0) {
+    t = "";   // 旧主题（nord/dracula/roufen）已移除，回到默认而不是留个空属性
+  }
+  if (t) document.documentElement.dataset.theme = t;
   if (localStorage.getItem("cbp-rail") === "closed") document.documentElement.dataset.rail = "closed";
 } catch (e) { /* 隐私模式下 localStorage 可能抛异常，忽略即可 */ }
