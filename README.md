@@ -213,6 +213,29 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `allow_self_upgrade` | `false` | 是否允许 Agent 修改**服务自身代码**（`self_*` 工具，**高权限，理解风险后再开**） |
 | `self_upgrade_paths` | 见 `config.example.json` | 自升级可触达的路径白名单（安装目录相对路径） |
 
+## 命令行（headless）
+
+```bash
+pip install -e .                    # 之后可用 cbp 命令（也可以 python -m cbp.cli）
+
+cbp serve --port 8765               # 启动服务（等价 python start.py）
+cbp status                          # 健康检查
+cbp run "把 docs 里的死链列出来" --model kimi-coding/k3
+cbp run "重构 X" --plan             # 计划模式：只读探索 → 产出方案后停
+cbp run "分析这个仓库" --sandbox read-only --workspace C:/proj
+cbp sessions --limit 10             # 会话列表
+cbp tools                           # 62 个工具
+cbp plugins list|enable|disable|reload [name]
+cbp mcp list                        # MCP server 状态
+cbp mcp add --name fs --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg C:/data
+cbp sandbox read-only --persist     # 切沙箱档位并写回 config.json
+```
+
+- 统一参数：`--url`（默认 `http://127.0.0.1:8765`，或 `CBP_URL`）、`--token`（或 `CBP_TOKEN`）
+- CLI **不在进程内启动浏览器**：它调同一个服务的 HTTP 接口，和 WebUI 看到同一份事实
+- `--json` 输出原始响应，方便脚本消费；`--quiet` 不打印步骤摘要
+- 连不上服务时返回非零退出码并说明先 `cbp serve`
+
 ## API 一览
 
 | 方法 | 路径 | 说明 |
