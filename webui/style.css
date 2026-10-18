@@ -876,3 +876,14 @@ body #bootBar{left:0;right:0;transform:none;max-width:none;width:auto;
 body.bootbar-on .connbanner{top:26px}
 /* 折叠态限流小标别盖住对话输入框（它和展开态浮窗应落在同一条"让位带"之上） */
 body .retry-chip{bottom:calc(16px + var(--retry-h,0px) + 4px)}
+
+/* 顶部信息条（最终样式）：左图标 + 左对齐文本 + 右操作，只有一条底部分隔线。
+   之前的居中浮框/全圈琥珀边框在宽屏上像一条空横幅（用户反馈"太丑"）。 */
+body #bootBar{justify-content:flex-start;padding:0 14px;gap:8px;height:28px;
+  border:0;border-bottom:1px solid var(--line2);
+  background:var(--panel2);color:var(--muted);font-size:12px}
+body #bootBar #bootIcon{flex:none;font-size:13px;color:var(--amber);line-height:1}
+body #bootBar #bootText{flex:1 1 auto;min-width:0;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+body #bootBar #bootRetry{flex:none;margin-left:auto;padding:1px 9px;font-size:11.5px}
+body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}

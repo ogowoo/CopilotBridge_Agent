@@ -2558,7 +2558,9 @@ function bootBanner(){
  let el=document.getElementById('bootBar');
  if(!el){
   el=document.createElement('div');el.id='bootBar';
-  el.innerHTML='<span id="bootText"></span><button class="btn ghost" id="bootRetry" style="padding:2px 10px;font-size:12px">重试浏览器</button>';
+  el.innerHTML='<span id="bootIcon" aria-hidden="true">⚠</span>'
+   +'<span id="bootText"></span>'
+   +'<button class="btn ghost" id="bootRetry">重试浏览器</button>';
   document.body.appendChild(el);
   // 这个浮层是**按需创建**的（第一次 pollBoot 才建），而 applyI18n 在页面加载时就跑完了
   // ——所以它的静态中文永远不会被扫到。建好立刻自己翻一次。
