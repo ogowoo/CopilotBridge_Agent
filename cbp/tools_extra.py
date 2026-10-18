@@ -6,7 +6,13 @@
 删掉本文件 + 取消 bridge 里的一行调用即可整体下线，不影响核心工具。
 
 参考 DSH（DeepSeek Harness）的工具面，按组提供、可逐组开关
-（config.agent.tools_extra 下的布尔项）：
+（config.agent.tools_extra 下的布尔项）。
+
+**归属规则（新增工具时先看这里）**：
+- 文件读写/验证这类**核心工具** → `cbp/tools.py`（它们依赖快照、回滚、审批等核心设施）
+- 其余**可选/实验性/需要额外依赖**的工具 → 本模块，用 `register(..., approval=...)` 声明审批
+- 本模块超过 3 组（search/web/shell/plan/vision/ask 已 6 组）就拆成 `tools_extra/` 子包，
+  每组一个文件；拆之前保持单文件，避免过早复杂化。
 
 - `search`  `grep`                   按内容正则搜索（find_files 只按文件名）
 - `web`     `web_fetch`              抓网页正文（HTML→纯文本）
@@ -63,11 +69,14 @@ class _Extra:
 
     def __init__(self, registry: Any, config: dict[str, Any],
                  vision_fn: Callable[[str, str], Awaitable[dict]] | None = None,
-                 ask_fn: Callable[[str, list[str]], Awaitable[dict]] | None = None) -> None:
+                 ask_fn: Callable[[str, list[str]], Awaitable[dict]] | None = None,
+                 session_getter: Callable[[], str] | None = None) -> None:
         self.reg = registry
         self.config = config or {}
         self.vision_fn = vision_fn
         self.ask_fn = ask_fn
+        # 当前会话 id：todo/present/提问都按会话隔离，避免并发会话互相看到
+        self.session_getter = session_getter
         self.allow_shell = bool(self.config.get("allow_shell", True))
         self.allow_web = bool(self.config.get("allow_web", True))
         self.allow_private_web = bool(self.config.get("allow_private_web", False))
@@ -75,14 +84,35 @@ class _Extra:
         self.question_timeout = float(
             self.config.get("question_timeout_seconds", _DEFAULT_QUESTION_TIMEOUT))
         self.jobs: dict[str, dict[str, Any]] = {}
-        self.todos: list[dict[str, Any]] = []
-        self.deliverables: list[dict[str, Any]] = []
-        self.pending_question: dict[str, Any] | None = None
+        # 按会话隔离（原先全局共享：两个会话并发会互相看到对方的清单）
+        self._todos: dict[str, list[dict[str, Any]]] = {}
+        self._deliverables: dict[str, list[dict[str, Any]]] = {}
+        self._pending_questions: dict[str, dict[str, Any]] = {}
+
+    def _sid(self) -> str:
+        """当前会话 id（取不到时用 'default'，测试与单会话场景仍然可用）。"""
+        try:
+            sid = self.session_getter() if self.session_getter else ""
+        except Exception:
+            sid = ""
+        return str(sid or "default")
+
+    @property
+    def todos(self) -> list[dict[str, Any]]:
+        return self._todos.get(self._sid(), [])
+
+    @property
+    def deliverables(self) -> list[dict[str, Any]]:
+        return self._deliverables.get(self._sid(), [])
+
+    @property
+    def pending_question(self) -> dict[str, Any] | None:
+        return self._pending_questions.get(self._sid())
 
     # ── 通用 ──
     def _path(self, path: str) -> Path:
         """复用核心注册表的路径沙箱。"""
-        return self.reg._path(path)  # noqa: SLF001（同包内复用，避免重复实现沙箱）
+        return self.reg.sandbox_path(path)
 
     def _rel(self, target: Path) -> str:
         try:
@@ -352,7 +382,7 @@ class _Extra:
             if status not in ("pending", "in_progress", "completed"):
                 status = "pending"
             clean.append({"content": content[:200], "status": status})
-        self.todos = clean
+        self._todos[self._sid()] = clean
         return {"todos": clean, "count": len(clean),
                 "pending": sum(1 for t in clean if t["status"] != "completed")}
 
@@ -371,7 +401,7 @@ class _Extra:
             items.append({"path": path, "description": str(item.get("description") or "")[:200],
                           "exists": target.is_file(), "bytes":
                           target.stat().st_size if target.is_file() else 0})
-        self.deliverables = items
+        self._deliverables[self._sid()] = items
         return {"presented": items, "count": len(items)}
 
     # ── vision：图片 ──
@@ -428,11 +458,12 @@ class _Extra:
         opts = [str(o).strip() for o in (options or []) if str(o).strip()][:6]
         if self.ask_fn is None:
             raise ExtraToolError("当前通道不支持向用户提问（需要 WebUI 会话）")
-        self.pending_question = {"question": question, "options": opts, "asked": time.time()}
+        sid = self._sid()
+        self._pending_questions[sid] = {"question": question, "options": opts, "asked": time.time()}
         try:
             return await self.ask_fn(question, opts)
         finally:
-            self.pending_question = None
+            self._pending_questions.pop(sid, None)
 
 
 # ────────────────────────── 注册入口 ──────────────────────────
@@ -471,9 +502,13 @@ _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
 }
 
 
+_APPROVAL_TOOLS: frozenset[str] = frozenset({"pwsh"})   # 破坏性：注册时声明，核心代码不再特判
+
+
 def register_extra_tools(registry: Any, config: dict[str, Any] | None = None,
                          vision_fn: Callable[[str, str], Awaitable[dict]] | None = None,
-                         ask_fn: Callable[[str, list[str]], Awaitable[dict]] | None = None
+                         ask_fn: Callable[[str, list[str]], Awaitable[dict]] | None = None,
+                         session_getter: Callable[[], str] | None = None
                          ) -> "_Extra":
     """把扩展工具注册到 ToolRegistry；返回实现对象（桥接层可读 todos/deliverables）。
 
@@ -481,7 +516,8 @@ def register_extra_tools(registry: Any, config: dict[str, Any] | None = None,
     未配置的组默认开启（vision/ask 还需要传入回调才真正可用）。
     """
     cfg = config or {}
-    impl = _Extra(registry, cfg, vision_fn=vision_fn, ask_fn=ask_fn)
+    impl = _Extra(registry, cfg, vision_fn=vision_fn, ask_fn=ask_fn,
+                  session_getter=session_getter)
     groups = cfg.get("tools_extra") if isinstance(cfg.get("tools_extra"), dict) else {}
     enabled: set[str] = set()
     for group, names in _GROUPS.items():
@@ -490,6 +526,6 @@ def register_extra_tools(registry: Any, config: dict[str, Any] | None = None,
     for name in sorted(enabled):
         fn = getattr(impl, name)
         desc, args = _DESCRIPTIONS.get(name, (name, {}))
-        registry.register(name, fn, desc, args)
+        registry.register(name, fn, desc, args, approval=name in _APPROVAL_TOOLS)
     impl.registered = sorted(enabled)
     return impl

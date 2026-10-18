@@ -130,5 +130,43 @@ class ExtraToolsTests(unittest.TestCase):
         asyncio.run(flow())
 
 
+class ExtraIsolationTests(unittest.TestCase):
+    """并发会话隔离与审批自声明（解耦边界的两个契约）。"""
+
+    def setUp(self):
+        self.ws = Path(tempfile.mkdtemp(prefix="cbp_extra_iso_"))
+        self.reg = ToolRegistry(self.ws, {"max_read_chars": 100000})
+        self.sid = "s1"
+        self.extra = register_extra_tools(self.reg, {"allow_shell": True},
+                                          session_getter=lambda: self.sid)
+
+    def tearDown(self):
+        shutil.rmtree(self.ws, ignore_errors=True)
+
+    def test_todos_are_per_session(self):
+        asyncio.run(self.extra.todo_write([{"content": "会话一的事", "status": "pending"}]))
+        self.assertEqual(len(self.extra.todos), 1)
+        self.sid = "s2"
+        self.assertEqual(self.extra.todos, [], "换会话不应看到别的会话的任务清单")
+        asyncio.run(self.extra.todo_write([{"content": "会话二", "status": "completed"}]))
+        self.assertEqual(len(self.extra.todos), 1)
+        self.sid = "s1"
+        self.assertEqual(self.extra.todos[0]["content"], "会话一的事")
+
+    def test_present_is_per_session(self):
+        (self.ws / "a.txt").write_text("x", encoding="utf-8")
+        asyncio.run(self.extra.present([{"path": "a.txt"}]))
+        self.assertEqual(len(self.extra.deliverables), 1)
+        self.sid = "s2"
+        self.assertEqual(self.extra.deliverables, [])
+
+    def test_pwsh_registered_with_approval(self):
+        self.assertIn("pwsh", self.reg._tools)
+        self.assertTrue(self.reg.requires_approval("pwsh"),
+                        "pwsh 必须在注册时声明 approval=True")
+        # 非破坏性扩展工具不应被审批门拦住
+        self.assertFalse(self.reg.requires_approval("grep"))
+
+
 if __name__ == "__main__":
     unittest.main()

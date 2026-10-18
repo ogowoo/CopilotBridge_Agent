@@ -1505,7 +1505,8 @@ async def _ask_user_via_webui(question: str, options: list[str]) -> dict:
 
 TOOLS_EXTRA = register_extra_tools(AGENT_TOOLS, AGENT_CFG,
                                    vision_fn=_vision_via_copilot,
-                                   ask_fn=_ask_user_via_webui)
+                                   ask_fn=_ask_user_via_webui,
+                                   session_getter=lambda: ACTIVE_SESSION_ID)
 # 新任务缺省工作区：POST /v1/agent/workspace 会更新它
 DEFAULT_WORKSPACE = str(AGENT_WORKSPACE)
 # 与 AgentRunner.__init__ 的默认值保持一致，供 WebUI 显示真实 Token 预算。

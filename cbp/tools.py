@@ -168,7 +168,7 @@ class _ComWorker:
 # 破坏性/不可回滚操作：默认需要用户**一次性**授权（fail-closed）。
 # 与 DSH 一致：只有 allowed-once，没有 allow-always、也没有撤销存储——
 # 授权用完即焚，下一次同类操作要重新授权。
-APPROVAL_REQUIRED_TOOLS = ("delete_path", "outlook_send", "run_python", "pwsh")
+APPROVAL_REQUIRED_TOOLS = ("delete_path", "outlook_send", "run_python")
 
 # 一次调用可能已经产生副作用、但我们**拿不到结果**的动作：禁止原样重试。
 NON_IDEMPOTENT_TOOLS = ("pwsh", "outlook_send", "delete_path", "move_path", "append_text",
@@ -192,6 +192,8 @@ class ToolRegistry:
         self.approval_policy = str(config.get("approval_policy", "ask")).lower()
         self.approval_required_tools = tuple(
             config.get("approval_required_tools") or APPROVAL_REQUIRED_TOOLS)
+        # 外部注册时用 approval=True 声明的破坏性工具（与核心集合分开维护）
+        self._approval_extra: set[str] = set()
         self.allow_python = bool(config.get("allow_python", False))
         # 程序化工具调用（P2-13）：在子进程里批量调用**只读**工具，默认关闭。
         self.allow_run_code = bool(config.get("allow_run_code", False))
@@ -289,9 +291,17 @@ class ToolRegistry:
             })
 
     def register(self, name: str, fn: Callable[..., Awaitable[Any]],
-                 description: str, arguments: dict[str, Any]) -> None:
-        """注册外部工具（如桥接层的 Copilot 文件上传 copilot_attach）。"""
+                 description: str, arguments: dict[str, Any],
+                 approval: bool = False) -> None:
+        """注册外部工具（如桥接层的 Copilot 文件上传 copilot_attach）。
+
+        approval=True：该工具是破坏性操作，需一次性审批（由**模块自己声明**，
+        核心工具的能力开关仍走 APPROVAL_REQUIRED_TOOLS）。这样扩展工具模块
+        不必在核心代码里加 if 分支。
+        """
         self._tools[name] = fn
+        if approval:
+            self._approval_extra.add(name)
         self._extra_descriptions.append(
             {"name": name, "description": description, "arguments": arguments})
 
@@ -782,6 +792,9 @@ class ToolRegistry:
         """
         if self.approval_policy == "never":
             return False
+        if name in self._approval_extra:
+            # 模块注册时自己声明为破坏性操作；能力开关由该模块负责
+            return True
         if name not in self.approval_required_tools:
             return False
         # 能力本身没开时不需要审批（工具根本不该被调用，另有报错路径）。
@@ -791,10 +804,6 @@ class ToolRegistry:
             return self.allow_python
         if name == "outlook_send":
             return self.allow_outlook_send
-        if name == "pwsh":
-            # 扩展工具的开关由 tools_extra 读取；这里保守地默认开启时需要审批
-            extra = self.config.get("tools_extra") or {}
-            return bool(self.config.get("allow_shell", True)) and bool(extra.get("shell", True))
         return True
 
     def _sandbox_denied(self, code: str, target: str, reason: str) -> str:
@@ -815,6 +824,10 @@ class ToolRegistry:
             "③ 只需要内容时用只读工具读取，或请用户把文件放进工作区。",
         ]
         return "\n".join(lines)
+
+    def sandbox_path(self, value: str = ".") -> Path:
+        """公开的沙箱路径解析（扩展工具模块用，避免访问私有方法）。"""
+        return self._path(value)
 
     def _path(self, value: str = ".") -> Path:
         candidate = (self.root / value).resolve()

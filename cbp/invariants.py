@@ -229,7 +229,7 @@ def _approval_contract() -> None:
     """三类破坏性工具必须默认要求审批，且授权是"消费式"的（allowed-once）。"""
     from .tools import APPROVAL_REQUIRED_TOOLS, ToolRegistry
 
-    expected = {"delete_path", "outlook_send", "run_python", "pwsh"}
+    expected = {"delete_path", "outlook_send", "run_python"}
     if set(APPROVAL_REQUIRED_TOOLS) != expected:
         raise InvariantError(f"审批工具集合变化了: {sorted(APPROVAL_REQUIRED_TOOLS)}（需同步文档与测试）")
     tmp = Path(tempfile.mkdtemp(prefix="cbp_inv_appr_"))
@@ -248,6 +248,11 @@ def _approval_contract() -> None:
         st.create("s1", "t", str(tmp), "m")
         if st.take_approval("s1", "delete_path", "h"):
             raise InvariantError("未授权就放行了（fail-open）")
+        # 扩展工具模块自己声明审批（register(..., approval=True)），核心代码不特判
+        from .tools_extra import register_extra_tools as _reg_extra
+        _reg_extra(t, {"allow_shell": True})
+        if "pwsh" in t._tools and not t.requires_approval("pwsh"):
+            raise InvariantError("pwsh 未按 register(approval=True) 要求审批")
         st.grant_approval("s1", "delete_path", "h")
         if not st.take_approval("s1", "delete_path", "h"):
             raise InvariantError("授权后仍不放行")
