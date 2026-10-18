@@ -798,6 +798,22 @@ WebUI 的授权横幅会按 `approval_scope` 显示不同措辞（"仅对这一�
 （改用工作区相对路径 / 开启自升级 / 让用户把文件放进工作区）。工具参数写错时也会
 列出该工具的**合法参数名**，避免模型反复试探。
 
+## 整体回归（真跑各能力）
+
+单测/审计是白盒；这个脚本**真跑一遍面向用户的能力**（用真实模型），几分钟给出结论：
+
+```bash
+python scripts/regression.py                 # 默认 kimi-coding/k3，跑完自动清理
+python scripts/regression.py --skip-slow     # 跳过深研/单测/布局审计（约 1.5 分钟）
+python scripts/regression.py --model copilot-auto --keep   # 保留现场排查
+```
+
+覆盖 22 项：健康检查、工具面完整性（62 个）、沙箱三档、**计划模式（提交方案且不写文件）**、
+普通写入任务、子代理创建/继续/分叉、深研（证据+报告）、定时任务执行、MCP（stdio 工具可用 +
+移除后摘除）、插件安装/卸载、插件面板、CLI 只读命令、单测、不变量、UI 冒烟、i18n/布局/对比度审计。
+
+结果写到 `data/regression/report.json`，失败时退出码非零（可接 CI）。
+
 ## 运行时不变量检查（提交前必跑）
 
 ```powershell
