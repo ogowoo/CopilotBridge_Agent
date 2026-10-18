@@ -415,6 +415,13 @@ Object.assign(I18N_EN, {
   "当前没有对话记录": "No conversation yet",
   "授权中…": "Authorizing…",
  "Agent 提问：": "Agent asks: ",
+ "新会话": "New session",
+ "从左侧选择会话，或在这里开始新的对话": "Pick a session on the left, or start a new chat here",
+ "发消息或创建任务，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图":
+   "Send a message or create a task, e.g. analyse the project under workspace and produce a TODO; screenshots can be pasted directly",
+ "开始": "Start",
+ "Enter 发送，Shift+Enter 换行": "Enter to send, Shift+Enter for a new line",
+ "时间线中的": "In the timeline, ",
  "深研": "Deep research",
  "多角度搜索 + 抓正文，生成带来源的调研报告（新会话）":
    "Multi-angle search + page fetching, produces a sourced research report (new session)",

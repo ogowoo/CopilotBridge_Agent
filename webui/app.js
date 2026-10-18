@@ -1568,10 +1568,15 @@ function openManual(){const body=document.getElementById('manualBody');
  try{if(typeof applyI18n==='function')applyI18n(body)}catch(e){}
  openMask('manualMask')}
 function closeManual(){closeMask('manualMask')}
-function openTask(){openMask('taskMask')}
-function closeTask(){closeMask('taskMask')}
+function openTask(){
+ // 新会话视图（DSH 式）：空态就是编辑器，没有再套一层弹窗
+ document.getElementById('emptyState').style.display='flex';
+ document.getElementById('sessionView').style.display='none';
+ current=null; try{drawSessions()}catch(e){}
+ const t=document.getElementById('task'); if(t){t.value='';t.focus()}
+}
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closePlugins();closeTask()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closePlugins();k()}});
 
 /* ── 实时面板选项卡 + 放大查看 ── */
 const LIVE_NAMES={activity:'当前执行状态',answer:'当前回答',prompt:'最近发送的内容',chat:'继续对话'};
@@ -1919,7 +1924,6 @@ async function runTask(){
  current=b.session_id;
  currentModel=b.model;      // 会话页模型选择器随即显示本次任务用的模型
  IMG_STORES.task=[];renderThumbs();
- closeTask();
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
  resetView();
@@ -2246,13 +2250,14 @@ const ACTIONS={
  exportTimeline:()=>exportTimeline(),
  refreshModels:()=>refreshModels(),
  runTask:()=>runTask(),
+ taskKey:(el,e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();runTask()}},
  closeDlg:()=>closeDlg(),
  closeManual:()=>closeManual(),
  closeLive:()=>closeLive(),
- closeTask:()=>closeTask(),
+
  // 点击遮罩**背景**才关闭（点弹窗内部不关）：原来写在内联里的 if(event.target===this)
  mask:(el,e)=>{if(e.target!==el)return;
-  ({dlg:closeDlg,manual:closeManual,live:closeLive,task:closeTask,plugins:closePlugins}[el.dataset.arg]||(()=>{}))()},
+  ({dlg:closeDlg,manual:closeManual,live:closeLive,plugins:closePlugins}[el.dataset.arg]||(()=>{}))()},
  maskGm:(el,e)=>{if(e.target===el)gmClose(null)},
  // 动态生成内容里的处理器（消息复制/代码折叠/附件移除）
  copyMsg:(el)=>copyMsg(el),

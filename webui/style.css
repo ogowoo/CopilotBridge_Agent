@@ -733,3 +733,19 @@ section.card:has(#stepCount){margin-top:14px}
 .pluginrow .pstat.bad{color:var(--danger-text)}
 .pluginrow .pacts{display:flex;gap:6px;margin-top:6px}
 .pluginrow .perr{margin-top:6px;color:var(--danger-text);white-space:pre-wrap;font-size:11.5px}
+
+/* ── 新会话视图（DSH 式：空态就是编辑器，不套弹窗）────────────────── */
+.newchat{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;width:100%;padding:clamp(20px,5vh,56px) 24px;text-align:center}
+.newchat .nc-head .big{line-height:1}
+.newchat .nc-sub{color:var(--muted);font-size:13px}
+.newchat .nc-box{width:min(760px,94%);border:1px solid var(--line2);border-radius:14px;
+  background:var(--panel2);padding:12px;display:flex;flex-direction:column;gap:8px;
+  text-align:left}
+.newchat textarea#task{width:100%;min-height:96px;max-height:40vh;resize:vertical;
+  border:0;background:transparent;color:var(--text);font:inherit;font-size:14px;
+  line-height:1.65;outline:none;padding:2px}
+.newchat .nc-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.newchat .nc-bar select,.newchat .nc-bar input{max-width:220px;min-width:110px}
+.newchat .nc-bar .btn.accent{margin-left:auto}
+.newchat .nc-hint{color:var(--faint);font-size:11.5px}

@@ -3,7 +3,7 @@
   <aside class="rail">
     <button type="button" id="railBtn" title="收起/展开侧栏" data-act="toggleRail">‹</button>
     <div class="railtop"><button type="button" class="btn accent block" data-act="openTask">＋ 新任务</button></div>
-    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" aria-label="筛选会话" placeholder="筛选…" data-act-input="drawSessions"><span class="listacts" id="listActs"><button type="button" class="iconbtn" title="使用手册" data-act="openManual"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5A2.5 2.5 0 0 1 4 20.5z"/></svg></button><button type="button" id="browserBtn" class="iconbtn" title="切换自动化浏览器窗口的显示/隐藏" data-act="toggleBrowser"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><circle cx="6.2" cy="6.8" r=".6" fill="currentColor" stroke="none"/><circle cx="8.4" cy="6.8" r=".6" fill="currentColor" stroke="none"/></svg></button><button type="button" id="themeBtn" class="iconbtn" title="主题：深色（点击切换）" data-act="toggleTheme"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></svg></button><button type="button" id="gsBtn" class="iconbtn" title="跨会话搜索对话内容" data-act="toggleGlobalSearch"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></button><button type="button" id="langBtn" class="iconbtn" title="语言 / 語言 / Language（点击切换）" data-act="cycleLang">简</button><button type="button" id="shutdownBtn" class="iconbtn danger" title="终止服务 / 退出（优雅停机；正在跑的任务会中断，状态已落库，重启后可恢复）" data-act="shutdownService"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v8"/><path d="M6.8 6.6a8 8 0 1 0 10.4 0"/></svg></button></span></div>
+    <div class="listhead"><span>SESSIONS</span><input id="sessFilter" aria-label="筛选会话" placeholder="筛选…" data-act-input="drawSessions"><span class="listacts" id="listActs"><button type="button" class="iconbtn" title="新会话" data-act="openTask"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><button type="button" class="iconbtn" title="使用手册" data-act="openManual"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5A2.5 2.5 0 0 1 4 20.5z"/></svg></button><button type="button" id="browserBtn" class="iconbtn" title="切换自动化浏览器窗口的显示/隐藏" data-act="toggleBrowser"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><circle cx="6.2" cy="6.8" r=".6" fill="currentColor" stroke="none"/><circle cx="8.4" cy="6.8" r=".6" fill="currentColor" stroke="none"/></svg></button><button type="button" id="themeBtn" class="iconbtn" title="主题：深色（点击切换）" data-act="toggleTheme"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></svg></button><button type="button" id="gsBtn" class="iconbtn" title="跨会话搜索对话内容" data-act="toggleGlobalSearch"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></button><button type="button" id="langBtn" class="iconbtn" title="语言 / 語言 / Language（点击切换）" data-act="cycleLang">简</button><button type="button" id="shutdownBtn" class="iconbtn danger" title="终止服务 / 退出（优雅停机；正在跑的任务会中断，状态已落库，重启后可恢复）" data-act="shutdownService"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v8"/><path d="M6.8 6.6a8 8 0 1 0 10.4 0"/></svg></button></span></div>
     <div id="sessions" class="sesslist"></div>
     <div id="gSearch" class="gsearch" style="display:none">
       <input id="gsInput" aria-label="跨会话搜索" placeholder="跨会话搜索对话内容…（Esc 关闭）" data-act-input="gsInput" data-act-key="gsKey">
@@ -11,10 +11,27 @@
     </div>
   </aside>
   <main class="main">
-    <div id="emptyState" class="empty">
-      <div class="big">CB</div>
-      <div>从左侧选择一个 Session，或发起新任务</div>
-      <div style="font-size:12px"><span data-i18n="提示：时间线中的">提示：时间线中的</span> <kbd data-i18n="查看结果">查看结果</kbd><span data-i18n=" 可展开结构化 JSON"> 可展开结构化 JSON</span></div>
+    <div id="emptyState" class="empty newchat">
+      <div class="nc-head"><span class="big">CB</span></div>
+      <div class="nc-sub" data-i18n="从左侧选择会话，或在这里开始新的对话">从左侧选择会话，或在这里开始新的对话</div>
+      <div class="nc-box">
+        <textarea id="task" aria-label="任务内容" rows="4"
+                  data-act-key="taskKey"
+                  placeholder="发消息或创建任务，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图"></textarea>
+        <div id="taskThumbs" class="thumbs"></div>
+        <div class="nc-bar">
+          <select id="model" aria-label="新任务使用的模型"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select>
+          <button type="button" id="refreshModelsBtn" class="iconbtn" title="重新读取 Copilot 模型菜单" data-act="refreshModels">↻</button>
+          <input id="workspace" aria-label="工作目录" placeholder="工作目录（可留空）">
+          <input id="sid" aria-label="Session ID" placeholder="Session ID（可留空）">
+          <div class="seg">
+            <button type="button" id="ntAgent" class="btn seg on" data-act="setTaskMode" data-arg="agent">Agent 执行</button>
+            <button type="button" id="ntChat" class="btn seg" data-act="setTaskMode" data-arg="chat">普通对话</button>
+          </div>
+          <button type="button" class="btn accent" data-act="runTask">开始</button>
+        </div>
+      </div>
+      <div class="nc-hint"><span data-i18n="Enter 发送，Shift+Enter 换行">Enter 发送，Shift+Enter 换行</span> · <span data-i18n="时间线中的">时间线中的</span> <kbd data-i18n="查看结果">查看结果</kbd><span data-i18n=" 可展开结构化 JSON"> 可展开结构化 JSON</span></div>
     </div>
     <div id="sessionView" style="display:none">
       <header class="topbar">
@@ -168,24 +185,6 @@
     <div class="dfoot">
       <button type="button" class="btn ghost" data-act="openPlugins">刷新</button>
       <button type="button" class="btn accent" data-act="closePlugins">关闭</button>
-    </div>
-  </div>
-</div>
-<!-- 新任务弹窗：表单字段与元素 ID 保持与旧内嵌版一致，JS 无需改动 -->
-<div class="mask" role="dialog" aria-modal="true" aria-label="新建任务" id="taskMask" data-act="mask" data-arg="task">
-  <div class="dlg" style="width:min(560px,94vw)">
-    <div class="dhead"><span>发起新任务</span><span class="hint">Esc 关闭</span></div>
-    <div class="dbody">
-      <input id="sid" aria-label="Session ID" placeholder="Session ID（可留空）">
-      <input id="workspace" aria-label="工作目录" placeholder="工作目录（可留空）">
-      <div style="display:flex;gap:6px"><select id="model" aria-label="新任务使用的模型"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select><button type="button" id="refreshModelsBtn" class="btn" style="flex:none;padding:5px 10px" title="重新读取 Copilot 模型菜单" data-act="refreshModels">↻</button></div>
-      <textarea id="task" aria-label="任务内容" rows="6" placeholder="任务内容，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图"></textarea>
-      <div id="taskThumbs" class="thumbs"></div>
-      <div style="display:flex;gap:6px"><button type="button" id="ntAgent" class="btn seg on" style="flex:1" data-act="setTaskMode" data-arg="agent">Agent 执行</button><button type="button" id="ntChat" class="btn seg" style="flex:1" data-act="setTaskMode" data-arg="chat">普通对话</button></div>
-    </div>
-    <div class="dfoot">
-      <button type="button" class="btn ghost" data-act="closeTask">取消</button>
-      <button type="button" class="btn accent" data-act="runTask">启动任务</button>
     </div>
   </div>
 </div>
