@@ -507,6 +507,7 @@ def teardown(ctx): ...
 | `research` | `deep_research` 多角度并行搜索 + 抓正文，返回证据包 | 无 |
 | `schedule` | `schedule_add/list/remove/run` 定时任务（every / daily / once），到点在**独立新会话**跑任务；`workspace` 指定工作目录（默认当前工作区） | 无 |
 | `image-gen` | `image_generate` 文生图，落盘到 `workspace/generated/` | DASHSCOPE_API_KEY 或 OPENAI_API_KEY |
+| `mcp` | **MCP 客户端**：连接 MCP server（stdio），把其工具注册成 `mcp__<server>__<tool>` | 无（本地进程，无需 key） |
 
 **Combined = Grok 式 bot**：实时搜索（web-search）+ 深研（research）+ 定时任务（schedule）+
 生图（image-gen）+ 跨会话记忆（memory）+ 子代理/编排（subagent/ralph/workflow）。
@@ -518,6 +519,31 @@ def teardown(ctx): ...
 - 工具 `web_search(query, max_results=6)`：DuckDuckGo 免 key；配了
   `BRAVE_API_KEY` / `TAVILY_API_KEY` / `SERPER_API_KEY` 会自动优选
 - 接口 `GET /v1/plugins/web-search/api/search?q=...&n=6`
+
+### 5.8 MCP（Model Context Protocol）
+
+CBP 当 **MCP 客户端**：连上外部 MCP server，把它的工具注册进 Agent，模型就能像用内置工具
+一样调用（工具名 `mcp__<server>__<tool>`）。当前实现 **stdio 传输**（本地 MCP server 的主流方式）。
+
+```bash
+# 添加一个 server（按需改成 npx/uvx 启动的真实 server）
+curl -X POST http://127.0.0.1:8765/v1/plugins/mcp/api/add \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"fs","spec":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","C:/data"]}}'
+
+curl http://127.0.0.1:8765/v1/plugins/mcp/api/list     # 连接状态 / 已暴露的工具
+curl -X POST http://127.0.0.1:8765/v1/plugins/mcp/api/call \
+  -H 'Content-Type: application/json' \
+  -d '{"server":"fs","tool":"read_file","arguments":{"path":"C:/data/a.txt"}}'
+```
+
+- 配置持久化在 `data/plugins.json` 的 `mcp.state.servers`；重启自动重连
+- 工具参数由 MCP 的 `inputSchema` 自动转成我们的参数说明
+- `tools/call` 的 `content[].type=text` 会拼成结果文本；`isError` 会转成工具错误
+- 单个 server 起不来只记在 `errors` 里，不影响其它 server 与内置工具
+- 也提供两个通用工具：`mcp_list`（看状态）、`mcp_call`（手动调用任意 server 的工具）
+
+> 限制：目前只支持 stdio；HTTP/SSE 传输、resources/prompts 两类 MCP 能力尚未接入。
 
 ### 5.5 子代理面板（看有哪些子代理、在跑什么）
 
