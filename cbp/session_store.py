@@ -643,6 +643,18 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         （会话已不可达，等于不可回收的垃圾数据）。
         """
         with self.lock, self._connect() as con:
+            # 级联：父会话删掉后，子代理会话没有归属（界面上只能浮在顶层），一并删除。
+            # 只删一层：子代理不允许再开子代理（深度上限 1）。
+            kids = [r[0] for r in con.execute(
+                "SELECT id FROM sessions WHERE parent_id=?", (sid,)).fetchall()]
+            for kid in kids:
+                con.execute("DELETE FROM sessions WHERE id=?", (kid,))
+                for table in ("messages", "steps", "file_events", "conv_stats",
+                              "turn_results", "step_dispatch", "approvals", "events"):
+                    try:
+                        con.execute(f"DELETE FROM {table} WHERE session_id=?", (kid,))
+                    except Exception:
+                        pass
             existed = con.execute("DELETE FROM sessions WHERE id=?", (sid,)).rowcount > 0
             for table in ("messages", "steps", "file_events", "conv_stats", "turn_results", "step_dispatch", "approvals", "events"):
                 try:

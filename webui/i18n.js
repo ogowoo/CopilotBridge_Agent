@@ -441,6 +441,13 @@ Object.assign(I18N_EN, {
  "（没有子目录）": "(no subdirectories)",
  "读取目录失败: ": "Failed to read directory: ",
  "新会话": "New session",
+ "显示子代理会话": "Show subagent sessions",
+ "展开/折叠子代理会话": "Expand/collapse subagent sessions",
+ "全部展开/折叠子代理会话": "Expand/collapse all subagent sessions",
+ "已展开": "Expanded",
+ "已折叠": "Collapsed",
+ "个子代理归属会话": "subagent sessions",
+ "已折叠子代理会话": "Subagent sessions hidden",
  "在此工作区新建会话": "New session in this workspace",
  "从左侧选择会话，或在这里开始新的对话": "Pick a session on the left, or start a new chat here",
  "发消息或创建任务，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图":

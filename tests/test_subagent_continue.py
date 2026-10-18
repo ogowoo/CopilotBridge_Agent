@@ -48,6 +48,13 @@ class SubagentForkTests(unittest.TestCase):
         row = b.AGENT_SESSIONS.get(out["agent_id"])
         self.assertEqual(row["parent_id"], "p1", "顶层会话分叉后父指针指向源会话")
 
+    def test_delete_parent_cascades_to_children(self):
+        """删父会话要把子代理一起删掉，否则子会话没有归属、只能浮在列表顶层。"""
+        b.AGENT_SESSIONS.delete("p1")
+        self.assertIsNone(b.AGENT_SESSIONS.get("p1"))
+        self.assertIsNone(b.AGENT_SESSIONS.get("sub-a"), "子代理应随父会话级联删除")
+        self.assertEqual(b.AGENT_SESSIONS.messages("sub-a"), [])
+
     def test_fork_unknown_session(self):
         with self.assertRaises(b.ToolError):
             asyncio.run(b.fork_subagent("nope"))

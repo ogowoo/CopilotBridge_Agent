@@ -778,8 +778,17 @@ async def web_ui_asset(asset: str):
 
 
 @app.get("/v1/agent/sessions")
-async def sessions(include_archived: bool = False):
-    return {"sessions": b.AGENT_SESSIONS.list(include_archived)}
+async def sessions(include_archived: bool = False, include_subagents: bool = True):
+    """会话列表。默认**不返回子代理会话**——它们已经挂在父会话下（子代理面板可看），
+    再占一行会把主列表淹掉。需要时传 include_subagents=true。"""
+    rows = b.AGENT_SESSIONS.list(include_archived)
+    # 默认返回**全部**（含子代理，带 parent_id）：WebUI 据此把子会话折叠到父会话下；
+    # 需要扁平列表的调用方显式传 include_subagents=false。
+    if not include_subagents:
+        rows = [x for x in rows if not str(x.get("parent_id") or "").strip()]
+    return {"sessions": rows, "subagent_count": sum(
+        1 for x in b.AGENT_SESSIONS.list(include_archived)
+        if str(x.get("parent_id") or "").strip())}
 
 
 @app.get("/v1/agent/sessions/{sid}")
