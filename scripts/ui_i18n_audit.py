@@ -213,6 +213,14 @@ def audit(url: str, as_json: bool) -> int:
                 items += page.evaluate(CHROME_JS)
             except Exception:
                 pass
+            # 「更多」下拉菜单：默认隐藏，不展开就扫不到（实测：插件管理… 漏翻就是这里）
+            try:
+                page.evaluate("document.getElementById('moreMenu').classList.add('open')")
+                page.wait_for_timeout(250)
+                items += page.evaluate(CHROME_JS)
+                page.evaluate("document.getElementById('moreMenu').classList.remove('open')")
+            except Exception:
+                pass
             # 再开一次"使用手册"与"新任务"弹窗（大字面量，最容易漏）
             for act in ("openManual", "openTask", "openPlugins"):
                 try:

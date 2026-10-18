@@ -426,6 +426,7 @@ Object.assign(I18N_EN, {
  "深研完成": "Research done",
  "深研失败: ": "Research failed: ",
  "插件管理": "Plugins",
+ "插件管理…": "Plugins…",
  "已启用": "Enabled",
  "已禁用": "Disabled",
  "未加载": "Not loaded",
