@@ -22,7 +22,8 @@
         <div class="nc-bar">
           <select id="model" aria-label="新任务使用的模型"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select>
           <button type="button" id="refreshModelsBtn" class="iconbtn" title="重新读取 Copilot 模型菜单" data-act="refreshModels">↻</button>
-          <input id="workspace" aria-label="工作目录" placeholder="工作目录（可留空）">
+          <input id="workspace" aria-label="工作目录" placeholder="工作目录（默认 workspace）">
+          <button type="button" class="iconbtn" title="选择工作目录" data-act="pickWorkspace">📁</button>
           <input id="sid" aria-label="Session ID" placeholder="Session ID（可留空）">
           <div class="seg">
             <button type="button" id="ntAgent" class="btn seg on" data-act="setTaskMode" data-arg="agent">Agent 执行</button>
@@ -172,6 +173,24 @@
     <div class="dfoot">
       <button type="button" class="btn ghost" id="liveCopy">复制内容</button>
       <button type="button" class="btn accent" data-act="closeLive">关闭</button>
+    </div>
+  </div>
+</div>
+<!-- 工作目录选择：系统对话框优先，失败回退到应用内浏览（对应 DSH 的 auto） -->
+<div class="mask" role="dialog" aria-modal="true" aria-label="选择工作目录" id="wsMask" data-act="mask" data-arg="ws">
+  <div class="dlg" style="width:min(640px,94vw)">
+    <div class="dhead"><span data-i18n="选择工作目录">选择工作目录</span><span class="hint">Esc</span></div>
+    <div class="dbody">
+      <div class="wsbar">
+        <button type="button" class="btn ghost" data-act="wsUp" title="上一级">↑</button>
+        <code id="wsPath" class="wspath">—</code>
+        <button type="button" class="btn ghost" data-act="wsDefault" title="回到默认工作区">默认</button>
+      </div>
+      <div id="wsList" class="wslist"></div>
+    </div>
+    <div class="dfoot">
+      <button type="button" class="btn ghost" data-act="closeWs">取消</button>
+      <button type="button" class="btn accent" data-act="wsChoose">选择此目录</button>
     </div>
   </div>
 </div>

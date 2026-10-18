@@ -3,7 +3,7 @@
 HTTP 路由在 api.py；本模块不定义任何 FastAPI 端点。
 """
 
-import asyncio, base64, collections, json, os, re, time, uuid
+import asyncio, base64, collections, json, os, re, shutil, time, uuid
 from os.path import commonprefix
 from datetime import datetime
 from pathlib import Path
@@ -3407,6 +3407,87 @@ def save_workspace_file(rel: str, data: bytes) -> str:
         return str(target.relative_to(AGENT_TOOLS.root))
     except ValueError:
         return str(target)
+
+
+# ── 工作目录选择器：系统原生对话框（对应 DSH 的 native 后端）──────────
+async def pick_directory_native(start: str | None = None) -> dict:
+    """弹系统文件夹对话框（Windows），返回用户选中的路径。
+
+    对应 DSH 的 `dsh-host-directory-picker-native`（它用 COM IFileOpenDialog；
+    这里用 PowerShell 的 FolderBrowserDialog，效果等价且无需 ctypes 手写 COM）。
+    对话框在服务所在桌面弹出：本地用户能看到；非交互会话会超时并让前端回退到
+    browse 模式（与 DSH 的 auto 行为一致）。
+    """
+    import subprocess as _sp
+
+    base = str(start or "").strip() or str(AGENT_TOOLS.root)
+    safe = base.replace("'", "''")
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms | Out-Null;"
+        "$f = New-Object System.Windows.Forms.FolderBrowserDialog;"
+        f"$f.Description = '选择工作目录';"
+        f"$f.SelectedPath = '{safe}';"
+        "$f.ShowNewFolderButton = $true;"
+        "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)"
+        " { Write-Output ('CBP_PICK=' + $f.SelectedPath) }")
+    exe = shutil.which("powershell") or "powershell"
+    loop = asyncio.get_running_loop()
+
+    def _run() -> tuple[int, str]:
+        proc = _sp.run([exe, "-NoProfile", "-STA", "-Command", script],
+                       capture_output=True, text=True, timeout=300,
+                       creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
+        return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+    try:
+        rc, out = await loop.run_in_executor(None, _run)
+    except Exception as exc:
+        raise ToolError(f"无法打开系统目录对话框（{exc}）；可改用应用内浏览") from exc
+    m = re.search(r"CBP_PICK=(.+)", out or "")
+    if not m:
+        return {"path": "", "cancelled": True}
+    chosen = m.group(1).strip()
+    if not chosen or not Path(chosen).is_dir():
+        return {"path": "", "cancelled": True}
+    return {"path": str(Path(chosen)), "cancelled": False}
+
+
+# ── 工作目录选择器：目录浏览（只列子目录，供 WebUI 选择器）──────────
+def browse_directories(path: str | None = None) -> dict:
+    """列出目录下的**子目录**，供 WebUI 的工作目录选择器。
+
+    不传 path 时从当前工作区开始（默认 workspace）；不列隐藏/依赖目录，
+    单层最多 300 项（防止 huge 目录把界面撑爆）。
+    """
+    start = str(path or "").strip()
+    base = Path(start).expanduser() if start else Path(AGENT_TOOLS.root)
+    try:
+        base = base.resolve()
+    except Exception:
+        base = Path(AGENT_TOOLS.root).resolve()
+    if not base.is_dir():
+        base = Path(AGENT_TOOLS.root).resolve()
+    skip = {"__pycache__", "node_modules", "edgeprofile", ".git", "site-packages"}
+    entries: list[dict] = []
+    try:
+        for child in sorted(base.iterdir(), key=lambda p: p.name.lower()):
+            try:
+                if not child.is_dir():
+                    continue
+                name = child.name
+                if name.startswith((".", "$")) or name.lower() in skip:
+                    continue
+                entries.append({"name": name, "path": str(child)})
+            except OSError:
+                continue
+            if len(entries) >= 300:
+                break
+    except (PermissionError, OSError):
+        pass
+    parent = base.parent if base.parent != base else None
+    return {"path": str(base), "parent": str(parent) if parent else "",
+            "entries": entries, "default": str(AGENT_TOOLS.root),
+            "is_default": str(base) == str(AGENT_TOOLS.root)}
 
 
 # ── 深研一键任务（WebUI「深研」按钮）──────────────────────────────────

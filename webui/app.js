@@ -248,6 +248,57 @@ async function deepResearchNow(){
  }catch(e){ toast(tr('深研失败: ')+(e.text||e),'err') }
 }
 
+/* ── 工作目录选择器（对齐 DSH：native 优先，失败回退 browse）──────────
+   native：POST /v1/agent/pick-directory（系统文件夹对话框）
+   browse：GET /v1/agent/browse（应用内树，对话框打不开时用） */
+let wsCurrent='';
+async function pickWorkspace(){
+ const cur=(document.getElementById('workspace')||{}).value||'';
+ try{
+  const d=await api('/v1/agent/pick-directory',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({start:cur})});
+  if(d&&d.path){ const w=document.getElementById('workspace'); if(w)w.value=d.path;
+    toast(tr('已选择工作目录: ')+d.path,'ok'); return }
+  if(d&&d.cancelled) return;   // 用户取消
+ }catch(e){
+  // 系统对话框不可用（无桌面会话/被策略禁用）→ 回退应用内浏览
+  toast(tr('系统对话框不可用，改用应用内浏览'),'ok');
+ }
+ await openWsBrowser(cur);
+}
+async function openWsBrowser(start){
+ openMask('wsMask');
+ await wsNavigate(start||'');
+}
+async function wsNavigate(path){
+ try{
+  const q=path?('?path='+encodeURIComponent(path)):'';
+  const d=await api('/v1/agent/browse'+q);
+  wsCurrent=d.path||'';
+  const p=document.getElementById('wsPath'); if(p)p.textContent=wsCurrent||'—';
+  const box=document.getElementById('wsList'); if(!box)return;
+  box.innerHTML='';
+  if(!(d.entries||[]).length){ box.innerHTML='<div class="meta">'+esc(tr('（没有子目录）'))+'</div>'; return }
+  (d.entries||[]).forEach(x=>{
+   const row=document.createElement('div');row.className='wsrow';
+   row.textContent='📁 '+x.name;
+   row.onclick=()=>wsNavigate(x.path);
+   box.appendChild(row)});
+ }catch(e){ toast(tr('读取目录失败: ')+(e.text||e),'err') }
+}
+async function wsUp(){
+ if(!wsCurrent)return;
+ const parent=wsCurrent.replace(/[\\/][^\\/]+$/, '');
+ if(parent&&parent!==wsCurrent) await wsNavigate(parent);
+}
+async function wsDefault(){ await wsNavigate('') }   // 不传 path = 默认工作区
+function wsChoose(){
+ const w=document.getElementById('workspace');
+ if(w&&wsCurrent){ w.value=wsCurrent; toast(tr('已选择工作目录: ')+wsCurrent,'ok') }
+ closeMask('wsMask');
+}
+function closeWs(){closeMask('wsMask')}
+
 async function api(u,o={}){
   if(DEMO)return demoApi(u,o);
   const call=tk=>{const opt=Object.assign({},o);opt.headers=Object.assign({},o.headers||{});
@@ -403,11 +454,17 @@ async function toggleBrowser(){
 async function refreshSessions(){if(serviceStopped)return;try{let d=await api('/v1/agent/sessions');sessCache=d.sessions||[];drawSessions()}catch(e){}}
 /* 列表签名：内容没变就不重建 DOM，避免每秒滚动回顶/点击错位 */
 let sessSig='';
+/* 工作区短名：只显示末两段（全路径放 title），避免会话列表被长路径撑开 */
+function shortWs(p){
+ let parts=String(p||'').replace(/\\/g,'/').split('/').filter(Boolean);
+ if(!parts.length) return '';
+ return parts.slice(-2).join('/');
+}
 function drawSessions(){
  let q=(document.getElementById('sessFilter').value||'').toLowerCase();
  let box=document.getElementById('sessions');
- let list=sessCache.filter(s=>!q||(s.title||'').toLowerCase().includes(q)||(s.id||'').toLowerCase().includes(q)||(s.state||'').includes(q)||(s.tag||'').toLowerCase().includes(q));
- let sig=q+'|'+list.map(s=>s.id+s.state+s.total_steps+s.estimated_tokens+(s.conversation_index??'')+(s.title||'')+(s.attachment_count??'')+(s.tag||'')).join('|')+'|'+current;
+ let list=sessCache.filter(s=>!q||(s.title||'').toLowerCase().includes(q)||(s.id||'').toLowerCase().includes(q)||(s.state||'').includes(q)||(s.tag||'').toLowerCase().includes(q)||(s.workspace||'').toLowerCase().includes(q));
+ let sig=q+'|'+list.map(s=>s.id+s.state+s.total_steps+s.estimated_tokens+(s.conversation_index??'')+(s.title||'')+(s.attachment_count??'')+(s.tag||'')+(s.workspace||'')).join('|')+'|'+current;
  if(sig===sessSig)return;
  sessSig=sig;
  box.innerHTML='';
@@ -419,7 +476,7 @@ function drawSessions(){
  if(groups.has(''))keys.push('');
  const renderCard=(s)=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
-  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(stateText(s.state))}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
+  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}${s.workspace?`<br><span class="sessws" title="${esc(s.workspace)}">📁 ${esc(shortWs(s.workspace))}</span>`:''}</small></div><span class="stag">${esc(stateText(s.state))}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
   let chip=e.querySelector('.sid');
   if(chip)chip.onclick=ev=>{ev.stopPropagation();try{navigator.clipboard.writeText(s.id);chip.textContent=tr('已复制 ✓');setTimeout(()=>chip.textContent=s.id,900)}catch(_){}};
   e.onclick=()=>load(s.id);
@@ -1576,7 +1633,7 @@ function openTask(){
  const t=document.getElementById('task'); if(t){t.value='';t.focus()}
 }
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closePlugins();k()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closePlugins();closeWs();k()}});
 
 /* ── 实时面板选项卡 + 放大查看 ── */
 const LIVE_NAMES={activity:'当前执行状态',answer:'当前回答',prompt:'最近发送的内容',chat:'继续对话'};
@@ -2238,6 +2295,11 @@ const ACTIONS={
  openSubagent:(el)=>load(el.dataset.arg),
  openPlugins:()=>openPlugins(),
  deepResearch:()=>deepResearchNow(),
+ pickWorkspace:()=>pickWorkspace(),
+ wsUp:()=>wsUp(),
+ wsDefault:()=>wsDefault(),
+ wsChoose:()=>wsChoose(),
+ closeWs:()=>closeWs(),
  closePlugins:()=>closePlugins(),
  refreshSubagents:()=>refreshSubagents(true),
  showPromptView:()=>showPromptView(),
@@ -2257,7 +2319,7 @@ const ACTIONS={
 
  // 点击遮罩**背景**才关闭（点弹窗内部不关）：原来写在内联里的 if(event.target===this)
  mask:(el,e)=>{if(e.target!==el)return;
-  ({dlg:closeDlg,manual:closeManual,live:closeLive,plugins:closePlugins}[el.dataset.arg]||(()=>{}))()},
+  ({dlg:closeDlg,manual:closeManual,live:closeLive,plugins:closePlugins,ws:closeWs}[el.dataset.arg]||(()=>{}))()},
  maskGm:(el,e)=>{if(e.target===el)gmClose(null)},
  // 动态生成内容里的处理器（消息复制/代码折叠/附件移除）
  copyMsg:(el)=>copyMsg(el),

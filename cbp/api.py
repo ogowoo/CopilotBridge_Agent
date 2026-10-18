@@ -1237,6 +1237,22 @@ async def activate_session(sid: str):
     return {"activated": True, "url": b.page.url, "headless": b.HEADLESS_CURRENT}
 
 
+@app.post("/v1/agent/pick-directory")
+async def pick_directory(payload: dict | None = None):
+    """弹系统文件夹对话框（DSH native 后端的等价实现）；失败时前端回退到 browse。"""
+    start = str((payload or {}).get("start") or "")
+    try:
+        return await b.pick_directory_native(start)
+    except b.ToolError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/v1/agent/browse")
+async def browse_dirs(path: str | None = None):
+    """列目录（只列子目录），供工作目录选择器；不传 path 从当前工作区开始。"""
+    return b.browse_directories(path)
+
+
 @app.get("/v1/agent/workspace")
 async def workspace():
     return {"workspace": str(b.AGENT_TOOLS.root)}

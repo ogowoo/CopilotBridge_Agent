@@ -415,6 +415,13 @@ Object.assign(I18N_EN, {
   "当前没有对话记录": "No conversation yet",
   "授权中…": "Authorizing…",
  "Agent 提问：": "Agent asks: ",
+ "选择工作目录": "Choose working directory",
+ "工作目录（默认 workspace）": "Working directory (default: workspace)",
+ "已选择工作目录: ": "Working directory selected: ",
+ "系统对话框不可用，改用应用内浏览":
+   "System dialog unavailable, using in-app browser",
+ "（没有子目录）": "(no subdirectories)",
+ "读取目录失败: ": "Failed to read directory: ",
  "新会话": "New session",
  "从左侧选择会话，或在这里开始新的对话": "Pick a session on the left, or start a new chat here",
  "发消息或创建任务，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图":
