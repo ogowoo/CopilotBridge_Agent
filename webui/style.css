@@ -902,3 +902,10 @@ body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
    让溢出发生在 #sessionView 内部，固定浮层就只压到"预留带"，不压内容。 */
 #sessionView{display:block;flex:1 1 auto;min-height:0;
   overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+
+/* ICONBTN-CENTER: 图标按钮的盒子必须能真正容纳图标。
+   实测：`.iconbtn{padding:1px 6px}` + width:26px（border-box）把内容区压到 14px，
+   比 16px 的 svg 还窄，grid 的居中对"溢出项"退化成靠左 → 每个图标整体偏右 2px
+   （手册按钮加了 focus 描边后特别明显）。内边距归零，靠 place-items 居中即可。 */
+.iconbtn{padding:0}
+.iconbtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
