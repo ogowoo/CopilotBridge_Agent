@@ -205,8 +205,11 @@ async function openPlugins(){
   const st=document.createElement('span');st.className='pstat '+(p.status==='loaded'?'on':(p.status==='error'?'bad':''));
   st.textContent=stateText(p.status==='loaded'?'已启用':(p.status==='disabled'?'已禁用':'未加载'));
   head.appendChild(name);head.appendChild(ver);head.appendChild(st);
-  const desc=document.createElement('div');desc.className='meta';desc.textContent=p.description||'';
+  const desc=document.createElement('div');desc.className='meta';
+  desc.setAttribute('data-i18n-skip','1');   // 插件作者给的描述：数据，不参与覆盖率审计
+  desc.textContent=p.description||'';
   const meta=document.createElement('div');meta.className='meta';
+  meta.setAttribute('data-i18n-skip','1');   // 贡献点是结构化数据
   meta.textContent=tr('权限: ')+(p.permissions||[]).join(', ')+' · '+tr('贡献: ')+JSON.stringify(p.contributes||{});
   const acts=document.createElement('div');acts.className='pacts';
   const btn=document.createElement('button');btn.type='button';btn.className='btn';
@@ -2089,7 +2092,10 @@ function showBoot(state,ready,err){
             browser_up:tr('浏览器已启动，等待 Copilot 就绪（可能需要在自动化窗口登录）'),
             needs_login:tr('需要在自动化窗口完成 Microsoft 登录'),
             failed:tr('浏览器启动失败')};
- const txt=tr('Copilot 未就绪：')+(map[state]||state||tr('未知'))+(err?('（'+(err+'').slice(0,120)+'）'):'')+tr('　提供商模型不受影响，可直接使用。');
+ // 错误详情也要过 tr()：它是后端/本地给的中文字符串（如"健康检查失败"），
+ // 直接拼会在一句英文里夹中文（实测评测抓到的语言覆盖缺口）。
+ const errPart=err?tr('（{e}）',{e:tr(String(err)).slice(0,120)}):'';
+ const txt=tr('Copilot 未就绪：')+(map[state]||state||tr('未知'))+errPart+tr('　提供商模型不受影响，可直接使用。');
  document.getElementById('bootText').textContent=txt;
  syncFixedLanes();
 }

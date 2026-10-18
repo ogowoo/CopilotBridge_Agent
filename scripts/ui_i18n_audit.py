@@ -34,7 +34,12 @@ CHROME_JS = r"""
   // 会话列表里"标题/ID"是用户数据要排除，但同一行的元信息（步骤/会话/Token）是界面文案
   const CHROME_ALLOW = '.smeta small';
   const skipNode = el => {
-    for (let p = el; p; p = p.parentElement) if (p.id && DATA_SKIP.has(p.id)) return true;
+    for (let p = el; p; p = p.parentElement) {
+      if (p.id && DATA_SKIP.has(p.id)) return true;
+      // data-i18n-skip：**数据型文本**（插件描述、贡献点 JSON、第三方元数据），
+      // 由作者语言决定，不该当"未翻译"报错。
+      if (p.hasAttribute && p.hasAttribute('data-i18n-skip')) return true;
+    }
     return false;
   };
   const containsData = el => {
@@ -194,7 +199,9 @@ def audit(url: str, as_json: bool) -> int:
             # 空态（未选会话时显示的引导文案）与"Copilot 未就绪"浮层此前都扫不到：
             # 前者在选中会话后被隐藏，后者是懒创建的浮层。
             try:
-                page.evaluate("showBoot('needs_login', false, '')")
+                # 用 **failed + 错误详情** 触发：只测 needs_login 空错误会漏掉
+                # "（健康检查失败）"这类**后端中文字符串被原样拼进英文句子**的缺口。
+                page.evaluate("showBoot('failed', false, '健康检查失败')")
                 page.wait_for_timeout(300)
                 items += page.evaluate(CHROME_JS)
             except Exception:
@@ -207,7 +214,7 @@ def audit(url: str, as_json: bool) -> int:
             except Exception:
                 pass
             # 再开一次"使用手册"与"新任务"弹窗（大字面量，最容易漏）
-            for act in ("openManual", "openTask"):
+            for act in ("openManual", "openTask", "openPlugins"):
                 try:
                     page.evaluate(f"{act}()")
                     page.wait_for_timeout(400)

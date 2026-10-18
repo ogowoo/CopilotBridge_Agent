@@ -350,6 +350,7 @@ Object.assign(I18N_EN, {
   "<span class=\"nl\">[Base64 内容，共 ": "<span class=\"nl\">[Base64 content, ",
   "Agent 回合 a1b2c3d4e5f6 已确认，等待 Copilot 回答": "Agent turn a1b2c3d4e5f6 confirmed, waiting for Copilot's answer",
   "Copilot 未就绪：": "Copilot not ready: ",
+ "（{e}）": " ({e})",
   "HTTP 响应为空": "Empty HTTP response",
   "Token/步数/手动触发自动创建新 Copilot 会话": "Token/step count/manual trigger created a new Copilot conversation",
   "URL 对应会话不属于当前 Session，拒绝删除；需要前缀: [CBP-AGENT][task-demo01]":
