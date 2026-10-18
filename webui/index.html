@@ -26,22 +26,26 @@
                   placeholder="发消息或创建任务，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图"></textarea>
         <div id="taskThumbs" class="thumbs"></div>
         <div class="nc-bar">
-          <select id="model" aria-label="新任务使用的模型"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select>
-          <button type="button" id="refreshModelsBtn" class="iconbtn" title="重新读取 Copilot 模型菜单" data-act="refreshModels">↻</button>
-          <input id="workspace" aria-label="工作目录" placeholder="工作目录（默认 workspace）">
-          <button type="button" class="iconbtn" title="选择工作目录" data-act="pickWorkspace">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
-                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.6 2h9.4A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
-            </svg></button>
-          <div class="seg">
-            <button type="button" id="ntAgent" class="btn seg on" data-act="setTaskMode" data-arg="agent">Agent 执行</button>
-            <button type="button" id="ntChat" class="btn seg" data-act="setTaskMode" data-arg="chat">普通对话</button>
+          <div class="nc-left">
+            <select id="model" class="nc-model" aria-label="新任务使用的模型"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select>
+            <button type="button" id="refreshModelsBtn" class="iconbtn" title="重新读取 Copilot 模型菜单" data-act="refreshModels">↻</button>
+            <input id="workspace" class="nc-ws" aria-label="工作目录" placeholder="工作目录（默认 workspace）">
+            <button type="button" class="iconbtn" title="选择工作目录" data-act="pickWorkspace">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.6 2h9.4A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
+              </svg></button>
           </div>
-          <button type="button" class="btn accent" data-act="runTask">开始</button>
+          <div class="nc-right">
+            <div class="nc-mode">
+              <button type="button" id="ntAgent" class="btn seg on" data-act="setTaskMode" data-arg="agent">Agent 执行</button>
+              <button type="button" id="ntChat" class="btn seg" data-act="setTaskMode" data-arg="chat">普通对话</button>
+            </div>
+            <button type="button" class="btn accent nc-send" data-act="runTask">开始</button>
+          </div>
         </div>
       </div>
-      <div class="nc-hint"><span data-i18n="Enter 发送，Shift+Enter 换行">Enter 发送，Shift+Enter 换行</span> · <span data-i18n="时间线中的">时间线中的</span> <kbd data-i18n="查看结果">查看结果</kbd><span data-i18n=" 可展开结构化 JSON"> 可展开结构化 JSON</span></div>
+      <div class="nc-hint"><span data-i18n="Enter 发送，Shift+Enter 换行">Enter 发送，Shift+Enter 换行</span></div>
     </div>
     <div id="sessionView" style="display:none">
       <header class="topbar">

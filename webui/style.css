@@ -736,18 +736,26 @@ section.card:has(#stepCount){margin-top:14px}
 
 /* ── 新会话视图（DSH 式：空态就是编辑器，不套弹窗）────────────────── */
 .newchat{display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:10px;width:100%;padding:clamp(20px,5vh,56px) 24px;text-align:center}
+  gap:12px;width:100%;padding:clamp(20px,5vh,56px) 24px;text-align:center}
 .newchat .nc-head .big{line-height:1}
 .newchat .nc-sub{color:var(--muted);font-size:13px}
-.newchat .nc-box{width:min(760px,94%);border:1px solid var(--line2);border-radius:14px;
-  background:var(--panel2);padding:12px;display:flex;flex-direction:column;gap:8px;
-  text-align:left}
-.newchat textarea#task{width:100%;min-height:96px;max-height:40vh;resize:vertical;
+.newchat .nc-box{width:min(820px,94%);border:1px solid var(--line2);border-radius:16px;
+  background:var(--panel2);padding:14px 14px 10px;display:flex;flex-direction:column;
+  gap:10px;text-align:left;box-shadow:0 6px 24px rgba(0,0,0,.06)}
+.newchat textarea#task{width:100%;min-height:104px;max-height:38vh;resize:vertical;
   border:0;background:transparent;color:var(--text);font:inherit;font-size:14px;
-  line-height:1.65;outline:none;padding:2px}
-.newchat .nc-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.newchat .nc-bar select,.newchat .nc-bar input{max-width:220px;min-width:110px}
-.newchat .nc-bar .btn.accent{margin-left:auto}
+  line-height:1.7;outline:none;padding:2px 2px 0}
+/* 工具栏：左侧操作区（可内部换行） + 右侧主按钮（永远贴右下，不随换行漂移） */
+.newchat .nc-bar{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;
+  border-top:1px solid var(--line2);padding-top:10px}
+.newchat .nc-left{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;
+  flex-wrap:wrap;row-gap:8px}
+.newchat .nc-right{flex:none;display:flex;align-items:center;gap:6px}
+.newchat .nc-model{flex:0 1 auto;width:auto;min-width:96px;max-width:168px}
+.newchat .nc-ws{flex:1 1 110px;min-width:90px;max-width:220px}
+.newchat .nc-left .iconbtn{flex:none}
+.newchat .nc-mode{display:flex;gap:4px;flex:none}
+.newchat .nc-send{min-width:88px;height:32px;border-radius:9px;font-weight:600}
 .newchat .nc-hint{color:var(--faint);font-size:11.5px}
 
 /* ── 工作目录选择器（native 优先 / browse 回退）────────────────── */
@@ -774,3 +782,12 @@ section.card:has(#stepCount){margin-top:14px}
 .wshead{cursor:pointer;user-select:none}
 .wshead .wscaret{flex:none;width:10px;color:var(--faint);font-size:10px}
 .wshead.collapsed{opacity:.8}
+
+/* 窄屏（主区被侧栏吃掉宽度后）：工具栏改两行——操作区一行，模式+开始一行右对齐。
+   不这样做时模型/目录/文件夹会被挤成三行，主按钮位置随机。 */
+@media (max-width: 1050px){
+  .newchat .nc-bar{flex-wrap:wrap}
+  .newchat .nc-left{flex:1 1 100%}
+  .newchat .nc-right{flex:1 1 100%;justify-content:space-between}
+  .newchat .nc-ws{max-width:none}
+}
