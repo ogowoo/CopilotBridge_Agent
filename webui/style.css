@@ -623,7 +623,6 @@ section.card:has(#stepCount){margin-top:14px}
    实测 480x900 时 #sessModel(269..499) 与 #btnRefreshSess(511..537) 超出视口，
    因为这一行是 nowrap 且下拉框有内在宽度。让标题独占一行、控件可换行。 */
 @media(max-width:640px){
-  #bootBar{max-width:96vw}          /* 窄屏未就绪条允许更宽，减少不必要的换行 */
   .trow{flex-wrap:wrap;row-gap:8px}
   .trow h1{flex:1 1 100%;white-space:normal}
   #sessModel{flex:1 1 auto;min-width:0;max-width:100%}
@@ -645,15 +644,13 @@ section.card:has(#stepCount){margin-top:14px}
 
 /* ── 浮层横向对齐内容区（实测：bootBar 用视口居中会偏左 159px 压住顶栏）──
    宽屏内容区中心 = (100vw + 318px)/2；侧栏折叠或窄屏（单列）时回到 50vw。 */
-:root[data-rail="closed"] #bootBar,
 :root[data-rail="closed"] .retry-fab,
 :root[data-rail="closed"] .retry-chip{left:50%}
 
 @media(max-width:860px){
-  #bootBar,.retry-fab,.retry-chip{left:50%}
+  .retry-fab,.retry-chip{left:50%}
   /* 窄屏宽度必须扣的是内容区（单列 = 整宽），不能再用"减掉侧栏 318px"的公式，
      否则宽度被压成 158px、文字竖排、高度冲到 296px（实测 600px 视口）。 */
-  #bootBar{max-width:min(760px,calc(100vw - 44px))}
 }
 .retry-fab,.retry-chip{bottom:16px}
 .toasts{bottom:calc(16px + var(--retry-h,0px) + 12px)}
