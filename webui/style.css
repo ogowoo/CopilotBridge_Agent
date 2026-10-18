@@ -790,7 +790,13 @@ section.card:has(#stepCount){margin-top:14px}
 /* 工作区分组头（对齐 DSH：文件夹图标 + 名字 + 会话数） */
 .wshead{display:flex;align-items:center;gap:6px}
 .wshead svg{flex:none;opacity:.75}
-.wshead .wsname{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 名字不占满：让 .taghead::after 的分隔线去填剩余空间，
+   「＋」因此靠右对齐（之前名字 flex:1 把 ＋ 挤到了中间） */
+.wshead .wsname{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 分隔线（::after）默认排在最后，会把 ＋ 挤在中间：用 order 让它排在 ＋ 之前，
+   ＋ 落到最右（分隔线在 名字/数量 与 ＋ 之间填充） */
+.wshead::after{order:1}
+.wshead .wsadd{flex:none;order:2}
 .wshead .wscount{flex:none;color:var(--faint);font-size:10.5px}
 
 /* 工作区分组：可点击折叠 */
