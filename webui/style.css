@@ -38,7 +38,8 @@ button,input,textarea,select{font:inherit;color:inherit}
 .listhead input{flex:1 1 90px;min-width:0;padding:5px 9px;font-size:12px;letter-spacing:0}
 /* 图标行用**分散对齐**：铺满整行并与下方会话列表的左右边缘对齐
    （右对齐时 7 个图标挤在右侧、左边留一大片空白）。 */
-.listacts{flex:1 1 100%;display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0}
+.listacts{flex:1 1 100%;display:flex;justify-content:flex-start;align-items:center;
+  gap:5px;row-gap:6px;flex-wrap:wrap;min-width:0}
 .sesslist{flex:1;overflow:auto;padding:0 8px 12px}
 .sess{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;cursor:pointer;border:1px solid transparent}
 .sess:hover{background:var(--sess-hover)}
@@ -592,8 +593,11 @@ section.card:has(#stepCount){margin-top:14px}
 #manualBody summary::marker{color:var(--muted)}
 
 /* ── Copilot 未就绪提示条 ───────────────────────────────────────── */
-#bootBar{position:fixed;left:calc((100vw + 318px) / 2);top:calc(var(--banner-h) + 12px);transform:translateX(-50%);z-index:55;display:none;
- align-items:center;gap:10px;max-width:min(760px,92vw);padding:7px 12px;border-radius:9px;
+#bootBar{position:fixed;left:0;right:0;top:0;transform:none;max-width:none;width:auto;
+ z-index:80;display:none;height:26px;box-sizing:border-box;padding:0 12px;
+ border-radius:0;border:0;border-bottom:1px solid var(--amber);font-size:11.5px;
+ justify-content:center;
+ align-items:center;gap:10px;
  background:var(--panel2);color:var(--text);border:1px solid var(--amber);
  box-shadow:0 6px 20px var(--menu-shadow);font-size:12.5px}
 #bootBar span{line-height:1.4}
@@ -851,7 +855,24 @@ section.card:has(#stepCount){margin-top:14px}
 .sess-lead.has{cursor:pointer}
 .sess-lead.has:hover{color:var(--text)}
 /* 子代理会话：固定缩进（不随前导位变化）+ 左侧引导线 + 标题略弱化 */
-.sess.child{margin-left:20px;border-left:2px solid var(--line2);padding-left:8px;
+.sess.child{margin-left:34px;border-left:2px solid var(--accent);
+  border-left-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  padding-left:10px;
   background:color-mix(in srgb, var(--panel2) 55%, transparent)}
 .sess.child b{font-weight:600;opacity:.92}
 .sess-exp:hover{color:var(--text)}
+
+/* 顶部细横条：占位在布局里（不是浮层），不遮挡侧栏与主区 */
+body.bootbar-on .app{height:calc(100vh - 26px);margin-top:26px}
+body.bootbar-on .main{padding-top:calc(18px + var(--banner-h,0px))}
+#bootBar #bootText{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bootBar .btn{flex:none}
+
+/* 细横条：压掉历史规则里的 left:50% / max-width（那几条是为"居中浮框"写的） */
+body #bootBar{left:0;right:0;transform:none;max-width:none;width:auto;
+  margin:0;border-radius:0}
+
+/* 顶部两条浮层叠放：细条在上（26px），连接横幅顺延；不让它们压在同一点 */
+body.bootbar-on .connbanner{top:26px}
+/* 折叠态限流小标别盖住对话输入框（它和展开态浮窗应落在同一条"让位带"之上） */
+body .retry-chip{bottom:calc(16px + var(--retry-h,0px) + 4px)}

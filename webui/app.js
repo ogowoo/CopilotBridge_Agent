@@ -2575,7 +2575,11 @@ let _lastBoot=null;   // 记住最近一次的未就绪状态：切语言后要�
 function showBoot(state,ready,err){
  _lastBoot=[state,ready,err];
  const el=bootBanner();
- if(ready){el.style.display='none';syncFixedLanes();return}
+ if(ready){
+  el.style.display='none';
+  document.body.classList.remove('bootbar-on');
+  syncFixedLanes();return}
+ document.body.classList.add('bootbar-on');
  el.style.display='flex';   // 先写文字再 syncFixedLanes：否则量到的是空框高度，
                             // 内容会在 1.5s 心跳重算时跳一下（截图抓到过空框）
  // 这条提示在 i18n 的动态容器跳过名单里（#bootText），所以必须自己查表
