@@ -47,7 +47,12 @@
 
 from __future__ import annotations
 
+import re
 import asyncio
+import shutil
+import subprocess
+import tempfile
+import zipfile
 import importlib.util
 import inspect
 import json
@@ -463,6 +468,140 @@ class PluginHost:
     def panels(self) -> list[dict[str, Any]]:
         """当前已加载插件声明的界面面板。"""
         return [dict(x) for x in self.panels_list]
+
+    # ── 安装 / 卸载 / 注册表（版本化）────────────────────────────────
+    def _plugin_dir(self, name: str) -> Path:
+        return self.plugin_root / name
+
+    @staticmethod
+    def _version_tuple(ver: str) -> tuple[int, ...]:
+        parts = []
+        for piece in str(ver or "").strip().lstrip("v").split("."):
+            num = "".join(ch for ch in piece if ch.isdigit())
+            parts.append(int(num) if num else 0)
+        while len(parts) < 3:
+            parts.append(0)
+        return tuple(parts[:3])
+
+    def _backup(self, name: str) -> str:
+        src = self._plugin_dir(name)
+        if not src.is_dir():
+            return ""
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        dest = self.data_dir / "plugin-backups" / f"{name}-{stamp}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dest)
+        return str(dest)
+
+    def install(self, source: str, name: str = "", force: bool = False) -> dict[str, Any]:
+        """从目录 / zip / git URL 安装插件（版本化，覆盖前自动备份）。
+
+        - 本地目录：复制整目录
+        - .zip：解包（拒绝 `..` 路径，防 zip-slip）
+        - git URL：`git clone --depth 1`
+        安装后立即加载；同名已存在时比较版本：新版覆盖（旧版备份），
+        旧版默认拒绝（避免误降级），`force=True` 才覆盖。
+        """
+        src = str(source or "").strip()
+        if not src:
+            raise PluginError("source 不能为空")
+        self.plugin_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="cbp-install-") as tmp:
+            tmpdir = Path(tmp)
+            if re.match(r"^(https?://|git@)", src):
+                git = shutil.which("git")
+                if not git:
+                    raise PluginError("安装 git 插件需要本机有 git")
+                dest = tmpdir / "src"
+                proc = subprocess.run([git, "clone", "--depth", "1", src, str(dest)],
+                                      capture_output=True, text=True, timeout=180)
+                if proc.returncode != 0:
+                    raise PluginError(f"git clone 失败: {(proc.stderr or proc.stdout)[:200]}")
+                staged = dest
+            elif src.lower().endswith(".zip"):
+                zpath = Path(src)
+                if not zpath.is_file():
+                    raise PluginError(f"找不到 zip: {src}")
+                staged = tmpdir / "unzip"
+                staged.mkdir()
+                with zipfile.ZipFile(zpath) as zf:
+                    for item in zf.infolist():
+                        target = (staged / item.filename).resolve()
+                        if staged.resolve() not in target.parents and target != staged.resolve():
+                            raise PluginError(f"zip 含越界路径，拒绝安装: {item.filename}")
+                    zf.extractall(staged)
+            else:
+                d = Path(src).expanduser()
+                if not d.is_dir():
+                    raise PluginError(f"找不到插件目录: {src}")
+                staged = d
+            manifest = _read_manifest(staged)
+            if manifest is None:
+                raise PluginError(f"{src} 不是插件（没有 plugin.json / package.json）")
+            target_name = str(name or manifest.name).strip()
+            if not target_name:
+                raise PluginError("无法确定插件名")
+            dest = self._plugin_dir(target_name)
+            existing = self.records.get(target_name)
+            old_ver = ""
+            try:
+                if dest.is_dir():
+                    old = _read_manifest(dest)
+                    old_ver = old.version if old else ""
+            except Exception:
+                old_ver = ""
+            new_ver = manifest.version
+            backup = ""
+            if dest.exists():
+                if not force and old_ver and self._version_tuple(new_ver) < self._version_tuple(old_ver):
+                    raise PluginError(
+                        f"已安装版本 {old_ver} 高于要安装的 {new_ver}；"
+                        f"确认要降级请加 force=true")
+                self._unload(target_name)
+                backup = self._backup(target_name)
+                shutil.rmtree(dest)
+            shutil.copytree(staged, dest)
+        rec = self._state.setdefault(target_name, {})
+        rec["installed"] = {"version": new_ver, "source": src, "at": time.time(),
+                            "backup": backup}
+        rec["enabled"] = True
+        self._save_state_file()
+        try:
+            loaded = self.load(target_name)
+        except PluginError as exc:
+            raise PluginError(f"安装成功但加载失败: {exc}") from exc
+        return {"name": target_name, "version": new_ver, "previous": old_ver,
+                "backup": backup, "status": (loaded or {}).get("status", "loaded")}
+
+    def uninstall(self, name: str, keep_backup: bool = True) -> dict[str, Any]:
+        """卸载插件：先卸载运行时贡献，再删目录（默认留备份）。"""
+        dest = self._plugin_dir(name)
+        if not dest.is_dir() and name not in self.records:
+            raise PluginError(f"没有名为 {name} 的插件")
+        self._unload(name)
+        backup = self._backup(name) if keep_backup and dest.is_dir() else ""
+        if dest.is_dir():
+            shutil.rmtree(dest)
+        self._state.pop(name, None)
+        self._save_state_file()
+        return {"name": name, "removed": True, "backup": backup}
+
+    def registry_view(self) -> dict[str, Any]:
+        """注册表视图：已安装插件（版本/来源/安装时间）+ 备份数量。"""
+        out = []
+        for m in self.discover():
+            meta = (self._state.get(m.name) or {}).get("installed") or {}
+            out.append({"name": m.name, "version": m.version,
+                        "description": m.description,
+                        "source": meta.get("source") or "builtin",
+                        "installed_at": meta.get("at"),
+                        "enabled": self.enabled(m.name),
+                        "status": (self.records.get(m.name) or {}).get("status", "not-loaded")})
+        backups = []
+        bdir = self.data_dir / "plugin-backups"
+        if bdir.is_dir():
+            backups = sorted(p.name for p in bdir.iterdir() if p.is_dir())[-20:]
+        return {"plugins": out, "backups": backups}
 
     def plugin_function(self, plugin: str, fn_name: str) -> Callable[..., Any] | None:
         """取已加载插件的模块级函数（桥接层复用插件能力用，如 research.deep_research）。"""

@@ -156,6 +156,20 @@ def cmd_sandbox(args) -> int:
 
 def cmd_plugins(args) -> int:
     with _client(args) as c:
+        if args.action == "registry":
+            print(json.dumps(_get(c, "/v1/plugins/registry"), ensure_ascii=False, indent=2))
+            return 0
+        if args.action in ("install", "uninstall"):
+            if not args.name:
+                return _fail("需要插件目录/来源（install）或插件名（uninstall）")
+            payload = ({"source": args.name, "force": args.force}
+                       if args.action == "install" else {"name": args.name})
+            path = "/v1/plugins/install" if args.action == "install" else "/v1/plugins/uninstall"
+            r = c.post(path, json=payload)
+            if r.status_code >= 400:
+                return _fail(r.text[:300])
+            print(json.dumps(r.json(), ensure_ascii=False))
+            return 0
         if args.action == "list":
             d = _get(c, "/v1/plugins")
             for p in d.get("plugins") or []:
@@ -247,8 +261,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_sandbox)
 
     p = sub.add_parser("plugins", help="插件管理")
-    p.add_argument("action", choices=["list", "enable", "disable", "reload"])
+    p.add_argument("action", choices=["list", "enable", "disable", "reload",
+                                     "install", "uninstall", "registry"])
     p.add_argument("name", nargs="?", default="")
+    p.add_argument("--force", action="store_true", help="允许降级/覆盖")
     p.set_defaults(func=cmd_plugins)
 
     p = sub.add_parser("mcp", help="MCP server 管理")

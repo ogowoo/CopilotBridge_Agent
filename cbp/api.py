@@ -458,6 +458,37 @@ async def agent_deep_research(payload: dict | None = None):
         raise HTTPException(400, str(exc))
 
 
+@app.get("/v1/plugins/registry")
+async def plugin_registry():
+    """插件注册表：已安装版本/来源/启停状态 + 备份列表。"""
+    return b.PLUGINS.registry_view()
+
+
+@app.post("/v1/plugins/install")
+async def plugin_install(payload: dict | None = None):
+    """安装插件：{source, name?, force?}。source 可为目录 / .zip / git URL。"""
+    data = payload or {}
+    try:
+        return b.PLUGINS.install(str(data.get("source") or ""),
+                                 str(data.get("name") or ""),
+                                 bool(data.get("force")))
+    except b.PluginError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/v1/plugins/uninstall")
+async def plugin_uninstall(payload: dict | None = None):
+    """卸载插件：{name, keep_backup?}。"""
+    data = payload or {}
+    name = str(data.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "需要 name")
+    try:
+        return b.PLUGINS.uninstall(name, bool(data.get("keep_backup", True)))
+    except b.PluginError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @app.get("/v1/plugins/panels")
 async def plugin_panels():
     """已加载插件声明的声明式面板（前端按 view 渲染）。"""

@@ -467,6 +467,24 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 （`approval_policy: "ask"` 时 WebUI 逐次授权，用后即焚）；`read_image` 的视觉分析与
 `ask_user_question` 依赖 Copilot 网页/WebUI，没有对应通道时优雅降级（返回元数据/明确报错）。
 
+### 5.6.2 插件安装 / 升级 / 卸载（版本化）
+
+```bash
+cbp plugins install ./my-plugin           # 本地目录
+cbp plugins install ./pkg.zip             # zip（拒绝 ../ 越界条目，防 zip-slip）
+cbp plugins install https://x/y.git       # git clone --depth 1
+cbp plugins registry                      # 已安装版本/来源/备份
+cbp plugins uninstall my-plugin           # 卸载（默认留备份）
+```
+
+HTTP 等价：`POST /v1/plugins/install {source, name?, force?}`、`POST /v1/plugins/uninstall`、
+`GET /v1/plugins/registry`。
+
+- **版本比较**：新版覆盖旧版并**自动备份**到 `data/plugin-backups/<name>-<时间>/`
+- **降级默认拒绝**（避免误把新功能换回旧版），确需降级用 `force=true` / `--force`
+- 安装后立即加载（工具/接口/面板一起生效），无需重启
+- 卸载会先摘运行时贡献（工具/路由/面板）再删目录
+
 ### 5.6.1 插件 UI：声明式面板
 
 插件可以往界面加**面板**（`permissions` 需含 `ui`），但只能声明式：
