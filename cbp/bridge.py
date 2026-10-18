@@ -3409,6 +3409,32 @@ def save_workspace_file(rel: str, data: bytes) -> str:
         return str(target)
 
 
+def create_directory(parent: str, name: str) -> dict:
+    """在 parent 下创建子目录（工作目录选择器的「新建目录」）。
+
+    只允许**单层目录名**（拒绝分隔符/..），避免借选择器在任意位置递归建树。
+    """
+    parent_path = str(parent or "").strip() or str(AGENT_TOOLS.root)
+    name = str(name or "").strip()
+    if not name:
+        raise ToolError("目录名不能为空")
+    if any(ch in name for ch in ("/", "\\", ":", "*", "?", '"', "<", ">", "|")):
+        raise ToolError("目录名不能包含路径分隔符或非法字符")
+    if name in (".", ".."):
+        raise ToolError("目录名非法")
+    base = Path(parent_path)
+    if not base.is_dir():
+        raise ToolError(f"父目录不存在: {parent_path}")
+    target = base / name
+    if target.exists():
+        raise ToolError(f"目录已存在: {target}")
+    try:
+        target.mkdir()
+    except OSError as exc:
+        raise ToolError(f"创建目录失败: {exc}") from exc
+    return {"path": str(target), "name": name, "parent": str(base)}
+
+
 # ── 工作目录选择器：系统原生对话框（对应 DSH 的 native 后端）──────────
 async def pick_directory_native(start: str | None = None) -> dict:
     """弹系统文件夹对话框（Windows），返回用户选中的路径。

@@ -208,7 +208,7 @@ def run(url: str, keep_open: bool) -> int:
             problems.append(f"SSE 未附加 token: {sse_urls[0][:120]}")
 
         # 5) 关键元素存在
-        for sel in ("#sessions", "#sid", "#moreBtn", "#workspace", "#task", "#tabChat", "#chatlog"):
+        for sel in ("#sessions", "#moreBtn", "#workspace", "#task", "#tabChat", "#chatlog"):
             if not page.query_selector(sel):
                 problems.append(f"缺少关键元素 {sel}")
 

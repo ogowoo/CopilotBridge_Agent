@@ -48,5 +48,37 @@ class BrowseTests(unittest.TestCase):
         self.assertFalse(d["is_default"])
 
 
+class MkdirTests(unittest.TestCase):
+    """新建目录（工作区选择器的「新建目录」）：单层、防穿越。"""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="cbp_mkdir_"))
+        self._old = bridge.AGENT_TOOLS.root
+        bridge.AGENT_TOOLS.root = self.root.resolve()
+
+    def tearDown(self):
+        bridge.AGENT_TOOLS.root = self._old
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_creates_single_level_dir(self):
+        d = bridge.create_directory(str(self.root), "new-ws")
+        self.assertTrue((self.root / "new-ws").is_dir())
+        self.assertEqual(Path(d["path"]).name, "new-ws")
+
+    def test_rejects_separators_and_dotdot(self):
+        for bad in ("a/b", "a\\b", "..", ".", "a:b"):
+            with self.assertRaises(bridge.ToolError):
+                bridge.create_directory(str(self.root), bad)
+
+    def test_rejects_existing(self):
+        (self.root / "dup").mkdir()
+        with self.assertRaises(bridge.ToolError):
+            bridge.create_directory(str(self.root), "dup")
+
+    def test_rejects_missing_parent(self):
+        with self.assertRaises(bridge.ToolError):
+            bridge.create_directory(str(self.root / "nope"), "x")
+
+
 if __name__ == "__main__":
     unittest.main()

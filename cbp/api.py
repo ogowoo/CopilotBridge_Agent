@@ -1247,6 +1247,16 @@ async def pick_directory(payload: dict | None = None):
         raise HTTPException(400, str(exc))
 
 
+@app.post("/v1/agent/browse/mkdir")
+async def browse_mkdir(payload: dict | None = None):
+    """在工作目录选择器里新建子目录：{parent, name} → {path}。"""
+    data = payload or {}
+    try:
+        return b.create_directory(str(data.get("parent") or ""), str(data.get("name") or ""))
+    except b.ToolError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @app.get("/v1/agent/browse")
 async def browse_dirs(path: str | None = None):
     """列目录（只列子目录），供工作目录选择器；不传 path 从当前工作区开始。"""

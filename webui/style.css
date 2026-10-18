@@ -763,3 +763,14 @@ section.card:has(#stepCount){margin-top:14px}
 
 /* 会话列表里的工作区路径（末两段，悬停看全路径） */
 .sessws{color:var(--faint);font-size:11px}
+
+/* 工作区分组头（对齐 DSH：文件夹图标 + 名字 + 会话数） */
+.wshead{display:flex;align-items:center;gap:6px}
+.wshead svg{flex:none;opacity:.75}
+.wshead .wsname{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wshead .wscount{flex:none;color:var(--faint);font-size:10.5px}
+
+/* 工作区分组：可点击折叠 */
+.wshead{cursor:pointer;user-select:none}
+.wshead .wscaret{flex:none;width:10px;color:var(--faint);font-size:10px}
+.wshead.collapsed{opacity:.8}

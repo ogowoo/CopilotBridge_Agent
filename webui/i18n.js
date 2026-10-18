@@ -416,6 +416,12 @@ Object.assign(I18N_EN, {
   "授权中…": "Authorizing…",
  "Agent 提问：": "Agent asks: ",
  "选择工作目录": "Choose working directory",
+ "新建工作区": "New workspace",
+ "新建目录": "New folder",
+ "新目录名（建在当前目录下）": "New folder name (created in the current directory)",
+ "创建": "Create",
+ "已创建目录: ": "Folder created: ",
+ "创建目录失败: ": "Failed to create folder: ",
  "工作目录（默认 workspace）": "Working directory (default: workspace)",
  "已选择工作目录: ": "Working directory selected: ",
  "系统对话框不可用，改用应用内浏览":

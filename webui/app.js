@@ -252,6 +252,22 @@ async function deepResearchNow(){
    native：POST /v1/agent/pick-directory（系统文件夹对话框）
    browse：GET /v1/agent/browse（应用内树，对话框打不开时用） */
 let wsCurrent='';
+/* 工作区分组折叠状态（localStorage，跨刷新保留） */
+function wsCollapsedList(){try{return JSON.parse(localStorage.getItem('cbp-ws-collapsed')||'[]')||[]}catch(e){return []}}
+function wsIsCollapsed(k){return wsCollapsedList().indexOf(k)>=0}
+function wsToggleCollapse(k){
+ let arr=wsCollapsedList();
+ const i=arr.indexOf(k);
+ if(i>=0)arr.splice(i,1);else arr.push(k);
+ try{localStorage.setItem('cbp-ws-collapsed',JSON.stringify(arr))}catch(e){}
+ sessSig='';   // 强制重绘
+ drawSessions();
+}
+/* 新建工作区：先切到新会话视图，再打开目录选择（native 优先，可新建目录） */
+async function newWorkspace(){
+ openTask();
+ await pickWorkspace();
+}
 async function pickWorkspace(){
  const cur=(document.getElementById('workspace')||{}).value||'';
  try{
@@ -296,6 +312,17 @@ function wsChoose(){
  const w=document.getElementById('workspace');
  if(w&&wsCurrent){ w.value=wsCurrent; toast(tr('已选择工作目录: ')+wsCurrent,'ok') }
  closeMask('wsMask');
+}
+async function wsMkdir(){
+ const name=await dlgPrompt(tr('新目录名（建在当前目录下）'), '', tr('创建'), tr('新建目录'));
+ if(!name||!String(name).trim()) return;
+ try{
+  const d=await api('/v1/agent/browse/mkdir',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({parent:wsCurrent,name:String(name).trim()})});
+  toast(tr('已创建目录: ')+(d.path||''),'ok');
+  await wsNavigate(d.path||wsCurrent);
+ }catch(e){ toast(tr('创建目录失败: ')+(e.text||e),'err') }
 }
 function closeWs(){closeMask('wsMask')}
 
@@ -469,14 +496,16 @@ function drawSessions(){
  sessSig=sig;
  box.innerHTML='';
  if(!list.length){box.innerHTML='<div class="sess-empty">'+esc(tr('没有匹配的 Session'))+'</div>';return}
- // 按标签分组（有标签的在前、组内保持 updated 倒序；未打标签的收在最后）
+ // 按**工作区**分组（对齐 DSH：组头是文件夹名，组内按 updated 倒序，组间按最近活跃排序）
  const groups=new Map();
- list.forEach(s=>{const t=(s.tag||'').trim();if(!groups.has(t))groups.set(t,[]);groups.get(t).push(s)});
- const keys=[...groups.keys()].filter(k=>k).sort((a,b)=>a.localeCompare(b,'zh'));
- if(groups.has(''))keys.push('');
+ list.forEach(s=>{const t=(s.workspace||'').trim();if(!groups.has(t))groups.set(t,[]);groups.get(t).push(s)});
+ const _maxUpd=(arr)=>Math.max(...arr.map(x=>Number(x.updated)||0));
+ const keys=[...groups.keys()].sort((a,b)=>_maxUpd(groups.get(b))-_maxUpd(groups.get(a)));
+ const wsName=(p)=>{const parts=String(p||'').replace(/\\/g,'/').split('/').filter(Boolean);
+   return parts.length?parts[parts.length-1]:tr('默认工作区')};
  const renderCard=(s)=>{let e=document.createElement('div');e.className='sess'+(s.id===current?' sel':'');e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
-  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}${s.workspace?`<br><span class="sessws" title="${esc(s.workspace)}">📁 ${esc(shortWs(s.workspace))}</span>`:''}</small></div><span class="stag">${esc(stateText(s.state))}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
+  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(stateText(s.state))}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
   let chip=e.querySelector('.sid');
   if(chip)chip.onclick=ev=>{ev.stopPropagation();try{navigator.clipboard.writeText(s.id);chip.textContent=tr('已复制 ✓');setTimeout(()=>chip.textContent=s.id,900)}catch(_){}};
   e.onclick=()=>load(s.id);
@@ -485,12 +514,24 @@ function drawSessions(){
   e.onkeydown=ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();load(s.id)}};
   box.appendChild(e)};
  keys.forEach(k=>{
-  if(keys.length>1||k){
-   const h=document.createElement('div');h.className='taghead';
-   h.textContent=k||tr('未分组');
-   if(k)h.title=tr('标签：')+k;
-   box.appendChild(h)}
-  groups.get(k).forEach(renderCard)});
+  const h=document.createElement('div');h.className='taghead wshead';
+  h.title=k||'';
+  const ico=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  ico.setAttribute('viewBox','0 0 24 24');ico.setAttribute('width','13');ico.setAttribute('height','13');
+  ico.setAttribute('fill','none');ico.setAttribute('stroke','currentColor');
+  ico.setAttribute('stroke-width','1.8');ico.setAttribute('stroke-linecap','round');
+  ico.setAttribute('stroke-linejoin','round');ico.setAttribute('aria-hidden','true');
+  ico.innerHTML='<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.6 2h9.4A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>';
+  const nm=document.createElement('span');nm.className='wsname';nm.textContent=wsName(k);
+  nm.setAttribute('data-i18n-skip','1');   // 文件夹名是数据
+  const cnt=document.createElement('span');cnt.className='wscount';cnt.textContent=String(groups.get(k).length);
+  const caret=document.createElement('span');caret.className='wscaret';
+  caret.textContent=wsIsCollapsed(k)?'▸':'▾';
+  h.appendChild(caret);h.appendChild(ico);h.appendChild(nm);h.appendChild(cnt);
+  h.classList.toggle('collapsed', wsIsCollapsed(k));
+  h.onclick=()=>wsToggleCollapse(k);
+  box.appendChild(h);
+  if(!wsIsCollapsed(k)) groups.get(k).forEach(renderCard)});
  try{translateAttrs(box)}catch(e){}}
 
 /* 会话标签：纯本地组织手段（不参与 Agent 逻辑），列表按标签分组 */
@@ -1977,7 +2018,7 @@ function setTaskMode(m){taskMode=m;
 async function runTask(){
  let task=document.getElementById('task').value.trim();if(!task)return;
  let atts=IMG_STORES.task.map(a=>a.dataUrl);
- let b={model:document.getElementById('model').value,messages:[{role:'user',content:task}],stream:false,session_id:document.getElementById('sid').value.trim()||('task-'+Date.now().toString(36)),workspace:document.getElementById('workspace').value.trim()||null,reuse_session:true,agent_mode:taskMode==='agent',attachments:atts};
+ let b={model:document.getElementById('model').value,messages:[{role:'user',content:task}],stream:false,session_id:((document.getElementById('sid')||{}).value||'').trim()||('task-'+Date.now().toString(36)),workspace:document.getElementById('workspace').value.trim()||null,reuse_session:true,agent_mode:taskMode==='agent',attachments:atts};
  current=b.session_id;
  currentModel=b.model;      // 会话页模型选择器随即显示本次任务用的模型
  IMG_STORES.task=[];renderThumbs();
@@ -2296,6 +2337,8 @@ const ACTIONS={
  openPlugins:()=>openPlugins(),
  deepResearch:()=>deepResearchNow(),
  pickWorkspace:()=>pickWorkspace(),
+ newWorkspace:()=>newWorkspace(),
+ wsMkdir:()=>wsMkdir(),
  wsUp:()=>wsUp(),
  wsDefault:()=>wsDefault(),
  wsChoose:()=>wsChoose(),
