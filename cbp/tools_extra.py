@@ -390,6 +390,8 @@ class _Extra:
                 status = "pending"
             clean.append({"content": content[:200], "status": status})
         self._todos[self._sid()] = clean
+        # 同步进会话状态：内存字典重启即丢，而且界面要靠 state.todos 显示"计划 x/y"
+        self._save_state(todos=clean)
         return {"todos": clean, "count": len(clean),
                 "pending": sum(1 for t in clean if t["status"] != "completed")}
 
@@ -489,11 +491,14 @@ class _Extra:
 
     def _save_state(self, **kw: Any) -> None:
         saver = getattr(self.reg, "state_saver", None)
-        if saver:
-            try:
-                saver(**kw)
-            except Exception:
-                pass
+        if not saver:
+            return
+        try:
+            saver(**kw)
+        except Exception as exc:
+            # 不能静默：曾经因为 sessions 表没有 goal 列，写库抛错被吞，
+            # 表现成"create_goal 成功但目标从未落库"（update_goal 随即说没有目标）
+            print(f"[tools_extra] 会话状态写入失败 {list(kw)}: {exc}", flush=True)
 
     async def create_goal(self, objective: str, max_rounds: int = 10) -> dict[str, Any]:
         """创建一个目标；Agent 在返回 final 前会自动检查，未完成则继续下一轮。"""

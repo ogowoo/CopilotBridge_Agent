@@ -814,3 +814,13 @@ section.card:has(#stepCount){margin-top:14px}
 .slashrow code{flex:none;color:var(--accent2);font-size:12.5px}
 .slashrow .sdesc{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
+
+/* -- 目标 / 计划条（goal 模式第几轮、plan 完成度）-------------------- */
+.goalbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px;
+  padding:7px 11px;border:1px solid var(--line2);border-radius:9px;
+  background:var(--panel2);font-size:12px;color:var(--muted)}
+.goalbar[hidden]{display:none}
+.goalbar .gb-goal{color:var(--text);font-weight:600}
+.goalbar .gb-meta{color:var(--faint)}
+.goalbar .gb-todo{color:var(--accent2)}
+.goalbar .gb-sep{color:var(--line2)}

@@ -1098,6 +1098,10 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
                              if (state or {}).get("state") == "waiting" else None),
         # 授权范围：once（逐参数）/ session（本会话内该工具都放行），前端据此措辞
         "approval_scope": str(b.AGENT_CFG.get("approval_scope", "once")).lower(),
+        # 目标（goal 模式）与计划（todo_write）：让界面能显示"第几轮/还剩几项"，
+        # 否则 /goal 跑起来之后用户只能从时间线猜进度
+        "goal": (state or {}).get("goal"),
+        "todos": (state or {}).get("todos"),
     })
     return runtime
 

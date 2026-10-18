@@ -244,6 +244,25 @@ const SLASH_COMMANDS=[
   desc:'切到 Agent 执行模式',run:()=>{setTaskMode('agent');toast(tr('已切到 Agent 执行'),'ok')}},
  {id:'chat',label:'chat',aliases:['chat','对话'],
   desc:'切到普通对话模式',run:()=>{setTaskMode('chat');toast(tr('已切到普通对话'),'ok')}},
+ {id:'goal',label:'goal',aliases:['goal','目标'],
+  desc:'目标模式：建立目标后多轮推进，未完成不会停',
+  run:(arg)=>{
+   if(!arg){toast(tr('用法：/goal 你的目标'),'err');return}
+   const t=document.getElementById('task');
+   if(t)t.value=arg+'\n\n'+'[目标模式] 请把上面这件事当作一个长期**目标**：'
+    +'先调用 create_goal 记录下来（max_rounds 取 8-12），必要时用 todo_write 拆出 3-8 个可执行子步骤；'
+    +'然后分多轮持续推进，每轮做完一部分就继续做下一部分，目标未达成时不要返回 final；'
+    +'只有目标真正达成（或确实被外部条件阻塞）时，先调用 update_goal（complete / blocked）再返回 final。';
+   runTask()}},
+ {id:'plan',label:'plan',aliases:['plan','计划'],
+  desc:'计划模式：只产出分步计划并停下，不动文件',
+  run:(arg)=>{
+   if(!arg){toast(tr('用法：/plan 你的任务'),'err');return}
+   const t=document.getElementById('task');
+   if(t)t.value=arg+'\n\n'+'[计划模式] 只做规划，不要执行：用 todo_write 写出 3-8 个可执行步骤'
+    +'（每步写清要做什么、产出物、以及怎么算做完），然后直接返回 final 把计划呈现给用户；'
+    +'本轮不要调用任何会改动文件/系统/网络的工具，也不要 create_goal。';
+   runTask()}},
  {id:'help',label:'help',aliases:['help','?','帮助'],
   desc:'列出全部可用命令',run:()=>{const t=document.getElementById('task');
    if(t){t.value='/';slashUpdate(true);t.focus()}}},
@@ -1348,6 +1367,29 @@ async function runtime(){
  }catch(e){}
  finally{runtimeInflight=false}}
 /* 渲染 runtime 快照：轮询与 SSE 推送共用（SSE 直接送快照，省一次往返） */
+/* 目标 / 计划条：goal 模式显示第几轮，plan 模式显示待办完成度 */
+function renderGoalBar(r){
+ const el=document.getElementById('goalBar');
+ if(!el)return;
+ const goal=(r&&r.goal&&typeof r.goal==='object')?r.goal:null;
+ const todos=(r&&Array.isArray(r.todos))?r.todos:[];
+ if(!goal&&!todos.length){el.hidden=true;el.innerHTML='';return}
+ el.hidden=false;
+ const parts=[];
+ if(goal){
+  const st=String(goal.status||'active');
+  const stTxt=tr({active:'进行中',complete:'已完成',blocked:'已阻塞',paused:'已暂停'}[st]||st);
+  const obj=String(goal.objective||'').slice(0,90);
+  parts.push('<span class="gb-goal" data-i18n-skip="1" title="'+esc(String(goal.objective||''))+'">🎯 '
+    +esc(obj)+'</span><span class="gb-meta">'+esc(tr('第'))+' '+esc(String(goal.rounds||0))+'/'
+    +esc(String(goal.max_rounds||0))+' '+esc(tr('轮'))+' · '+esc(stTxt)+'</span>');
+ }
+ if(todos.length){
+  const done=todos.filter(x=>x&&x.done).length;
+  parts.push('<span class="gb-todo">☑ '+esc(tr('计划'))+' '+done+'/'+todos.length+'</span>');
+ }
+ el.innerHTML=parts.join('<span class="gb-sep">·</span>');
+}
 async function applyRuntime(r){
  if(!r)return;
  const myId=current;
@@ -1356,6 +1398,7 @@ async function applyRuntime(r){
  if(!myId)return;
  if(r.session_id&&r.session_id!==myId)return;
  lastRuntime=r;
+ try{renderGoalBar(r)}catch(e){}
  currentUrl=r.current_url||currentUrl;
   document.getElementById('pulse').className=r.busy?'pulse':'dot-off';
   const _actTxt=`阶段: ${r.phase||r.session_state}\n${r.detail||''}\n总步骤: ${r.total_steps}\n当前会话步骤: ${r.conversation_steps}\nToken估算: ${r.estimated_tokens}\n会话序号: ${(r.conversation_index??0)+1}\n${r.queue_pending?`队列: ${r.queue_pending} 条待处理\n`:''}最后更新: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():''}${r.model_warning?`\n\n⚠ ${r.model_warning}`:''}`;

@@ -176,7 +176,11 @@ CREATE TABLE IF NOT EXISTS conv_stats (
             except Exception:
                 pass  # 列已存在
             # 迁移：子代理的父子关系与短标签（子代理面板按 parent_id 列出）
-            for _col, _decl in (("parent_id", "TEXT"), ("description", "TEXT")):
+            # 迁移：目标（goal 模式）与计划（todo_write）——此前 patch 白名单里有 goal
+            # 但**表里没有这一列**，写库直接抛错又被吞掉，导致"create_goal 成功但目标
+            # 从未落库"（update_goal 随后报"当前会话没有目标"）。
+            for _col, _decl in (("parent_id", "TEXT"), ("description", "TEXT"),
+                                ("goal", "TEXT"), ("todos", "TEXT")):
                 try:
                     con.execute(f"ALTER TABLE sessions ADD COLUMN {_col} {_decl}")
                 except Exception:
@@ -188,9 +192,9 @@ CREATE TABLE IF NOT EXISTS conv_stats (
             return None
         item = dict(row)
         for key in ("conversation_urls", "summary", "recent_steps", "modified_files", "pending",
-                    "pending_steps", "approval_pending"):
+                    "pending_steps", "approval_pending", "goal", "todos"):
             try: item[key] = json.loads(item[key] or "null")
-            except Exception: item[key] = [] if key in {"conversation_urls", "recent_steps", "pending", "pending_steps"} else None
+            except Exception: item[key] = [] if key in {"conversation_urls", "recent_steps", "pending", "pending_steps", "todos"} else None
         for key in ("cancel_requested", "archived", "compact_requested", "rollover_requested"):
             item[key] = bool(item[key])
         return item
@@ -235,11 +239,11 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                    "modified_files","pending","last_error","cancel_requested","archived","compact_requested",
                    "rollover_requested","conv_tokens","conv_chars","gate_state",
                    "retry_resume_at","retry_attempt","rate_limited_since","initial_prompt",
-            "pending_steps","approval_pending","tag","goal","parent_id","description"}
+            "pending_steps","approval_pending","tag","goal","todos","parent_id","description"}
         values = {k:v for k,v in values.items() if k in allowed}
         if "state" in values and values["state"] not in self.STATES: raise ValueError("invalid state")
         for key in ("conversation_urls","summary","recent_steps","modified_files","pending",
-                "pending_steps","approval_pending"):
+                "pending_steps","approval_pending","goal","todos"):
             if key in values: values[key] = json.dumps(values[key], ensure_ascii=False)
         for key in ("cancel_requested","archived","compact_requested","rollover_requested"):
             if key in values: values[key] = int(bool(values[key]))
