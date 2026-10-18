@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from .prompt import AGENT_PROTOCOL, PromptRegistry
+from .prompt import AGENT_PROTOCOL, AGENT_TEAM, PromptRegistry
 from .spans import set_recorder, span
 from .tools import ToolRegistry
 
@@ -130,6 +130,45 @@ class AgentResult:
 # 换会话重发或模型重复回答时，同一动作可能连续到达，需要幂等保护。
 NON_IDEMPOTENT_TOOLS = {"append_text", "append_text_b64", "move_path", "copy_path"}
 
+# ── 任务可拆性识别（决定是否提示模型用子代理扇出）────────────────────────
+_ITEM_SPLIT = re.compile(r"[、，,]\s*")
+_PATHISH = re.compile(r"[\w./\\-]{2,}")
+
+
+def delegation_targets(task: str) -> list[str]:
+    """从任务文本里粗略挑出"互不依赖的目标"（目录/文件/主题名）。
+
+    只做**提示**用途：命中就给模型一句"可考虑扇出"，不强制、不改变协议。
+    判定保守一些，宁可漏提示也不要对普通任务噪声化。
+    """
+    text = (task or "").strip()
+    if not text:
+        return []
+    # 形如 "a、b、c" / "x.pdf, y.pdf" 的并列项
+    cand: list[str] = []
+    for m in re.finditer(r"([\w./\\-]{2,}(?:\s*[、，,]\s*[\w./\\-]{2,}){2,})", text):
+        parts = [p.strip() for p in _ITEM_SPLIT.split(m.group(1)) if p.strip()]
+        if len(parts) >= 3:
+            cand.extend(parts)
+    # "三个/三种/多个 + 目录/文件/主题/接口" 这类量词
+    quant = re.search(r"(?:三个|三种|三份|四个|四种|多个|若干)\s*([\w\u4e00-\u9fff]{1,6})", text)
+    # 明确的路径列举（a/、b/、c/ 或 workspace/x）
+    paths = re.findall(r"(?:^|[\s（(])((?:[\w.-]+/){1,3}[\w.-]+)", text)
+    if len({p for p in paths if not p.startswith("http")}) >= 2:
+        cand.extend(paths)
+    cleaned, seen = [], set()
+    for item in cand:
+        low = item.lower()
+        if low in seen or low.startswith("http"):
+            continue
+        seen.add(low)
+        cleaned.append(item)
+    if len(cleaned) >= 3:
+        return cleaned[:6]
+    if quant and len(cleaned) >= 2:
+        return cleaned[:6]
+    return []
+
 class AgentRunner:
     # 一次回答里最多执行多少个动作（配置 max_actions_per_turn 可调，硬顶 12）。
     # 越长的批量输出越容易被 Copilot 输出上限截断，默认保守取 4。
@@ -164,6 +203,9 @@ class AgentRunner:
         reg.add("protocol", AGENT_PROTOCOL, order=-1000)
         reg.add("tools", json.dumps(self.tools.descriptions(only=self._active_tool_names()),
                                     ensure_ascii=False), order=100)
+        # 任务分工（子代理）：只在工具面里含 subagent 时才注入，避免不可用时误导模型
+        if "subagent" in self._active_tool_names():
+            reg.add("team", AGENT_TEAM, order=150)
         reg.add("self_upgrade", self._self_upgrade_rules(), order=200)
         reg.add("workspace", self._workspace_context(), order=300)
         return reg.render(variables={"CBP_FILE_ROUTING": _routing})
@@ -1220,6 +1262,15 @@ class AgentRunner:
                 all_steps.append(event); self.step_saver(event)
             elif total == 0:
                 prompt = self._system_prompt() + "\n\n用户任务：\n" + task
+                # 任务看起来能拆成几个互不依赖的目标时，只在**用户消息**里给一句
+                # 可选提示（系统提示词保持逐字稳定）：弱模型不会自己想到扇出。
+                if "subagent_many" in self._active_tool_names():
+                    targets = delegation_targets(task)
+                    if len(targets) >= 2:
+                        prompt += ("\n\n（提示：这个任务里有 %d 个互不依赖的目标：%s。"
+                                   "若它们各自都需要多轮读取/分析，可以先用 subagent_many "
+                                   "一次把它们派出去，各自跑完再汇总；若几步就能直接做完，"
+                                   "就按普通流程做。）" % (len(targets), "、".join(targets)))
                 # 首回合也要带上"运行中插入的指令"：被强行插入中断时本回合不计步，
                 # total 仍是 0，若这里不读 pending，插入的指令会被推迟一个回合。
                 # （run_agent 会把"同一会话的新任务文本"也塞进 pending，那段已在

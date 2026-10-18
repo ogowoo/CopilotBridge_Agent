@@ -475,6 +475,46 @@ class _Extra:
             raise ExtraToolError("task 不能为空")
         return await self.subagent_fn(task, description, model, max_steps)
 
+    async def subagent_many(self, tasks: list | None = None, model: str = "",
+                            max_steps: int = 40, stop_on_error: bool = False) -> dict[str, Any]:
+        """一次派多个**互不依赖**的子任务（扇出），全部跑完再返回汇总。
+
+        为什么需要：模型要派 3 个子代理就得连写 3 次 `subagent`，弱模型往往直接
+        自己串行扫完了（实测 Kimi 就这么干）。扇出把它压成**一次调用**。
+        顺序执行：浏览器通道只有一个页面，真并发会互相踩；也避免全局会话指针竞争。
+        """
+        if self.subagent_fn is None:
+            raise ExtraToolError("当前通道不支持子代理")
+        items = [t for t in (tasks or []) if t]
+        if not items:
+            raise ExtraToolError("tasks 不能为空（数组，每项 {task, description} 或直接字符串）")
+        if len(items) > 6:
+            raise ExtraToolError(f"一次最多 6 个子任务（收到 {len(items)} 个）")
+        results, t0 = [], time.time()
+        for idx, raw in enumerate(items, 1):
+            if isinstance(raw, str):
+                task, label = raw, ""
+            elif isinstance(raw, dict):
+                task = str(raw.get("task") or "").strip()
+                label = str(raw.get("description") or raw.get("label") or "").strip()
+            else:
+                raise ExtraToolError(f"第 {idx} 项格式不对（应为字符串或 {task/description} 对象）")
+            if not task:
+                raise ExtraToolError(f"第 {idx} 项 task 为空")
+            try:
+                out = await self.subagent_fn(task, label, model, max_steps)
+                results.append({"index": idx, "task": task[:120], "ok": True,
+                                "agent_id": out.get("agent_id"), "steps": out.get("steps"),
+                                "content": out.get("content")})
+            except Exception as exc:                      # noqa: BLE001 单项失败要能继续
+                results.append({"index": idx, "task": task[:120], "ok": False,
+                                "error": f"{type(exc).__name__}: {exc}"})
+                if stop_on_error:
+                    break
+        ok = [r for r in results if r["ok"]]
+        return {"requested": len(items), "succeeded": len(ok), "failed": len(results) - len(ok),
+                "seconds": round(time.time() - t0, 1), "results": results}
+
     async def subagent_send(self, session_id: str = "", message: str = "",
                             model: str = "", max_steps: int = 40,
                             agent_id: str = "") -> dict[str, Any]:
@@ -603,8 +643,8 @@ _GROUPS: dict[str, tuple[str, ...]] = {
     "vision": ("read_image",),
     "ask": ("ask_user_question",),
     "goal": ("create_goal", "get_goal", "update_goal"),
-    "team": ("subagent", "subagent_send", "subagent_fork", "subagent_list",
-             "ralph", "workflow"),
+    "team": ("subagent", "subagent_many", "subagent_send", "subagent_fork",
+             "subagent_list", "ralph", "workflow"),
 }
 
 _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
@@ -634,15 +674,21 @@ _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
     "get_goal": ("读取当前目标与进度", {}),
     "update_goal": ("更新目标状态：complete 完成 / blocked 卡住 / pause 暂停 / resume 恢复 / edit 改目标",
                     {"action": "complete|blocked|pause|resume|edit", "objective": "action=edit 时的新目标"}),
-    "subagent": ("把独立子任务交给子代理（独立会话、独立上下文），返回它的结果；适合并行调研、隔离上下文",
-                 {"task": "子任务描述（要自足）", "description": "3-5 词标签（可选）",
+    "subagent": ("把一段自足的任务交给子代理（独立会话、独立上下文），用于隔离上下文或并行推进调研/分析/局部改造；返回它的最终结果与步数，不返回中间步骤",
+                 {"task": "完整的自包含任务：它看不到本次对话，目标/路径/验收标准/返回格式都要写全", "description": "3-5 词标签，仅用于展示",
                   "model": "子代理模型（默认跟随父会话）", "max_steps": "子任务步数上限，默认 40"}),
-    "subagent_send": ("继续一个已有子代理会话（同一上下文追加一轮）；适合先查后追问",
+    "subagent_many": ("一次派多个互不依赖的子任务（顺序执行，全部跑完再返回汇总）；"
+                      "把任务拆成 2~6 个独立子目标时用它，一次调用顶多次 subagent",
+                      {"tasks": "数组，每项 {task:'自足的任务描述', description:'3-5 词标签'}",
+                       "model": "子代理模型（默认跟随父会话）", "max_steps": "每个子任务步数上限，默认 40",
+                       "stop_on_error": "某一项失败后是否停止后续，默认 false"}),
+    "subagent_send": ("在已有子代理会话里追加一轮：它记得之前的上下文，只写新增的要求",
                        {"session_id": "子代理会话 ID（即 subagent 返回的 agent_id；也可用 agent_id 传）",
                         "message": "要追加的话", "model": "模型（默认沿用子会话）",
                         "max_steps": "本轮步数上限，默认 40"}),
-    "subagent_fork": ("从某个会话分叉出新的子代理（复制最近对话），用于并行试另一个方案",
-                      {"session_id": "源会话 ID", "description": "3-5 词标签（可选）",
+    "subagent_fork": ("从当前会话分叉出子代理：它继承已完成的对话，适合试第二条路线/另一版实现；"
+                      "任务里只写新增要求，别复述已有上下文",
+                      {"session_id": "源会话 ID（默认当前会话）", "description": "3-5 词标签，仅用于展示",
                        "keep_messages": "复制最近多少条消息，默认 60"}),
     "subagent_list": ("列出子代理会话（可按父会话过滤）与状态/步数",
                       {"parent_id": "父会话 ID（可选）", "limit": "最多条数，默认 50"}),
