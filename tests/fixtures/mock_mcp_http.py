@@ -36,6 +36,17 @@ def _rpc(msg: dict) -> dict | None:
             "serverInfo": {"name": "mock-mcp-http", "version": "0.0.1"}}}
     if method == "notifications/initialized":
         return None
+    if method == "prompts/list":
+        return {"jsonrpc": "2.0", "id": mid, "result": {"prompts": [
+            {"name": "greet", "description": "打招呼模板",
+             "arguments": [{"name": "who", "description": "对象", "required": True}]},
+        ]}}
+    if method == "prompts/get":
+        who = str(((msg.get("params") or {}).get("arguments") or {}).get("who") or "")
+        return {"jsonrpc": "2.0", "id": mid, "result": {
+            "description": "打招呼模板",
+            "messages": [{"role": "user",
+                          "content": {"type": "text", "text": f"请向 {who} 打招呼"}}]}}
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": mid, "result": {"tools": TOOLS}}
     if method == "resources/list":

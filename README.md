@@ -451,6 +451,7 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 | `/help` | `/?`、`/帮助` | 重新列出全部命令 |
 | `/goal <目标>` | `/目标` | **目标模式**：先 `create_goal` 再分多轮推进，目标未完成时返回 final 会自动续轮（轮次上限默认 10），达成/受阻时 `update_goal` 收尾 |
 | `/plan <任务>` | `/计划` | **计划模式**：只用 `todo_write` 产出分步计划并停下，不动文件、不建目标 |
+| `/server.模板名 参数…` | — | **MCP prompt 模板**：自动按 MCP server 提供的模板生成命令，渲染结果载入输入框（未配置 MCP 时不出现） |
 
 - 命令注册在 `webui/app.js` 的 `SLASH_COMMANDS`，加新命令只需追加一条 `{id,label,aliases,desc,run}`
 - 不带参数回车 = 补全等待输入；带参数回车 = 立即执行
@@ -556,6 +557,10 @@ curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C
   工具说明里列出可用 uri（避免把几十个资源各注册成一个工具，撑爆工具表）
 - `resources/read` → 文本直接返回；二进制（`blob`）给出 mime 与 base64 长度
 - 通用工具：`mcp_list`（状态）、`mcp_call`（手动调）、`mcp_read_resource`（读资源）
+- `prompts/list` → 每个有模板的 server 注册 `mcp__<server>__use_prompt(name, arguments)`；
+  同时 **WebUI 自动生成斜杠命令**：`/server.模板名 参数1 参数2 …`，渲染结果直接填进输入框
+- `prompts/get` → 消息序列拼成文本（`[role] 内容`）
+- 通用工具：`mcp_get_prompt(server, name, arguments)`
 
 **健壮性**
 - 单个 server 起不来只记录在 `errors`，不影响其它 server 与内置工具
@@ -563,7 +568,7 @@ curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C
   不探测会让连接阶段白等 30 秒）
 - 配置持久化在 `data/plugins.json` 的 `mcp.state.servers`，重启自动重连
 
-> 尚未接入：`prompts` 能力；旧版 **HTTP+SSE 双端点**传输（只支持 streamable HTTP）。
+> 尚未接入：旧版 **HTTP+SSE 双端点**传输（2024-11-05 老规范，只支持 streamable HTTP）。
 
 ### 5.5 子代理面板（看有哪些子代理、在跑什么）
 

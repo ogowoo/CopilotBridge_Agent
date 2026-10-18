@@ -43,6 +43,18 @@ def main() -> int:
                 "serverInfo": {"name": "mock-mcp", "version": "0.0.1"}}})
         elif method == "notifications/initialized":
             pass
+        elif method == "prompts/list":
+            _send({"jsonrpc": "2.0", "id": mid, "result": {"prompts": [
+                {"name": "greet", "description": "打招呼模板",
+                 "arguments": [{"name": "who", "description": "对象", "required": True}]},
+            ]}})
+        elif method == "prompts/get":
+            params = msg.get("params") or {}
+            who = str((params.get("arguments") or {}).get("who") or "")
+            _send({"jsonrpc": "2.0", "id": mid, "result": {
+                "description": "打招呼模板",
+                "messages": [{"role": "user",
+                              "content": {"type": "text", "text": f"请向 {who} 打招呼"}}]}})
         elif method == "tools/list":
             _send({"jsonrpc": "2.0", "id": mid, "result": {"tools": tools}})
         elif method == "tools/call":

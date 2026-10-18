@@ -99,6 +99,7 @@ class McpStdioClient:
         self.proc: asyncio.subprocess.Process | None = None
         self.tools: list[dict] = []
         self.resources: list[dict] = []
+        self.prompts: list[dict] = []
         self.error: str | None = None
         self._id = 0
         self._pending: dict[int, asyncio.Future] = {}
@@ -248,10 +249,43 @@ class McpStdioClient:
         else:
             items = (rdata or {}).get("resources") or []
             self.resources = [r for r in items if isinstance(r, dict) and r.get("uri")]
+        try:
+            pdata = await self.request("prompts/list", timeout=min(self.timeout, 8.0))
+        except Exception:
+            self.prompts = []            # 同上：prompts 也是可选能力
+        else:
+            pitems = (pdata or {}).get("prompts") or []
+            self.prompts = [p for p in pitems if isinstance(p, dict) and p.get("name")]
         self.error = None
 
     async def list_resources(self) -> list[dict]:
         return self.resources
+
+    async def get_prompt(self, name: str, arguments: dict | None = None) -> dict:
+        """取 prompt 模板并渲染成消息序列。"""
+        result = await self.request("prompts/get", {"name": str(name),
+                                                    "arguments": arguments or {}})
+        messages = (result or {}).get("messages") or []
+        parts: list[str] = []
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            content = msg.get("content")
+            text = ""
+            if isinstance(content, dict):
+                text = str(content.get("text") or "")
+            elif isinstance(content, list):
+                text = "\n".join(str(c.get("text") or "") for c in content
+                                 if isinstance(c, dict))
+            elif content is not None:
+                text = str(content)
+            if text:
+                parts.append(f"[{msg.get('role') or 'user'}] {text}")
+        if not parts:
+            raise McpError(f"{self.name}: prompt {name} 没有内容")
+        return {"name": str(name),
+                "description": str((result or {}).get("description") or ""),
+                "text": "\n\n".join(parts)}
 
     async def call_tool(self, tool: str, arguments: dict | None = None) -> dict:
         result = await self.request("tools/call", {"name": tool,
@@ -484,6 +518,17 @@ class McpManager:
                                    or f"MCP {name} 的 {tool.get('name')} 工具",
                     "arguments": _schema_to_args(tool.get("inputSchema")),
                 })
+            if client.prompts:
+                names = ", ".join(str(x.get("name")) for x in client.prompts[:8])
+                out.append({
+                    "server": name,
+                    "tool": "use_prompt",
+                    "registered_name": f"mcp__{_safe(name)}__use_prompt",
+                    "description": (f"用 MCP server {name} 的 prompt 模板生成提示词。"
+                                    f"可用模板: {names}"),
+                    "arguments": {"name": "模板名（见说明里列出的可用项）",
+                                  "arguments": "模板参数对象（按模板声明传）"},
+                })
             if client.resources:
                 uris = ", ".join(str(r.get("uri")) for r in client.resources[:8])
                 out.append({
@@ -496,6 +541,29 @@ class McpManager:
                 })
         return out
 
+    def prompt_specs(self) -> list[dict]:
+        out = []
+        for name, client in self.clients.items():
+            for pr in client.prompts:
+                out.append({
+                    "server": name,
+                    "name": str(pr.get("name")),
+                    "description": str(pr.get("description") or "").strip(),
+                    "arguments": [{"name": str(a.get("name")),
+                                   "description": str(a.get("description") or ""),
+                                   "required": bool(a.get("required"))}
+                                  for a in (pr.get("arguments") or [])
+                                  if isinstance(a, dict) and a.get("name")],
+                })
+        return out
+
+    async def get_prompt(self, server: str, name: str,
+                         arguments: dict | None = None) -> dict:
+        client = self.clients.get(server)
+        if client is None:
+            raise McpError(f"MCP server 未连接: {server}")
+        return await client.get_prompt(name, arguments)
+
     async def call(self, server: str, tool: str, arguments: dict | None = None) -> dict:
         client = self.clients.get(server)
         if client is None:
@@ -505,6 +573,12 @@ class McpManager:
             if not uri:
                 raise McpError("read_resource 需要 uri")
             return await client.read_resource(uri)
+        if tool == "use_prompt":
+            name = str((arguments or {}).get("name") or "").strip()
+            if not name:
+                raise McpError("use_prompt 需要 name")
+            args = (arguments or {}).get("arguments")
+            return await client.get_prompt(name, args if isinstance(args, dict) else {})
         return await client.call_tool(tool, arguments)
 
     def resource_specs(self) -> list[dict]:
@@ -541,11 +615,14 @@ def setup(ctx):
                  "tools": [str(t.get("name")) for t in (manager.clients.get(name).tools
                                                         if name in manager.clients else [])],
                  "resources": [str(r.get("uri")) for r in (manager.clients.get(name).resources
-                                                           if name in manager.clients else [])]}
+                                                           if name in manager.clients else [])],
+                 "prompts": [str(x.get("name")) for x in (manager.clients.get(name).prompts
+                                                          if name in manager.clients else [])]}
                 for name, spec in manager.servers.items()
             ],
             "tools": manager.tool_specs(),
             "resources": manager.resource_specs(),
+            "prompts": manager.prompt_specs(),
         }
 
     async def _connect_and_register():
@@ -571,6 +648,13 @@ def setup(ctx):
     ctx.register_tool("mcp_read_resource", _read_resource,
                       "读取 MCP server 的资源（只读）",
                       {"server": "MCP server 名", "uri": "资源 URI"})
+    async def _get_prompt(server: str, name: str, arguments: dict | None = None):
+        return await manager.get_prompt(server, name, arguments or {})
+
+    ctx.register_tool("mcp_get_prompt", _get_prompt,
+                      "用 MCP server 的 prompt 模板生成提示词（server/name/arguments）",
+                      {"server": "MCP server 名", "name": "模板名",
+                       "arguments": "模板参数对象"})
 
     # ── 管理接口（加/删/重连/直调/看资源）──
     async def _api_list(request):
@@ -640,6 +724,38 @@ def setup(ctx):
     ctx.register_api("POST", "api/reload", _api_reload)
     ctx.register_api("POST", "api/call", _api_call)
     ctx.register_api("GET", "api/resources", _api_resources)
+
+    async def _api_prompts(request):
+        """列出全部 prompt 模板；带 server+name+arguments 时直接渲染。"""
+        name = str(request.query_params.get("name") or "").strip()
+        server = str(request.query_params.get("server") or "").strip()
+        if name and server:
+            raw = request.query_params.get("arguments") or ""
+            try:
+                args = json.loads(raw) if raw else {}
+            except Exception:
+                args = {}
+            try:
+                return await manager.get_prompt(server, name, args if isinstance(args, dict) else {})
+            except Exception as exc:
+                return {"error": str(exc)}
+        return {"prompts": manager.prompt_specs()}
+
+    async def _api_prompt(request):
+        """渲染指定 prompt：{server, name, arguments} → {text}。"""
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        try:
+            return await manager.get_prompt(str(body.get("server") or ""),
+                                            str(body.get("name") or ""),
+                                            body.get("arguments") or {})
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    ctx.register_api("GET", "api/prompts", _api_prompts)
+    ctx.register_api("POST", "api/prompt", _api_prompt)
 
     # 启动即连接（需要事件循环；无循环时只记日志，工具仍可手动调 api/reload）
     try:

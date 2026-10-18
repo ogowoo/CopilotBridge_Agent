@@ -35,7 +35,8 @@ class McpStdioTests(unittest.TestCase):
             await self.mgr.connect_all()
             self.assertNotIn("mock", self.mgr.errors)
             names = [t["tool"] for t in self.mgr.tool_specs()]
-            self.assertEqual(sorted(names), ["add", "boom", "echo"])
+            # mock 同时提供 prompts，所以还会多一个 use_prompt（每个有 prompt 的 server 一个）
+            self.assertEqual(sorted(names), ["add", "boom", "echo", "use_prompt"])
             await self.mgr.close_all()
 
         asyncio.run(scenario())
@@ -69,6 +70,21 @@ class McpStdioTests(unittest.TestCase):
             await self.mgr.connect_all()
             names = [t["registered_name"] for t in self.mgr.tool_specs()]
             self.assertIn("mcp__my_server_v2__echo", names)
+            await self.mgr.close_all()
+
+        asyncio.run(scenario())
+
+    def test_stdio_prompts_list_and_get(self):
+        async def scenario():
+            self.mgr.add("mock", {"command": sys.executable, "args": [str(MOCK)]})
+            await self.mgr.connect_all()
+            specs = self.mgr.prompt_specs()
+            self.assertEqual([p["name"] for p in specs], ["greet"])
+            self.assertEqual(specs[0]["arguments"][0]["name"], "who")
+            res = await self.mgr.get_prompt("mock", "greet", {"who": "世界"})
+            self.assertIn("请向 世界 打招呼", res["text"])
+            reg = [t["registered_name"] for t in self.mgr.tool_specs()]
+            self.assertIn("mcp__mock__use_prompt", reg)
             await self.mgr.close_all()
 
         asyncio.run(scenario())
@@ -138,6 +154,18 @@ class McpHttpTests(unittest.TestCase):
             self.assertIn("MCP 资源内容 OK", res["text"])
             with self.assertRaises(self.mod.McpError):
                 await self.mgr.call("httpmock", "read_resource", {"uri": "mock://nope"})
+            await self.mgr.close_all()
+
+        asyncio.run(scenario())
+
+    def test_http_prompts_list_and_get(self):
+        async def scenario():
+            self.mgr.add("httpmock", {"url": self.url})
+            await self.mgr.connect_all()
+            specs = self.mgr.prompt_specs()
+            self.assertEqual([p["name"] for p in specs], ["greet"])
+            res = await self.mgr.get_prompt("httpmock", "greet", {"who": "HTTP"})
+            self.assertIn("请向 HTTP 打招呼", res["text"])
             await self.mgr.close_all()
 
         asyncio.run(scenario())

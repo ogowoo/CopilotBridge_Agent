@@ -289,10 +289,54 @@ function slashUpdate(force){
  items.forEach((c,i)=>{
   const row=document.createElement('div');
   row.className='slashrow'+(i===slashIdx?' on':'');
-  row.innerHTML='<code>/'+esc(c.label)+'</code><span class="sdesc">'+esc(tr(c.desc))+'</span>';
+  const sd=document.createElement('span');sd.className='sdesc';
+  if(c.raw)sd.setAttribute('data-i18n-skip','1');   // MCP 模板描述是数据
+  sd.textContent=tr(c.desc);
+  row.innerHTML='<code>/'+esc(c.label)+'</code>';
+  row.appendChild(sd);
   row.onmousedown=(ev)=>{ev.preventDefault();slashPick(c)};
   box.appendChild(row)});
 }
+/* MCP prompt 模板 → 动态斜杠命令（/server.模板名 参数1 参数2 …）。
+   模板是 server 给的**数据**，描述不参与 i18n 覆盖率判定（raw:true）。 */
+let mcpPromptSig='';
+async function loadMcpPrompts(){
+ try{
+  const d=await api('/v1/plugins/mcp/api/prompts');
+  const prompts=(d&&d.prompts)||[];
+  const sig=JSON.stringify(prompts.map(p=>[p.server,p.name,p.description]));
+  if(sig===mcpPromptSig)return;              // 没变化就别重建
+  mcpPromptSig=sig;
+  for(let i=SLASH_COMMANDS.length-1;i>=0;i--) if(SLASH_COMMANDS[i].mcp) SLASH_COMMANDS.splice(i,1);
+  prompts.forEach(p=>{
+   const label=p.server+'.'+p.name;
+   const argNames=(p.arguments||[]).map(a=>a.name).filter(Boolean);
+   SLASH_COMMANDS.push({
+    id:'mcp_'+p.server+'_'+p.name, label, aliases:[label], raw:true,
+    desc:p.description||('MCP '+p.server+' 的 '+p.name+' 模板'),
+    mcp:{server:p.server,name:p.name,argNames},
+    run:(arg)=>{
+     const parts=String(arg||'').trim()?String(arg).trim().split(/\s+/) : [];
+     const args={};
+     argNames.forEach((n,i)=>{ if(parts[i]!==undefined) args[n]=parts[i] });
+     const missing=argNames.filter(n=>args[n]===undefined);
+     if(missing.length){ toast(tr('用法：/')+label+' '+missing.map(n=>'<'+n+'>').join(' '),'err'); return }
+     post('/v1/plugins/mcp/api/prompt',{server:p.server,name:p.name,arguments:args})
+      .then(r=>{
+       if(!r||r.error){ toast(tr('模板渲染失败: ')+(r&&r.error||''),'err'); return }
+       const t=document.getElementById('task');
+       if(t){ t.value=(r.text||''); t.focus(); t.setSelectionRange(t.value.length,t.value.length) }
+       toast(tr('已载入模板: ')+label,'ok');
+      })
+      .catch(e=>toast(tr('模板渲染失败: ')+(e.text||e),'err'));
+    }});
+  });
+ }catch(e){ /* 没装/没配 MCP 时静默 */ }
+}
+function post(u,body){
+ return api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+}
+
 function slashPick(c){
  const t=document.getElementById('task');if(!t)return;
  t.value='/'+c.label+' ';t.focus();
@@ -1797,6 +1841,7 @@ function openManual(){const body=document.getElementById('manualBody');
  openMask('manualMask')}
 function closeManual(){closeMask('manualMask')}
 function openTask(){
+ try{loadMcpPrompts()}catch(e){}
  // 侧栏收起时编辑器区域虽然还在，但"从左侧选会话"的提示会误导：先展开侧栏
  try{if(document.documentElement.dataset.rail==='closed')toggleRail()}catch(e){}
  // 新会话视图（DSH 式）：空态就是编辑器，没有再套一层弹窗
@@ -2440,6 +2485,7 @@ try{const _rs=document.getElementById('btnRefreshSess');if(_rs)_rs.onclick=async
 
 
 try{applyTheme(themeChoice(),false);watchSystemTheme()}catch(e){}
+try{loadMcpPrompts()}catch(e){}
 /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
 document.getElementById('sessModel').onchange=e=>setSessionModel(e.target.value);
 attachPasteHandler('task','task');
