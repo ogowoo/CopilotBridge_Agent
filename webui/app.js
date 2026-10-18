@@ -275,20 +275,6 @@ async function pickWorkspace(){
  const cur=(document.getElementById('workspace')||{}).value||'';
  await openWsBrowser(cur);
 }
-/* 系统对话框（可选）：只在用户明确点「系统选择」时走 */
-async function wsNative(){
- const cur=wsCurrent||(document.getElementById('workspace')||{}).value||'';
- toast(tr('正在打开系统目录对话框…'),'ok');
- try{
-  const d=await api('/v1/agent/pick-directory',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify({start:cur})});
-  if(d&&d.path){ const w=document.getElementById('workspace'); if(w)w.value=d.path;
-    closeWs(); toast(tr('已选择工作目录: ')+d.path,'ok'); return }
-  if(d&&d.cancelled){ toast(tr('已取消'),'ok') }
- }catch(e){
-  toast(tr('系统对话框不可用，请用应用内浏览'),'err');
- }
-}
 async function openWsBrowser(start){
  openMask('wsMask');
  await wsNavigate(start||'');
@@ -2359,7 +2345,6 @@ const ACTIONS={
  pickWorkspace:()=>pickWorkspace(),
  newWorkspace:()=>newWorkspace(),
  wsMkdir:()=>wsMkdir(),
- wsNative:()=>wsNative(),
  wsUp:()=>wsUp(),
  wsDefault:()=>wsDefault(),
  wsChoose:()=>wsChoose(),

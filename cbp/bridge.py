@@ -3461,7 +3461,7 @@ async def pick_directory_native(start: str | None = None) -> dict:
 
     def _run() -> tuple[int, str]:
         proc = _sp.run([exe, "-NoProfile", "-STA", "-Command", script],
-                       capture_output=True, text=True, timeout=300,
+                       capture_output=True, text=True, timeout=15,
                        creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
         return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
