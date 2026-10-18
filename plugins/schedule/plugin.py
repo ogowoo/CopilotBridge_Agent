@@ -221,6 +221,9 @@ def setup(ctx):
             body = {}
         return sched.remove(body.get("name") or "")
 
+    ctx.register_panel({"id": "schedules", "title": "定时任务", "view": "table",
+                        "api": {"method": "GET", "path": "api/list"},
+                        "hint": "按间隔/每天/一次性时间点执行的任务"})
     ctx.register_api("GET", "api/list", _api_list)
     ctx.register_api("POST", "api/run", _api_run)
     ctx.register_api("POST", "api/add", _api_add)

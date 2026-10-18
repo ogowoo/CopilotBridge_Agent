@@ -189,6 +189,98 @@ function renderSubagents(list){
 }
 
 /* ── 插件管理（对应 cbp/plugins.py 的贡献点与启停）──────────────────── */
+/* ── 插件面板（声明式）：插件给数据，前端按 view 渲染 ──────────────
+   view: kv / list / table / json / markdown。插件不注入 HTML，避免 XSS。 */
+let panelCache=[];
+function _panelUrl(p){ return '/v1/plugins/'+encodeURIComponent(p.plugin)+'/api/'+String(p.path||'').replace(/^\/+/, ''); }
+function _panelData(p){
+ return api(_panelUrl(p), {method:p.method||'GET'});
+}
+function _renderKv(obj){
+ if(!obj||typeof obj!=='object'||Array.isArray(obj))return _renderJson(obj);
+ const rows=Object.entries(obj).map(([k,v])=>{
+  const val=(v&&typeof v==='object')?JSON.stringify(v):String(v===null||v===undefined?'':v);
+  return '<tr><th>'+esc(k)+'</th><td>'+esc(val)+'</td></tr>';});
+ return '<table class="ptable">'+rows.join('')+'</table>';
+}
+function _renderList(arr){
+ if(!Array.isArray(arr))return _renderJson(arr);
+ if(!arr.length)return '<div class="meta">'+esc(tr('（空）'))+'</div>';
+ return '<ul class="plist">'+arr.map(x=>'<li>'+esc(typeof x==='object'?JSON.stringify(x):String(x))+'</li>').join('')+'</ul>';
+}
+function _renderTable(arr){
+ if(!Array.isArray(arr))return _renderJson(arr);
+ if(!arr.length)return '<div class="meta">'+esc(tr('（空）'))+'</div>';
+ const cols=[...new Set(arr.flatMap(x=>Object.keys(x||{})))];
+ const head='<tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr>';
+ const body=arr.map(x=>'<tr>'+cols.map(c=>{
+  const v=x&&x[c]; const s=(v&&typeof v==='object')?JSON.stringify(v):(v===null||v===undefined?'':String(v));
+  return '<td>'+esc(s)+'</td>';}).join('')+'</tr>').join('');
+ return '<table class="ptable">'+head+body+'</table>';
+}
+function _renderJson(v){
+ try{ return '<pre class="pjson">'+esc(JSON.stringify(v,null,2))+'</pre>' }
+ catch(e){ return '<pre class="pjson">'+esc(String(v))+'</pre>' }
+}
+function _renderPanel(p,data){
+ const body=document.getElementById('panelBody');
+ if(!body)return;
+ const box=(data&&typeof data==='object'&&!Array.isArray(data)&&Array.isArray(data[p.id])
+            ? data[p.id] : (data&&data.items!==undefined?data.items:data));
+ let html='';
+ const v=p.view||'kv';
+ if(v==='table')html=_renderTable(Array.isArray(box)?box:_firstArray(data));
+ else if(v==='list')html=_renderList(Array.isArray(box)?box:_firstArray(data));
+ else if(v==='json')html=_renderJson(data);
+ else if(v==='markdown')html='<div class="md-body">'+mdToHtml(String((data&&(data.text||data.markdown))||''))+'</div>';
+ else html=_renderKv(box);
+ body.innerHTML=html;
+ if(p.hint)body.insertAdjacentHTML('afterbegin','<div class="meta">'+esc(p.hint)+'</div>');
+}
+function _firstArray(data){
+ if(Array.isArray(data))return data;
+ if(data&&typeof data==='object'){
+  for(const k of Object.keys(data)) if(Array.isArray(data[k])) return data[k];
+ }
+ return [];
+}
+async function openPanels(){
+ openMask('panelMask');
+ await refreshPanels(true);
+}
+async function refreshPanels(silent){
+ const list=document.getElementById('panelList'), body=document.getElementById('panelBody');
+ if(!list||!body)return;
+ let panels=[];
+ try{ const d=await api('/v1/plugins/panels'); panels=(d&&d.panels)||[] }
+ catch(e){ list.innerHTML='<div class="meta">'+esc(tr('读取失败: ')+(e.text||e))+'</div>'; return }
+ panelCache=panels;
+ if(!panels.length){ list.innerHTML='<div class="meta">'+esc(tr('（没有面板）'))+'</div>'; body.innerHTML=''; return }
+ list.innerHTML='';
+ panels.forEach((p,i)=>{
+  const row=document.createElement('div');
+  row.className='panelrow'+(i===0?' on':'');
+  row.setAttribute('data-i18n-skip','1');     // 面板标题来自插件（数据）
+  row.textContent=p.title||p.id;
+  row.title=p.plugin+' · '+p.view;
+  row.onclick=()=>{ [...list.children].forEach(c=>c.classList.remove('on')); row.classList.add('on'); loadPanel(p) };
+  list.appendChild(row);
+ });
+ await loadPanel(panels[0]);
+}
+async function loadPanel(p){
+ const body=document.getElementById('panelBody');
+ if(!body)return;
+ body.innerHTML='<div class="meta">'+esc(tr('加载中…'))+'</div>';
+ try{
+  const data=await _panelData(p);
+  _renderPanel(p,data);
+ }catch(e){
+  body.innerHTML='<div class="meta">'+esc(tr('读取失败: ')+(e.text||e))+'</div>';
+ }
+}
+function closePanels(){closeMask('panelMask')}
+
 async function openPlugins(){
  openMask('pluginsMask');
  const box=document.getElementById('pluginsBody');
@@ -1851,7 +1943,7 @@ function openTask(){
  const t=document.getElementById('task'); if(t){t.value='';t.focus()}
 }
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closePlugins();closeWs();k()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closePlugins();closeWs();closePanels();k()}});
 
 /* ── 实时面板选项卡 + 放大查看 ── */
 const LIVE_NAMES={activity:'当前执行状态',answer:'当前回答',prompt:'最近发送的内容',chat:'继续对话'};
@@ -2552,6 +2644,9 @@ const ACTIONS={
  liveTab:(el)=>liveTab(el.dataset.arg),
  openSubagent:(el)=>load(el.dataset.arg),
  openPlugins:()=>openPlugins(),
+ openPanels:()=>openPanels(),
+ refreshPanels:()=>refreshPanels(),
+ closePanels:()=>closePanels(),
  deepResearch:()=>deepResearchNow(),
  pickWorkspace:()=>pickWorkspace(),
  newWorkspace:()=>newWorkspace(),
@@ -2580,7 +2675,7 @@ const ACTIONS={
 
  // 点击遮罩**背景**才关闭（点弹窗内部不关）：原来写在内联里的 if(event.target===this)
  mask:(el,e)=>{if(e.target!==el)return;
-  ({dlg:closeDlg,manual:closeManual,live:closeLive,plugins:closePlugins,ws:closeWs}[el.dataset.arg]||(()=>{}))()},
+  ({dlg:closeDlg,manual:closeManual,live:closeLive,plugins:closePlugins,ws:closeWs,panel:closePanels}[el.dataset.arg]||(()=>{}))()},
  maskGm:(el,e)=>{if(e.target===el)gmClose(null)},
  // 动态生成内容里的处理器（消息复制/代码折叠/附件移除）
  copyMsg:(el)=>copyMsg(el),

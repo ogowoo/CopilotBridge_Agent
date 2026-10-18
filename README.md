@@ -444,6 +444,21 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 （`approval_policy: "ask"` 时 WebUI 逐次授权，用后即焚）；`read_image` 的视觉分析与
 `ask_user_question` 依赖 Copilot 网页/WebUI，没有对应通道时优雅降级（返回元数据/明确报错）。
 
+### 5.6.1 插件 UI：声明式面板
+
+插件可以往界面加**面板**（`permissions` 需含 `ui`），但只能声明式：
+
+```python
+ctx.register_panel({"id": "schedules", "title": "定时任务", "view": "table",
+                    "api": {"method": "GET", "path": "api/list"}})
+```
+
+- `view` ∈ `kv` / `list` / `table` / `json` / `markdown`；插件只给**数据接口**，
+  渲染由前端完成——**不接受插件注入 HTML/JS**（插件是第三方代码，等于开放 XSS 面）
+- 面板入口：插件管理弹窗 →「插件面板」，或 `GET /v1/plugins/panels`
+- 卸载插件会同时摘掉它的面板（不留点开就 404 的入口）
+- 内置示例：`schedule` 的「定时任务」表、`mcp` 的「MCP 服务器」JSON
+
 ### 5.7 斜杠命令（`/`）
 
 新会话输入框以 `/` 开头即进入命令模式（面板可键盘操作）：

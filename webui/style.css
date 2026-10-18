@@ -824,3 +824,20 @@ section.card:has(#stepCount){margin-top:14px}
 .goalbar .gb-meta{color:var(--faint)}
 .goalbar .gb-todo{color:var(--accent2)}
 .goalbar .gb-sep{color:var(--line2)}
+
+/* -- 插件面板（声明式渲染 kv/list/table/json/markdown）-------------- */
+.panelwrap{display:flex;gap:10px;min-height:280px}
+.panellist{flex:0 0 150px;display:flex;flex-direction:column;gap:4px;
+  border-right:1px solid var(--line2);padding-right:8px}
+.panelrow{padding:6px 8px;border-radius:7px;cursor:pointer;font-size:12.5px;color:var(--muted)}
+.panelrow:hover{background:var(--menu-hover);color:var(--text)}
+.panelrow.on{background:var(--sess-sel);color:var(--text);font-weight:600}
+.panelbody{flex:1 1 auto;min-width:0;max-height:54vh;overflow:auto;font-size:12.5px}
+.ptable{width:100%;border-collapse:collapse}
+.ptable th,.ptable td{border-bottom:1px solid var(--line2);padding:5px 8px;text-align:left;
+  vertical-align:top;word-break:break-word}
+.ptable th{color:var(--muted);font-weight:600;white-space:nowrap}
+.plist{margin:0;padding-left:18px}
+.plist li{margin:3px 0;word-break:break-word}
+.pjson{margin:0;white-space:pre-wrap;word-break:break-word;color:var(--term-text);
+  background:var(--term-bg);border:1px solid var(--line2);border-radius:8px;padding:8px}

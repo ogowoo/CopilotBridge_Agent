@@ -136,6 +136,35 @@ class PluginTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             asyncio.run(self.host.dispatch_api("boom", "GET", "boom", Req()))
 
+    def test_panel_requires_ui_permission(self):
+        _write_plugin(self.tmp, "noui", {"name": "noui", "cbp": {"permissions": ["tools"]}},
+                      "def setup(ctx):\n    ctx.register_panel({'id':'x','title':'X',"
+                      "'view':'kv','api':{'path':'api/x'}})\n")
+        with self.assertRaises(Exception):
+            self.host.load("noui")
+
+    def test_panel_registered_and_removed_on_unload(self):
+        _write_plugin(self.tmp, "uip", {
+            "name": "uip", "cbp": {"permissions": ["ui"],
+                                   "contributes": {"panels": ["stats"]}},
+        }, "def setup(ctx):\n    ctx.register_panel({'id':'stats','title':'统计',"
+           "'view':'table','api':{'method':'GET','path':'api/stats'}})\n")
+        self.host.load("uip")
+        panels = self.host.panels()
+        self.assertEqual([p["id"] for p in panels], ["stats"])
+        self.assertEqual(panels[0]["plugin"], "uip")
+        self.assertEqual(panels[0]["view"], "table")
+        self.host.unload("uip")
+        self.assertEqual(self.host.panels(), [], "卸载插件要摘掉它的面板")
+
+    def test_panel_rejects_html_ish_view(self):
+        _write_plugin(self.tmp, "badview", {
+            "name": "badview", "cbp": {"permissions": ["ui"]},
+        }, "def setup(ctx):\n    ctx.register_panel({'id':'x','view':'html',"
+           "'api':{'path':'api/x'}})\n")
+        with self.assertRaises(Exception):
+            self.host.load("badview")
+
     def test_events_and_state(self):
         seen = []
         _write_plugin(self.tmp, "ev", {

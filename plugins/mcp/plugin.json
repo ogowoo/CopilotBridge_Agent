@@ -12,7 +12,8 @@
     "permissions": [
       "tools",
       "api",
-      "storage"
+      "storage",
+      "ui"
     ],
     "contributes": {
       "tools": [
@@ -27,6 +28,9 @@
         "POST api/remove",
         "POST api/reload",
         "POST api/call"
+      ],
+      "panels": [
+        "servers"
       ]
     }
   }

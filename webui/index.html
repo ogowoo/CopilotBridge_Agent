@@ -192,6 +192,22 @@
     </div>
   </div>
 </div>
+<!-- 插件面板：插件只提供数据，前端按 view 渲染（不接受插件注入 HTML） -->
+<div class="mask" role="dialog" aria-modal="true" aria-label="插件面板" id="panelMask" data-act="mask" data-arg="panel">
+  <div class="dlg" style="width:min(760px,94vw)">
+    <div class="dhead"><span data-i18n="插件面板">插件面板</span><span class="hint">Esc</span></div>
+    <div class="dbody">
+      <div class="panelwrap">
+        <div id="panelList" class="panellist" data-i18n-skip="1"></div>
+        <div id="panelBody" class="panelbody" data-i18n-skip="1"><div class="meta" data-i18n="（没有面板）">（没有面板）</div></div>
+      </div>
+    </div>
+    <div class="dfoot">
+      <button type="button" class="btn ghost" data-act="closePanels" data-i18n="关闭">关闭</button>
+      <button type="button" class="btn" data-act="refreshPanels">刷新</button>
+    </div>
+  </div>
+</div>
 <!-- 工作目录选择：系统对话框优先，失败回退到应用内浏览（对应 DSH 的 auto） -->
 <div class="mask" role="dialog" aria-modal="true" aria-label="选择工作目录" id="wsMask" data-act="mask" data-arg="ws">
   <div class="dlg" style="width:min(640px,94vw)">
@@ -220,6 +236,7 @@
     </div>
     <div class="dfoot">
       <button type="button" class="btn ghost" data-act="openPlugins">刷新</button>
+      <button type="button" class="btn" data-act="openPanels">插件面板</button>
       <button type="button" class="btn accent" data-act="closePlugins">关闭</button>
     </div>
   </div>

@@ -35,6 +35,10 @@ class FakeCtx:
     def register_api(self, method, path, handler):
         self.apis[(method, path)] = handler
 
+    def register_panel(self, panel):
+        self.panels = getattr(self, "panels", [])
+        self.panels.append(panel)
+
     @property
     def state(self):
         return self._state

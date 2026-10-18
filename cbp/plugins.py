@@ -60,6 +60,9 @@ from typing import Any, Awaitable, Callable
 
 PLUGIN_DIR_NAME = "plugins"
 MANIFEST_NAMES = ("plugin.json", "package.json")
+# 插件声明式面板支持的渲染方式（插件只给数据，前端负责渲染——插件不注入 HTML）
+PANEL_VIEWS = ("kv", "list", "table", "json", "markdown")
+
 ALLOWED_PERMISSIONS = {"tools", "providers", "api", "ui", "events", "storage", "files"}
 PERMISSION_LABELS = {
     "tools": "注册 Agent 工具",
@@ -182,6 +185,40 @@ class PluginContext:
                        prefix: str = "plugin") -> dict[str, Any]:
         return await self.host.run_task(task, model, workspace, prefix)
 
+    # ── 声明式 UI 面板 ──
+    def register_panel(self, panel: dict[str, Any]) -> None:
+        """声明一个界面面板：插件提供数据接口，前端按 view 渲染。
+
+        只允许**声明式**内容（kv/list/table/json/markdown），不接受 HTML/JS——
+        插件是第三方代码，让它注入标记等于把 XSS 面直接开放给客户端。
+        """
+        if "ui" not in self.manifest.permissions:
+            raise PluginError(f"{self.name}: 未声明 permissions 里的 'ui'，不能注册面板")
+        if not isinstance(panel, dict):
+            raise PluginError(f"{self.name}: panel 必须是对象")
+        pid = str(panel.get("id") or "").strip()
+        if not pid:
+            raise PluginError(f"{self.name}: panel.id 不能为空")
+        view = str(panel.get("view") or "kv").strip().lower()
+        if view not in PANEL_VIEWS:
+            raise PluginError(f"{self.name}: view 必须是 {list(PANEL_VIEWS)} 之一")
+        api = panel.get("api") or {}
+        if not isinstance(api, dict) or not str(api.get("path") or "").strip():
+            raise PluginError(f"{self.name}: panel.api 需要 path（插件自己的接口）")
+        entry = {
+            "plugin": self.name,
+            "id": pid,
+            "title": str(panel.get("title") or pid)[:80],
+            "view": view,
+            "method": str(api.get("method") or "GET").upper(),
+            "path": str(api.get("path") or "").strip(),
+            "hint": str(panel.get("hint") or "")[:200],
+        }
+        self.registered.setdefault("panels", []).append(entry)
+        self.host.panels_list = [x for x in self.host.panels_list
+                                 if not (x["plugin"] == self.name and x["id"] == pid)]
+        self.host.panels_list.append(entry)
+
     # ── 事件 ──
     def on(self, event: str, handler: Callable[..., Any]) -> None:
         if "events" not in self.manifest.permissions:
@@ -236,6 +273,7 @@ class PluginHost:
         self.log_fn = log_fn or (lambda m: print(m, flush=True))
         self.routes: dict[tuple[str, str, str], Callable[..., Any]] = {}
         self.listeners: list[tuple[str, str, Callable[..., Any]]] = []
+        self.panels_list: list[dict[str, Any]] = []
         self.records: dict[str, dict[str, Any]] = {}   # name -> {manifest, module, ctx, status, error}
         self._state: dict[str, dict[str, Any]] = {}
         self._state_path = self.data_dir / "plugins.json"
@@ -378,6 +416,8 @@ class PluginHost:
                 self.routes.pop(key, None)
         # 摘事件
         self.listeners = [x for x in self.listeners if x[0] != name]
+        # 摘面板（否则卸载后界面还留着一个点开就 404 的入口）
+        self.panels_list = [x for x in self.panels_list if x["plugin"] != name]
         sys.modules.pop(f"cbp_plugin_{name.replace('-', '_')}", None)
 
     def unload(self, name: str) -> None:
@@ -420,6 +460,10 @@ class PluginHost:
                                         "error": str(exc), "loaded_at": None}
 
     # ── 查询 ──
+    def panels(self) -> list[dict[str, Any]]:
+        """当前已加载插件声明的界面面板。"""
+        return [dict(x) for x in self.panels_list]
+
     def plugin_function(self, plugin: str, fn_name: str) -> Callable[..., Any] | None:
         """取已加载插件的模块级函数（桥接层复用插件能力用，如 research.deep_research）。"""
         rec = self.records.get(plugin) or {}

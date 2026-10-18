@@ -720,6 +720,9 @@ def setup(ctx):
         except Exception as exc:
             return {"error": str(exc)}
 
+    ctx.register_panel({"id": "servers", "title": "MCP 服务器", "view": "json",
+                        "api": {"method": "GET", "path": "api/list"},
+                        "hint": "连接状态、工具与资源"})
     ctx.register_api("GET", "api/list", _api_list)
     ctx.register_api("POST", "api/add", _api_add)
     ctx.register_api("POST", "api/remove", _api_remove)

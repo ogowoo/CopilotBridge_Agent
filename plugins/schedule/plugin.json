@@ -13,7 +13,8 @@
       "tools",
       "api",
       "storage",
-      "events"
+      "events",
+      "ui"
     ],
     "contributes": {
       "tools": [
@@ -27,6 +28,9 @@
         "POST api/run",
         "POST api/add",
         "POST api/remove"
+      ],
+      "panels": [
+        "schedules"
       ]
     },
     "config": {

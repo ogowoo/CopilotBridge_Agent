@@ -458,6 +458,12 @@ async def agent_deep_research(payload: dict | None = None):
         raise HTTPException(400, str(exc))
 
 
+@app.get("/v1/plugins/panels")
+async def plugin_panels():
+    """已加载插件声明的声明式面板（前端按 view 渲染）。"""
+    return {"panels": b.PLUGINS.panels()}
+
+
 @app.get("/v1/plugins")
 async def list_plugins():
     """插件列表：名称/版本/状态/权限/贡献点（与 DSH 插件语义兼容）。"""
