@@ -871,8 +871,11 @@ body #bootBar{left:0;right:0;transform:none;max-width:none;width:auto;
 
 /* 顶部两条浮层叠放：细条在上（26px），连接横幅顺延；不让它们压在同一点 */
 body.bootbar-on .connbanner{top:26px}
-/* 折叠态限流小标别盖住对话输入框（它和展开态浮窗应落在同一条"让位带"之上） */
-body .retry-chip{bottom:calc(16px + var(--retry-h,0px) + 4px)}
+/* 折叠态限流小标落在 .main 预留的底部让位带里（高度由 --retry-h 同步，见 app.js
+   updateRetryCountdown 里的 syncFixedLanes 调用）。法则：小标必须整块落在
+   「内容底边」之下，所以 bottom 不能再叠加 --retry-h——之前那样反而把小标抬进内容区
+   （实测 900x700 遮挡 .tabs 19%）。 */
+body .retry-chip{bottom:16px}
 
 /* 顶部信息条（最终样式）：左图标 + 左对齐文本 + 右操作，只有一条底部分隔线。
    之前的居中浮框/全圈琥珀边框在宽屏上像一条空横幅（用户反馈"太丑"）。 */

@@ -457,6 +457,25 @@ def _ui_assets_whitelisted() -> None:
         raise InvariantError(f"白名单里有页面未引用的条目（可能已废弃）: {stale}")
 
 
+@invariant("手册中英两版章节一致")
+def _manual_bilingual_parity() -> None:
+    """中文手册与英文手册的章节数必须相同。
+
+    真事：手册正文原来只有中文（只翻了 h3），英文界面下"夹生"；补英文时若只改一边，
+    切到另一语言就会缺章节/多了空节。两套模板都是 `const MANUAL_HTML*=` 里的模板串，
+    直接数 `<h3>` 即可静态核对。
+    """
+    src = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
+    counts = {}
+    for name in ("MANUAL_HTML", "MANUAL_HTML_EN"):
+        m = re.search(rf"const {name}=`(.*?)`;", src, re.S)
+        if not m:
+            raise InvariantError(f"webui/app.js 找不到 {name} 模板")
+        counts[name] = m.group(1).count("<h3>")
+    if counts["MANUAL_HTML"] != counts["MANUAL_HTML_EN"]:
+        raise InvariantError(f"手册中英章节数不一致: {counts}")
+
+
 @invariant("toast 文案必须走 tr()")
 def _toast_strings_translated() -> None:
     """toast 里的中文必须包在 tr() 里。

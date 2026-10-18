@@ -17,6 +17,7 @@ const I18N_EN = {
   "筛选会话": "Filter sessions",
   "筛选…": "Filter…",
   "使用手册": "Manual",
+ "目录": "Contents",
   "切换自动化浏览器窗口的显示/隐藏": "Show / hide the automation browser window",
   "主题：深色（点击切换）": "Theme: dark (click to cycle)",
   "跨会话搜索对话内容": "Search across sessions",
@@ -922,4 +923,11 @@ function rerenderForLang() {
   try { if (typeof showBoot === "function" && typeof _lastBoot !== "undefined" && _lastBoot)
           showBoot(_lastBoot[0], _lastBoot[1], _lastBoot[2]); } catch (e) {}
   try { if (typeof fillStepTools === "function") fillStepTools(); } catch (e) {}
+  // 手册是整块注入的 HTML：切语言后必须整篇重画（中英是两套完整模板）
+  try {
+    if (typeof openManual === "function"
+        && document.getElementById("manualMask")?.classList.contains("open")) {
+      openManual();
+    }
+  } catch (e) {}
 }

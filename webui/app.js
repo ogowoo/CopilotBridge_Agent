@@ -1716,8 +1716,14 @@ function updateRetryCountdown(r){
  let text=fmtCountdown(resumeAt*1000-Date.now());
  box.dataset.resume=resumeAt;
  if(chip){chip.dataset.resume=resumeAt;chip.textContent='⏳ '+text}
- if(!showCard){box.style.display='none';if(chip)chip.style.display='block';return}
+ if(!showCard){
+  box.style.display='none';if(chip)chip.style.display='block';
+  // 卡片(高) → 小标(矮) 必须重算 --retry-h：否则底部让位带仍按卡片高度预留，
+  // 小标会远离输入框、也可能压住内容（布局审计实测 retryChip 遮挡 #followup 6%）
+  try{syncFixedLanes()}catch(e){}
+  return}
  box.style.display='block';if(chip)chip.style.display='none';
+ try{syncFixedLanes()}catch(e){}
  // 标题按实际通道措辞：API 提供商（模型 ID 含 /，如 deepseek/deepseek-chat）
  // 的 5xx/超时也走同一个窗口，写成"Copilot 限流"不准确。
  let isProvider=!!(currentModel&&currentModel.indexOf('/')>=0);
@@ -1958,8 +1964,173 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <li><b>提示找不到输入框/模型按钮</b>：登录态失效，运行 <code>python scripts/login.py</code> 重新登录（或在有窗口模式下直接登录）。</li>
 <li><b>任务显示等待服务</b>：Copilot 在限流，等它自动恢复；持续不可用会安全暂停，恢复后点「恢复」。</li>
 </ul>`;
+/* 英文手册：整篇对照翻译（章节数与中文版一致，18 节）。
+   以前只翻了 h3、正文留中文——用户实测「手册还是夹生的」。 */
+const MANUAL_HTML_EN=`<h3>Quick start</h3>
+<ul>
+<li><b>New task</b> on the left: type the task, choose <b>Agent run</b> (may read/write workspace files, self-verifies) or <b>Plain chat</b> (Q&amp;A only), then press <b>Start</b>.</li>
+<li>Each task is a Session backed by its own Copilot web conversation; pick one in the left list to view it.</li>
+<li>Show/hide the automation browser with the <b>browser</b> button in the toolbar (switching to headless restarts it but keeps the login).</li>
+</ul>
+<h3>Browser starts on demand (usable without Copilot)</h3>
+<p>The service does <b>not</b> launch a browser at startup: the API and WebUI are available immediately and
+provider models (DeepSeek/Kimi/OpenAI, …) work right away. The browser starts only when Copilot is actually
+needed (a copilot-model chat/task, or refreshing the model list).</p>
+<ul>
+<li>The top bar shows the state: not started / starting / waiting for sign-in / failed, plus a <b>Retry browser</b>
+button (click it after signing in — no service restart needed).</li>
+<li>Provider models <b>never</b> touch the browser; while Copilot is not ready, those requests return an explicit
+message instead of a vague error.</li>
+<li>To warm the browser up at startup, set <code>browser_startup</code> to <code>eager</code> in <code>config.json</code>.</li>
+<li>Troubleshooting: <code>copilot_ready</code> / <code>browser_state</code> / <code>browser_error</code> in <code>GET /health</code>.</li>
+</ul>
+
+<h3>Session controls</h3>
+<ul>
+<li><b>Pause / resume</b>: pause stops after the current turn; resume continues from the checkpoint.</li>
+<li><b>Compact context</b>: manually squeeze history into a summary (usually unnecessary — thresholds do it automatically).</li>
+<li><b>Continue</b>: append instructions and keep going. <b>Switch to page</b>: point the automation browser at that
+conversation. <b>Open conversation</b>: open the Copilot page in your own browser.</li>
+<li><b>Cancel task</b>: stop and mark as cancelled. <b>More ▾</b>: archive, delete the local record, or delete it together
+with the Copilot web conversation.</li>
+</ul>
+<h3>Task snapshots and rollback</h3>
+<ul>
+<li>Before any write the service records a <b>pre-change image</b> (one per path, keeping the earliest state).</li>
+<li>On the session page click <b>Roll back task changes</b>: modified files are restored, files/directories the task
+created are deleted — back to the state <b>before the task started</b>.</li>
+<li>Limits: 8 MB per file / 800 entries per session / 256 MB of images in total; beyond that writes are only noted
+in <i>skipped</i> — <b>writing is never blocked</b>.</li>
+<li>Deleting a session also reclaims its workspace snapshots and self-upgrade snapshots.</li>
+</ul>
+
+<h3>Roll back to a specific version</h3>
+<p>Every write records a <b>version point</b> (the version counts Copilot turns: +1 per complete turn), so rollback
+is not limited to "back to before the task started".</p>
+<ul>
+<li><b>Rollback</b> on the session page lets you pick a version: the state before a given step, or after a given turn.</li>
+<li>Works together with task snapshots: snapshots restore the content, version points choose the landing spot.</li>
+<li>The offline channel <code>python scripts/rollback.py</code> supports rollback by version too.</li>
+</ul>
+
+<h3>Follow-up chat</h3>
+<ul>
+<li>Send more messages under a session card: <b>Agent continue</b> executes tool actions; <b>Plain chat</b> only
+talks to the Copilot conversation. <kbd>Enter</kbd> sends, <kbd>Shift+Enter</kbd> inserts a newline.</li>
+<li>Follow-ups use the session's own model, not the model picked in the new-task form.</li>
+</ul>
+<h3>Follow-up message queue</h3>
+<p>Follow-ups are <b>queued and return immediately</b>: the message enters a queue, the backend consumes it in order,
+so you do not have to wait for the current turn to finish.</p>
+<ul>
+<li>Queued and in-flight messages can be <b>viewed, edited and deleted</b> in the UI, and stay in sync with the history.</li>
+<li>The queue bar lists waiting messages only; the one being processed is not shown twice.</li>
+<li>Handy for "lay out the next few steps up front" without interrupting the running turn.</li>
+</ul>
+
+<h3>Paste images / screenshots</h3>
+<p>Both follow-ups and new tasks accept <b>pasted images</b> (Ctrl+V of a screenshot or copied image); they are sent
+to Copilot with the message — for tasks like "look at this error screenshot" or "adjust the page to this design".</p>
+
+<h3>Models</h3>
+<ul>
+<li>The model dropdown comes from <code>/v1/models</code>: Copilot web models (copilot-*) plus API provider models
+(such as <code>deepseek/deepseek-chat</code>).</li>
+<li>Click ↻ to re-enumerate the Copilot menu (newly released models are discovered automatically); sub-menus
+(e.g. models under GPT) are detected and selectable too.</li>
+<li>API providers need their key in the environment (e.g. <code>DEEPSEEK_API_KEY</code>); see the README.</li>
+</ul>
+<h3>Refreshing the model list</h3>
+<p>When the Copilot menu changes or renders incompletely, models "disappear". The <b>↻ icon</b> next to the model
+dropdown at the top of the session page rescans (<code>POST /v1/models/refresh</code>); the button is disabled
+during the scan, then a toast reports the result and the session's model options are updated.</p>
+
+<h3>Rate-limit countdown</h3>
+<p>When Copilot rate-limits, a <b>countdown card</b> appears: it anchors to the first over-limit moment and computes
+the remaining wait over a fixed window (default <code>service_retry_window_seconds</code> = 3660 s = 1 h + 1 min of slack),
+so you do not retry by hand over and over.</p>
+<p>The service resumes automatically when the countdown ends; you may also pause or cancel meanwhile.</p>
+
+<h3>Long-task mechanics</h3>
+<ul>
+<li>Context is compressed once it exceeds the threshold; an overly long session hands over to a fresh conversation
+(carrying a checkpoint summary).</li>
+<li>On rate limiting the state becomes "waiting for service" with exponential backoff; when Copilot judges the
+conversation full, the turn is resent in a new conversation.</li>
+<li>After a service restart, interrupted tasks resume automatically (auto_resume).</li>
+</ul>
+<h3>Batch actions (fewer Copilot turns)</h3>
+<p>The model may return several actions at once: <code>{"type":"actions","actions":[action1,action2,...]}</code>;
+they run locally in order and each action is still recorded as its own step.</p>
+<ul><li>The count is capped by <code>max_actions_per_turn</code>; the parser also enforces a hard cap
+<code>MAX_BATCH_ACTIONS</code> (currently 4), and the excess is truncated and flagged <code>_batch_truncated</code>.</li>
+<li>A failing action inside the batch does not affect the rest; a <i>final</i> inside the batch is deferred and the
+<b>verification gate</b> decides whether the task may complete.</li></ul>
+
+<h3>Long-term memory (across sessions)</h3>
+<p>Besides <b>AGENT.md</b> (hard rules injected in full every turn) and <b>skills</b> (procedural "how to"),
+the agent keeps <b>long-term memory</b>: verified facts from past tasks accumulate, and later related tasks retrieve
+and inject them into the prompt (keyword + CJK bigram matching — no dependencies, no network).</p>
+<ul>
+<li><b>Automatic capture</b>: at task wrap-up the agent judges whether a fact is still useful beyond this task;
+only then is it written. Trivial process details are not.</li>
+<li><b>On request</b>: just say "remember XX in long-term memory".</li>
+<li><b>Scope</b>: <code>global</code> is visible to every task; <code>project</code> only within the current workspace.</li>
+<li><b>Retrieval</b>: only the few most relevant entries are injected (never everything); on conflict the current
+fact wins, and stale entries can be deleted.</li>
+<li><b>Panel</b>: click the <b>memory icon</b> in the top toolbar → filter by scope, keyword search, see stats
+(total / pinned / <b>never hit</b> — to find entries worth cleaning), and <b>pin</b> or <b>delete</b> them one by one.</li>
+<li><b>Pinned</b> entries are injected on every retrieval — reserve them for critical conventions; click again to unpin.</li>
+<li><b>Switch</b>: <code>allow_memory_write</code> (default true) turns memory writes off globally.</li>
+<li><b>API</b>: <code>GET /v1/agent/memory?query=&amp;scope=</code>,
+<code>POST /v1/agent/memory/{id}/pin</code>, <code>DELETE /v1/agent/memory/{id}</code>;
+stored in its own database <code>data/memory.db</code>, capped at 500 entries per scope with low-value entries evicted.</li>
+</ul>
+
+<h3>Self-accumulating skills</h3>
+<ul>
+<li>At wrap-up the agent first runs <code>skill_list</code> to look for a matching skill; if none exists and the
+approach is reusable, it creates one with <code>skill_create</code> (defaults to
+<code>skills/&lt;name&gt;/SKILL.md</code> in the current workspace).</li>
+<li>Writing to the global <code>skills/</code> (effective for all workspaces) requires <code>allow_self_upgrade</code>.</li>
+<li>Skills are <b>usable immediately</b>, no restart; a project-level skill overrides the global one of the same name.</li>
+</ul>
+
+<h3>Interface</h3>
+<ul>
+<li><b>◐</b> theme cycle: dark / light / Nord blue / eye-friendly beige / Dracula purple / soft pink / mint, kept across reloads.</li>
+<li>The thin handle on the rail's left edge collapses/expands the sidebar; the live panel (run state / current answer /
+sent content / follow-up) is tabbed — <b>⤢ Expand</b> shows the full text.</li>
+<li>Each step in the timeline shows its duration; "View result" expands the structured JSON.</li>
+</ul>
+<h3>Service self-upgrade (off by default)</h3>
+<ol>
+<li>Set <code>"allow_self_upgrade": true</code> in the agent section of <code>config.json</code> and restart; the
+<code>self_*</code> tools are then registered (allowlist: <code>cbp/ webui/ scripts/ docs/ tests/ skills/</code> etc.;
+<code>config.json</code>, <code>data/</code> and <code>EdgeProfile/</code> are always off-limits).</li>
+<li>Have a task "use the self-upgrade tools" to change code: self_read_text → self_replace_text →
+<b>self_validate</b> (full syntax check) → <b>self_unittest</b> (run the service's own tests); both must pass before
+the task may finish.</li>
+<li>Changes take effect only after a <b>manual restart</b>; <code>restart_pending</code> in
+<code>GET /v1/agent/self/status</code> tells you.</li>
+<li>Rollback: <code>POST /v1/agent/self/rollback</code> (online) or <code>python scripts/rollback.py</code> (offline).</li>
+</ol>
+<p class="hint">A workspace may not point at the service install directory (unless self-upgrade is enabled) —
+otherwise ordinary file tools could edit the service code and bypass the permission gate.</p>
+
+<h3>FAQ</h3>
+<ul>
+<li><b>Brief stop on the sign-in page after a restart</b>: enterprise SSO bounces through the company ADFS automatically,
+taking about 40 s; usually no manual sign-in is needed. If it stops on the account picker, click your account once.</li>
+<li><b>"Input box / model button not found"</b>: the login expired — run <code>python scripts/login.py</code> to sign in
+again (or sign in directly in windowed mode).</li>
+<li><b>The task shows "waiting for service"</b>: Copilot is rate limiting; wait for it to recover. If it stays
+unavailable the task pauses safely — click <b>Resume</b> afterwards.</li>
+</ul>`;
 /* ── 手册增强：自动目录 + 低频章节折叠（运行时处理，不改模板）── */
-const MANUAL_COLLAPSE=['服务自升级','常见问题'];
+const MANUAL_COLLAPSE_ZH=['服务自升级','常见问题'];
+const MANUAL_COLLAPSE_EN=['Service self-upgrade','FAQ'];
+const MANUAL_COLLAPSE=()=>(currentLang()==='en'?MANUAL_COLLAPSE_EN:MANUAL_COLLAPSE_ZH);
 function enhanceManual(){
  const body=document.getElementById('manualBody');
  if(!body)return;
@@ -1968,14 +2139,14 @@ function enhanceManual(){
  hs.forEach((h,i)=>h.id='mh'+i);
  let toc=document.createElement('nav');
  toc.className='mtoc';
- toc.innerHTML='<b>目录</b>'+hs.map((h,i)=>`<a href="#mh${i}">${esc(h.textContent)}</a>`).join('');
+ toc.innerHTML='<b>'+esc(tr('目录'))+'</b>'+hs.map((h,i)=>`<a href="#mh${i}">${esc(h.textContent)}</a>`).join('');
  body.insertBefore(toc, body.firstChild);
  toc.querySelectorAll('a').forEach(a=>a.onclick=e=>{
   e.preventDefault();
   const t=document.getElementById(a.getAttribute('href').slice(1));
   if(t)t.scrollIntoView({behavior:'smooth',block:'start'});});
  hs.forEach(h=>{
-  if(!MANUAL_COLLAPSE.some(k=>h.textContent.includes(k)))return;
+  if(!MANUAL_COLLAPSE().some(k=>h.textContent.includes(k)))return;
   const d=document.createElement('details');
   d.id=h.id;
   const sum=document.createElement('summary');sum.textContent=h.textContent;
@@ -1989,7 +2160,7 @@ function enhanceManual(){
 }
 
 function openManual(){const body=document.getElementById('manualBody');
- body.innerHTML=MANUAL_HTML;enhanceManual();
+ body.innerHTML=(currentLang()==='en')?MANUAL_HTML_EN:MANUAL_HTML;enhanceManual();
  // 手册是动态注入的：注入后再走一遍翻译。章节标题有英文条目，正文按取舍保持中文
  // （长文档整篇翻译成本高且易失真，该取舍写在 README 的 i18n 说明里）。
  try{if(typeof applyI18n==='function')applyI18n(body)}catch(e){}
