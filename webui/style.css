@@ -846,7 +846,12 @@ section.card:has(#stepCount){margin-top:14px}
 .skind{display:inline-block;margin-right:4px;font-size:11px;opacity:.85}
 
 /* 子代理会话：归集在父会话下，缩进 + 左侧引导线 */
-.sess.child{margin-left:14px;border-left:2px solid var(--line2);padding-left:8px;opacity:.94}
-.sess-exp{flex:none;border:0;background:transparent;color:var(--faint);cursor:pointer;
-  font-size:10px;padding:0 3px;line-height:1}
+.sess-lead{flex:none;width:12px;text-align:center;font-size:10px;line-height:1;
+  color:var(--faint);user-select:none}
+.sess-lead.has{cursor:pointer}
+.sess-lead.has:hover{color:var(--text)}
+/* 子代理会话：固定缩进（不随前导位变化）+ 左侧引导线 + 标题略弱化 */
+.sess.child{margin-left:20px;border-left:2px solid var(--line2);padding-left:8px;
+  background:color-mix(in srgb, var(--panel2) 55%, transparent)}
+.sess.child b{font-weight:600;opacity:.92}
 .sess-exp:hover{color:var(--text)}
