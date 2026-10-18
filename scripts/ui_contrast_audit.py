@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-THEMES = [("dark", ""), ("amber", "amber"), ("light", "light"),
+THEMES = [("dark", ""), ("amber", "amber"), ("jade", "jade"), ("light", "light"),
           ("solarized", "solarized"), ("mint", "mint")]
 
 # (选择器, 需求对比度, 说明) —— 4.5 = 正文，3.0 = 大字/非文本

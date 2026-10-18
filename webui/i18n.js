@@ -365,6 +365,7 @@ Object.assign(I18N_EN, {
  "深色": "Dark",
  "浅色": "Light",
  "琥珀": "Amber",
+ "墨玉": "Ink jade",
  "护眼米": "Solarized",
  "薄荷": "Mint",
  "主题：{n}（当前 {c}，点击切换）": "Theme: {n} (current: {c}, click to switch)",

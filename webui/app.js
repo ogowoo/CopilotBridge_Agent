@@ -2067,7 +2067,7 @@ document.addEventListener('click',e=>{let m=document.getElementById('moreMenu');
 /* 主题：选择（choice）与解析（resolved）分开——
    choice='auto' 表示**跟随系统**（默认），resolved 才落到具体主题 id。
    之前只有 toggleTheme 写 localStorage，加载靠 boot.js；现在两边同一套语义。 */
-const THEMES=[["auto","跟随系统"],["","深色"],["amber","琥珀"],["light","浅色"],["solarized","护眼米"],["mint","薄荷"]];
+const THEMES=[["auto","跟随系统"],["","深色"],["amber","琥珀"],["jade","墨玉"],["light","浅色"],["solarized","护眼米"],["mint","薄荷"]];
 const THEME_IDS=THEMES.map(x=>x[0]);
 function themeChoice(){
  try{

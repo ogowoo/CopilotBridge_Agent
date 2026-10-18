@@ -4,7 +4,7 @@
  * 必须在样式表之前执行，否则会看到暗→亮闪烁。 */
 try {
   // 主题取值：null/auto = 跟随系统；"" / "dark" = 深色；其余为主题 id
-  const KNOWN = ["amber", "light", "solarized", "mint"];
+  const KNOWN = ["amber", "jade", "light", "solarized", "mint"];
   let t = localStorage.getItem("cbp-theme");
   if (t === null || t === "" || t === "auto") {
     // 跟随系统：系统偏好浅色就用浅色，否则用默认深色
