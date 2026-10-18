@@ -457,6 +457,33 @@ def _ui_assets_whitelisted() -> None:
         raise InvariantError(f"白名单里有页面未引用的条目（可能已废弃）: {stale}")
 
 
+@invariant("title 提示不要直接写中文")
+def _title_strings_translated() -> None:
+    """`x.title='中文…'` 必须包 `tr()`。
+
+    真事：模型下拉 `<option>` 的 `title` 取自后端中文说明，英文界面弹出
+    "GPT-5.6 Sol 深入思考（GPT 子菜单）"；`browserBtn.title` / `memBtn.title`
+    也是裸中文字面量。这类原生提示是浏览器画的，不走 DOM 翻译，也不在 i18n
+    审计范围内。
+    """
+    cjk = re.compile(r"[\u4e00-\u9fff]")
+    bad = []
+    for f in sorted((ROOT / "webui").glob("*.js")):
+        text = f.read_text(encoding="utf-8")
+        for i, line in enumerate(text.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*"):
+                continue
+            m = re.search(r"\.title\s*=\s*(['\"`])(.*?)\1", line)
+            if m and cjk.search(m.group(2)):
+                bad.append(f"{f.name}:{i}")
+            m2 = re.search(r"o\.title\s*=\s*m\.description", line)
+            if m2:
+                bad.append(f"{f.name}:{i}（应走 modelDesc(m)）")
+    if bad:
+        raise InvariantError(f"这些 title 直接写了中文（必须包 tr()）: {bad[:8]}")
+
+
 @invariant("手册中英两版章节一致")
 def _manual_bilingual_parity() -> None:
     """中文手册与英文手册的章节数必须相同。

@@ -666,6 +666,8 @@ async def models():
             "created": created,
             "owned_by": "microsoft-copilot",
             "description": item["description"],
+            # 英文说明：WebUI 英文界面用它当 <option title>（否则原生提示是中文）
+            "description_en": item.get("description_en") or item["description"],
             # 菜单实况可见性：扫描没见到的不显示在 WebUI
             "available": b.copilot_model_available(item),
         }
@@ -680,6 +682,7 @@ async def models():
                 "created": created,
                 "owned_by": pname,
                 "description": p.description + ("" if p.configured else "（未配置 API Key）"),
+                "description_en": p.description + ("" if p.configured else " (API key not configured)"),
                 "available": p.configured,
             })
     return {"object": "list", "data": data}

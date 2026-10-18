@@ -84,13 +84,30 @@ MEASURE_JS = r"""
   const KEY = ['#title','#status','#sidChip','.tabs','#chatlog','#followup','#sendFollowup',
                '#injectBtn','#chatFindToggle','#sessModel','.actions','#steps','#activity','#answer'];
   res.occlusions = [];
+  // 元素被滚动容器裁剪后**真正可见**的矩形：不裁剪就会误报。
+  // 实测：#sessionView 内部滚动的 .tabs，原始矩形落在 fixed 浮层下面，
+  // 但那些像素已被容器裁掉，用户看不到"遮挡"。
+  const clipOf = el => {
+    let r = el.getBoundingClientRect();
+    let p = el.parentElement;
+    while (p && p !== document.body) {
+      const cs = getComputedStyle(p);
+      if (/auto|scroll|hidden/.test(cs.overflowY + cs.overflowX)) {
+        const pr = p.getBoundingClientRect();
+        r = {left: Math.max(r.left, pr.left), top: Math.max(r.top, pr.top),
+             right: Math.min(r.right, pr.right), bottom: Math.min(r.bottom, pr.bottom)};
+      }
+      p = p.parentElement;
+    }
+    return r;
+  };
   fixed.forEach(f => {
     if (f.r.right < 0 || f.r.left > vw || f.r.bottom < 0 || f.r.top > vh) return;
     KEY.forEach(sel => {
       document.querySelectorAll(sel).forEach(el => {
         const cs2 = getComputedStyle(el);
         if (cs2.display === 'none' || cs2.visibility === 'hidden') return;
-        const b = el.getBoundingClientRect();
+        const b = clipOf(el);   // 只比"裁剪后仍可见"的部分
         if (b.width < 4 || b.height < 4) return;
         const ox = Math.max(0, Math.min(f.r.right, b.right) - Math.max(f.r.left, b.left));
         const oy = Math.max(0, Math.min(f.r.bottom, b.bottom) - Math.max(f.r.top, b.top));

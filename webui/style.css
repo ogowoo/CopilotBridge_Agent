@@ -887,3 +887,18 @@ body #bootBar #bootText{flex:1 1 auto;min-width:0;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 body #bootBar #bootRetry{flex:none;margin-left:auto;padding:1px 9px;font-size:11.5px}
 body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
+
+/* CHAT-FLEX: 对话标签弹性填充（内部滚动），不再固定 max-height:48vh。
+   布局审计 1280x800 抓到：底部同时有提示条/限流小标时 .main 的 padding-bottom
+   变大，固定高度面板不收缩 → 输入框被挤出 padding 区并被 overflow:hidden 裁掉
+   （报“浮层遮挡 #followup 6%”）。 */
+#chat.livepane{flex:1 1 auto;min-height:0;max-height:none;overflow:hidden}
+#chat .chatlog{flex:1 1 auto;min-height:0;overflow:auto}
+#chat .composer{flex:none}
+
+/* SESSION-SCROLL: 会话区内部滚动。
+   实测 900x700：三个卡片叠起来比可视区高，而 #sessionView 不滚动 → 卡片溢出
+   .main 的 padding 区，被 fixed 的限流小标压住（布局审计报 .tabs 25%）。
+   让溢出发生在 #sessionView 内部，固定浮层就只压到"预留带"，不压内容。 */
+#sessionView{display:block;flex:1 1 auto;min-height:0;
+  overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}

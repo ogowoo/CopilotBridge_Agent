@@ -40,40 +40,49 @@ MODELS = {
     "copilot-auto": {
         "ui_names": ["Auto", "自动"],
         "description": "由 Microsoft 365 Copilot 自动选择回答模式",
+        "description_en": "Let Microsoft 365 Copilot pick the response mode",
     },
     "copilot-quick-response": {
         "ui_names": ["Quick response", "Quick", "快速响应", "快速"],
         "description": "优先快速响应",
+        "description_en": "Prefer fast responses",
     },
     "copilot-think-deeper": {
         "ui_names": ["Think deeper", "Think Deeper", "深入思考"],
         "description": "使用更深入的推理模式",
+        "description_en": "Use deeper reasoning mode",
     },
     "copilot-gpt": {
         "ui_names": ["GPT"],
         "description": "使用 Copilot 菜单中的 GPT 模型",
+        "description_en": "Use the GPT model from the Copilot menu",
     },
     "copilot-gpt-5-6": {
         "ui_names": ["GPT-5.6", "GPT 5.6", "GPT5.6"],
         "description": "使用 Copilot 菜单中的 GPT-5.6 模型",
+        "description_en": "Use the GPT-5.6 model from the Copilot menu",
     },
     # GPT 父项下二级子菜单的叶子选项（实测菜单里只有这两个可选）：
     # 内置一份，未扫描前也能直接选中；扫描后若菜单改名会被自动发现覆盖。
     "copilot-gpt-5-6-sol-quick-response": {
         "ui_names": ["GPT-5.6 Sol Quick response"],
         "description": "GPT-5.6 Sol 快速响应（GPT 子菜单）",
+        "description_en": "GPT-5.6 Sol Quick response (GPT sub-menu)",
     },
     "copilot-gpt-5-6-sol-think-deeper": {
         "ui_names": ["GPT-5.6 Sol Think deeper"],
         "description": "GPT-5.6 Sol 深入思考（GPT 子菜单）",
+        "description_en": "GPT-5.6 Sol Think deeper (GPT sub-menu)",
     },
     "copilot-sol": {
         "ui_names": ["Sol", "SOL"],
         "description": "使用 Copilot 菜单中的 Sol 模型",
+        "description_en": "Use the Sol model from the Copilot menu",
     },
     "copilot-think": {
         "ui_names": ["Think", "思考"],
         "description": "使用 Copilot 菜单中的 Think 模型",
+        "description_en": "Use the Think model from the Copilot menu",
     },
 }
 

@@ -422,6 +422,8 @@ Object.assign(I18N_EN, {
     "Headless mode (window hidden) — click to show the automation window",
   "当前会话": "Current session",
   "当前会话模型：": "Current session model: ",
+  "当前会话模型：{n}（下一回合生效，服务重启后仍沿用）":
+    "Current session model: {n} (applies to the next turn, kept after restart)",
   "当前显示自动化窗口，点击切换为无头模式（隐藏窗口）":
     "Automation window visible — click to switch to headless (hidden)",
   "当前没有对话记录": "No conversation yet",
@@ -923,6 +925,8 @@ function rerenderForLang() {
   try { if (typeof showBoot === "function" && typeof _lastBoot !== "undefined" && _lastBoot)
           showBoot(_lastBoot[0], _lastBoot[1], _lastBoot[2]); } catch (e) {}
   try { if (typeof fillStepTools === "function") fillStepTools(); } catch (e) {}
+  // 模型下拉的 <option title> 来自后端说明：切语言要重建，否则原生提示还是旧语言
+  try { if (typeof loadModels === "function") loadModels(); } catch (e) {}
   // 手册是整块注入的 HTML：切语言后必须整篇重画（中英是两套完整模板）
   try {
     if (typeof openManual === "function"

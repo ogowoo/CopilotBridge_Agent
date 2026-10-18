@@ -658,7 +658,7 @@ async function loadModels(){
   fillModelSelect(document.getElementById('sessModel'), avail, document.getElementById('sessModel').value);
   let prev=sel.value;
   sel.innerHTML='';
-  avail.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;if(m.description)o.title=m.description;sel.appendChild(o)});
+  avail.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;const _d=modelDesc(m);if(_d)o.title=_d;sel.appendChild(o)});
   sel.value=avail.some(m=>m.id===prev)?prev:avail[0].id;
   refreshSessModelOptions()}catch(e){}
 }
@@ -668,7 +668,7 @@ function fillModelSelect(sel, avail, keep){
  let prev=keep||sel.value||'';
  let seen=avail.map(m=>m.id);
  sel.innerHTML='';
- avail.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;if(m.description)o.title=m.description;sel.appendChild(o)});
+ avail.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;const _d=modelDesc(m);if(_d)o.title=_d;sel.appendChild(o)});
  if(prev&&!seen.includes(prev)){
   let o=document.createElement('option');o.value=prev;o.textContent=prev+'（菜单里未找到）';sel.appendChild(o)}}
 /* 会话页模型选择器：显示当前会话自己的模型 */
@@ -677,9 +677,9 @@ function refreshSessModelOptions(){
  let want=currentModel||'';
  if(!want)return;
  let has=[...sel.options].some(o=>o.value===want);
- if(!has){let o=document.createElement('option');o.value=want;o.textContent=want+'（菜单里未找到）';sel.appendChild(o)}
+ if(!has){let o=document.createElement('option');o.value=want;o.textContent=want+tr('（菜单里未找到）');sel.appendChild(o)}
  sel.value=want;
- sel.title='当前会话模型：'+want+'（下一回合生效，服务重启后仍沿用）'}	
+ sel.title=tr('当前会话模型：{n}（下一回合生效，服务重启后仍沿用）',{n:want})}	
 async function setSessionModel(model){
  if(!current||!model)return;
  try{
@@ -688,6 +688,14 @@ async function setSessionModel(model){
   currentModel=d.model||model;
   toast(tr('会话模型已切换为 ')+(d.model||model)+(d.note?'（'+d.note+'）':'')+'，下一回合生效', d.note?'':'ok')
  }catch(e){toast(tr('切换模型失败: ')+(e.text||e),'err');refreshSessModelOptions()}}
+/* 模型说明：原生 <option title> 的文案要跟着界面语言走。
+   后端 /v1/models 同时给 description（中文）与 description_en（英文）。 */
+function modelDesc(m){
+ if(!m)return '';
+ if(currentLang()==='en'&&m.description_en)return m.description_en;
+ if(currentLang()==='tw'&&m.description)return (typeof toTraditional==='function')?toTraditional(m.description):m.description;
+ return m.description||'';
+}
 async function refreshModels(){
  if(DEMO){toast(tr('演示模式（API 未连接）：无法刷新模型列表'),'err');return}
  let btn=document.getElementById('refreshModelsBtn');
@@ -706,7 +714,7 @@ async function refreshModels(){
 function drawBrowserBtn(h){let b=document.getElementById('browserBtn');
  // 只更新提示，不动内容——之前 b.textContent='▣' 把 SVG 图标替换成了文字，
  // 按钮里显示"切换"两个字（26px 宽塞不下，竖排成两行）。
- b.title=h?'当前为无头模式（窗口隐藏），点击显示自动化窗口':'当前显示自动化窗口，点击切换为无头模式（隐藏窗口）';
+ b.title=tr(h?'当前为无头模式（窗口隐藏），点击显示自动化窗口':'当前显示自动化窗口，点击切换为无头模式（隐藏窗口）');
  b.style.color=h?'var(--muted)':'';  // 无头时淡一点，有窗口时正常
 }
 async function browserState(){if(DEMO)return;try{let d=await api('/v1/agent/browser');drawBrowserBtn(d.headless)}catch(e){}}
@@ -2649,7 +2657,7 @@ function memBtn(){
  if(b)return b;
  b=document.createElement('button');
  b.id='memBtn';b.type='button';b.className='iconbtn';b.innerHTML=MEM_ICON;
- b.title='长期记忆：查看 / 检索 / 置顶 / 删除（点击打开面板）';
+ b.title=tr('长期记忆：查看 / 检索 / 置顶 / 删除（点击打开面板）');
  // 放到顶部工具栏：优先贴着手册按钮，其次常见工具栏容器，最后才退回 body
  // 与「使用手册 / 主题」按钮同一行：左侧栏 .listhead 内（排在手册按钮后面）
  // 图标容器可能是 .listacts（两行布局后的图标行），退回 .listhead
