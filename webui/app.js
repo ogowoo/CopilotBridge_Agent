@@ -324,6 +324,14 @@ async function wsMkdir(){
   await wsNavigate(d.path||wsCurrent);
  }catch(e){ toast(tr('创建目录失败: ')+(e.text||e),'err') }
 }
+/* 在指定工作区直接新建会话（DSH 式：组头 ＋ 按钮） */
+function newSessionInWorkspace(ws){
+ openTask();
+ const w=document.getElementById('workspace');
+ if(w)w.value=ws||'';
+ const t=document.getElementById('task');
+ if(t){t.focus()}
+}
 function closeWs(){closeMask('wsMask')}
 
 async function api(u,o={}){
@@ -527,7 +535,12 @@ function drawSessions(){
   const cnt=document.createElement('span');cnt.className='wscount';cnt.textContent=String(groups.get(k).length);
   const caret=document.createElement('span');caret.className='wscaret';
   caret.textContent=wsIsCollapsed(k)?'▸':'▾';
-  h.appendChild(caret);h.appendChild(ico);h.appendChild(nm);h.appendChild(cnt);
+  const add=document.createElement('button');
+  add.type='button';add.className='wsadd';add.title=tr('在此工作区新建会话');
+  add.setAttribute('data-i18n-title','在此工作区新建会话');
+  add.textContent='＋';
+  add.onclick=(ev)=>{ev.stopPropagation();newSessionInWorkspace(k)};
+  h.appendChild(caret);h.appendChild(ico);h.appendChild(nm);h.appendChild(cnt);h.appendChild(add);
   h.classList.toggle('collapsed', wsIsCollapsed(k));
   h.onclick=()=>wsToggleCollapse(k);
   box.appendChild(h);

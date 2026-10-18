@@ -429,6 +429,7 @@ Object.assign(I18N_EN, {
  "（没有子目录）": "(no subdirectories)",
  "读取目录失败: ": "Failed to read directory: ",
  "新会话": "New session",
+ "在此工作区新建会话": "New session in this workspace",
  "从左侧选择会话，或在这里开始新的对话": "Pick a session on the left, or start a new chat here",
  "发消息或创建任务，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图":
    "Send a message or create a task, e.g. analyse the project under workspace and produce a TODO; screenshots can be pasted directly",

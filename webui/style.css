@@ -791,3 +791,9 @@ section.card:has(#stepCount){margin-top:14px}
   .newchat .nc-right{flex:1 1 100%;justify-content:space-between}
   .newchat .nc-ws{max-width:none}
 }
+
+/* 工作区组头：在此工作区新建会话（DSH 式） */
+.wsadd{flex:none;border:0;background:transparent;color:var(--faint);cursor:pointer;
+  font-size:13px;line-height:1;padding:2px 4px;border-radius:5px;opacity:0;transition:opacity .1s}
+.wshead:hover .wsadd,.wshead:focus-within .wsadd{opacity:1}
+.wsadd:hover{background:var(--menu-hover);color:var(--text)}
