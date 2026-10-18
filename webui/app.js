@@ -750,7 +750,8 @@ function toggleSubagents(){
  else parents.clear && parents.forEach(p=>expandedSess.delete(p));
  try{localStorage.setItem('cbp-expanded-sess',JSON.stringify([...expandedSess]))}catch(e){}
  sessSig='';drawSessions();
- toast((anyCollapsed?tr('已展开')+' ':'已折叠 ')+parents.size+' '+tr('个子代理归属会话'),'ok');
+ toast(tr(anyCollapsed?'已展开 {n} 个子代理会话':'已折叠 {n} 个子代理会话',
+            {n: parents.size}),'ok');
 }
 /* 列表签名：内容没变就不重建 DOM，避免每秒滚动回顶/点击错位 */
 let sessSig='';
@@ -1430,7 +1431,7 @@ async function exportTimeline(){
   a.download='cbp-'+current+'-timeline-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.json';
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),3000);
-  toast(tr('时间线已导出（')+((payload.steps||[]).length)+' 步）','ok')}catch(e){toast('导出失败: '+e,'err')}}
+  toast(tr('时间线已导出（')+((payload.steps||[]).length)+' 步）','ok')}catch(e){toast(tr('导出失败: ')+e,'err')}}
 
 /* ── 页面内通知（toast）与通用模态层（替代原生 alert/confirm/prompt） ── */
 function toast(msg,type=''){let box=document.getElementById('toasts'),e=document.createElement('div');
@@ -1531,7 +1532,7 @@ async function load(id){
  updateChannelUI();           // 按通道显示/隐藏"网页对话"专用按钮与文案
  document.getElementById('title').textContent=s.title;
  let _sc=document.getElementById('sidChip');
- if(_sc){_sc.textContent=s.id;_sc.onclick=()=>{try{navigator.clipboard.writeText(s.id);toast('已复制会话 ID: '+s.id,'ok')}catch(e){toast(s.id)}}}
+ if(_sc){_sc.textContent=s.id;_sc.onclick=()=>{try{navigator.clipboard.writeText(s.id);toast(tr('已复制会话 ID: ')+s.id,'ok')}catch(e){toast(s.id)}}}
  document.getElementById('status').textContent=stateText(s.state)+' · '+s.workspace;
  setPill(s.state);setKpis(s);
  document.getElementById('steps').innerHTML='';renderedSteps=0;lastDetail='';
@@ -1677,7 +1678,7 @@ async function refreshChat(){
 async function control(a){if(!current)return;try{let r=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/${a}`,{method:'POST'});if(a==='resume')toast(noteText(r, r.runner_started?tr('已恢复，正在续跑任务'):tr('已恢复')), r.note_kind==='err'?'err':'ok');await load(current)}catch(e){toast(tr('操作失败: ')+e,'err')}}
 async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;toast(tr('已将自动化 Edge 切换到该会话'),'ok')}catch(e){toast(tr('操作失败: ')+e,'err')}}
 function openCopilot(){if(currentUrl){if(!/^https?:\/\//i.test(currentUrl)){toast(tr('地址不是 http(s)，已拒绝打开'),'err');return}window.open(currentUrl,'_blank','noopener,noreferrer')}
- else toast(isProviderModel(currentModel)?'该会话用的是 API 提供商模型，没有可打开的网页对话':'该 Session 暂无网页会话地址','err')}
+ else toast(isProviderModel(currentModel)?tr('该会话用的是 API 提供商模型，没有可打开的网页对话'):tr('该 Session 暂无网页会话地址'),'err')}
 async function removeSession(remote){
  if(!current)return;
  let extra=remote?'，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）':'';
@@ -1780,7 +1781,7 @@ async function rollbackSession(){
   let body=version?{version}:{};
   let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/rollback`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   let tail=d.failed?`，失败 ${d.failed}`:'';
-  toast(`回滚完成：还原 ${d.restored}、删除 ${d.deleted}${tail}`, d.failed?'err':'ok');
+  toast(tr('回滚完成：还原 {a}、删除 {b}{tail}',{a:d.restored,b:d.deleted,tail:tail}), d.failed?'err':'ok');
   await load(current)
  }catch(e){toast(tr('回滚失败: ')+(e.text||e),'err')}}
 /* ── 回滚服务自升级：还原 CopilotBridge 自身代码（需重启服务生效） ── */
@@ -1795,7 +1796,7 @@ async function rollbackSelfUpgrade(){
   let msg=`将把服务自身代码恢复到自升级前的状态（最近一次）：\n\n${list.join('\n')}\n\n回滚后必须重启服务才生效。确定继续？`;
   if(!await dlgConfirm(msg,'回滚服务自升级',true))return;
   let d=await api('/v1/agent/self/rollback?last=true',{method:'POST'});
-  toast(`自升级已回滚：还原 ${d.restored||0}、删除 ${d.deleted||0}${d.failed?`，失败 ${d.failed}`:''} · 请重启服务`, d.failed?'err':'ok');
+  toast(tr('自升级已回滚：还原 {a}、删除 {b}{fail} · 请重启服务',{a:d.restored||0,b:d.deleted||0,fail:d.failed?tr('，失败 {n}',{n:d.failed}):''}), d.failed?'err':'ok');
  }catch(e){toast(tr('自升级回滚失败: ')+e,'err')}}
 /* ── 删除结果可视化弹窗 ── */
 let lastDeleteResult=null;
@@ -2132,7 +2133,7 @@ async function removeQueueItem(itemId){
  if(!await dlgConfirm(tr('删除这条排队中的消息？此操作不可撤销。'),'删除排队消息',true))return;
  try{
   await api(`/v1/agent/sessions/${encodeURIComponent(current)}/queue/${itemId}`,{method:'DELETE'});
-  toast(tr('已删除排队消息'),'ok');refreshQueue();load(current)}catch(e){toast('删除失败: '+e,'err')}}
+  toast(tr('已删除排队消息'),'ok');refreshQueue();load(current)}catch(e){toast(tr('删除失败: ')+e,'err')}}
 /* ── 粘贴图片/截图附件 ── */
 const IMG_STORES={task:[],follow:[]};
 
@@ -2251,7 +2252,7 @@ async function editMsg(btn){
  try{
   const d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/messages/${id}`,
    {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:v})});
-  toast(noteText(d,'已更新'),'ok');
+  toast(noteText(d,tr('已更新')),'ok');
   await refreshChat();
  }catch(e){toast(tr('编辑失败: ')+(e.text||e),'err')}}
 async function delMsg(btn){
@@ -2329,7 +2330,7 @@ async function injectMessage(){
   let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/inject`,
                   {method:'POST',headers:{'Content-Type':'application/json'},
                    body:JSON.stringify({content,queue})});
-  toast(noteText(d,'已插入'), d.running?'ok':'');
+  toast(noteText(d,tr('已插入')), d.running?'ok':'');
   liveTab('chat');
   // 让聊天区尽快看到这条指令（标"插入",与普通发送区分）
   let log=document.getElementById('chatlog');
@@ -2548,7 +2549,7 @@ async function loadMemory(){
  box.querySelectorAll('[data-pin]').forEach(b=>b.onclick=async()=>{
   const want=b.dataset.v!=='1';
   try{await api('/v1/agent/memory/'+b.dataset.pin+'/pin?pinned='+want+'&scope='+encodeURIComponent(memScope),{method:'POST'});
-   toast(want?'已置顶（检索时恒定注入）':'已取消置顶','ok');loadMemory()}
+   toast(want?tr('已置顶（检索时恒定注入）'):tr('已取消置顶'),'ok');loadMemory()}
   catch(e){toast(tr('操作失败: ')+e,'err')}});
 }
 try{memBtn()}catch(e){}

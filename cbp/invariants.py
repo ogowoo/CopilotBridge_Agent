@@ -457,6 +457,34 @@ def _ui_assets_whitelisted() -> None:
         raise InvariantError(f"白名单里有页面未引用的条目（可能已废弃）: {stale}")
 
 
+@invariant("toast 文案必须走 tr()")
+def _toast_strings_translated() -> None:
+    """toast 里的中文必须包在 tr() 里。
+
+    真事：`toast('已折叠 ' + n + ' ' + tr('个子代理归属会话'))` —— 只包了后半句，
+    英文界面下弹出 "已折叠 2 subagent sessions"（用户实测抓到）。
+    DOM 审计扫不到 toast（它是动态插入的），所以只能静态核对调用参数。
+    """
+    cjk = re.compile(r"[\u4e00-\u9fff]")
+    bad = []
+    for f in sorted((ROOT / "webui").glob("*.js")):
+        text = f.read_text(encoding="utf-8")
+        for m in re.finditer(r"toast\(", text):
+            depth, j = 1, m.end()
+            while j < len(text) and depth:
+                if text[j] == "(":
+                    depth += 1
+                elif text[j] == ")":
+                    depth -= 1
+                j += 1
+            expr = text[m.end():j - 1]
+            if cjk.search(expr) and "tr(" not in expr:
+                bad.append(f"{f.name}:{text[:m.start()].count(chr(10)) + 1}")
+    if bad:
+        raise InvariantError(
+            f"这些 toast 直接传了中文（必须包 tr()）: {bad[:8]}")
+
+
 @invariant("i18n 调用没有被写成字符串字面量")
 def _i18n_calls_not_literals() -> None:
     """防"批量替换做坏"这一真实事故。
