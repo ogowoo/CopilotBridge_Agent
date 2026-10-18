@@ -140,6 +140,25 @@ MEASURE_JS = r"""
 }
 """
 
+# 工具栏"主操作按钮"的锚定关系：主按钮必须贴容器右边缘、且垂直在工具栏内。
+# 实测事故：`.nc-bar` 用 flex-wrap 时主按钮跟着换行漂移，跑到第二行中间；
+# 布局审计只查溢出/重叠/裁剪，量不到"换行了但没出界"这种秩序问题。
+COMPOSER_ALIGN_JS = r"""
+() => {
+  const empty = document.getElementById('emptyState');
+  const bar = document.querySelector('.nc-bar');
+  const send = document.querySelector('.nc-send');
+  if (!empty || !bar || !send) return {skipped: 'elements-missing'};
+  if (getComputedStyle(empty).display === 'none') return {skipped: 'composer-hidden'};
+  const b = bar.getBoundingClientRect(), s = send.getBoundingClientRect();
+  if (b.width < 2 || s.width < 2) return {skipped: 'zero-size'};
+  return {barLeft: Math.round(b.left), barRight: Math.round(b.right),
+          barTop: Math.round(b.top), barBottom: Math.round(b.bottom),
+          sendLeft: Math.round(s.left), sendRight: Math.round(s.right),
+          sendTop: Math.round(s.top), sendBottom: Math.round(s.bottom)};
+}
+"""
+
 
 def audit(widths: list[tuple[int, int]], url: str, stress: bool = False) -> int:
     from playwright.sync_api import sync_playwright
@@ -222,6 +241,29 @@ def audit(widths: list[tuple[int, int]], url: str, stress: bool = False) -> int:
             if m["clippedText"]:
                 problems.append(f"{w}x{h}: {len(m['clippedText'])} 处文字被裁剪（例："
                                 + "; ".join(f"{c['id'] or c['cls']}:{c['text']}" for c in m["clippedText"][:3]) + ")")
+
+            # ── 新会话编辑器：主按钮锚定检查 ──────────────────────────
+            try:
+                page.evaluate("()=>{try{openTask()}catch(e){}}")
+                page.wait_for_timeout(320)
+                comp = page.evaluate(COMPOSER_ALIGN_JS)
+            except Exception as exc:
+                comp = {"skipped": f"eval-failed: {exc}"}
+            if not comp.get("skipped"):
+                gap = abs(comp["sendRight"] - comp["barRight"])
+                if gap > 2:
+                    problems.append(
+                        f"{w}x{h}: 工具栏主按钮未贴右（容器右 {comp['barRight']} / "
+                        f"按钮右 {comp['sendRight']}，差 {gap}px）")
+                if comp["sendTop"] < comp["barTop"] - 1 or comp["sendBottom"] > comp["barBottom"] + 1:
+                    problems.append(
+                        f"{w}x{h}: 工具栏主按钮纵向超出工具栏 "
+                        f"(按钮 {comp['sendTop']}..{comp['sendBottom']} / "
+                        f"工具栏 {comp['barTop']}..{comp['barBottom']})")
+                report.setdefault("composer_align", []).append(
+                    {"width": w, "gap": gap,
+                     "inside": comp["sendTop"] >= comp["barTop"] - 1
+                               and comp["sendBottom"] <= comp["barBottom"] + 1})
 
         browser.close()
 

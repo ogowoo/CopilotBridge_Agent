@@ -486,7 +486,7 @@ def teardown(ctx): ...
 |---|---|---|
 | `web-search` | `web_search` 联网搜索 | DuckDuckGo 免 key；可选 BRAVE/TAVILY/SERPER_API_KEY |
 | `research` | `deep_research` 多角度并行搜索 + 抓正文，返回证据包 | 无 |
-| `schedule` | `schedule_add/list/remove/run` 定时任务（every / daily / once），到点在**独立新会话**跑任务 | 无 |
+| `schedule` | `schedule_add/list/remove/run` 定时任务（every / daily / once），到点在**独立新会话**跑任务；`workspace` 指定工作目录（默认当前工作区） | 无 |
 | `image-gen` | `image_generate` 文生图，落盘到 `workspace/generated/` | DASHSCOPE_API_KEY 或 OPENAI_API_KEY |
 
 **Combined = Grok 式 bot**：实时搜索（web-search）+ 深研（research）+ 定时任务（schedule）+

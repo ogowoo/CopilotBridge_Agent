@@ -81,7 +81,7 @@ class Scheduler:
         return next((x for x in self.items() if x.get("name") == name), None)
 
     # ── 操作 ──
-    def add(self, name, spec, task, model="", enabled=True):
+    def add(self, name, spec, task, model="", enabled=True, workspace=""):
         name = str(name or "").strip()
         task = str(task or "").strip()
         if not name or not task:
@@ -91,6 +91,7 @@ class Scheduler:
         next_run = _next_run(spec)
         items = [x for x in self.items() if x.get("name") != name]
         items.append({"name": name, "spec": spec, "task": task, "model": str(model or ""),
+                      "workspace": str(workspace or ""),
                       "enabled": bool(enabled), "created": time.time(),
                       "next_run": next_run, "last_run": None, "last_result": None,
                       "runs": 0})
@@ -103,8 +104,8 @@ class Scheduler:
         return {"removed": name, "left": len(items)}
 
     def list(self):
-        return [{**{k: x.get(k) for k in ("name", "spec", "task", "model", "enabled",
-                                          "runs", "last_result")},
+        return [{**{k: x.get(k) for k in ("name", "spec", "task", "model", "workspace",
+                                          "enabled", "runs", "last_result")},
                  "next_run": _fmt(x.get("next_run")) if x.get("next_run") else None,
                  "last_run": _fmt(x.get("last_run")) if x.get("last_run") else None}
                 for x in self.items()]
@@ -129,7 +130,7 @@ class Scheduler:
         self.ctx.log(f"定时任务触发: {name}")
         try:
             res = await self.ctx.run_task(item.get("task") or "", item.get("model") or "",
-                                          "", "cron")
+                                          item.get("workspace") or "", "cron")
         except Exception as exc:
             res = {"error": str(exc), "session_id": None, "content": "", "steps": 0}
         items = self.items()
@@ -166,8 +167,9 @@ def setup(ctx):
     sched = Scheduler(ctx)
     ctx._scheduler = sched
 
-    async def _add(name: str, spec: dict, task: str, model: str = "", enabled: bool = True):
-        return sched.add(name, spec, task, model, enabled)
+    async def _add(name: str, spec: dict, task: str, model: str = "",
+                   enabled: bool = True, workspace: str = ""):
+        return sched.add(name, spec, task, model, enabled, workspace)
 
     async def _list():
         return {"schedules": sched.list()}
@@ -181,7 +183,9 @@ def setup(ctx):
     ctx.register_tool("schedule_add", _add,
                       "添加定时任务：spec 支持 {\"every\":\"30m\"}/{\"daily\":\"09:00\"}/{\"once\":\"ISO时间\"}",
                       {"name": "任务名", "spec": "时间规格对象", "task": "到点执行的完整任务描述",
-                       "model": "使用的模型（默认跟随配置）", "enabled": "是否启用，默认 true"})
+                       "model": "使用的模型（默认跟随配置）",
+                       "workspace": "工作目录（默认用当前工作区；绝对路径或相对服务目录）",
+                       "enabled": "是否启用，默认 true"})
     ctx.register_tool("schedule_list", _list, "列出定时任务与下次执行时间", {})
     ctx.register_tool("schedule_remove", _remove, "删除定时任务", {"name": "任务名"})
     ctx.register_tool("schedule_run", _run, "立即执行定时任务（不传 name 则执行所有到期项）",
@@ -208,7 +212,7 @@ def setup(ctx):
             body = {}
         return sched.add(body.get("name") or "", body.get("spec") or {},
                          body.get("task") or "", body.get("model") or "",
-                         bool(body.get("enabled", True)))
+                         bool(body.get("enabled", True)), body.get("workspace") or "")
 
     async def _api_remove(request):
         try:
@@ -226,7 +230,13 @@ def setup(ctx):
         await asyncio.sleep(3)
         await sched.loop()
 
-    sched._task = asyncio.ensure_future(_start())
+    try:
+        sched._task = asyncio.ensure_future(_start())
+    except RuntimeError:
+        # 没有运行中的事件循环（单测/CLI 直接调 setup）：不启动 tick，
+        # 工具与 API 仍可手动调用。宿主始终在 async lifespan 里加载插件。
+        sched._task = None
+        ctx.log("schedule: 无事件循环，tick 未启动（工具仍可用）")
     ctx.log("schedule 已就绪（tick=20s）")
 
 

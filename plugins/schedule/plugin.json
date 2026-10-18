@@ -1,7 +1,7 @@
 {
   "name": "schedule",
   "version": "0.1.0",
-  "description": "定时任务：按间隔/每天定时/一次性时间点跑 Agent 任务（结果写进新会话，可在会话列表查看）",
+  "description": "定时任务：按间隔/每天定时/一次性时间点跑 Agent 任务（结果写进新会话，可在会话列表查看；可指定工作区）",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
