@@ -22,9 +22,10 @@
       <div class="nc-sub" data-i18n="从左侧选择会话，或在这里开始新的对话">从左侧选择会话，或在这里开始新的对话</div>
       <div class="nc-box">
         <textarea id="task" aria-label="任务内容" rows="4"
-                  data-act-key="taskKey"
+                  data-act-key="taskKey" data-act-input="taskInput"
                   placeholder="发消息或创建任务，例如：分析 workspace 里的项目并生成 TODO；可直接粘贴截图"></textarea>
         <div id="taskThumbs" class="thumbs"></div>
+        <div id="slashMenu" class="slashmenu" hidden></div>
         <div class="nc-bar">
           <div class="nc-left">
             <select id="model" class="nc-model" aria-label="新任务使用的模型"><option value="copilot-auto">Auto</option><option value="copilot-think-deeper">Think deeper</option></select>
@@ -45,7 +46,8 @@
           </div>
         </div>
       </div>
-      <div class="nc-hint"><span data-i18n="Enter 发送，Shift+Enter 换行">Enter 发送，Shift+Enter 换行</span></div>
+      <div class="nc-hint"><span data-i18n="Enter 发送，Shift+Enter 换行">Enter 发送，Shift+Enter 换行</span>
+        · <span data-i18n="输入 / 查看命令">输入 / 查看命令</span></div>
     </div>
     <div id="sessionView" style="display:none">
       <header class="topbar">

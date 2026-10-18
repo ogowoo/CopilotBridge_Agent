@@ -230,12 +230,98 @@ async function openPlugins(){
 }
 function closePlugins(){closeMask('pluginsMask')}
 
+/* ── 斜杠命令（/）：模式与工具的快捷入口 ─────────────────────────
+   输入框以 "/" 开头时列出命令；↑↓ 选择、Tab/Enter 补全、Esc 关闭。
+   带参数直接回车即执行（/research 问题…），不带参数则补全后等输入。 */
+const SLASH_COMMANDS=[
+ {id:'research',label:'research',aliases:['research','深研','dr'],
+  desc:'深研：多角度搜索 + 抓正文，生成带来源的报告',
+  run:(arg)=>{
+   if(!arg){toast(tr('用法：/research 你的问题'),'err');return}
+   const t=document.getElementById('task'); if(t)t.value='';
+   deepResearchNow(arg)}},
+ {id:'agent',label:'agent',aliases:['agent','执行'],
+  desc:'切到 Agent 执行模式',run:()=>{setTaskMode('agent');toast(tr('已切到 Agent 执行'),'ok')}},
+ {id:'chat',label:'chat',aliases:['chat','对话'],
+  desc:'切到普通对话模式',run:()=>{setTaskMode('chat');toast(tr('已切到普通对话'),'ok')}},
+ {id:'help',label:'help',aliases:['help','?','帮助'],
+  desc:'列出全部可用命令',run:()=>{const t=document.getElementById('task');
+   if(t){t.value='/';slashUpdate(true);t.focus()}}},
+];
+let slashIdx=0;
+function slashMatch(q){
+ const s=(q||'').toLowerCase();
+ if(!s)return SLASH_COMMANDS.slice();
+ return SLASH_COMMANDS.filter(c=>c.aliases.some(a=>a.toLowerCase().startsWith(s)));
+}
+function slashOpen(){
+ const box=document.getElementById('slashMenu');
+ return !!(box&&!box.hidden);
+}
+function slashUpdate(force){
+ const t=document.getElementById('task'),box=document.getElementById('slashMenu');
+ if(!t||!box)return;
+ const m=/^\/(\S*)$/.exec(t.value);
+ if(!m&&!force){box.hidden=true;box.innerHTML='';return}
+ const items=slashMatch(m?m[1]:'');
+ if(!items.length){box.hidden=true;box.innerHTML='';return}
+ if(slashIdx>=items.length)slashIdx=0;
+ box.hidden=false;box.innerHTML='';
+ items.forEach((c,i)=>{
+  const row=document.createElement('div');
+  row.className='slashrow'+(i===slashIdx?' on':'');
+  row.innerHTML='<code>/'+esc(c.label)+'</code><span class="sdesc">'+esc(tr(c.desc))+'</span>';
+  row.onmousedown=(ev)=>{ev.preventDefault();slashPick(c)};
+  box.appendChild(row)});
+}
+function slashPick(c){
+ const t=document.getElementById('task');if(!t)return;
+ t.value='/'+c.label+' ';t.focus();
+ const box=document.getElementById('slashMenu');if(box)box.hidden=true;
+}
+function slashKey(e){
+ const box=document.getElementById('slashMenu');
+ if(!box||box.hidden)return false;
+ const rows=[...box.querySelectorAll('.slashrow')];
+ const n=Math.max(rows.length,1);
+ if(e.key==='ArrowDown'){slashIdx=(slashIdx+1)%n;slashUpdate(true);e.preventDefault();return true}
+ if(e.key==='ArrowUp'){slashIdx=(slashIdx-1+n)%n;slashUpdate(true);e.preventDefault();return true}
+ if(e.key==='Enter'){
+  // 已是**完整命令**（/chat、/help、/research 问题…）→ 直接执行；
+  // 只有还在输入前缀时才补全。否则 /help 会被当成补全、永远执行不了。
+  if(slashRun(document.getElementById('task').value)){e.preventDefault();return true}
+  const m1=/^\/(\S*)$/.exec(document.getElementById('task').value||'');
+  const c1=slashMatch(m1?m1[1]:'')[slashIdx];
+  if(c1){slashPick(c1);e.preventDefault();return true}
+ }
+ if(e.key==='Tab'){
+  const m=/^\/(\S*)$/.exec(document.getElementById('task').value||'');
+  const c=slashMatch(m?m[1]:'')[slashIdx];
+  if(c){slashPick(c);e.preventDefault();return true}
+ }
+ if(e.key==='Escape'){box.hidden=true;box.innerHTML='';e.preventDefault();return true}
+ return false;
+}
+function slashRun(text){
+ const m=/^\/(\S+)\s*([\s\S]*)$/.exec(String(text||'').trim());
+ if(!m)return false;
+ const c=SLASH_COMMANDS.find(x=>x.aliases.some(a=>a.toLowerCase()===m[1].toLowerCase()));
+ if(!c)return false;
+ const box=document.getElementById('slashMenu');if(box){box.hidden=true;box.innerHTML=''}
+ c.run((m[2]||'').trim());
+ return true;
+}
+
 /* ── 深研一键命令（research 插件 + 模型综合）────────────────────────
    点「深研」→ 输入问题 → 后端收集证据包 → Agent 写成带来源的报告 → 打开新会话。 */
-async function deepResearchNow(){
- const q=await dlgPrompt(
+async function deepResearchNow(query){
+ // 斜杠命令可以带问题（/research 问题），按钮则弹输入框
+ let q=query;
+ if(!q){
+  q=await dlgPrompt(
    tr('输入研究问题：会用多角度搜索 + 抓取正文，生成带来源的调研报告（约 20-60 秒）'),
    '', tr('开始深研'), tr('深研'));
+ }
  if(!q||!String(q).trim())return;
  toast(tr('深研中…（多角度搜索 + 抓正文）'),'ok');
  try{
@@ -2396,7 +2482,8 @@ const ACTIONS={
  exportTimeline:()=>exportTimeline(),
  refreshModels:()=>refreshModels(),
  runTask:()=>runTask(),
- taskKey:(el,e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();runTask()}},
+ taskKey:(el,e)=>{if(slashKey(e))return;if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(slashRun(el.value))return;runTask()}},
+ taskInput:()=>slashUpdate(),
  closeDlg:()=>closeDlg(),
  closeManual:()=>closeManual(),
  closeLive:()=>closeLive(),

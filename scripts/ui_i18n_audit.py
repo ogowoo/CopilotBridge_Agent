@@ -221,6 +221,14 @@ def audit(url: str, as_json: bool) -> int:
                 page.evaluate("document.getElementById('moreMenu').classList.remove('open')")
             except Exception:
                 pass
+            # 斜杠命令面板：只有输入 "/" 才出现，不主动打开就扫不到
+            try:
+                page.evaluate("()=>{const t=document.getElementById('task');"
+                              "if(t){t.value='/';slashUpdate(true)}}")
+                page.wait_for_timeout(300)
+                items += page.evaluate(CHROME_JS)
+            except Exception:
+                pass
             # 再开一次"使用手册"与"新任务"弹窗（大字面量，最容易漏）
             for act in ("openManual", "openTask", "openPlugins"):
                 try:

@@ -447,6 +447,15 @@ Object.assign(I18N_EN, {
    "Send a message or create a task, e.g. analyse the project under workspace and produce a TODO; screenshots can be pasted directly",
  "开始": "Start",
  "Enter 发送，Shift+Enter 换行": "Enter to send, Shift+Enter for a new line",
+ "输入 / 查看命令": "Type / for commands",
+ "深研：多角度搜索 + 抓正文，生成带来源的报告":
+   "Deep research: multi-angle search + page fetching, produces a sourced report",
+ "切到 Agent 执行模式": "Switch to Agent mode",
+ "切到普通对话模式": "Switch to plain chat mode",
+ "列出全部可用命令": "List all available commands",
+ "用法：/research 你的问题": "Usage: /research your question",
+ "已切到 Agent 执行": "Switched to Agent mode",
+ "已切到普通对话": "Switched to plain chat",
  "时间线中的": "In the timeline, ",
  "深研": "Deep research",
  "多角度搜索 + 抓正文，生成带来源的调研报告（新会话）":
