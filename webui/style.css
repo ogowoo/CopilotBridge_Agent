@@ -751,6 +751,21 @@ section.card:has(#stepCount){margin-top:14px}
 .newchat .nc-left{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;
   flex-wrap:wrap;row-gap:8px}
 .newchat .nc-right{flex:none;display:flex;align-items:center;gap:6px}
+/* 工具栏控件统一 32px 高、8px 圆角、同一套边框/底色——
+   之前模型 31 / 目录 37 / 图标按钮 26 / 分段 28 混在一起，高度和风格都不齐 */
+.newchat .nc-bar select,
+.newchat .nc-bar input{height:32px;padding:0 10px;font-size:13px;box-sizing:border-box;
+  border-radius:8px;background:var(--input-bg);border:1px solid var(--line2)}
+.newchat .nc-bar select{line-height:30px}
+.newchat .nc-bar .iconbtn{width:32px;height:32px;border-radius:8px;
+  border:1px solid var(--line2);background:var(--input-bg);color:var(--muted)}
+.newchat .nc-bar .iconbtn:hover{border-color:var(--accent);color:var(--text)}
+.newchat .nc-bar .btn.seg{height:32px;border-radius:8px;padding:0 12px;
+  background:transparent;border:1px solid var(--line2);color:var(--muted)}
+.newchat .nc-bar .btn.seg:hover{color:var(--text);border-color:var(--accent)}
+/* 选中的模式用描边高亮：实心强调色只留给「开始」这个唯一主操作 */
+.newchat .nc-bar .btn.seg.on{background:transparent;border-color:var(--accent);
+  color:var(--accent2);font-weight:600}
 .newchat .nc-model{flex:0 1 auto;width:auto;min-width:96px;max-width:168px}
 .newchat .nc-ws{flex:1 1 110px;min-width:90px;max-width:220px}
 .newchat .nc-left .iconbtn{flex:none}
