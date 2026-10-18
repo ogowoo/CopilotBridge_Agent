@@ -709,3 +709,17 @@ section.card:has(#stepCount){margin-top:14px}
 .questionbar .qinput{flex:1 1 200px;min-width:120px;padding:5px 8px;border-radius:6px;
   border:1px solid var(--line2);background:var(--bg);color:var(--text);font:inherit}
 .questionbar .qchip{font-size:11.5px;padding:2px 8px}
+
+/* ── 子代理面板（subagents）─────────────────────────────────────────
+   一行一个子代理：状态点 + 描述 + 元信息（状态/步数/阶段），点行切到子会话。 */
+.subagents{display:none}
+.subagentlist{display:flex;flex-direction:column;gap:2px;padding:6px 10px 8px}
+.subagentrow{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:6px;
+  cursor:pointer;font-size:12.5px;min-width:0}
+.subagentrow:hover{background:var(--menu-hover)}
+.subagentrow.sel{background:var(--panel2);outline:1px solid var(--line2)}
+.subagentrow .sa-desc{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--text)}
+.subagentrow .sa-meta{flex:none;color:var(--faint);font-size:11.5px}
+.dot-bad{width:7px;height:7px;border-radius:50%;background:var(--danger-text);flex:none;
+  display:inline-block}

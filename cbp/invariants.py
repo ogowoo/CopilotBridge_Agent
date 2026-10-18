@@ -411,6 +411,8 @@ def _ui_actions_wired() -> None:
     html = (web / "index.html").read_text(encoding="utf-8")
     js = (web / "app.js").read_text(encoding="utf-8")
     used = set(re.findall(r'data-act(?:-input|-key)?="([A-Za-z0-9_]+)"', html + js))
+    # 动态生成的元素用 el.dataset.act='x'（不是 HTML 属性），同样算引用
+    used |= set(re.findall(r"dataset\.act\s*=\s*['\"]([A-Za-z0-9_]+)['\"]", js))
     if not used:
         raise InvariantError("没有解析到任何 data-act（事件委托被回退了？）")
     parts = js.split("const ACTIONS={", 1)

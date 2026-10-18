@@ -429,6 +429,18 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 （`approval_policy: "ask"` 时 WebUI 逐次授权，用后即焚）；`read_image` 的视觉分析与
 `ask_user_question` 依赖 Copilot 网页/WebUI，没有对应通道时优雅降级（返回元数据/明确报错）。
 
+### 5.5 子代理面板（看有哪些子代理、在跑什么）
+
+用 `subagent` / `ralph` / `workflow` 派生出的子代理会以 `sub-xxxxxxxxxx` 独立会话运行。
+WebUI 在 KPI 区下方有**子代理面板**（有子代理时才出现）：
+
+- 每行：状态点 + 子代理描述 + 状态/步数/当前阶段
+- 点一行 → 切到该子会话看完整时间线；点「刷新」立即拉取
+- 数据来自 `GET /v1/agent/subagents`（可按 `?parent=<sid>` 过滤）
+
+子会话会记录 `parent_id` 与 `description`（会话表新增两列，自动迁移）。子代理**继承父会话的
+会话级授权**（父授权了 pwsh，子代理不再弹），但逐参数的一次性授权不继承。
+
 ### 6. 常用运维命令
 ```powershell
 python start.py                              # 启动服务（默认 127.0.0.1:8765）

@@ -175,6 +175,12 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 con.execute("ALTER TABLE sessions ADD COLUMN tag TEXT")
             except Exception:
                 pass  # 列已存在
+            # 迁移：子代理的父子关系与短标签（子代理面板按 parent_id 列出）
+            for _col, _decl in (("parent_id", "TEXT"), ("description", "TEXT")):
+                try:
+                    con.execute(f"ALTER TABLE sessions ADD COLUMN {_col} {_decl}")
+                except Exception:
+                    pass  # 列已存在
 
     @staticmethod
     def _decode(row):
@@ -211,13 +217,25 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         with self.lock, self._connect() as con:
             return [self._decode(x) for x in con.execute(query)]
 
+    def list_subagents(self, parent_id: str | None = None, limit: int = 50):
+        """列出子代理会话（parent_id 非空），可选按父会话过滤。
+
+        子代理面板据此显示"有哪些子代理、在跑什么、进度到哪"。
+        """
+        sql = ("SELECT * FROM sessions WHERE parent_id IS NOT NULL AND parent_id != '' "
+               + ("AND parent_id=? " if parent_id else "")
+               + "ORDER BY updated DESC LIMIT ?")
+        args = ((parent_id,) if parent_id else ()) + (int(limit),)
+        with self.lock, self._connect() as con:
+            return [self._decode(x) for x in con.execute(sql, args)]
+
     def patch(self, sid: str, **values):
         allowed = {"title","state","workspace","model","current_url","conversation_index","conversation_urls",
                    "total_steps","conversation_steps","estimated_tokens","estimated_chars","summary","recent_steps",
                    "modified_files","pending","last_error","cancel_requested","archived","compact_requested",
                    "rollover_requested","conv_tokens","conv_chars","gate_state",
                    "retry_resume_at","retry_attempt","rate_limited_since","initial_prompt",
-            "pending_steps","approval_pending","tag","goal"}
+            "pending_steps","approval_pending","tag","goal","parent_id","description"}
         values = {k:v for k,v in values.items() if k in allowed}
         if "state" in values and values["state"] not in self.STATES: raise ValueError("invalid state")
         for key in ("conversation_urls","summary","recent_steps","modified_files","pending",

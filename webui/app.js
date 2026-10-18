@@ -147,6 +147,45 @@ function showQuestionBar(q){
   el.appendChild(span);el.appendChild(inp);el.appendChild(ok)}
  el.style.display='flex'}
 
+/* ── 子代理面板（看到有哪些子代理、在跑什么、进度到哪）──────────────
+   数据来自 GET /v1/agent/subagents；点一行可切到该子会话查看详情。 */
+let lastSubagentFetch=0, subagentBusy=false;
+async function refreshSubagents(force){
+ const now=Date.now();
+ if(subagentBusy) return;
+ if(!force && now-lastSubagentFetch<3000) return;
+ subagentBusy=true;lastSubagentFetch=now;
+ try{
+  const d=await api('/v1/agent/subagents');
+  renderSubagents(d.subagents||[]);
+ }catch(e){}
+ finally{subagentBusy=false}
+}
+function renderSubagents(list){
+ const bar=document.getElementById('subagentBar');
+ const box=document.getElementById('subagentList');
+ const cnt=document.getElementById('subagentCount');
+ if(!bar||!box) return;
+ if(!list.length){bar.style.display='none';box.innerHTML='';return}
+ // 用 'block' 而非 ''：'' 会回退到样式表里的 .subagents{display:none}（实测踩到）
+ bar.style.display='block';
+ const running=list.filter(s=>s.state==='running').length;
+ cnt.textContent=tr(' · {n} 个',{n:list.length})+(running?tr('（{r} 个运行中）',{r:running}):'');
+ box.innerHTML='';
+ list.slice(0,8).forEach(s=>{
+  const row=document.createElement('div');
+  row.className='subagentrow'+(s.id===current?' sel':'');
+  row.dataset.act='openSubagent';row.dataset.arg=s.id;
+  const dot=document.createElement('span');
+  dot.className=s.state==='running'?'dot-on':(s.state==='failed'?'dot-bad':'dot-off');
+  const desc=document.createElement('span');desc.className='sa-desc';
+  desc.textContent=s.description||s.task||s.id;
+  const meta=document.createElement('span');meta.className='sa-meta';
+  meta.textContent=stateText(s.state)+' · '+s.steps+' '+tr('步')+(s.phase?' · '+s.phase:'');
+  row.appendChild(dot);row.appendChild(desc);row.appendChild(meta);
+  box.appendChild(row)});
+}
+
 async function api(u,o={}){
   if(DEMO)return demoApi(u,o);
   const call=tk=>{const opt=Object.assign({},o);opt.headers=Object.assign({},o.headers||{});
@@ -1096,6 +1135,7 @@ async function applyRuntime(r){
   // 只在真的等待授权时显示（后端已按 waiting 过滤，这里再兜一层）
   try{showApprovalBar(r.session_state==='waiting'?r.approval_pending:null,r.approval_scope)}catch(e){}
   try{showQuestionBar(r.question||null)}catch(e){}
+  try{refreshSubagents(r.session_state==='running')}catch(e){}
   updateRetryCountdown(r);
   if(r.total_steps!==lastTotal||(r.detail||'')!==lastDetail){
    lastDetail=r.detail||'';
@@ -2126,6 +2166,8 @@ const ACTIONS={
  rollbackSelfUpgrade:()=>rollbackSelfUpgrade(),
  removeSession:(el)=>removeSession(el.dataset.arg==='true'),
  liveTab:(el)=>liveTab(el.dataset.arg),
+ openSubagent:(el)=>load(el.dataset.arg),
+ refreshSubagents:()=>refreshSubagents(true),
  showPromptView:()=>showPromptView(),
  expandLive:()=>expandLive(),
  toggleChatFind:()=>toggleChatFind(),

@@ -3402,6 +3402,9 @@ async def run_subagent(task: str, description: str = "", model: str = "",
     pm = providers_mod.split_provider_model(child_model)
     is_provider = bool(pm and pm[0] in PROVIDERS)
     AGENT_SESSIONS.create(child_sid, task, parent_root, child_model)
+    # 父子关系与短标签：子代理面板据此列出"谁派生的、在跑什么"
+    AGENT_SESSIONS.patch(child_sid, parent_id=parent_sid,
+                         description=(description or task)[:120])
     try:
         # 继承父会话的会话级授权（子代理是同一任务的一部分，不该重复授权）
         AGENT_SESSIONS.copy_session_approvals(parent_sid, child_sid)

@@ -407,6 +407,30 @@ async def agent_debug_download(payload: dict | None = None):
     return await b.debug_download_now(stem)
 
 
+@app.get("/v1/agent/subagents")
+async def list_subagents(parent: str | None = None, limit: int = 50):
+    """子代理列表：id / 任务 / 状态 / 进度 / 父会话（供 WebUI 子代理面板）。"""
+    rows = b.AGENT_SESSIONS.list_subagents(parent, limit)
+    out = []
+    for s in rows:
+        rt = b.RUNTIME.get(s["id"]) or {}
+        out.append({
+            "id": s["id"],
+            "parent_id": s.get("parent_id") or "",
+            "description": s.get("description") or (s.get("title") or "")[:80],
+            "task": (s.get("original_task") or "")[:500],
+            "state": s.get("state"),
+            "model": s.get("model"),
+            "steps": int(s.get("total_steps") or 0),
+            "created": s.get("created"),
+            "updated": s.get("updated"),
+            "last_error": s.get("last_error"),
+            "phase": rt.get("phase"),
+            "detail": (rt.get("detail") or "")[:200],
+        })
+    return {"subagents": out, "count": len(out)}
+
+
 @app.get("/v1/agent/debug/page")
 async def agent_debug_page():
     """诊断：当前自动化页面截图 + 下载入口（只读，排障用）。"""
