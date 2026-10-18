@@ -483,11 +483,6 @@ async function refreshSessions(){if(serviceStopped)return;try{let d=await api('/
 /* 列表签名：内容没变就不重建 DOM，避免每秒滚动回顶/点击错位 */
 let sessSig='';
 /* 工作区短名：只显示末两段（全路径放 title），避免会话列表被长路径撑开 */
-function shortWs(p){
- let parts=String(p||'').replace(/\\/g,'/').split('/').filter(Boolean);
- if(!parts.length) return '';
- return parts.slice(-2).join('/');
-}
 function drawSessions(){
  let q=(document.getElementById('sessFilter').value||'').toLowerCase();
  let box=document.getElementById('sessions');
@@ -1673,6 +1668,8 @@ function openManual(){const body=document.getElementById('manualBody');
  openMask('manualMask')}
 function closeManual(){closeMask('manualMask')}
 function openTask(){
+ // 侧栏收起时编辑器区域虽然还在，但"从左侧选会话"的提示会误导：先展开侧栏
+ try{if(document.documentElement.dataset.rail==='closed')toggleRail()}catch(e){}
  // 新会话视图（DSH 式）：空态就是编辑器，没有再套一层弹窗
  document.getElementById('emptyState').style.display='flex';
  document.getElementById('sessionView').style.display='none';
@@ -2080,7 +2077,6 @@ function toggleRail(){let r=document.documentElement,c=r.dataset.rail==='closed'
  if(c){delete r.dataset.rail}else{r.dataset.rail='closed'}
  document.getElementById('railBtn').textContent=c?'‹':'›';
  try{localStorage.setItem('cbp-rail',c?'':'closed')}catch(e){}}
-function railNewTask(){if(document.documentElement.dataset.rail==='closed')toggleRail();openTask()}
 try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="›"}catch(e){}
 /* ── 长期记忆管理面板 ───────────────────────────────────────────────
    外观复用项目既有的 .mask/.dlg 弹窗类（与确认框同款），图标用内联 SVG

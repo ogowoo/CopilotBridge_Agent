@@ -68,6 +68,16 @@ class PluginTests(unittest.TestCase):
         with self.assertRaises(PluginError):
             self.host.load("weird")
 
+    def test_unknown_plugin_does_not_pollute_state(self):
+        """拼错的插件名不能往 plugins.json 里写状态（否则列表出现幽灵插件）。"""
+        before = self.host._state.copy()
+        with self.assertRaises(Exception):
+            self.host.enable("no-such-plugin")
+        with self.assertRaises(Exception):
+            self.host.disable("no-such-plugin")
+        self.assertNotIn("no-such-plugin", self.host._state)
+        self.assertEqual(before.keys(), self.host._state.keys())
+
     def test_enable_disable_persisted(self):
         _write_plugin(self.tmp, "p1", {
             "name": "p1", "cbp": {"permissions": ["tools"], "contributes": {"tools": ["t1"]}},
@@ -96,6 +106,35 @@ class PluginTests(unittest.TestCase):
         # 两种注册写法都认
         out2 = asyncio.run(self.host.dispatch_api("apiplug", "GET", "api/ping", Req()))
         self.assertEqual(out2, {"pong": True})
+
+    def test_api_route_zero_arg_handler(self):
+        """handler 可以不带参数（按签名调用，而不是靠捕获 TypeError 试错）。"""
+        _write_plugin(self.tmp, "noarg", {
+            "name": "noarg", "cbp": {"permissions": ["api"],
+                                     "contributes": {"api": ["GET api/now"]}},
+        }, "def setup(ctx):\n    ctx.register_api('GET','api/now', lambda: {'ok': 1})\n")
+        self.host.load("noarg")
+
+        class Req:
+            query_params = {}
+
+        out = asyncio.run(self.host.dispatch_api("noarg", "GET", "now", Req()))
+        self.assertEqual(out, {"ok": 1})
+
+    def test_api_handler_typeerror_is_not_retried(self):
+        """handler 内部的 TypeError 必须冒出来，不能被误当成"参数不匹配"重跑一次。"""
+        _write_plugin(self.tmp, "boom", {
+            "name": "boom", "cbp": {"permissions": ["api"],
+                                    "contributes": {"api": ["GET api/boom"]}},
+        }, "def bad(request):\n    return 1 + 'x'\n"
+           "def setup(ctx):\n    ctx.register_api('GET','api/boom', bad)\n")
+        self.host.load("boom")
+
+        class Req:
+            query_params = {}
+
+        with self.assertRaises(TypeError):
+            asyncio.run(self.host.dispatch_api("boom", "GET", "boom", Req()))
 
     def test_events_and_state(self):
         seen = []

@@ -254,8 +254,9 @@ class PluginHost:
             self.data_dir.mkdir(parents=True, exist_ok=True)
             self._state_path.write_text(json.dumps(self._state, ensure_ascii=False, indent=1),
                                         encoding="utf-8")
-        except Exception:
-            pass
+        except Exception as exc:
+            # 落盘失败不致命，但必须留痕：否则"改了插件配置、重启后丢了"会毫无线索
+            self.log(f"[plugins] 状态落盘失败: {exc}")
 
     def state_for(self, name: str) -> dict[str, Any]:
         return dict((self._state.get(name) or {}).get("state") or {})
@@ -386,7 +387,14 @@ class PluginHost:
         self._unload(name)
         return self.load(name)
 
+    def _known(self, name: str) -> bool:
+        return any(m.name == name for m in self.discover())
+
     def enable(self, name: str) -> dict[str, Any]:
+        # 先确认插件真的存在，再落盘状态：否则一个拼错的名字（或 API 误调）会
+        # 在 data/plugins.json 里留下"幽灵插件"，列表里显示成 v · 未加载（实测踩到）
+        if not self._known(name) and name not in self.records:
+            raise PluginError(f"没有名为 {name} 的插件")
         self.set_enabled(name, True)
         try:
             return self.load(name)
@@ -395,6 +403,8 @@ class PluginHost:
             raise
 
     def disable(self, name: str) -> dict[str, Any]:
+        if not self._known(name) and name not in self.records:
+            raise PluginError(f"没有名为 {name} 的插件")
         self.set_enabled(name, False)
         self._unload(name)
         return {"name": name, "status": "disabled"}
@@ -460,14 +470,16 @@ class PluginHost:
                    or self.routes.get((plugin, method.upper(), "api/" + rel)))
         if handler is None:
             raise PluginError(f"插件 {plugin} 没有注册 {method.upper()} /{path}")
+        # 按**签名**决定是否传 request，而不是靠捕获 TypeError 试错：
+        # handler 内部抛的 TypeError 会被误当成"参数不匹配"，静默重跑一次并
+        # 掩盖真实错误（实测踩到过——真正的 bug 变成"二次调用又炸了"）。
         try:
-            result = handler(request)
-            if inspect.isawaitable(result):
-                result = await result
-            return result
-        except TypeError:
-            # 允许不带参数的 handler
-            result = handler()
-            if inspect.isawaitable(result):
-                result = await result
-            return result
+            params = [p for p in inspect.signature(handler).parameters.values()
+                      if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD,
+                                    p.VAR_POSITIONAL)]
+        except (TypeError, ValueError):
+            params = [True]          # 取不到签名（内置/C 函数）时按"接收 request"处理
+        result = handler(request) if params else handler()
+        if inspect.isawaitable(result):
+            result = await result
+        return result
