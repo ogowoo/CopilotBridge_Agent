@@ -2064,7 +2064,7 @@ async function waitSessionReady(sid){
 function toggleMore(e){e.stopPropagation();document.getElementById('moreMenu').classList.toggle('open')}
 document.addEventListener('click',e=>{let m=document.getElementById('moreMenu');if(m&&m.classList.contains('open')&&!e.target.closest('#moreBtn'))m.classList.remove('open')});
 
-const THEMES=[["","深色"],["light","浅色"],["nord","Nord 蓝"],["solarized","护眼米"],["dracula","Dracula 紫"],["roufen","柔粉"],["mint","薄荷"]];
+const THEMES=[["","深色"],["amber","琥珀"],["light","浅色"],["solarized","护眼米"],["mint","薄荷"]];
 function toggleTheme(){
  let cur=document.documentElement.dataset.theme||'';
  let i=THEMES.findIndex(x=>x[0]===cur);if(i<0)i=0;

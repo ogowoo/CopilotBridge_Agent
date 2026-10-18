@@ -443,6 +443,21 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 .manual kbd{border:1px solid var(--line2);border-radius:5px;padding:1px 6px;font-size:12px;background:var(--panel2)}
 
 /* ── 主题：浅色 ── */
+:root[data-theme="amber"]{
+  --bg:#14161a;--panel:#1b1e24;--panel2:#22262d;--line:#2c313a;--line2:#3a404b;
+  --text:#e7e9ee;--muted:#98a0ad;--faint:#87909c;--sid-fg:#8d96a3;--accent-fg:#14161a;
+  --accent:#f0a02c;--accent2:#ffb84d;
+  --green:#57b26a;--amber:#e0a02c;--red:#e5534b;--blue:#6aa8ff;--purple:#b892ff;
+  --scrollbar:#3a404b;--input-bg:#101216;--btn-bg:#232830;--btn-hover-text:#fff;
+  --sess-hover:#1e2229;--sess-sel:#262b34;--dot-off:#3f4650;
+  --menu-shadow:rgba(0,0,0,.65);--menu-hover:#2a3039;--meter:#101216;
+  --term-bg:#0e1013;--term-text:#c9ced8;--step-line:#1e2229;
+  --jv-bg:#0e1013;--jv-text:#dde1e8;--jv-border:#242a32;--jv-ind:#39404b;
+  --ky:#d0b3ff;--st:#8fdca0;--nm:#9dc2ff;--bl:#ffc466;--nl:#7a828e;
+  --msg-user-bg:#3b2f1d;--msg-user-border:#5b4a2c;--big:#6f7683;
+  --danger-bg:#2a1618;--danger-border:#5f2b2a;--danger-text:#ff8f85;--danger-hover-text:#ffb3ac;
+  --mask-bg:rgba(6,8,11,.68);--dlg-shadow:rgba(0,0,0,.8);
+}
 :root[data-theme="light"]{
   --bg:#eef1f6;--panel:#ffffff;--panel2:#f4f6fa;--line:#e2e8f0;--line2:#cbd5e1;
   --text:#17202c;--muted:#5b6b7e;--faint:#687888;--sid-fg:#5d6c7a;--accent-fg:#ffffff;
@@ -459,21 +474,6 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
   --mask-bg:rgba(30,41,59,.32);--dlg-shadow:rgba(15,23,42,.25);
 }
 /* ── 主题：Nord（极地蓝灰） ── */
-:root[data-theme="nord"]{
-  --bg:#2e3440;--panel:#3b4252;--panel2:#434c5e;--line:#4c566a;--line2:#5e6b82;
-  --text:#eceff4;--muted:#a5b0c0;--faint:#a7afbb;--sid-fg:#c4c9d1;--accent-fg:#11161d;
-  --accent:#88c0d0;--accent2:#81a1c1;
-  --green:#a3be8c;--amber:#ebcb8b;--red:#bf616a;--blue:#81a1c1;--purple:#b48ead;
-  --scrollbar:#4c566a;--input-bg:#2a303d;--btn-bg:#434c5e;--btn-hover-text:#fff;
-  --sess-hover:#424a5a;--sess-sel:#48536a;--dot-off:#59657a;
-  --menu-shadow:rgba(0,0,0,.5);--menu-hover:#4c566a;--meter:#2a303d;
-  --term-bg:#262b36;--term-text:#d8dee9;--step-line:#3f4756;
-  --jv-bg:#262b36;--jv-text:#d8dee9;--jv-border:#4c566a;--jv-ind:#4c566a;
-  --ky:#b48ead;--st:#a3be8c;--nm:#81a1c1;--bl:#ebcb8b;--nl:#7b8798;
-  --msg-user-bg:#3b4a63;--msg-user-border:#4c5b77;--big:#8792a9;
-  --danger-bg:#402e32;--danger-border:#6b3a40;--danger-text:#ecaeb4;--danger-hover-text:#f0aab0;
-  --mask-bg:rgba(24,28,36,.66);--dlg-shadow:rgba(0,0,0,.6);
-}
 /* ── 主题：护眼（Solarized 米白） ── */
 :root[data-theme="solarized"]{
   --bg:#fdf6e3;--panel:#fffdf5;--panel2:#f5efdd;--line:#e4dcc4;--line2:#d5cdb4;
@@ -491,37 +491,7 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
   --mask-bg:rgba(101,123,131,.25);--dlg-shadow:rgba(101,123,131,.3);
 }
 /* ── 主题：Dracula（暗夜紫） ── */
-:root[data-theme="dracula"]{
-  --bg:#282a36;--panel:#303241;--panel2:#383a4a;--line:#44475a;--line2:#565969;
-  --text:#f8f8f2;--muted:#b6bacb;--faint:#959aac;--sid-fg:#acb0be;--accent-fg:#11161d;
-  --accent:#bd93f9;--accent2:#d6b6ff;
-  --green:#50fa7b;--amber:#f1fa8c;--red:#ff5555;--blue:#8be9fd;--purple:#bd93f9;
-  --scrollbar:#44475a;--input-bg:#242631;--btn-bg:#383a4a;--btn-hover-text:#fff;
-  --sess-hover:#363849;--sess-sel:#3f4152;--dot-off:#50536a;
-  --menu-shadow:rgba(0,0,0,.6);--menu-hover:#44475a;--meter:#242631;
-  --term-bg:#21222c;--term-text:#e2e4ee;--step-line:#3a3d4e;
-  --jv-bg:#21222c;--jv-text:#e2e4ee;--jv-border:#44475a;--jv-ind:#44475a;
-  --ky:#d6b6ff;--st:#50fa7b;--nm:#8be9fd;--bl:#f1fa8c;--nl:#8a8fa3;
-  --msg-user-bg:#3b3454;--msg-user-border:#4d4470;--big:#7b809b;
-  --danger-bg:#3d2830;--danger-border:#6e3540;--danger-text:#ff8080;--danger-hover-text:#ffa0a0;
-  --mask-bg:rgba(20,21,28,.66);--dlg-shadow:rgba(0,0,0,.75);
-}
 /* ── 主题：柔粉 ── */
-:root[data-theme="roufen"]{
-  --bg:#fdf2f5;--panel:#ffffff;--panel2:#fdf7f9;--line:#f3dde4;--line2:#ecc9d5;
-  --text:#4a2e38;--muted:#8a6673;--faint:#97697a;--sid-fg:#855c6b;--accent-fg:#11161d;
-  --accent:#ec5c8a;--accent2:#d64575;
-  --green:#16a34a;--amber:#b45309;--red:#dc2626;--blue:#2563eb;--purple:#9333ea;
-  --scrollbar:#ecc9d5;--input-bg:#fff;--btn-bg:#fff;--btn-hover-text:var(--text);
-  --sess-hover:#fbeef3;--sess-sel:#fbe4ec;--dot-off:#d8b3c1;
-  --menu-shadow:rgba(236,92,138,.15);--menu-hover:#fce9f0;--meter:#f3dde4;
-  --term-bg:#fdf7f9;--term-text:#5a3a46;--step-line:#f6e6ec;
-  --jv-bg:#fdf7f9;--jv-text:#5a3a46;--jv-border:#f3dde4;--jv-ind:#ecc9d5;
-  --ky:#9333ea;--st:#16a34a;--nm:#1d4ed8;--bl:#b45309;--nl:#b3929e;
-  --msg-user-bg:#fce4ec;--msg-user-border:#f5c6d8;--big:#ca698a;
-  --danger-bg:#fef2f2;--danger-border:#f3c1bd;--danger-text:#b91c1c;--danger-hover-text:#7f1d1d;
-  --mask-bg:rgba(74,46,56,.25);--dlg-shadow:rgba(74,46,56,.2);
-}
 /* ── 主题：薄荷 ── */
 :root[data-theme="mint"]{
   --bg:#eef7f3;--panel:#ffffff;--panel2:#f2faf6;--line:#d9ece2;--line2:#c2ddd0;
