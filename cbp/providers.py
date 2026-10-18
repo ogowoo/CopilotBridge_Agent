@@ -68,9 +68,20 @@ PRESETS: dict[str, dict[str, Any]] = {
         "models": ["deepseek-chat", "deepseek-reasoner"],
         "description": "DeepSeek API",
     },
+    # Kimi Coding 订阅（Anthropic Messages 协议，非 OpenAI 兼容）。
+    # 实测：用户的 sk-kim… key 在 api.kimi.com/coding 可用，在 moonshot 上 401。
+    "kimi-coding": {
+        "base_url": "https://api.kimi.com/coding",
+        "api": "anthropic",
+        "api_key_env": ["KIMI_API_KEY", "MONSHOT_API_KEY", "MOONSHOT_API_KEY"],
+        "models": ["k3", "k3-256k", "kimi-for-coding", "kimi-for-coding-highspeed"],
+        "max_tokens": 8192,
+        "json_mode": "off",          # Anthropic 无 response_format，靠提示词约束
+        "description": "Kimi Coding（Anthropic Messages 协议）",
+    },
     "kimi": {
         "base_url": "https://api.moonshot.cn/v1",
-        "api_key_env": "MOONSHOT_API_KEY",
+        "api_key_env": ["MOONSHOT_API_KEY", "KIMI_API_KEY", "MONSHOT_API_KEY"],
         "models": ["kimi-k2-0905-preview", "moonshot-v1-128k"],
         "description": "Kimi（Moonshot）API",
     },
@@ -131,15 +142,29 @@ class ApiProvider:
     def __init__(self, name: str, cfg: dict[str, Any]):
         self.name = name
         self.base_url = str(cfg.get("base_url", "")).rstrip("/")
-        env_name = str(cfg.get("api_key_env", ""))
-        self.api_key = str(cfg.get("api_key") or (_read_env(env_name) if env_name else "") or "")
-        self.api_key_env = env_name
+        # api_key_env 支持字符串或列表；按顺序回退（实测用户会把 Kimi 的 key
+        # 设成 KIMI_API_KEY，而官方示例是 MOONSHOT_API_KEY——两种都认）
+        env_spec = cfg.get("api_key_env", "")
+        env_names = ([str(x) for x in env_spec if str(x).strip()]
+                     if isinstance(env_spec, (list, tuple))
+                     else ([str(env_spec)] if str(env_spec).strip() else []))
+        key = str(cfg.get("api_key") or "").strip()
+        for _en in env_names:
+            if key:
+                break
+            key = _read_env(_en) or ""
+        self.api_key = key
+        self.api_key_env = env_names[0] if env_names else ""
+        self.api_key_envs = env_names
         self.models = [str(m) for m in (cfg.get("models") or [])]
         self.description = str(cfg.get("description") or name)
         self.timeout = float(cfg.get("timeout_seconds", 300))
         # 结构化输出模式：auto（默认，先试 json_object）/ json_schema /
         # json_object / off。不支持的服务会在 4xx 时自动降级重试一次。
         self.json_mode = str(cfg.get("json_mode", "auto")).lower()
+        # 协议类型：openai（默认，/chat/completions）或 anthropic（/v1/messages）
+        self.api = str(cfg.get("api", "openai")).lower()
+        self.max_tokens = int(cfg.get("max_tokens", 8192) or 8192)
         # 代理：显式 proxy 优先；否则 use_system_proxy（默认开）时用系统代理。
         # 关掉可强制直连（代理本身故障时用）。
         self.proxy = str(cfg.get("proxy") or "").strip() or None
@@ -171,9 +196,14 @@ class ApiProvider:
             proxy = self.proxy_url()
             if proxy:
                 kwargs["proxy"] = proxy
+        headers: dict[str, str] = {"Authorization": f"Bearer {self.api_key}"}
+        if self.api == "anthropic":
+            # Kimi Coding 实测 Bearer 与 x-api-key 都接受；带上协议版本头更稳
+            headers["x-api-key"] = self.api_key
+            headers["anthropic-version"] = "2023-06-01"
         return httpx.AsyncClient(
             base_url=self.base_url,
-            headers={"Authorization": f"Bearer {self.api_key}"},
+            headers=headers,
             timeout=httpx.Timeout(self.timeout, connect=30),
             **kwargs,
         )
@@ -212,9 +242,42 @@ class ApiProvider:
                 "name": "agent_action", "strict": False, "schema": schema}}}
         return {"response_format": {"type": "json_object"}}
 
+    @staticmethod
+    def _anthropic_body(model: str, messages: list[dict[str, str]],
+                        max_tokens: int, stream: bool) -> dict[str, Any]:
+        """OpenAI 风格的 messages → Anthropic Messages 请求体。"""
+        system_parts = [m.get("content") or "" for m in messages if m.get("role") == "system"]
+        conv = [{"role": m.get("role"), "content": m.get("content") or ""}
+                for m in messages if m.get("role") in ("user", "assistant")]
+        body: dict[str, Any] = {"model": model, "max_tokens": max_tokens,
+                                "messages": conv or [{"role": "user", "content": ""}]}
+        if system_parts:
+            body["system"] = "\n\n".join(x for x in system_parts if x)
+        if stream:
+            body["stream"] = True
+        return body
+
+    @staticmethod
+    def _anthropic_text(data: dict[str, Any]) -> str:
+        blocks = data.get("content") or []
+        return "".join(str(b.get("text") or "") for b in blocks if isinstance(b, dict)
+                       and b.get("type") == "text")
+
     async def complete(self, model: str, messages: list[dict[str, str]],
                        response_schema: dict[str, Any] | None = None) -> str:
         self.require_ready()
+        if self.api == "anthropic":
+            body = self._anthropic_body(model, messages, self.max_tokens, stream=False)
+            try:
+                async with self._client() as client:
+                    resp = await client.post("/v1/messages", json=body)
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                raise ProviderUnavailable(self.net_error_text(exc)) from exc
+            self._check_status(resp)
+            try:
+                return self._anthropic_text(resp.json())
+            except Exception as exc:
+                raise ProviderError(f"响应格式异常: {exc}") from exc
         payload: dict[str, Any] = {"model": model, "messages": messages, "stream": False}
         payload.update(self._json_hint(response_schema))
         # 先按配置（可能含自动探测到的系统代理）请求；传输层失败且代理是**自动探测**
@@ -250,6 +313,30 @@ class ApiProvider:
         ProviderError —— 调用方可退回非流式 complete()。
         """
         self.require_ready()
+        if self.api == "anthropic":
+            body = self._anthropic_body(model, messages, self.max_tokens, stream=True)
+            try:
+                async with self._client() as client:
+                    async with client.stream("POST", "/v1/messages", json=body) as resp:
+                        self._check_status(resp)
+                        async for line in resp.aiter_lines():
+                            line = line.strip()
+                            if not line.startswith("data:"):
+                                continue
+                            raw = line[5:].strip()
+                            try:
+                                ev = json.loads(raw)
+                            except Exception:
+                                continue
+                            if ev.get("type") == "content_block_delta":
+                                delta = (ev.get("delta") or {}).get("text")
+                                if delta:
+                                    yield delta
+                            elif ev.get("type") == "message_stop":
+                                return
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                raise ProviderUnavailable(self.net_error_text(exc)) from exc
+            return
         body: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
         body.update(self._json_hint(response_schema))
         try:
