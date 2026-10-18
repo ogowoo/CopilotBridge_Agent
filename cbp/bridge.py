@@ -1503,10 +1503,19 @@ async def _ask_user_via_webui(question: str, options: list[str]) -> dict:
         EXTRA_ANSWERS.pop(sid, None)
 
 
-TOOLS_EXTRA = register_extra_tools(AGENT_TOOLS, AGENT_CFG,
-                                   vision_fn=_vision_via_copilot,
-                                   ask_fn=_ask_user_via_webui,
-                                   session_getter=lambda: ACTIVE_SESSION_ID)
+TOOLS_EXTRA = register_extra_tools(
+    AGENT_TOOLS, AGENT_CFG,
+    vision_fn=_vision_via_copilot,
+    ask_fn=_ask_user_via_webui,
+    session_getter=lambda: ACTIVE_SESSION_ID,
+    # 引擎定义在文件后部：用 lambda 延迟解析，避免前向引用
+    subagent_fn=lambda *a, **k: run_subagent(*a, **k),
+    ralph_fn=lambda *a, **k: run_ralph(*a, **k),
+    workflow_fn=lambda *a, **k: run_workflow(*a, **k))
+
+# 会话状态钩子：扩展工具用它读写当前会话的 goal/todos（Agent 循环据此续轮）
+AGENT_TOOLS.state_getter = lambda: (AGENT_SESSIONS.get(ACTIVE_SESSION_ID) or {})
+AGENT_TOOLS.state_saver = lambda **kw: AGENT_SESSIONS.patch(ACTIVE_SESSION_ID, **kw)
 # 新任务缺省工作区：POST /v1/agent/workspace 会更新它
 DEFAULT_WORKSPACE = str(AGENT_WORKSPACE)
 # 与 AgentRunner.__init__ 的默认值保持一致，供 WebUI 显示真实 Token 预算。
@@ -3365,6 +3374,175 @@ async def plain_completions(req: AgentRequest):
             "choices": [{"index": 0, "message": {"role": "assistant", "content": result["content"]},
                          "finish_reason": "stop"}],
             "session_id": sid, "mode": "chat"}
+
+
+# ── 子代理引擎（subagent / ralph / workflow 的底座）────────────────────
+# 子会话 = 独立 Copilot 对话（或 provider 独立历史），跑完父会话下一回合会自动
+# 导航回自己的对话 URL（browser turn 的 expected URL 守卫），不污染父上下文。
+_SUBAGENT_DEPTH = {"depth": 0}
+_SUBAGENT_MAX_DEPTH = 1          # 防递归：子代理不能再开子代理
+
+
+async def run_subagent(task: str, description: str = "", model: str = "",
+                       max_steps: int = 40) -> dict:
+    """在独立子会话里跑一个 Agent 任务，返回结构化结果。"""
+    # 必须声明 global：函数内会给 ACTIVE_SESSION_ID 赋值（切到子会话再恢复），
+    # 不声明会变成局部变量，前面读取时抛 UnboundLocalError（实测踩到）。
+    global ACTIVE_SESSION_ID
+    task = str(task or "").strip()
+    if not task:
+        raise ToolError("task 不能为空")
+    if _SUBAGENT_DEPTH["depth"] >= _SUBAGENT_MAX_DEPTH:
+        raise ToolError("子代理不能再创建子代理（防止无限递归）")
+    parent_sid = ACTIVE_SESSION_ID
+    parent_root = str(AGENT_TOOLS.root)
+    child_sid = "sub-" + uuid.uuid4().hex[:10]
+    parent_state = AGENT_SESSIONS.get(parent_sid) or {}
+    child_model = normalize_model_soft((model or parent_state.get("model") or DEFAULT_MODEL).strip())
+    pm = providers_mod.split_provider_model(child_model)
+    is_provider = bool(pm and pm[0] in PROVIDERS)
+    AGENT_SESSIONS.create(child_sid, task, parent_root, child_model)
+    try:
+        # 继承父会话的会话级授权（子代理是同一任务的一部分，不该重复授权）
+        AGENT_SESSIONS.copy_session_approvals(parent_sid, child_sid)
+    except Exception as exc:
+        log(f"子会话继承父授权失败（不影响运行）：{exc}")
+    _SUBAGENT_DEPTH["depth"] += 1
+    try:
+        AGENT_SESSIONS.patch(child_sid, state="running")
+        ACTIVE_SESSION_ID = child_sid
+        AGENT_TOOLS.current_session_id = child_sid
+        AGENT_TOOLS.set_web_copilot_tools(not is_provider)
+
+        if is_provider:
+            async def turn(prompt, model_id, force_new=False):
+                return await provider_turn(child_sid, model_id, prompt, force_new=force_new)
+        else:
+            async def turn(prompt, model_id, force_new=False):
+                st = AGENT_SESSIONS.get(child_sid) or {}
+                make_new = force_new or not st.get("current_url")
+                if not make_new:
+                    expected = st.get("current_url") or ""
+                    m = CONVERSATION_URL_RE.search(expected)
+                    if m and m.group(0) not in (page.url or ""):
+                        await page.goto(expected, wait_until="domcontentloaded", timeout=120000)
+                        await asyncio.sleep(1)
+                        _forget_selected_model()
+                marker = _agent_chat_marker(child_sid, int(st.get("conversation_index", 0)))
+                send_prompt = (marker + "\n" + prompt) if make_new else prompt
+                ans = await agent_chat_once(send_prompt, model_id, make_new)
+                final_url = await stable_conversation_url(timeout=15)
+                if final_url:
+                    st2 = AGENT_SESSIONS.get(child_sid) or {}
+                    urls = list(st2.get("conversation_urls") or [])
+                    if final_url not in urls:
+                        urls.append(final_url)
+                    AGENT_SESSIONS.patch(child_sid, current_url=final_url, conversation_urls=urls)
+                return ans
+
+        def get():
+            return AGENT_SESSIONS.get(child_sid)
+
+        def save(**kw):
+            if "state" in kw and kw["state"] != "waiting" and "approval_pending" not in kw:
+                kw["approval_pending"] = None
+            return AGENT_SESSIONS.patch(child_sid, **kw)
+
+        def add_step(x):
+            st = get()
+            AGENT_SESSIONS.add_step(child_sid, int(x.get("step", st["total_steps"] + 1)),
+                                    int(st["conversation_index"]), x)
+
+        def add_file(x):
+            AGENT_SESSIONS.add_file_event(child_sid, x)
+
+        def add_conv_stat(x):
+            AGENT_SESSIONS.add_conv_stat(child_sid, x)
+
+        cfg_child = dict(AGENT_CFG)
+        cfg_child["max_total_steps"] = max(3, min(int(max_steps or 40), 200))
+        runner = AgentRunner(AGENT_TOOLS, turn, cfg_child, get, save, add_step, add_file,
+                             add_conv_stat,
+                             step_begin=lambda no, tool, h: AGENT_SESSIONS.begin_step(
+                                 child_sid, _conv_index(child_sid), no, tool, h),
+                             step_finish=lambda no, st='done': AGENT_SESSIONS.finish_step(
+                                 child_sid, _conv_index(child_sid), no, st),
+                             approval_check=lambda tool, h: AGENT_SESSIONS.take_approval(
+                                 child_sid, tool, h))
+        try:
+            result = await runner.run(task, child_model)
+            AGENT_SESSIONS.patch(child_sid, state="completed")
+            return {"agent_id": child_sid, "description": (description or task)[:120],
+                    "content": result.content, "steps": len(result.steps),
+                    "model": child_model, "error": None}
+        except Exception as exc:
+            AGENT_SESSIONS.patch(child_sid, state="failed", last_error=str(exc))
+            return {"agent_id": child_sid, "description": (description or task)[:120],
+                    "content": "", "steps": 0, "model": child_model, "error": str(exc)}
+    finally:
+        _SUBAGENT_DEPTH["depth"] -= 1
+        ACTIVE_SESSION_ID = parent_sid
+        AGENT_TOOLS.current_session_id = parent_sid or ""
+        AGENT_TOOLS.set_root(parent_root, False)
+        AGENT_TOOLS.set_web_copilot_tools(True)
+
+
+async def run_ralph(objective: str, max_rounds: int = 5, model: str = "",
+                    max_steps_per_round: int = 40) -> dict:
+    """目标迭代：每轮用**全新子代理**推进目标，直到子代理声明完成或用尽轮次。"""
+    objective = str(objective or "").strip()
+    if not objective:
+        raise ToolError("objective 不能为空")
+    rounds = max(1, min(int(max_rounds or 5), 20))
+    handoff = ""
+    history = []
+    for i in range(rounds):
+        task = (f"目标：{objective}\n\n这是第 {i + 1}/{rounds} 轮迭代。"
+                + (f"上一轮交接：\n{handoff}\n\n" if handoff else "")
+                + "推进目标。**如果目标已完全达成**，答复第一行写 GOAL_COMPLETE，然后给结论；"
+                  "否则第一行写 GOAL_CONTINUE，并简要说明下一步交给下一轮。")
+        res = await run_subagent(task, description=f"ralph 第 {i + 1} 轮",
+                                 model=model, max_steps=max_steps_per_round)
+        content = str(res.get("content") or "")
+        history.append({"round": i + 1, "agent_id": res.get("agent_id"),
+                        "status": "complete" if "GOAL_COMPLETE" in content[:200] else "continue",
+                        "excerpt": content[:500], "error": res.get("error")})
+        if "GOAL_COMPLETE" in content[:200]:
+            return {"objective": objective, "rounds": history, "complete": True}
+        handoff = content[:2000]
+        if res.get("error"):
+            break
+    return {"objective": objective, "rounds": history, "complete": False}
+
+
+async def run_workflow(spec: dict, model: str = "") -> dict:
+    """按阶段编排子代理（顺序执行：浏览器通道只有一个页面，不能真并发）。"""
+    if not isinstance(spec, dict):
+        raise ToolError("workflow 需要对象：{name, phases:[{title, agents:[{prompt,label}]}]}")
+    phases = spec.get("phases") or []
+    if not isinstance(phases, list) or not phases:
+        raise ToolError("workflow.phases 不能为空")
+    results = []
+    for phase in phases[:10]:
+        if not isinstance(phase, dict):
+            continue
+        title = str(phase.get("title") or "")
+        agents = phase.get("agents") or []
+        for a in (agents or [])[:8]:
+            if isinstance(a, str):
+                prompt, label = a, title
+            elif isinstance(a, dict):
+                prompt = str(a.get("prompt") or "")
+                label = str(a.get("label") or title)
+            else:
+                continue
+            if not prompt.strip():
+                continue
+            res = await run_subagent(prompt, description=f"{title}｜{label}"[:120], model=model)
+            results.append({"phase": title, "label": label,
+                            "agent_id": res.get("agent_id"),
+                            "content": res.get("content", ""), "error": res.get("error")})
+    return {"workflow": str(spec.get("name") or ""), "results": results}
 
 
 async def shutdown_browser():

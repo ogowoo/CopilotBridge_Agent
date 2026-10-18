@@ -92,9 +92,15 @@ class ProviderSessionToolSurfaceTests(unittest.TestCase):
         # 1) 工具清单 JSON 里不该出现 copilot_* —— 模型看不到就不会调
         import json as _json
         import re as _re
-        m = _re.search(r"可用工具：\n(\[.*?\])", joined, _re.S)
-        self.assertIsNotNone(m, "提示词里未找到工具清单")
-        names = {x["name"] for x in _json.loads(m.group(1))}
+        # 工具清单是系统提示词的最后一段：从标记处截到末尾再解析。
+        # （不能用非贪婪 .*? 到第一个 ]——工具描述里可能有 phases:[{...}] 之类嵌套）
+        marker = "可用工具：\n"
+        self.assertIn(marker, joined, "提示词里未找到工具清单")
+        tail = joined.split(marker, 1)[1].strip()
+        # 系统提示词之后还会拼 "用户任务：..."，解析前截掉
+        # 工具清单之后还有"项目约定/AGENT.md"等段落：用 raw_decode 只取第一个 JSON 值
+        tools_list, _end = _json.JSONDecoder().raw_decode(tail)
+        names = {x["name"] for x in tools_list}
         self.assertFalse([n for n in names if n.startswith("copilot")])
         # 2) 也不能再教模型"大文件优先用 copilot_attach 丢给 Copilot 分析"
         self.assertNotIn("丢给 Copilot 分析", joined)

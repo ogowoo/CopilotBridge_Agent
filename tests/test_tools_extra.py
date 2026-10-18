@@ -168,5 +168,59 @@ class ExtraIsolationTests(unittest.TestCase):
         self.assertFalse(self.reg.requires_approval("grep"))
 
 
+class TeamToolsTests(unittest.TestCase):
+    """子代理 / 迭代 / 编排：工具层只做参数校验与转发，引擎由桥接层注入。"""
+
+    def setUp(self):
+        self.ws = Path(tempfile.mkdtemp(prefix="cbp_team_"))
+        self.reg = ToolRegistry(self.ws, {"max_read_chars": 100000})
+
+    def tearDown(self):
+        shutil.rmtree(self.ws, ignore_errors=True)
+
+    def test_subagent_delegates_and_requires_task(self):
+        calls = []
+
+        async def fake_sub(task, desc="", model="", max_steps=40):
+            calls.append((task, desc))
+            return {"agent_id": "sub-1", "content": "done", "error": None}
+
+        extra = register_extra_tools(self.reg, {}, subagent_fn=fake_sub)
+        out = asyncio.run(extra.subagent("子任务A", "标签"))
+        self.assertEqual(out["agent_id"], "sub-1")
+        self.assertEqual(calls, [("子任务A", "标签")])
+        with self.assertRaises(ExtraToolError):
+            asyncio.run(extra.subagent("   "))
+
+    def test_without_engine_is_explicit_error(self):
+        extra = register_extra_tools(self.reg, {})
+        with self.assertRaises(ExtraToolError) as ctx:
+            asyncio.run(extra.subagent("x"))
+        self.assertIn("不支持", str(ctx.exception))
+
+    def test_ralph_and_workflow_delegate(self):
+        seen = {}
+
+        async def fake_ralph(objective, rounds=5, model=""):
+            seen["ralph"] = (objective, rounds)
+            return {"complete": True, "rounds": []}
+
+        async def fake_wf(spec, model=""):
+            seen["wf"] = spec.get("name")
+            return {"results": []}
+
+        extra = register_extra_tools(self.reg, {}, ralph_fn=fake_ralph, workflow_fn=fake_wf)
+        asyncio.run(extra.ralph("目标X", 3))
+        asyncio.run(extra.workflow({"name": "wf1", "phases": []}))
+        self.assertEqual(seen["ralph"], ("目标X", 3))
+        self.assertEqual(seen["wf"], "wf1")
+
+    def test_team_group_switch(self):
+        reg = ToolRegistry(self.ws, {"max_read_chars": 100000})
+        register_extra_tools(reg, {"tools_extra": {"team": False}})
+        self.assertNotIn("subagent", reg._tools)
+        self.assertIn("grep", reg._tools)
+
+
 if __name__ == "__main__":
     unittest.main()

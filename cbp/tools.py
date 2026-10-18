@@ -194,6 +194,9 @@ class ToolRegistry:
             config.get("approval_required_tools") or APPROVAL_REQUIRED_TOOLS)
         # 外部注册时用 approval=True 声明的破坏性工具（与核心集合分开维护）
         self._approval_extra: set[str] = set()
+        # 会话状态钩子（由桥接层注入）：扩展工具读写当前会话状态（goal/todos 等）
+        self.state_getter: Callable[[], dict[str, Any]] | None = None
+        self.state_saver: Callable[..., Any] | None = None
         self.allow_python = bool(config.get("allow_python", False))
         # 程序化工具调用（P2-13）：在子进程里批量调用**只读**工具，默认关闭。
         self.allow_run_code = bool(config.get("allow_run_code", False))

@@ -890,6 +890,40 @@ class AgentRunner:
         # 实际观测调整。
         self.service_retry_window_seconds = max(60.0, float(config.get("service_retry_window_seconds", 3660)))
 
+    def _goal_continue_step(self, total: int) -> dict | None:
+        """目标未完成 → 返回一条 goal_round 步骤并递增轮次；完成/无目标返回 None。
+
+        对应 DSH 的 goal：目标处于 active 时，模型返回 final 不算结束，自动续轮；
+        轮次用尽则标记 blocked（不再无限续）。状态存在会话 state["goal"] 里，
+        由扩展工具 create_goal/update_goal 维护。
+        """
+        try:
+            goal = (self.state_getter() or {}).get("goal")
+        except Exception:
+            return None
+        if not isinstance(goal, dict) or str(goal.get("status")) != "active":
+            return None
+        rounds = int(goal.get("rounds") or 0)
+        max_rounds = int(goal.get("max_rounds") or 10)
+        if rounds >= max_rounds:
+            goal["status"] = "blocked"
+            goal["blocked_reason"] = f"达到轮次上限 {max_rounds}"
+            try:
+                self.state_saver(goal=goal)
+            except Exception:
+                pass
+            return None
+        goal["rounds"] = rounds + 1
+        try:
+            self.state_saver(goal=goal)
+        except Exception:
+            pass
+        return {"step": total + 1, "status": "goal_round",
+                "reason": f"目标「{str(goal.get('objective') or '')[:80]}」未完成，"
+                          f"开始第 {goal['rounds']}/{max_rounds} 轮；请继续推进目标，"
+                          "只有确认目标已完成时才返回 final（否则会自动续轮）",
+                "error": ""}
+
     def _gate_message(self, strikes: int, auto: dict | None) -> str:
         """验证门拒绝消息：必须报出**逐字可照抄**的工具名与参数。
 
@@ -1498,6 +1532,12 @@ class AgentRunner:
                                                  estimated_chars=chars + used_chars)
                                 validation_required = syntax_validated = tests_passed = False
                                 _save_gate()
+                                _g = self._goal_continue_step(total)
+                                if _g is not None:
+                                    history.append(_g); all_steps.append(_g); self.step_saver(_g)
+                                    total += 1
+                                    self.state_saver(total_steps=total, recent_steps=history[-self.keep_recent:])
+                                    break
                                 return AgentResult(sub.get("content") or "任务已完成。", all_steps)
                         step = {"step": total + 1, "status": "validation_gate",
                                 "error": self._gate_message(gate_strikes, _auto)}
@@ -1514,6 +1554,12 @@ class AgentRunner:
                         self.state_saver(total_steps=total + 1, conversation_steps=conv_steps + 1,
                                          recent_steps=history[-self.keep_recent:], last_error=step["error"])
                         total += 1; conv_steps += 1
+                        break
+                    _g = self._goal_continue_step(total)
+                    if _g is not None:
+                        history.append(_g); all_steps.append(_g); self.step_saver(_g)
+                        total += 1
+                        self.state_saver(total_steps=total, recent_steps=history[-self.keep_recent:])
                         break
                     self._record_conv_stat(state, conv_steps + 1, conv_t + used_tokens,
                                            conv_c + used_chars, "completed", model)

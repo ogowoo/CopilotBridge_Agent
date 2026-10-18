@@ -217,7 +217,7 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                    "modified_files","pending","last_error","cancel_requested","archived","compact_requested",
                    "rollover_requested","conv_tokens","conv_chars","gate_state",
                    "retry_resume_at","retry_attempt","rate_limited_since","initial_prompt",
-            "pending_steps","approval_pending","tag"}
+            "pending_steps","approval_pending","tag","goal"}
         values = {k:v for k,v in values.items() if k in allowed}
         if "state" in values and values["state"] not in self.STATES: raise ValueError("invalid state")
         for key in ("conversation_urls","summary","recent_steps","modified_files","pending",
@@ -504,6 +504,24 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                         "DO UPDATE SET created=excluded.created, consumed=0",
                         (sid, tool, "*", time.time()))
             self.append_event(sid, "approval_granted", {"tool": tool, "scope": "session"}, con=con)
+
+    def copy_session_approvals(self, parent_sid: str, child_sid: str) -> int:
+        """把父会话的**会话级**授权（args_hash='*'）继承给子会话。
+
+        子代理是同一任务的一部分：用户在父会话里授权了 pwsh，子代理不该再弹一次。
+        只复制会话级授权（逐参数的一次性授权不继承——那是针对具体那次调用的）。
+        """
+        with self.lock, self._connect() as con:
+            rows = con.execute(
+                "SELECT tool FROM approvals WHERE session_id=? AND args_hash='*' AND consumed=0",
+                (parent_sid,)).fetchall()
+            for row in rows:
+                con.execute(
+                    "INSERT INTO approvals(session_id,tool,args_hash,created,consumed) "
+                    "VALUES(?,?,?,?,0) ON CONFLICT(session_id,tool,args_hash) "
+                    "DO UPDATE SET created=excluded.created, consumed=0",
+                    (child_sid, row["tool"], "*", time.time()))
+            return len(rows)
 
     def take_approval(self, sid: str, tool: str, args_hash: str) -> bool:
         """取用授权：先精确匹配（消费式），再回退到本会话级（不消费）。

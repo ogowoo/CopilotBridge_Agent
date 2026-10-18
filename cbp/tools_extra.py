@@ -70,13 +70,20 @@ class _Extra:
     def __init__(self, registry: Any, config: dict[str, Any],
                  vision_fn: Callable[[str, str], Awaitable[dict]] | None = None,
                  ask_fn: Callable[[str, list[str]], Awaitable[dict]] | None = None,
-                 session_getter: Callable[[], str] | None = None) -> None:
+                 session_getter: Callable[[], str] | None = None,
+                 subagent_fn: Callable[..., Awaitable[dict]] | None = None,
+                 ralph_fn: Callable[..., Awaitable[dict]] | None = None,
+                 workflow_fn: Callable[..., Awaitable[dict]] | None = None) -> None:
         self.reg = registry
         self.config = config or {}
         self.vision_fn = vision_fn
         self.ask_fn = ask_fn
         # 当前会话 id：todo/present/提问都按会话隔离，避免并发会话互相看到
         self.session_getter = session_getter
+        # 子代理编排引擎（桥接层注入：真正跑子会话的逻辑在 bridge.run_subagent 等）
+        self.subagent_fn = subagent_fn
+        self.ralph_fn = ralph_fn
+        self.workflow_fn = workflow_fn
         self.allow_shell = bool(self.config.get("allow_shell", True))
         self.allow_web = bool(self.config.get("allow_web", True))
         self.allow_private_web = bool(self.config.get("allow_private_web", False))
@@ -449,6 +456,87 @@ class _Extra:
                     result["error"] = f"视觉分析失败: {exc}"
         return result
 
+    # ── team：子代理 / 迭代 / 编排 ──
+    async def subagent(self, task: str, description: str = "", model: str = "",
+                       max_steps: int = 40) -> dict[str, Any]:
+        """把独立子任务交给子代理（独立会话/独立上下文），返回结果。"""
+        if self.subagent_fn is None:
+            raise ExtraToolError("当前通道不支持子代理")
+        task = str(task or "").strip()
+        if not task:
+            raise ExtraToolError("task 不能为空")
+        return await self.subagent_fn(task, description, model, max_steps)
+
+    async def ralph(self, objective: str, max_rounds: int = 5, model: str = "") -> dict[str, Any]:
+        """目标迭代：每轮用全新子代理推进目标，直到声明完成或用尽轮次。"""
+        if self.ralph_fn is None:
+            raise ExtraToolError("当前通道不支持 ralph")
+        return await self.ralph_fn(objective, max_rounds, model)
+
+    async def workflow(self, spec: dict, model: str = "") -> dict[str, Any]:
+        """按阶段编排多个子代理（顺序执行）。"""
+        if self.workflow_fn is None:
+            raise ExtraToolError("当前通道不支持 workflow")
+        return await self.workflow_fn(spec, model)
+
+    # ── goal：跨轮目标 ──
+    def _session_state(self) -> dict[str, Any]:
+        getter = getattr(self.reg, "state_getter", None)
+        try:
+            return (getter() if getter else {}) or {}
+        except Exception:
+            return {}
+
+    def _save_state(self, **kw: Any) -> None:
+        saver = getattr(self.reg, "state_saver", None)
+        if saver:
+            try:
+                saver(**kw)
+            except Exception:
+                pass
+
+    async def create_goal(self, objective: str, max_rounds: int = 10) -> dict[str, Any]:
+        """创建一个目标；Agent 在返回 final 前会自动检查，未完成则继续下一轮。"""
+        obj = str(objective or "").strip()
+        if not obj:
+            raise ExtraToolError("objective 不能为空")
+        rounds = max(1, min(int(max_rounds or 10), 50))
+        goal = {"objective": obj[:500], "rounds": 0, "max_rounds": rounds,
+                "status": "active", "created": time.time()}
+        self._save_state(goal=goal)
+        return {"goal": goal,
+                "hint": f"目标已创建（最多 {rounds} 轮）；未完成时返回 final 会自动续轮，"
+                        "完成时用 update_goal(complete) 结束"}
+
+    async def get_goal(self) -> dict[str, Any]:
+        """读取当前目标与进度。"""
+        goal = self._session_state().get("goal")
+        if not isinstance(goal, dict):
+            return {"goal": None, "detail": "当前会话没有目标"}
+        return {"goal": goal}
+
+    async def update_goal(self, action: str, objective: str = "") -> dict[str, Any]:
+        """更新目标状态：complete / blocked / pause / resume / edit。"""
+        act = str(action or "").strip().lower()
+        goal = self._session_state().get("goal")
+        if not isinstance(goal, dict):
+            raise ExtraToolError("当前会话没有目标")
+        if act == "edit":
+            obj = str(objective or "").strip()
+            if not obj:
+                raise ExtraToolError("edit 需要 objective")
+            goal["objective"] = obj[:500]
+        elif act in ("complete", "blocked", "active"):
+            goal["status"] = act
+        elif act in ("pause", "paused"):
+            goal["status"] = "paused"
+        elif act in ("resume", "active"):
+            goal["status"] = "active"
+        else:
+            raise ExtraToolError(f"不支持的 action: {action}（可用 complete/blocked/pause/resume/edit）")
+        self._save_state(goal=goal)
+        return {"goal": goal}
+
     # ── ask：向用户提问 ──
     async def ask_user_question(self, question: str, options: list[Any] | None = None) -> dict[str, Any]:
         """向用户提问并阻塞等待回答（超时返回 unanswered）。"""
@@ -475,6 +563,8 @@ _GROUPS: dict[str, tuple[str, ...]] = {
     "plan": ("todo_write", "present"),
     "vision": ("read_image",),
     "ask": ("ask_user_question",),
+    "goal": ("create_goal", "get_goal", "update_goal"),
+    "team": ("subagent", "ralph", "workflow"),
 }
 
 _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
@@ -499,6 +589,18 @@ _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
                     "analyze": "是否调用视觉分析，默认 true"}),
     "ask_user_question": ("任务中途向用户提问并等待回答（适合需要用户决策/补充信息时，避免瞎猜）",
                           {"question": "要问用户的问题", "options": "可选项列表（可选）"}),
+    "create_goal": ("创建一个跨轮目标：未完成时返回 final 会自动续轮（最多 max_rounds 轮），完成后用 update_goal 结束",
+                    {"objective": "目标（具体、可判定完成）", "max_rounds": "最多续轮次数，默认 10"}),
+    "get_goal": ("读取当前目标与进度", {}),
+    "update_goal": ("更新目标状态：complete 完成 / blocked 卡住 / pause 暂停 / resume 恢复 / edit 改目标",
+                    {"action": "complete|blocked|pause|resume|edit", "objective": "action=edit 时的新目标"}),
+    "subagent": ("把独立子任务交给子代理（独立会话、独立上下文），返回它的结果；适合并行调研、隔离上下文",
+                 {"task": "子任务描述（要自足）", "description": "3-5 词标签（可选）",
+                  "model": "子代理模型（默认跟随父会话）", "max_steps": "子任务步数上限，默认 40"}),
+    "ralph": ("目标迭代：每轮用全新子代理推进目标，直到子代理声明 GOAL_COMPLETE 或用尽轮次",
+              {"objective": "目标", "max_rounds": "最多轮次，默认 5", "model": "模型（默认跟随父会话）"}),
+    "workflow": ("按阶段编排多个子代理（顺序执行；浏览器通道只有一个页面，不能真并发）",
+                 {"spec": "对象 {name, phases:[{title, agents:[{prompt,label}]}]}", "model": "模型"}),
 }
 
 
@@ -508,7 +610,10 @@ _APPROVAL_TOOLS: frozenset[str] = frozenset({"pwsh"})   # 破坏性：注册时�
 def register_extra_tools(registry: Any, config: dict[str, Any] | None = None,
                          vision_fn: Callable[[str, str], Awaitable[dict]] | None = None,
                          ask_fn: Callable[[str, list[str]], Awaitable[dict]] | None = None,
-                         session_getter: Callable[[], str] | None = None
+                         session_getter: Callable[[], str] | None = None,
+                         subagent_fn: Callable[..., Awaitable[dict]] | None = None,
+                         ralph_fn: Callable[..., Awaitable[dict]] | None = None,
+                         workflow_fn: Callable[..., Awaitable[dict]] | None = None
                          ) -> "_Extra":
     """把扩展工具注册到 ToolRegistry；返回实现对象（桥接层可读 todos/deliverables）。
 
@@ -517,7 +622,8 @@ def register_extra_tools(registry: Any, config: dict[str, Any] | None = None,
     """
     cfg = config or {}
     impl = _Extra(registry, cfg, vision_fn=vision_fn, ask_fn=ask_fn,
-                  session_getter=session_getter)
+                  session_getter=session_getter,
+                  subagent_fn=subagent_fn, ralph_fn=ralph_fn, workflow_fn=workflow_fn)
     groups = cfg.get("tools_extra") if isinstance(cfg.get("tools_extra"), dict) else {}
     enabled: set[str] = set()
     for group, names in _GROUPS.items():
