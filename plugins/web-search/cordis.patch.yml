@@ -1,0 +1,8 @@
+# DSH 兼容元数据：本插件若在 DSH 里使用，对应一行 Cordis composition。
+# CBP 只读取它做展示/迁移参考，不执行 JS。
+- insert:
+    - id: web-search
+      name: '@cbp-plugin/web-search'
+      config:
+        backend: auto
+        max_results: 6

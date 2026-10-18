@@ -13,7 +13,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request as HttpRequest
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from playwright.async_api import async_playwright
@@ -149,6 +149,14 @@ async def lifespan(app):
     else:
         b.log("API 已启动（browser_startup=lazy：首次使用 Copilot 时才启动浏览器）")
     cleanup_task = asyncio.create_task(b.periodic_session_cleanup())
+    # 插件系统：启动时加载已启用的插件（data/plugins.json 记启停）
+    try:
+        b.PLUGINS.load_all()
+        loaded = [p["name"] for p in b.PLUGINS.list() if p.get("status") == "loaded"]
+        if loaded:
+            b.log(f"插件已加载: {', '.join(loaded)}")
+    except Exception as exc:
+        b.log(f"插件加载异常（不影响主服务）: {exc}")
     try:
         yield
     finally:
@@ -405,6 +413,37 @@ async def agent_debug_download(payload: dict | None = None):
     """诊断：立即把当前页面的第一个下载候选存到 data/debug-download/。"""
     stem = str((payload or {}).get("stem") or "")
     return await b.debug_download_now(stem)
+
+
+@app.get("/v1/plugins")
+async def list_plugins():
+    """插件列表：名称/版本/状态/权限/贡献点（与 DSH 插件语义兼容）。"""
+    return {"plugins": b.PLUGINS.list()}
+
+
+@app.post("/v1/plugins/{name}/{action}")
+async def plugin_action(name: str, action: str):
+    """插件启停/重载：action = enable | disable | reload。"""
+    try:
+        if action == "enable":
+            return {"ok": True, "plugin": b.PLUGINS.enable(name)}
+        if action == "disable":
+            return {"ok": True, "plugin": b.PLUGINS.disable(name)}
+        if action == "reload":
+            return {"ok": True, "plugin": b.PLUGINS.reload(name)}
+    except b.PluginError as exc:
+        raise HTTPException(400, str(exc))
+    raise HTTPException(404, f"未知动作: {action}")
+
+
+@app.api_route("/v1/plugins/{plugin}/api/{path:path}",
+               methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def plugin_api(plugin: str, path: str, request: HttpRequest):
+    """插件自定义接口的统一分发（启停不需要重启服务）。"""
+    try:
+        return await b.PLUGINS.dispatch_api(plugin, request.method, path, request)
+    except b.PluginError as exc:
+        raise HTTPException(404, str(exc))
 
 
 @app.get("/v1/agent/subagents")

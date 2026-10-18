@@ -35,6 +35,7 @@
             <button type="button" class="btn danger" data-act="control" data-arg="cancel">取消任务</button>
             <div class="menu"><button type="button" class="btn ghost" id="moreBtn" data-act="toggleMore">更多 ▾</button><div class="menuList" id="moreMenu">
               <button type="button" data-act="control" data-arg="archive">归档</button>
+              <button type="button" data-act="openPlugins">插件管理…</button>
               <button type="button" data-act="rollbackSession">回滚任务改动…</button>
               <button type="button" class="danger" data-act="rollbackSelfUpgrade">回滚服务自升级…</button>
               <button type="button" data-act="removeSession" data-arg="false">仅删除本地记录</button>
@@ -150,6 +151,19 @@
     <div class="dfoot">
       <button type="button" class="btn ghost" id="liveCopy">复制内容</button>
       <button type="button" class="btn accent" data-act="closeLive">关闭</button>
+    </div>
+  </div>
+</div>
+<!-- 插件管理弹窗：列出 plugins/*/plugin.json 的插件，可启用/禁用/重载 -->
+<div class="mask" role="dialog" aria-modal="true" aria-label="插件管理" id="pluginsMask" data-act="mask" data-arg="plugins">
+  <div class="dlg" style="width:min(720px,94vw)">
+    <div class="dhead"><span data-i18n="插件管理">插件管理</span><span class="hint">Esc 关闭</span></div>
+    <div class="dbody">
+      <div id="pluginsBody" style="max-height:62vh;overflow:auto"></div>
+    </div>
+    <div class="dfoot">
+      <button type="button" class="btn ghost" data-act="openPlugins">刷新</button>
+      <button type="button" class="btn accent" data-act="closePlugins">关闭</button>
     </div>
   </div>
 </div>

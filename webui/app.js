@@ -186,6 +186,45 @@ function renderSubagents(list){
   box.appendChild(row)});
 }
 
+/* ── 插件管理（对应 cbp/plugins.py 的贡献点与启停）──────────────────── */
+async function openPlugins(){
+ openMask('pluginsMask');
+ const box=document.getElementById('pluginsBody');
+ if(!box) return;
+ box.innerHTML='<div class="meta">'+esc(tr('加载中…'))+'</div>';
+ let list=[];
+ try{ const d=await api('/v1/plugins'); list=d.plugins||[] }catch(e){
+  box.innerHTML='<div class="meta">'+esc(tr('读取插件失败: ')+(e.text||e))+'</div>';return}
+ if(!list.length){ box.innerHTML='<div class="meta">'+esc(tr('没有安装插件（把插件放进 plugins/ 目录）'))+'</div>';return}
+ box.innerHTML='';
+ list.forEach(p=>{
+  const row=document.createElement('div');row.className='pluginrow';
+  const head=document.createElement('div');head.className='phead';
+  const name=document.createElement('b');name.textContent=p.name+'  ';
+  const ver=document.createElement('span');ver.className='meta';ver.textContent='v'+(p.version||'')+' · ';
+  const st=document.createElement('span');st.className='pstat '+(p.status==='loaded'?'on':(p.status==='error'?'bad':''));
+  st.textContent=stateText(p.status==='loaded'?'已启用':(p.status==='disabled'?'已禁用':'未加载'));
+  head.appendChild(name);head.appendChild(ver);head.appendChild(st);
+  const desc=document.createElement('div');desc.className='meta';desc.textContent=p.description||'';
+  const meta=document.createElement('div');meta.className='meta';
+  meta.textContent=tr('权限: ')+(p.permissions||[]).join(', ')+' · '+tr('贡献: ')+JSON.stringify(p.contributes||{});
+  const acts=document.createElement('div');acts.className='pacts';
+  const btn=document.createElement('button');btn.type='button';btn.className='btn';
+  btn.textContent=p.enabled?tr('禁用'):tr('启用');
+  btn.onclick=async()=>{ btn.disabled=true;
+    try{ await api('/v1/plugins/'+encodeURIComponent(p.name)+'/'+(p.enabled?'disable':'enable'),{method:'POST'});
+      toast(tr('已')+(p.enabled?tr('禁用'):tr('启用'))+': '+p.name,'ok'); await openPlugins(); }
+    catch(e){ btn.disabled=false; toast(tr('操作失败: ')+(e.text||e),'err') } };
+  const rb=document.createElement('button');rb.type='button';rb.className='btn ghost';rb.textContent=tr('重载');
+  rb.onclick=async()=>{ try{ await api('/v1/plugins/'+encodeURIComponent(p.name)+'/reload',{method:'POST'});
+      toast(tr('已重载: ')+p.name,'ok'); await openPlugins(); }catch(e){ toast(tr('重载失败: ')+(e.text||e),'err') } };
+  acts.appendChild(btn);acts.appendChild(rb);
+  row.appendChild(head);row.appendChild(desc);row.appendChild(meta);row.appendChild(acts);
+  if(p.error){ const er=document.createElement('div');er.className='perr';er.textContent=p.error; row.appendChild(er) }
+  box.appendChild(row)});
+}
+function closePlugins(){closeMask('pluginsMask')}
+
 async function api(u,o={}){
   if(DEMO)return demoApi(u,o);
   const call=tk=>{const opt=Object.assign({},o);opt.headers=Object.assign({},o.headers||{});
@@ -1509,7 +1548,7 @@ function closeManual(){closeMask('manualMask')}
 function openTask(){openMask('taskMask')}
 function closeTask(){closeMask('taskMask')}
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closeTask()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closePlugins();closeTask()}});
 
 /* ── 实时面板选项卡 + 放大查看 ── */
 const LIVE_NAMES={activity:'当前执行状态',answer:'当前回答',prompt:'最近发送的内容',chat:'继续对话'};
@@ -2167,6 +2206,8 @@ const ACTIONS={
  removeSession:(el)=>removeSession(el.dataset.arg==='true'),
  liveTab:(el)=>liveTab(el.dataset.arg),
  openSubagent:(el)=>load(el.dataset.arg),
+ openPlugins:()=>openPlugins(),
+ closePlugins:()=>closePlugins(),
  refreshSubagents:()=>refreshSubagents(true),
  showPromptView:()=>showPromptView(),
  expandLive:()=>expandLive(),
@@ -2184,7 +2225,7 @@ const ACTIONS={
  closeTask:()=>closeTask(),
  // 点击遮罩**背景**才关闭（点弹窗内部不关）：原来写在内联里的 if(event.target===this)
  mask:(el,e)=>{if(e.target!==el)return;
-  ({dlg:closeDlg,manual:closeManual,live:closeLive,task:closeTask}[el.dataset.arg]||(()=>{}))()},
+  ({dlg:closeDlg,manual:closeManual,live:closeLive,task:closeTask,plugins:closePlugins}[el.dataset.arg]||(()=>{}))()},
  maskGm:(el,e)=>{if(e.target===el)gmClose(null)},
  // 动态生成内容里的处理器（消息复制/代码折叠/附件移除）
  copyMsg:(el)=>copyMsg(el),

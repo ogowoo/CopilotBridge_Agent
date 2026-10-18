@@ -429,6 +429,54 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 （`approval_policy: "ask"` 时 WebUI 逐次授权，用后即焚）；`read_image` 的视觉分析与
 `ask_user_question` 依赖 Copilot 网页/WebUI，没有对应通道时优雅降级（返回元数据/明确报错）。
 
+### 5.6 插件系统（与 DSH 插件语义兼容）
+
+CBP 的插件是"**语义兼容** DSH"而不是"直接跑 DSH 插件"：DSH 插件是 npm 包 + Cordis
+（JS `apply(ctx)`）在 Node 里跑；CBP 是 Python 服务。对齐的是**契约**——同形清单、
+同一套贡献点、同样的加载→apply→卸载生命周期、同样的 `id + disabled + config` 启停语义。
+（要直跑 JS 插件需要内嵌 Node，不在本系统目标内。）
+
+**清单**（`plugins/<name>/plugin.json`，也接受 `package.json` 里放 `"cbp"` 字段，
+`"dsh"` 字段原样透传供迁移参考）：
+
+```json
+{
+  "name": "web-search",
+  "version": "0.1.0",
+  "description": "联网搜索",
+  "dsh":   {"bundle": {"patch": "./cordis.patch.yml"}},
+  "cbp": {
+    "entry": "plugin.py",
+    "permissions": ["tools", "api"],
+    "contributes": {"tools": ["web_search"], "api": ["GET api/search"]},
+    "config": {"backend": "auto"}
+  }
+}
+```
+
+**入口**（`plugin.py`）：
+
+```python
+def setup(ctx):                      # ctx ≈ DSH/Cordis 的 ctx
+    ctx.register_tool("web_search", handler, "说明", {"query": "..."})
+    ctx.register_api("GET", "api/search", handler)   # → /v1/plugins/<name>/api/search
+    ctx.on("step_done", callback)                    # session_start / step_done / session_end
+def teardown(ctx): ...
+```
+
+**ctx 能力**：`register_tool` / `register_provider` / `register_api` / `on` /
+`state` + `save_state` / `read_text` + `write_text`（限插件目录）/ `log`。
+权限 `tools/providers/api/ui/events/storage/files` 必须在清单里声明，否则调用报错。
+
+**管理**：WebUI「更多 ▾ → 插件管理…」可启用/禁用/重载；对应 API
+`GET /v1/plugins`、`POST /v1/plugins/{name}/{enable|disable|reload}`。
+启停记录在 `data/plugins.json`，**不需要重启服务**（禁用即摘掉工具/提供商/路由/事件）。
+
+**内置示例：`web-search`**（现代 bot 的核心能力）
+- 工具 `web_search(query, max_results=6)`：DuckDuckGo 免 key；配了
+  `BRAVE_API_KEY` / `TAVILY_API_KEY` / `SERPER_API_KEY` 会自动优选
+- 接口 `GET /v1/plugins/web-search/api/search?q=...&n=6`
+
 ### 5.5 子代理面板（看有哪些子代理、在跑什么）
 
 用 `subagent` / `ralph` / `workflow` 派生出的子代理会以 `sub-xxxxxxxxxx` 独立会话运行。

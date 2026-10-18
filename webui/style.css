@@ -723,3 +723,13 @@ section.card:has(#stepCount){margin-top:14px}
 .subagentrow .sa-meta{flex:none;color:var(--faint);font-size:11.5px}
 .dot-bad{width:7px;height:7px;border-radius:50%;background:var(--danger-text);flex:none;
   display:inline-block}
+
+/* ── 插件管理弹窗 ─────────────────────────────────────────────── */
+.pluginrow{border:1px solid var(--line2);border-radius:9px;padding:9px 11px;margin:8px 0;
+  background:var(--panel2);font-size:12.5px;line-height:1.6}
+.pluginrow .phead{display:flex;align-items:center;gap:6px;margin-bottom:2px}
+.pluginrow .pstat{font-size:11.5px;padding:0 6px;border-radius:5px;background:var(--menu-hover)}
+.pluginrow .pstat.on{color:var(--ok-text,var(--accent2))}
+.pluginrow .pstat.bad{color:var(--danger-text)}
+.pluginrow .pacts{display:flex;gap:6px;margin-top:6px}
+.pluginrow .perr{margin-top:6px;color:var(--danger-text);white-space:pre-wrap;font-size:11.5px}

@@ -308,6 +308,13 @@ class ToolRegistry:
         self._extra_descriptions.append(
             {"name": name, "description": description, "arguments": arguments})
 
+    def unregister(self, name: str) -> None:
+        """摘掉一个外部注册的工具（插件卸载用）。"""
+        self._tools.pop(name, None)
+        self._extra_descriptions = [d for d in self._extra_descriptions
+                                    if d.get("name") != name]
+        self._approval_extra.discard(name)
+
     def set_web_copilot_tools(self, allowed: bool) -> None:
         """启用/禁用"需要 Copilot 网页会话"的工具（copilot_attach/copilot_file）。
 

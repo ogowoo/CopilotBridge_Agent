@@ -16,6 +16,7 @@ from .agent import (AGENT_ACTION_SCHEMA, AgentRunner, AgentPaused, AgentInterrup
                     CopilotConversationFull, validate_token_budget)
 from . import providers as providers_mod
 from .tools_extra import register_extra_tools, ExtraToolError
+from .plugins import PluginHost, PluginError
 from .memory import MemoryStore
 from .session_store import SessionStore
 from .snapshots import SnapshotStore
@@ -1516,6 +1517,14 @@ TOOLS_EXTRA = register_extra_tools(
 # 会话状态钩子：扩展工具用它读写当前会话的 goal/todos（Agent 循环据此续轮）
 AGENT_TOOLS.state_getter = lambda: (AGENT_SESSIONS.get(ACTIVE_SESSION_ID) or {})
 AGENT_TOOLS.state_saver = lambda **kw: AGENT_SESSIONS.patch(ACTIVE_SESSION_ID, **kw)
+
+# ── 插件系统（cbp/plugins.py，与 DSH 插件语义兼容）────────────────────
+# 贡献点：Agent 工具（AGENT_TOOLS）、模型提供商（PROVIDERS）、HTTP 路由、会话事件。
+# 启停记录在 data/plugins.json；load_all() 在服务启动时由 api.py 的 lifespan 调用。
+PLUGINS = PluginHost(BASE, registry=AGENT_TOOLS, providers=PROVIDERS,
+                     provider_factory=lambda name, cfg: providers_mod.ApiProvider(name, cfg)
+                     if hasattr(providers_mod, "ApiProvider") else cfg,
+                     log_fn=lambda m: print(f"[{datetime.now():%H:%M:%S}] {m}", flush=True))
 # 新任务缺省工作区：POST /v1/agent/workspace 会更新它
 DEFAULT_WORKSPACE = str(AGENT_WORKSPACE)
 # 与 AgentRunner.__init__ 的默认值保持一致，供 WebUI 显示真实 Token 预算。
@@ -3211,6 +3220,11 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             return AGENT_SESSIONS.patch(sid,**kw)
         def add_step(x):
             st=get(); AGENT_SESSIONS.add_step(sid,int(x.get("step",st["total_steps"]+1)),int(st["conversation_index"]),x)
+            try:
+                PLUGINS.emit("step_done", session_id=sid, tool=x.get("tool"),
+                             status=x.get("status"), reason=x.get("reason") or "")
+            except Exception:
+                pass
         def add_file(x): AGENT_SESSIONS.add_file_event(sid,x)
         def add_conv_stat(x): AGENT_SESSIONS.add_conv_stat(sid,x)
         # 写操作前捕获原像：工作区改动与自升级改动分作用域，均可整任务回滚
@@ -3221,7 +3235,10 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                         step_finish=lambda no,st='done': AGENT_SESSIONS.finish_step(sid, _conv_index(sid), no, st),
                         approval_check=lambda tool,h: AGENT_SESSIONS.take_approval(sid, tool, h))
         try:
+            PLUGINS.emit("session_start", session_id=sid, task=effective_task, model=req.model)
             result = await runner.run(effective_task,req.model)
+            PLUGINS.emit("session_end", session_id=sid, content=result.content,
+                         steps=len(result.steps), state="completed")
             runtime_update(sid, phase="completed", detail=result.content, answer_preview=result.content)
             SNAPSHOTS.prune()
             return result, sid
