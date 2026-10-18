@@ -598,6 +598,7 @@ class McpManager:
 def setup(ctx):
     manager = McpManager(ctx.state.get("servers") or {})
     ctx._mcp = manager
+    ctx._mcp_tools = set()
 
     def _snapshot() -> dict:
         return {
@@ -687,6 +688,7 @@ def setup(ctx):
             await client.close()
         removed = manager.remove(name)
         ctx.save_state(servers=manager.servers)
+        _register_dynamic(ctx, manager)      # 摘掉该 server 的工具
         return {"removed": removed, "name": name}
 
     async def _api_reload(request):
@@ -767,7 +769,26 @@ def setup(ctx):
 
 
 def _register_dynamic(ctx, manager: McpManager) -> None:
-    """把 MCP 工具/资源注册进工具表；重连后旧名字先摘掉，避免指向已关闭的连接。"""
+    """把 MCP 工具/资源**对账**进工具表：缺的补上，多余的摘掉。
+
+    之前只加不减：移除 server 后它的工具还留在表里，指向已关闭的连接，
+    模型调用只会得到"未连接"（实测遗留过 4 个 mcp__mock__* 幽灵工具）。
+    """
+    desired = {item["registered_name"] for item in manager.tool_specs()}
+    known = getattr(ctx, "_mcp_tools", set()) or set()
+    for stale in known - desired:
+        try:
+            reg = getattr(getattr(ctx, "host", None), "registry", None)
+            if reg is not None and hasattr(reg, "unregister"):
+                reg.unregister(stale)
+        except Exception:
+            pass
+        try:
+            ctx.registered["tools"].remove(stale)
+        except Exception:
+            pass
+    ctx._mcp_tools = set(desired)
+
     for item in manager.tool_specs():
         rname, server, tool = item["registered_name"], item["server"], item["tool"]
 

@@ -102,6 +102,65 @@ class McpStdioTests(unittest.TestCase):
         asyncio.run(scenario())
 
 
+class FakeCtx:
+    """只实现 _register_dynamic 需要的接口，用于验证工具表对账。"""
+
+    def __init__(self):
+        self.tools: dict[str, object] = {}
+        self.registered = {"tools": []}
+        self.removed: list[str] = []
+
+        class Reg:
+            def __init__(self, outer):
+                self.outer = outer
+
+            def register(self, name, fn, desc, args, approval=False):
+                self.outer.tools[name] = fn
+
+            def unregister(self, name):
+                self.outer.removed.append(name)
+                self.outer.tools.pop(name, None)
+
+        class Host:
+            def __init__(self, outer):
+                self.registry = Reg(outer)
+
+        self.host = Host(self)
+
+    def register_tool(self, name, fn, desc, args=None, approval=False):
+        self.tools[name] = fn
+        self.registered["tools"].append(name)
+
+
+class McpReconcileTests(unittest.TestCase):
+    """移除 server 后，它的工具必须从工具表里摘掉（否则是"幽灵工具"）。"""
+
+    def setUp(self):
+        self.mod = load_plugin()
+        self.mgr = self.mod.McpManager()
+
+    def tearDown(self):
+        self.mgr = self.mod.McpManager()
+
+    def test_removed_server_tools_are_unregistered(self):
+        ctx = FakeCtx()
+
+        async def scenario():
+            self.mgr.add("mock", {"command": sys.executable, "args": [str(MOCK)]})
+            await self.mgr.connect_all()
+            self.mod._register_dynamic(ctx, self.mgr)
+            self.assertIn("mcp__mock__echo", ctx.tools)
+            # 移除 server（模拟 api/remove）
+            client = self.mgr.clients.pop("mock")
+            await client.close()
+            self.mgr.remove("mock")
+            self.mod._register_dynamic(ctx, self.mgr)
+            self.assertNotIn("mcp__mock__echo", ctx.tools)
+            self.assertIn("mcp__mock__echo", ctx.removed)
+
+        asyncio.run(scenario())
+
+
 class McpHttpTests(unittest.TestCase):
     """streamable HTTP 传输：JSON 响应、SSE 响应、session 头、resources。"""
 
