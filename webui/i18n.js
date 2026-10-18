@@ -621,6 +621,29 @@ Object.assign(I18N_EN, {
   "（演示模式）此处为 Copilot 回复": "(demo mode) Copilot's reply appears here",
   "（点击切换）": " (click to cycle)",
   "（菜单里未找到）": " (not found in the menu)",
+ "长期记忆": "Long-term memory",
+ "上一级": "Go up one level",
+ "默认": "Default",
+ "定时任务": "Scheduled tasks",
+ "MCP 服务器": "MCP servers",
+ "按间隔/每天/一次性时间点执行的任务": "Tasks that run on an interval, daily, or once at a set time",
+ "连接状态、工具与资源": "Connection state, tools and resources",
+ "回到默认工作区": "Back to the default workspace",
+ "在此新建目录": "Create a folder here",
+ "选择此目录": "Use this folder",
+ "检索": "Search",
+ "置顶": "Pin",
+ "取消置顶": "Unpin",
+ "命中 {n}": "{n} hits",
+ "全部作用域": "All scopes",
+ "仅全局": "Global only",
+ "仅当前项目": "Current project only",
+ "关键词检索…（回车）": "Search keywords… (Enter)",
+ "共 {t} 条 · 置顶 {p} · 从未命中 {u} · {kinds} · {scopes}":
+   "{t} entries · {p} pinned · {u} never hit · {kinds} · {scopes}",
+ "没有匹配的记忆。Agent 完成任务时会自动沉淀，也可以直接让它「记到长期记忆」。":
+   "No matching memories. The agent records them as tasks finish; you can also just ask it to \"remember this\".",
+
   "，下一回合生效": ", takes effect next turn",
   "，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）":
     ", plus all Copilot web conversations tied to this task (titles may no longer carry the [CBP-AGENT] marker; ownership is verified against the conversation body)",
@@ -927,6 +950,8 @@ function rerenderForLang() {
   try { if (typeof fillStepTools === "function") fillStepTools(); } catch (e) {}
   // 模型下拉的 <option title> 来自后端说明：切语言要重建，否则原生提示还是旧语言
   try { if (typeof loadModels === "function") loadModels(); } catch (e) {}
+  // 主题按钮标题是拼串（"主题：X（当前 Y…）"），必须在切语言后重设一次
+  try { if (typeof applyTheme === "function") applyTheme(themeChoice(), false); } catch (e) {}
   // 手册是整块注入的 HTML：切语言后必须整篇重画（中英是两套完整模板）
   try {
     if (typeof openManual === "function"

@@ -14,9 +14,12 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request as HttpRequest
-from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
+from fastapi.responses import (StreamingResponse, FileResponse, RedirectResponse,
+                             JSONResponse)
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from playwright.async_api import async_playwright
+from . import i18n as backend_i18n
 
 from . import bridge as b
 from . import copilot_delete as cd
@@ -176,6 +179,21 @@ async def lifespan(app):
 b.ENSURE_BROWSER = ensure_browser   # 桥接层按需拉起浏览器的入口
 
 app = FastAPI(title="Copilot Local Bridge Agent", version="10.2.1", lifespan=lifespan)
+
+# ── 错误文案本地化：全局异常处理器按 X-CBP-Lang 翻译 detail ─────────────
+# 只改**展示**：日志、协议、模型看到的仍是中文原文（评测与协议绑定）。
+_LANG_HEADER = "X-CBP-Lang"
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _localized_http_error(request: HttpRequest, exc: StarletteHTTPException):
+    lang = (request.headers.get(_LANG_HEADER) or "zh").lower()[:2]
+    detail = exc.detail
+    if isinstance(detail, str):
+        detail = backend_i18n.translate(detail, lang)
+    return JSONResponse({"detail": detail}, status_code=exc.status_code,
+                        headers=getattr(exc, "headers", None))
+
 
 
 # ── 同源/CSRF 防护（仅拦"会改状态"的方法）──────────────────────────────

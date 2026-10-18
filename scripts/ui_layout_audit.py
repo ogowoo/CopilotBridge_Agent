@@ -99,6 +99,9 @@ MEASURE_JS = r"""
       }
       p = p.parentElement;
     }
+    // 补 width/height：后续 elementFromPoint 会用到中点，缺字段会算出 NaN
+    r.width = Math.max(0, r.right - r.left);
+    r.height = Math.max(0, r.bottom - r.top);
     return r;
   };
   fixed.forEach(f => {

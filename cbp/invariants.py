@@ -457,6 +457,29 @@ def _ui_assets_whitelisted() -> None:
         raise InvariantError(f"白名单里有页面未引用的条目（可能已废弃）: {stale}")
 
 
+@invariant("后端错误文案都有英文翻译")
+def _backend_errors_translated() -> None:
+    """`HTTPException(4xx, "中文…")` 的 detail 必须能被 `cbp/i18n.py` 翻成英文。
+
+    真事：界面文案三语了，但错误 detail 一直中文——英文界面下 toast 里弹出
+    "Session 不存在"。48 处 raise 靠人记不住，改成全局处理器 + 翻译表之后，
+    这条静态核对防止新加的错误文案漏翻。
+    """
+    from . import i18n as backend_i18n
+
+    src = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
+    msgs = re.findall(r'HTTPException\(\s*\d{3}\s*,\s*"([^"]+)"', src)
+    # 纯英文/无中文的（如 "Not Found"）不需要翻译
+    cjk = [m for m in msgs if re.search(r"[\u4e00-\u9fff]", m)]
+    missing = backend_i18n.untranslated(cjk, "en")
+    # 允许"已经是英文"的输出（模式替换后不含中文即算翻到）
+    really_missing = [m for m in missing
+                      if not re.search(r"[\u4e00-\u9fff]", backend_i18n.translate(m, "en"))]
+    if really_missing:
+        raise InvariantError(
+            f"这些错误文案在英文下仍是中文（补到 cbp/i18n.py）: {really_missing[:6]}")
+
+
 @invariant("title 提示不要直接写中文")
 def _title_strings_translated() -> None:
     """`x.title='中文…'` 必须包 `tr()`。

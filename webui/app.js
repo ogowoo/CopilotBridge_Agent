@@ -235,7 +235,7 @@ function _renderPanel(p,data){
  else if(v==='markdown')html='<div class="md-body">'+mdToHtml(String((data&&(data.text||data.markdown))||''))+'</div>';
  else html=_renderKv(box);
  body.innerHTML=html;
- if(p.hint)body.insertAdjacentHTML('afterbegin','<div class="meta">'+esc(p.hint)+'</div>');
+ if(p.hint)body.insertAdjacentHTML('afterbegin','<div class="meta">'+esc(tr(p.hint))+'</div>');
 }
 function _firstArray(data){
  if(Array.isArray(data))return data;
@@ -261,7 +261,7 @@ async function refreshPanels(silent){
   const row=document.createElement('div');
   row.className='panelrow'+(i===0?' on':'');
   row.setAttribute('data-i18n-skip','1');     // 面板标题来自插件（数据）
-  row.textContent=p.title||p.id;
+  row.textContent=tr(p.title||p.id);
   row.title=p.plugin+' · '+p.view;
   row.onclick=()=>{ [...list.children].forEach(c=>c.classList.remove('on')); row.classList.add('on'); loadPanel(p) };
   list.appendChild(row);
@@ -571,7 +571,10 @@ function closeWs(){closeMask('wsMask')}
 async function api(u,o={}){
   if(DEMO)return demoApi(u,o);
   const call=tk=>{const opt=Object.assign({},o);opt.headers=Object.assign({},o.headers||{});
-    if(tk)opt.headers['X-CBP-Token']=tk;return fetch(u,opt)};
+    if(tk)opt.headers['X-CBP-Token']=tk;
+    // 语言头：后端据此翻译错误 detail（展示层；协议/日志仍是中文）
+    try{opt.headers['X-CBP-Lang']=currentLang()}catch(e){}
+    return fetch(u,opt)};
   let r=await call(apiToken());
   if(r.status===401){
     // 服务端配置了 api_token：就地询问一次并记住（仅本机浏览器 localStorage）。
@@ -2674,15 +2677,15 @@ async function openMemory(){
   mask=document.createElement('div');
   mask.id='memMask';mask.className='mask';
   mask.innerHTML=`<div class="dlg" style="width:min(720px,94vw)">
-   <div class="chead" style="border-bottom:1px solid var(--line)">长期记忆
-    <span class="hint"><button class="btn ghost" id="memClose" style="padding:2px 10px;font-size:12px">关闭</button></span></div>
+   <div class="chead" style="border-bottom:1px solid var(--line)">${tr('长期记忆')}
+    <span class="hint"><button class="btn ghost" id="memClose" style="padding:2px 10px;font-size:12px">${tr('关闭')}</button></span></div>
    <div style="padding:12px 15px;display:flex;flex-direction:column;gap:8px;min-height:0">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
      <select id="memScopeSel" class="btn ghost" style="padding:4px 8px">
-      <option value="all">全部作用域</option><option value="global">仅全局</option><option value="project">仅当前项目</option>
+      <option value="all">${tr('全部作用域')}</option><option value="global">${tr('仅全局')}</option><option value="project">${tr('仅当前项目')}</option>
      </select>
-     <input id="memSearch" class="btn ghost" style="flex:1;min-width:150px;padding:4px 10px;text-align:left" placeholder="关键词检索…（回车）">
-     <button class="btn ghost" id="memReload" style="padding:4px 12px">检索</button>
+     <input id="memSearch" class="btn ghost" style="flex:1;min-width:150px;padding:4px 10px;text-align:left" placeholder="${tr('关键词检索…（回车）')}">
+     <button class="btn ghost" id="memReload" style="padding:4px 12px">${tr('检索')}</button>
     </div>
     <div id="memStats"></div>
     <div id="memList"></div>
@@ -2705,18 +2708,18 @@ async function loadMemory(){
  const d=await api('/v1/agent/memory?scope='+encodeURIComponent(memScope)+'&query='+encodeURIComponent(memQuery));
  const st=d.stats||{};
  document.getElementById('memStats').textContent=
-  `共 ${st.total||0} 条 · 置顶 ${st.pinned||0} · 从未命中 ${st.unused||0} · ${JSON.stringify(st.by_kind||{})} · ${(d.scopes||[]).join(', ')}`;
+  tr('共 {t} 条 · 置顶 {p} · 从未命中 {u} · {kinds} · {scopes}',{t: st.total||0, p: st.pinned||0, u: st.unused||0, kinds: JSON.stringify(st.by_kind||{}), scopes: (d.scopes||[]).join(', ')});
  const box=document.getElementById('memList');
  if(!(d.items||[]).length){
-  box.innerHTML='<div class="mem-empty">没有匹配的记忆。Agent 完成任务时会自动沉淀，也可以直接让它「记到长期记忆」。</div>';return}
+  box.innerHTML=('<div class="mem-empty">'+esc(tr('没有匹配的记忆。Agent 完成任务时会自动沉淀，也可以直接让它「记到长期记忆」。'))+'</div>');return}
  box.innerHTML=d.items.map(m=>`<div class="mem-row">
    <div class="mem-meta">
     <span>#${esc(m.id)}</span><span class="mem-kind">${esc(m.kind)}</span><span>${esc(m.scope)}</span>
-    <span>命中 ${m.use_count||0}</span>${m.pinned?'<span class="mem-pin">★ 置顶</span>':''}
+    <span>${tr('命中 {n}',{n:m.use_count||0})}</span>${m.pinned?'<span class="mem-pin">★ '+tr('置顶')+'</span>':''}
     ${(m.tags||[]).map(t=>`<span>#${esc(t)}</span>`).join('')}
     <span class="sp"></span>
-    <button class="btn ghost" data-pin="${m.id}" data-v="${m.pinned?1:0}" style="padding:2px 10px;font-size:12px">${m.pinned?'取消置顶':'置顶'}</button>
-    <button class="btn ghost" data-del="${m.id}" style="padding:2px 10px;font-size:12px;color:var(--danger-text);border-color:var(--danger-border)">删除</button>
+    <button class="btn ghost" data-pin="${m.id}" data-v="${m.pinned?1:0}" style="padding:2px 10px;font-size:12px">${m.pinned?tr('取消置顶'):tr('置顶')}</button>
+    <button class="btn ghost" data-del="${m.id}" style="padding:2px 10px;font-size:12px;color:var(--danger-text);border-color:var(--danger-border)">${tr('删除')}</button>
    </div>
    <div class="mem-text">${esc(m.text)}</div>
   </div>`).join('');
