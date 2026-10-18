@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""MCP 客户端插件（stdio 传输）。
+"""MCP 客户端插件（stdio + streamable HTTP/SSE 两种传输，含 resources）。
 
-把外部 MCP server 的工具注册成 Agent 工具，命名 `mcp__<server>__<tool>`。
+把外部 MCP server 的工具注册成 Agent 工具，命名 `mcp__<server>__<tool>`；
+资源（resources）额外提供一个只读工具 `mcp__<server>__read_resource`。
 
-协议要点（2024-11-05）：
-- stdio 上一条消息一行 JSON（换行分隔，消息内不能有裸换行）
-- 握手 initialize → 通知 notifications/initialized → tools/list → tools/call
-- 结果形如 {"content":[{"type":"text","text":"..."}],"isError":bool}
-
-为什么用 stdio：本地 MCP server 几乎都是 stdio（npx/uvx 启动的进程），
-不需要额外端口与鉴权；HTTP 传输后续可在同一 manager 上加。
+协议要点（2024-11-05 / 2025-03-26 streamable HTTP）：
+- stdio：一行一条 JSON-RPC 消息
+- HTTP：POST 单端点，响应可以是 application/json，也可以是 text/event-stream（SSE）
+- 握手 initialize → notifications/initialized → tools/list → resources/list
+- 结果：tools/call 返回 {content:[{type:'text',text}], isError}
+        resources/read 返回 {contents:[{uri,mimeType,text|blob}]}
 """
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ import json
 import os
 import re
 import shutil
-import sys
+import subprocess
 import time
 
 PROTOCOL = "2024-11-05"
-_CLIENT_INFO = {"name": "cbp-mcp", "version": "0.1.0"}
+_CLIENT_INFO = {"name": "cbp-mcp", "version": "0.2.0"}
 _REQ_TIMEOUT = 30.0
 
 
@@ -49,8 +49,43 @@ def _schema_to_args(schema: dict | None) -> dict[str, str]:
     return out
 
 
+def _content_text(result: dict) -> str:
+    """把 tools/call 的 content 数组拼成文本。"""
+    parts: list[str] = []
+    for item in (result or {}).get("content") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "text":
+            parts.append(str(item.get("text") or ""))
+        elif item.get("type") == "resource" and isinstance(item.get("resource"), dict):
+            parts.append(str(item["resource"].get("text") or ""))
+    return "\n".join(p for p in parts if p)
+
+
+def _resource_text(result: dict) -> str:
+    """把 resources/read 的 contents 数组拼成文本（blob 只给出 mime/长度）。"""
+    parts: list[str] = []
+    for item in (result or {}).get("contents") or []:
+        if not isinstance(item, dict):
+            continue
+        uri = item.get("uri") or ""
+        if item.get("text") is not None:
+            parts.append(f"# {uri}\n{item.get('text')}")
+        elif item.get("blob") is not None:
+            raw = str(item.get("blob"))
+            parts.append(f"# {uri}\n（二进制 {item.get('mimeType') or 'application/octet-stream'}，"
+                         f"base64 {len(raw)} 字符）")
+        else:
+            parts.append(f"# {uri}\n（空）")
+    return "\n\n".join(parts)
+
+
+# ────────────────────────── stdio 传输 ──────────────────────────
+
 class McpStdioClient:
     """一个 stdio MCP server 的连接（按需启动、按需关闭）。"""
+
+    transport = "stdio"
 
     def __init__(self, name: str, command: str, args: list[str] | None = None,
                  env: dict[str, str] | None = None, cwd: str | None = None,
@@ -63,6 +98,7 @@ class McpStdioClient:
         self.timeout = float(timeout or _REQ_TIMEOUT)
         self.proc: asyncio.subprocess.Process | None = None
         self.tools: list[dict] = []
+        self.resources: list[dict] = []
         self.error: str | None = None
         self._id = 0
         self._pending: dict[int, asyncio.Future] = {}
@@ -70,14 +106,12 @@ class McpStdioClient:
         self._stderr_task: asyncio.Task | None = None
         self.stderr_tail: list[str] = []
 
-    # ── 生命周期 ──
     async def start(self) -> None:
         exe = shutil.which(self.command) or self.command
         env = {**os.environ, **self.env}
         kwargs = {}
         if os.name == "nt":
-            kwargs["creationflags"] = getattr(
-                __import__("subprocess"), "CREATE_NO_WINDOW", 0)
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self.proc = await asyncio.create_subprocess_exec(
             exe, *self.args,
             stdin=asyncio.subprocess.PIPE,
@@ -86,16 +120,7 @@ class McpStdioClient:
             env=env, cwd=self.cwd, **kwargs)
         self._pump_task = asyncio.create_task(self._pump())
         self._stderr_task = asyncio.create_task(self._drain_stderr())
-        await self.request("initialize", {
-            "protocolVersion": PROTOCOL,
-            "capabilities": {},
-            "clientInfo": _CLIENT_INFO,
-        })
-        await self._notify("notifications/initialized")
-        data = await self.request("tools/list")
-        tools = (data or {}).get("tools") or []
-        self.tools = [t for t in tools if isinstance(t, dict) and t.get("name")]
-        self.error = None
+        await self._handshake()
 
     async def close(self) -> None:
         for task in (self._pump_task, self._stderr_task):
@@ -119,7 +144,6 @@ class McpStdioClient:
             except Exception:
                 pass
         # Windows 的 proactor 管道不显式关会在 GC 时刷 "unclosed transport" 警告。
-        # 子进程 transport 覆盖三条管道（stdin/stdout/stderr），关它最彻底。
         try:
             st = getattr(proc, "_transport", None)
             if st is not None:
@@ -127,7 +151,6 @@ class McpStdioClient:
         except Exception:
             pass
 
-    # ── 收发 ──
     async def _pump(self) -> None:
         assert self.proc and self.proc.stdout
         while True:
@@ -173,9 +196,11 @@ class McpStdioClient:
             msg["params"] = params
         await self._write(msg)
 
-    async def request(self, method: str, params: dict | None = None) -> dict:
+    async def request(self, method: str, params: dict | None = None,
+                      timeout: float | None = None) -> dict:
         self._id += 1
         rid = self._id
+        limit = float(timeout or self.timeout)
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[rid] = fut
         payload = {"jsonrpc": "2.0", "id": rid, "method": method}
@@ -183,11 +208,11 @@ class McpStdioClient:
             payload["params"] = params
         try:
             await self._write(payload)
-            msg = await asyncio.wait_for(fut, timeout=self.timeout)
+            msg = await asyncio.wait_for(fut, timeout=limit)
         except asyncio.TimeoutError:
             self._pending.pop(rid, None)
             tail = ("；stderr: " + " | ".join(self.stderr_tail[-3:])) if self.stderr_tail else ""
-            raise McpError(f"{self.name}: {method} 超时 {self.timeout:.0f}s{tail}")
+            raise McpError(f"{self.name}: {method} 超时 {limit:.0f}s{tail}")
         except Exception as exc:
             self._pending.pop(rid, None)
             raise McpError(f"{self.name}: {method} 发送失败: {exc}") from exc
@@ -197,19 +222,177 @@ class McpStdioClient:
                            f"{err.get('message') if isinstance(err, dict) else err}")
         return msg.get("result") or {}
 
-    # ── 业务 ──
+    # ── 公共业务（两种传输共用）──
+    async def _handshake(self) -> None:
+        await self.request("initialize", {
+            "protocolVersion": PROTOCOL,
+            "capabilities": {},
+            "clientInfo": _CLIENT_INFO,
+        })
+        try:
+            await self._notify("notifications/initialized")
+        except Exception:
+            pass
+        await self._load_tools()
+
+    async def _load_tools(self) -> None:
+        data = await self.request("tools/list")
+        tools = (data or {}).get("tools") or []
+        self.tools = [t for t in tools if isinstance(t, dict) and t.get("name")]
+        try:
+            # 可选能力：没实现 resources 的 server 可能回 -32601，也可能干脆不回。
+            # 用短超时探测，避免连接阶段被一个可选能力拖住 30 秒。
+            rdata = await self.request("resources/list", timeout=min(self.timeout, 8.0))
+        except Exception:
+            self.resources = []          # server 没实现 resources 是正常的
+        else:
+            items = (rdata or {}).get("resources") or []
+            self.resources = [r for r in items if isinstance(r, dict) and r.get("uri")]
+        self.error = None
+
+    async def list_resources(self) -> list[dict]:
+        return self.resources
+
     async def call_tool(self, tool: str, arguments: dict | None = None) -> dict:
         result = await self.request("tools/call", {"name": tool,
                                                    "arguments": arguments or {}})
-        texts = []
-        for item in (result.get("content") or []):
-            if isinstance(item, dict) and item.get("type") == "text":
-                texts.append(str(item.get("text") or ""))
-        text = "\n".join(t for t in texts if t)
+        text = _content_text(result)
         if result.get("isError"):
             raise McpError(text or f"{self.name}:{tool} 返回 isError")
-        return {"text": text, "raw": result, "isError": bool(result.get("isError"))}
+        return {"text": text, "raw": result, "isError": False}
 
+    async def read_resource(self, uri: str) -> dict:
+        result = await self.request("resources/read", {"uri": str(uri)})
+        text = _resource_text(result)
+        if not text:
+            raise McpError(f"{self.name}: 资源 {uri} 内容为空")
+        return {"uri": str(uri), "text": text}
+
+
+# ────────────────────── streamable HTTP 传输 ──────────────────────
+
+class McpHttpClient(McpStdioClient):
+    """MCP over HTTP（streamable HTTP；兼容把响应写成 text/event-stream）。
+
+    复用 stdio 客户端的握手/业务方法，只覆盖底层收发。
+    """
+
+    transport = "http"
+
+    def __init__(self, name: str, url: str, headers: dict[str, str] | None = None,
+                 timeout: float = _REQ_TIMEOUT):
+        super().__init__(name, command="", args=[], env={}, cwd=None, timeout=timeout)
+        self.url = str(url or "").strip()
+        self.headers = {str(k): str(v) for k, v in (headers or {}).items()}
+        self.session_id: str | None = None
+        self._http = None
+
+    async def start(self) -> None:
+        import httpx
+        if not self.url:
+            raise McpError(f"{self.name}: 需要 url")
+        self._http = httpx.AsyncClient(timeout=self.timeout, follow_redirects=True)
+        await self._handshake()
+
+    async def close(self) -> None:
+        http, self._http = self._http, None
+        if http is not None:
+            try:
+                await http.aclose()
+            except Exception:
+                pass
+
+    async def _notify(self, method: str, params: dict | None = None) -> None:
+        payload = {"jsonrpc": "2.0", "method": method}
+        if params is not None:
+            payload["params"] = params
+        await self._post(payload, expect_id=None)
+
+    async def request(self, method: str, params: dict | None = None,
+                      timeout: float | None = None) -> dict:
+        self._id += 1
+        rid = self._id
+        payload = {"jsonrpc": "2.0", "id": rid, "method": method}
+        if params is not None:
+            payload["params"] = params
+        msg = await self._post(payload, expect_id=rid, timeout=timeout)
+        if isinstance(msg, dict) and msg.get("error"):
+            err = msg["error"]
+            raise McpError(f"{self.name}: {method} 返回错误: "
+                           f"{err.get('message') if isinstance(err, dict) else err}")
+        return (msg or {}).get("result") or {}
+
+    def _headers(self) -> dict[str, str]:
+        h = {"Accept": "application/json, text/event-stream",
+             "Content-Type": "application/json",
+             "MCP-Protocol-Version": PROTOCOL}
+        if self.session_id:
+            h["Mcp-Session-Id"] = self.session_id
+        h.update(self.headers)
+        return h
+
+    async def _post(self, payload: dict, expect_id: int | None,
+                    timeout: float | None = None) -> dict | None:
+        if self._http is None:
+            raise McpError(f"{self.name}: HTTP 客户端未初始化")
+        kwargs = {"timeout": float(timeout)} if timeout else {}
+        try:
+            resp = await self._http.post(self.url, json=payload, headers=self._headers(),
+                                         **kwargs)
+        except Exception as exc:
+            raise McpError(f"{self.name}: HTTP 请求失败: {exc}") from exc
+        sid = resp.headers.get("Mcp-Session-Id") or resp.headers.get("mcp-session-id")
+        if sid:
+            self.session_id = sid
+        if resp.status_code >= 400:
+            raise McpError(f"{self.name}: HTTP {resp.status_code}: {resp.text[:200]}")
+        ctype = (resp.headers.get("content-type") or "").lower()
+        if expect_id is None:
+            return None
+        if "text/event-stream" in ctype:
+            return await self._read_sse(resp, expect_id)
+        try:
+            data = resp.json()
+        except Exception:
+            # 有些实现把 SSE 写成普通文本
+            return self._parse_sse_text(resp.text, expect_id)
+        if isinstance(data, list):            # 批量响应
+            for item in data:
+                if isinstance(item, dict) and item.get("id") == expect_id:
+                    return item
+            return (data[0] if data else {})
+        return data
+
+    async def _read_sse(self, resp, expect_id: int) -> dict:
+        async for line in resp.aiter_lines():
+            msg = self._sse_line(line)
+            if msg is not None and msg.get("id") == expect_id:
+                return msg
+        raise McpError(f"{self.name}: SSE 流里没有 id={expect_id} 的响应")
+
+    @staticmethod
+    def _sse_line(line: str) -> dict | None:
+        if not line or not line.startswith("data:"):
+            return None
+        raw = line[5:].strip()
+        if not raw or raw == "[DONE]":
+            return None
+        try:
+            msg = json.loads(raw)
+        except Exception:
+            return None
+        return msg if isinstance(msg, dict) else None
+
+    @classmethod
+    def _parse_sse_text(cls, text: str, expect_id: int) -> dict | None:
+        for line in (text or "").splitlines():
+            msg = cls._sse_line(line)
+            if msg is not None and msg.get("id") == expect_id:
+                return msg
+        raise McpError("HTTP 响应既不是 JSON 也不是可解析的 SSE")
+
+
+# ────────────────────────── 管理器 ──────────────────────────
 
 class McpManager:
     """管理若干 MCP server 连接（不含事件循环假设，便于单测）。"""
@@ -223,15 +406,22 @@ class McpManager:
         name = str(name or "").strip()
         if not name:
             raise McpError("server 名不能为空")
-        cmd = str((spec or {}).get("command") or "").strip()
-        if not cmd:
-            raise McpError(f"{name}: 需要 command")
-        entry = {"command": cmd,
-                 "args": [str(a) for a in (spec.get("args") or [])],
-                 "env": {str(k): str(v) for k, v in (spec.get("env") or {}).items()},
-                 "cwd": (spec.get("cwd") or None),
-                 "timeout": float(spec.get("timeout") or _REQ_TIMEOUT),
-                 "enabled": bool(spec.get("enabled", True))}
+        spec = spec or {}
+        url = str(spec.get("url") or "").strip()
+        cmd = str(spec.get("command") or "").strip()
+        if not url and not cmd:
+            raise McpError(f"{name}: 需要 command（stdio）或 url（HTTP）")
+        entry = {
+            "transport": "http" if url else "stdio",
+            "command": cmd,
+            "args": [str(a) for a in (spec.get("args") or [])],
+            "env": {str(k): str(v) for k, v in (spec.get("env") or {}).items()},
+            "cwd": (spec.get("cwd") or None),
+            "url": url,
+            "headers": {str(k): str(v) for k, v in (spec.get("headers") or {}).items()},
+            "timeout": float(spec.get("timeout") or _REQ_TIMEOUT),
+            "enabled": bool(spec.get("enabled", True)),
+        }
         self.servers[name] = entry
         return {"name": name, **entry}
 
@@ -247,8 +437,14 @@ class McpManager:
         old = self.clients.pop(name, None)
         if old is not None:
             await old.close()
-        client = McpStdioClient(name, spec["command"], spec.get("args"), spec.get("env"),
-                                spec.get("cwd"), spec.get("timeout", _REQ_TIMEOUT))
+        if spec.get("transport") == "http":
+            client: McpStdioClient = McpHttpClient(
+                name, spec.get("url") or "", spec.get("headers"),
+                spec.get("timeout", _REQ_TIMEOUT))
+        else:
+            client = McpStdioClient(name, spec["command"], spec.get("args"),
+                                    spec.get("env"), spec.get("cwd"),
+                                    spec.get("timeout", _REQ_TIMEOUT))
         try:
             await client.start()
         except Exception as exc:
@@ -275,7 +471,7 @@ class McpManager:
         self.clients.clear()
 
     def tool_specs(self) -> list[dict]:
-        """展平所有 server 的工具，供注册进工具表。"""
+        """展平所有 server 的工具（含每个 server 一个只读资源工具）。"""
         out = []
         for name, client in self.clients.items():
             for tool in client.tools:
@@ -288,13 +484,39 @@ class McpManager:
                                    or f"MCP {name} 的 {tool.get('name')} 工具",
                     "arguments": _schema_to_args(tool.get("inputSchema")),
                 })
+            if client.resources:
+                uris = ", ".join(str(r.get("uri")) for r in client.resources[:8])
+                out.append({
+                    "server": name,
+                    "tool": "read_resource",
+                    "registered_name": f"mcp__{_safe(name)}__read_resource",
+                    "description": (f"读取 MCP server {name} 的资源（只读）。"
+                                    f"可用 uri: {uris}"),
+                    "arguments": {"uri": "资源 URI（见工具说明里列出的可用项）"},
+                })
         return out
 
     async def call(self, server: str, tool: str, arguments: dict | None = None) -> dict:
         client = self.clients.get(server)
         if client is None:
             raise McpError(f"MCP server 未连接: {server}")
+        if tool == "read_resource":
+            uri = str((arguments or {}).get("uri") or "").strip()
+            if not uri:
+                raise McpError("read_resource 需要 uri")
+            return await client.read_resource(uri)
         return await client.call_tool(tool, arguments)
+
+    def resource_specs(self) -> list[dict]:
+        out = []
+        for name, client in self.clients.items():
+            for res in client.resources:
+                out.append({"server": name,
+                            "uri": str(res.get("uri")),
+                            "name": str(res.get("name") or ""),
+                            "mimeType": str(res.get("mimeType") or ""),
+                            "description": str(res.get("description") or "")})
+        return out
 
 
 # ────────────────────────── 插件入口 ──────────────────────────
@@ -307,18 +529,23 @@ def setup(ctx):
         return {
             "servers": [
                 {"name": name,
-                 "command": spec.get("command"),
+                 "transport": spec.get("transport"),
+                 "command": spec.get("command") or None,
                  "args": spec.get("args") or [],
+                 "url": spec.get("url") or None,
                  "enabled": spec.get("enabled", True),
                  "connected": name in manager.clients,
                  "error": manager.errors.get(name),
-                 # 注意：client.tools 是 MCP 原始工具字典（键是 name/description/inputSchema），
+                 # 注意：client.tools 是 MCP 原始工具字典（name/description/inputSchema），
                  # 不是 tool_specs() 的展平结构——这里曾取 t["tool"] 直接 KeyError → 500
                  "tools": [str(t.get("name")) for t in (manager.clients.get(name).tools
-                                                        if name in manager.clients else [])]}
+                                                        if name in manager.clients else [])],
+                 "resources": [str(r.get("uri")) for r in (manager.clients.get(name).resources
+                                                           if name in manager.clients else [])]}
                 for name, spec in manager.servers.items()
             ],
             "tools": manager.tool_specs(),
+            "resources": manager.resource_specs(),
         }
 
     async def _connect_and_register():
@@ -332,14 +559,20 @@ def setup(ctx):
     async def _call(server: str, tool: str, arguments: dict | None = None):
         return await manager.call(server, tool, arguments or {})
 
+    async def _read_resource(server: str, uri: str):
+        return await manager.call(server, "read_resource", {"uri": uri})
+
     ctx.register_tool("mcp_list", _list,
-                      "列出已配置的 MCP server 及其工具（含连接状态与错误）", {})
+                      "列出已配置的 MCP server、其工具与资源（含连接状态与错误）", {})
     ctx.register_tool("mcp_call", _call,
                       "调用 MCP server 的工具（server/tool/arguments）",
                       {"server": "MCP server 名", "tool": "工具名",
                        "arguments": "参数对象"})
+    ctx.register_tool("mcp_read_resource", _read_resource,
+                      "读取 MCP server 的资源（只读）",
+                      {"server": "MCP server 名", "uri": "资源 URI"})
 
-    # ── 管理接口（加/删/重连/直调）──
+    # ── 管理接口（加/删/重连/直调/看资源）──
     async def _api_list(request):
         return _snapshot()
 
@@ -388,11 +621,25 @@ def setup(ctx):
         except Exception as exc:
             return {"error": str(exc)}
 
+    async def _api_resources(request):
+        server = str(request.query_params.get("server") or "")
+        client = manager.clients.get(server)
+        if client is None:
+            return {"error": f"MCP server 未连接: {server}"}
+        uri = str(request.query_params.get("uri") or "").strip()
+        try:
+            if uri:
+                return await client.read_resource(uri)
+            return {"resources": client.resources}
+        except Exception as exc:
+            return {"error": str(exc)}
+
     ctx.register_api("GET", "api/list", _api_list)
     ctx.register_api("POST", "api/add", _api_add)
     ctx.register_api("POST", "api/remove", _api_remove)
     ctx.register_api("POST", "api/reload", _api_reload)
     ctx.register_api("POST", "api/call", _api_call)
+    ctx.register_api("GET", "api/resources", _api_resources)
 
     # 启动即连接（需要事件循环；无循环时只记日志，工具仍可手动调 api/reload）
     try:
@@ -404,7 +651,7 @@ def setup(ctx):
 
 
 def _register_dynamic(ctx, manager: McpManager) -> None:
-    """把 MCP 工具注册进工具表；重连后旧名字先摘掉，避免指向已关闭的连接。"""
+    """把 MCP 工具/资源注册进工具表；重连后旧名字先摘掉，避免指向已关闭的连接。"""
     for item in manager.tool_specs():
         rname, server, tool = item["registered_name"], item["server"], item["tool"]
 

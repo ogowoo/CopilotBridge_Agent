@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""MCP 客户端插件：连上 mock server，工具能注册、能调用、错误能透出。"""
+"""MCP 客户端插件：stdio 与 HTTP 两种传输、resources、错误与隔离。"""
 import asyncio
 import importlib.util
 import sys
@@ -9,6 +9,9 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 PLUGIN = BASE / "plugins" / "mcp" / "plugin.py"
 MOCK = BASE / "tests" / "fixtures" / "mock_mcp_server.py"
+sys.path.insert(0, str(BASE / "tests" / "fixtures"))
+
+import mock_mcp_http  # noqa: E402
 
 
 def load_plugin():
@@ -18,7 +21,7 @@ def load_plugin():
     return mod
 
 
-class McpClientTests(unittest.TestCase):
+class McpStdioTests(unittest.TestCase):
     def setUp(self):
         self.mod = load_plugin()
         self.mgr = self.mod.McpManager()
@@ -78,6 +81,72 @@ class McpClientTests(unittest.TestCase):
             self.assertIn("bad", self.mgr.errors)
             self.assertNotIn("good", self.mgr.errors)
             self.assertTrue([t for t in self.mgr.tool_specs() if t["server"] == "good"])
+            await self.mgr.close_all()
+
+        asyncio.run(scenario())
+
+
+class McpHttpTests(unittest.TestCase):
+    """streamable HTTP 传输：JSON 响应、SSE 响应、session 头、resources。"""
+
+    def setUp(self):
+        self.mod = load_plugin()
+        self.mgr = self.mod.McpManager()
+        self.srv = mock_mcp_http.MockMcpHttp()
+        self.url = self.srv.start()
+
+    def tearDown(self):
+        self.srv.stop()
+        self.mgr = self.mod.McpManager()
+
+    def test_http_connect_and_tools(self):
+        async def scenario():
+            self.mgr.add("httpmock", {"url": self.url})
+            await self.mgr.connect_all()
+            self.assertNotIn("httpmock", self.mgr.errors)
+            client = self.mgr.clients["httpmock"]
+            self.assertEqual(client.transport, "http")
+            self.assertEqual(client.session_id, "sess-test-1")
+            names = [t["tool"] for t in self.mgr.tool_specs()]
+            self.assertIn("echo", names)
+            await self.mgr.close_all()
+
+        asyncio.run(scenario())
+
+    def test_http_sse_response_is_parsed(self):
+        """tools/call 由服务端用 text/event-stream 返回，客户端要能取出结果。"""
+        async def scenario():
+            self.mgr.add("httpmock", {"url": self.url})
+            await self.mgr.connect_all()
+            res = await self.mgr.call("httpmock", "echo", {"text": "SSE 也通"})
+            self.assertEqual(res["text"], "SSE 也通")
+            await self.mgr.close_all()
+
+        asyncio.run(scenario())
+
+    def test_http_resources_list_and_read(self):
+        async def scenario():
+            self.mgr.add("httpmock", {"url": self.url})
+            await self.mgr.connect_all()
+            specs = self.mgr.resource_specs()
+            self.assertEqual([s["uri"] for s in specs], ["mock://readme"])
+            # 每个 server 一个只读资源工具
+            reg = [t["registered_name"] for t in self.mgr.tool_specs()]
+            self.assertIn("mcp__httpmock__read_resource", reg)
+            res = await self.mgr.call("httpmock", "read_resource",
+                                      {"uri": "mock://readme"})
+            self.assertIn("MCP 资源内容 OK", res["text"])
+            with self.assertRaises(self.mod.McpError):
+                await self.mgr.call("httpmock", "read_resource", {"uri": "mock://nope"})
+            await self.mgr.close_all()
+
+        asyncio.run(scenario())
+
+    def test_http_bad_endpoint_reports_error(self):
+        async def scenario():
+            self.mgr.add("dead", {"url": "http://127.0.0.1:9/mcp", "timeout": 3})
+            await self.mgr.connect_all()
+            self.assertIn("dead", self.mgr.errors)
             await self.mgr.close_all()
 
         asyncio.run(scenario())

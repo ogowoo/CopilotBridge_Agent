@@ -1,7 +1,7 @@
 {
   "name": "mcp",
-  "version": "0.1.0",
-  "description": "MCP 客户端：连接 MCP server（stdio JSON-RPC），把其工具注册成 Agent 工具（mcp__<server>__<tool>）",
+  "version": "0.2.0",
+  "description": "MCP 客户端：连接 MCP server（stdio 或 HTTP），把其工具与资源注册成 Agent 工具（mcp__<server>__<tool>）",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -17,10 +17,12 @@
     "contributes": {
       "tools": [
         "mcp_list",
-        "mcp_call"
+        "mcp_call",
+        "mcp_read_resource"
       ],
       "api": [
         "GET api/list",
+        "GET api/resources",
         "POST api/add",
         "POST api/remove",
         "POST api/reload",

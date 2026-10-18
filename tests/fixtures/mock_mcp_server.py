@@ -69,6 +69,10 @@ def main() -> int:
         elif method == "shutdown":
             _send({"jsonrpc": "2.0", "id": mid, "result": {}})
             return 0
+        elif mid is not None:
+            # 真实 MCP server 对未实现的方法回 -32601；不回会让客户端干等到超时
+            _send({"jsonrpc": "2.0", "id": mid, "error": {
+                "code": -32601, "message": f"method not found: {method}"}})
     return 0
 
 

@@ -507,7 +507,7 @@ def teardown(ctx): ...
 | `research` | `deep_research` 多角度并行搜索 + 抓正文，返回证据包 | 无 |
 | `schedule` | `schedule_add/list/remove/run` 定时任务（every / daily / once），到点在**独立新会话**跑任务；`workspace` 指定工作目录（默认当前工作区） | 无 |
 | `image-gen` | `image_generate` 文生图，落盘到 `workspace/generated/` | DASHSCOPE_API_KEY 或 OPENAI_API_KEY |
-| `mcp` | **MCP 客户端**：连接 MCP server（stdio），把其工具注册成 `mcp__<server>__<tool>` | 无（本地进程，无需 key） |
+| `mcp` | **MCP 客户端**：连接 MCP server（stdio / HTTP），把工具与资源注册成 `mcp__<server>__<tool>` | 无（本地进程或 HTTP 端点） |
 
 **Combined = Grok 式 bot**：实时搜索（web-search）+ 深研（research）+ 定时任务（schedule）+
 生图（image-gen）+ 跨会话记忆（memory）+ 子代理/编排（subagent/ralph/workflow）。
@@ -522,28 +522,48 @@ def teardown(ctx): ...
 
 ### 5.8 MCP（Model Context Protocol）
 
-CBP 当 **MCP 客户端**：连上外部 MCP server，把它的工具注册进 Agent，模型就能像用内置工具
-一样调用（工具名 `mcp__<server>__<tool>`）。当前实现 **stdio 传输**（本地 MCP server 的主流方式）。
+CBP 当 **MCP 客户端**：连上外部 MCP server，把它的工具与资源注册进 Agent，模型就能像用内置
+工具一样调用。支持两种传输：
+
+| 传输 | 配置 | 说明 |
+|---|---|---|
+| **stdio** | `{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","C:/data"]}` | 本地进程，主流方式 |
+| **HTTP** | `{"url":"https://host/mcp","headers":{"Authorization":"Bearer ..."}}` | streamable HTTP；响应是 `application/json` 或 `text/event-stream`(SSE) 都能解析，自动维护 `Mcp-Session-Id` |
 
 ```bash
-# 添加一个 server（按需改成 npx/uvx 启动的真实 server）
+# stdio
 curl -X POST http://127.0.0.1:8765/v1/plugins/mcp/api/add \
   -H 'Content-Type: application/json' \
   -d '{"name":"fs","spec":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","C:/data"]}}'
 
-curl http://127.0.0.1:8765/v1/plugins/mcp/api/list     # 连接状态 / 已暴露的工具
+# HTTP + 鉴权头
+curl -X POST http://127.0.0.1:8765/v1/plugins/mcp/api/add \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"remote","spec":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer xxx"}}}'
+
+curl http://127.0.0.1:8765/v1/plugins/mcp/api/list            # 连接状态 / 工具 / 资源
 curl -X POST http://127.0.0.1:8765/v1/plugins/mcp/api/call \
   -H 'Content-Type: application/json' \
   -d '{"server":"fs","tool":"read_file","arguments":{"path":"C:/data/a.txt"}}'
+curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs'          # 资源清单
+curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C:/data/a.txt'  # 读资源
 ```
 
-- 配置持久化在 `data/plugins.json` 的 `mcp.state.servers`；重启自动重连
-- 工具参数由 MCP 的 `inputSchema` 自动转成我们的参数说明
-- `tools/call` 的 `content[].type=text` 会拼成结果文本；`isError` 会转成工具错误
-- 单个 server 起不来只记在 `errors` 里，不影响其它 server 与内置工具
-- 也提供两个通用工具：`mcp_list`（看状态）、`mcp_call`（手动调用任意 server 的工具）
+**能力映射**
+- `tools/list` → 每个工具注册成 `mcp__<server>__<tool>`，参数由 `inputSchema` 自动转成参数说明
+- `tools/call` → `content[].type=text` 拼成结果；`isError` 转成工具错误
+- `resources/list` → 每个 server 额外注册一个只读工具 `mcp__<server>__read_resource(uri)`，
+  工具说明里列出可用 uri（避免把几十个资源各注册成一个工具，撑爆工具表）
+- `resources/read` → 文本直接返回；二进制（`blob`）给出 mime 与 base64 长度
+- 通用工具：`mcp_list`（状态）、`mcp_call`（手动调）、`mcp_read_resource`（读资源）
 
-> 限制：目前只支持 stdio；HTTP/SSE 传输、resources/prompts 两类 MCP 能力尚未接入。
+**健壮性**
+- 单个 server 起不来只记录在 `errors`，不影响其它 server 与内置工具
+- `resources/list` 属于可选能力：用 **8 秒短超时**探测（未实现的 server 可能不回包，
+  不探测会让连接阶段白等 30 秒）
+- 配置持久化在 `data/plugins.json` 的 `mcp.state.servers`，重启自动重连
+
+> 尚未接入：`prompts` 能力；旧版 **HTTP+SSE 双端点**传输（只支持 streamable HTTP）。
 
 ### 5.5 子代理面板（看有哪些子代理、在跑什么）
 
