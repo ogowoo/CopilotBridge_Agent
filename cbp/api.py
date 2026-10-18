@@ -415,6 +415,35 @@ async def agent_debug_download(payload: dict | None = None):
     return await b.debug_download_now(stem)
 
 
+@app.get("/v1/agent/sandbox")
+async def get_sandbox():
+    """查询当前沙箱档位与可选值。"""
+    return {"mode": str(getattr(b.AGENT_TOOLS, "sandbox_mode", "workspace-write")),
+            "modes": list(b.SANDBOX_MODES),
+            "plan_mode": bool(getattr(b.AGENT_TOOLS, "plan_mode", False))}
+
+
+@app.post("/v1/agent/sandbox")
+async def set_sandbox(payload: dict | None = None):
+    """切换沙箱档位：read-only / workspace-write / danger-full-access。"""
+    mode = str((payload or {}).get("mode") or "").strip().lower()
+    if mode not in b.SANDBOX_MODES:
+        raise HTTPException(400, f"mode 必须是 {list(b.SANDBOX_MODES)} 之一")
+    b.AGENT_TOOLS.sandbox_mode = mode
+    b.AGENT_CFG["sandbox_mode"] = mode
+    persist = bool((payload or {}).get("persist"))
+    if persist:
+        cfg_path = b.BASE / "config.json"
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+            cfg.setdefault("agent", {})["sandbox_mode"] = mode
+            cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
+                                encoding="utf-8")
+        except Exception as exc:
+            raise HTTPException(500, f"写 config.json 失败: {exc}")
+    return {"mode": mode, "persisted": persist}
+
+
 @app.post("/v1/agent/deep-research")
 async def agent_deep_research(payload: dict | None = None):
     """一键深研：research 插件收集证据 → Agent 综合成带来源的报告（新会话）。"""
@@ -1100,6 +1129,9 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
         "approval_scope": str(b.AGENT_CFG.get("approval_scope", "once")).lower(),
         # 目标（goal 模式）与计划（todo_write）：让界面能显示"第几轮/还剩几项"，
         # 否则 /goal 跑起来之后用户只能从时间线猜进度
+        "sandbox_mode": str(getattr(b.AGENT_TOOLS, "sandbox_mode", "workspace-write")),
+        "plan_mode": bool((state or {}).get("plan_mode")),
+        "plan": (state or {}).get("plan"),
         "goal": (state or {}).get("goal"),
         "todos": (state or {}).get("todos"),
     })

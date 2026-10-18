@@ -49,7 +49,7 @@ def parse_skill_md(dirname: str, text: str) -> tuple[str, str]:
 # ── 工具分组：按任务裁剪注入的工具清单（P0-1）─────────────────────
 # 30 个工具的 schema 每回合全量注入纯属烧 token；单条任务通常只用少数几组。
 TOOL_GROUPS: dict[str, tuple[str, ...]] = {
-    "core": ("list_directory", "find_files", "read_text", "write_text", "append_text",
+    "core": ("exit_plan_mode", "list_directory", "find_files", "read_text", "write_text", "append_text",
              "write_text_b64", "append_text_b64", "replace_text", "make_directory",
              "copy_path", "move_path", "validate_python", "run_unittest",
              "skill_list", "skill_read", "skill_create",
@@ -168,6 +168,20 @@ class _ComWorker:
 # 破坏性/不可回滚操作：默认需要用户**一次性**授权（fail-closed）。
 # 与 DSH 一致：只有 allowed-once，没有 allow-always、也没有撤销存储——
 # 授权用完即焚，下一次同类操作要重新授权。
+# ── 沙箱档位（对应 DSH 的三档）──────────────────────────────────────
+# read-only            只读：任何会改动文件/系统/外部服务的工具一律拒绝
+# workspace-write      默认：写操作只允许在工作区内（workspace_roots 白名单）
+# danger-full-access   允许写到工作区之外（仍受自升级护栏约束），供用户显式选择
+SANDBOX_MODES = ("read-only", "workspace-write", "danger-full-access")
+
+# 变更类工具：read-only 档位下全部拒绝；扩展工具可用 approval=True 声明后同样受管
+MUTATING_TOOLS = {
+    "write_text", "write_text_b64", "append_text", "append_text_b64", "replace_text",
+    "write_docx", "write_excel", "make_directory", "move_path", "copy_path", "delete_path",
+    "run_python", "pwsh", "outlook_send", "save_workspace_file",
+    "image_generate", "schedule_add", "schedule_remove", "schedule_run", "memory_write",
+}
+
 APPROVAL_REQUIRED_TOOLS = ("delete_path", "outlook_send", "run_python")
 
 # 一次调用可能已经产生副作用、但我们**拿不到结果**的动作：禁止原样重试。
@@ -190,6 +204,12 @@ class ToolRegistry:
         self.allow_delete = bool(config.get("allow_delete", False))
         # 一次性审批策略（fail-closed）：ask=破坏性工具须用户逐次授权；never=不要求。
         self.approval_policy = str(config.get("approval_policy", "ask")).lower()
+        # 沙箱档位：read-only / workspace-write / danger-full-access（非法值回落默认）
+        self.sandbox_mode = str(config.get("sandbox_mode", "workspace-write")).lower()
+        if self.sandbox_mode not in SANDBOX_MODES:
+            self.sandbox_mode = "workspace-write"
+        # 计划模式：进入后强制只读，直到 exit_plan_mode 显式退出
+        self.plan_mode = bool(config.get("plan_mode", False))
         self.approval_required_tools = tuple(
             config.get("approval_required_tools") or APPROVAL_REQUIRED_TOOLS)
         # 外部注册时用 approval=True 声明的破坏性工具（与核心集合分开维护）
@@ -257,6 +277,7 @@ class ToolRegistry:
             "copy_path": self.copy_path,
             "move_path": self.move_path,
             "delete_path": self.delete_path,
+            "exit_plan_mode": self.exit_plan_mode,
             "run_python": self.run_python,
             "run_code": self.run_code,
             "validate_python": self.validate_python,
@@ -686,8 +707,9 @@ class ToolRegistry:
     def set_root(self, value: str | Path, create: bool = False) -> str:
         target = Path(value).expanduser()
         target = target.resolve() if target.is_absolute() else (self.root / target).resolve()
-        if self.workspace_roots and not any(target == r or r in target.parents
-                                            for r in self.workspace_roots):
+        if (self.workspace_roots and self.sandbox_mode != "danger-full-access"
+                and not any(target == r or r in target.parents
+                            for r in self.workspace_roots)):
             raise ToolError(self._sandbox_denied(
                 "FS_SANDBOX_NOT_ALLOWED", str(value), "目标目录不在 workspace_roots 白名单内"))
         # 权限门：工作区若覆盖服务安装目录，普通文件工具就能直接改服务代码/
@@ -739,6 +761,9 @@ class ToolRegistry:
             {"name": "move_path", "description": "移动文件或目录", "arguments": {"source": "相对路径", "destination": "相对路径"}},
             {"name": "validate_python", "description": "检查 Python 文件或目录语法；仅在文件全部写完后执行（写了一半的文件必然失败，不是缺陷）", "arguments": {"path": "相对路径，默认 ."}},
             {"name": "run_unittest", "description": "执行 unittest 测试发现；仅在文件全部写完后执行", "arguments": {"path": "测试目录，默认 tests", "pattern": "默认 test_*.py"}},
+            {"name": "exit_plan_mode",
+             "description": "结束计划模式：提交方案并解除只读限制（计划阶段只读探索后调用）",
+             "arguments": {"plan": "要执行的方案（Markdown）", "notes": "补充说明（可选）"}},
         ]
         if self.allow_delete:
             items.append({"name": "delete_path", "description": "删除路径", "arguments": {"path": "相对路径"}})
@@ -835,6 +860,17 @@ class ToolRegistry:
         ]
         return "\n".join(lines)
 
+    def _covers_install(self, candidate: Path) -> bool:
+        """candidate 是否落在服务安装目录内（danger 档下仍要拦这个）。"""
+        if not self.global_root:
+            return False
+        try:
+            install = Path(self.global_root).resolve()
+            candidate.relative_to(install)
+            return not self.allow_self_upgrade
+        except ValueError:
+            return False
+
     def sandbox_path(self, value: str = ".") -> Path:
         """公开的沙箱路径解析（扩展工具模块用，避免访问私有方法）。"""
         return self._path(value)
@@ -844,6 +880,10 @@ class ToolRegistry:
         try:
             candidate.relative_to(self.root)
         except ValueError as exc:
+            # danger-full-access：允许越出工作区（用户显式选择），但不许借此改服务
+            # 安装目录——那会绕过自升级护栏与验证闭环。
+            if self.sandbox_mode == "danger-full-access" and not self._covers_install(candidate):
+                return candidate
             raise ToolError(self._sandbox_denied(
                 "FS_SANDBOX_ESCAPE", str(value),
                 "解析后的路径落在工作区之外（含 ../ 或绝对路径越界）")) from exc
@@ -890,6 +930,25 @@ class ToolRegistry:
                 "list_directory / outlook_unread），确认之后再决定下一步；"
                 "若确认没有发生，可再明确重发一次。\n详情：" + str(info.get("detail") or "")[:200])
 
+    async def exit_plan_mode(self, plan: str = "", notes: str = "") -> dict[str, Any]:
+        """结束计划模式：把方案写进会话状态并解锁写操作。
+
+        对应 DSH 的 exit_plan_mode：计划阶段只读探索，产出方案后由用户/模型确认再执行。
+        """
+        text = str(plan or "").strip()
+        if not text:
+            raise ToolError("exit_plan_mode 需要 plan（要执行的方案）")
+        self.plan_mode = False
+        saved = {"plan": text[:8000], "notes": str(notes or "")[:2000], "at": time.time()}
+        if self.state_saver is not None:
+            try:
+                self.state_saver(plan=saved, plan_mode=0)
+            except Exception:
+                pass
+        return {"ok": True, "plan_saved": True, "plan": text,
+                "hint": "方案已记录。**本轮请直接返回 final** 把方案呈现给用户，"
+                        "不要开始执行；用户确认后下一轮再按方案动手。"}
+
     async def execute(self, name: str, arguments: dict[str, Any] | None) -> Any:
         if not self.allow_web_copilot_tools and name in self.web_copilot_tools:
             raise ToolError(
@@ -899,6 +958,17 @@ class ToolRegistry:
         fn = self._tools.get(name)
         if not fn:
             raise ToolError(f"未知工具: {name}")
+        # 计划模式 / 只读档位：变更类动作在**执行前**就拒绝（结构化错误，模型可据此
+        # 改走只读路径，而不是写完才发现不该写）
+        if name in MUTATING_TOOLS:
+            if self.plan_mode:
+                raise ToolError(self._sandbox_denied(
+                    "SANDBOX_PLAN_MODE", name,
+                    "当前处于计划模式（只读）；先给出方案并调用 exit_plan_mode 结束计划阶段"))
+            if self.sandbox_mode == "read-only":
+                raise ToolError(self._sandbox_denied(
+                    "SANDBOX_READ_ONLY", name,
+                    "当前沙箱档位是 read-only；改用只读工具，或让用户切换档位"))
         if self._com_unknown and name in NON_IDEMPOTENT_TOOLS:
             raise ToolError(self.unknown_outcome_error(name))
         try:

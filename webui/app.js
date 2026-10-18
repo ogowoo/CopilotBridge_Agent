@@ -255,13 +255,12 @@ const SLASH_COMMANDS=[
     +'只有目标真正达成（或确实被外部条件阻塞）时，先调用 update_goal（complete / blocked）再返回 final。';
    runTask()}},
  {id:'plan',label:'plan',aliases:['plan','计划'],
-  desc:'计划模式：只产出分步计划并停下，不动文件',
+  desc:'计划模式（只读）：探索后产出方案，exit_plan_mode 提交',
   run:(arg)=>{
    if(!arg){toast(tr('用法：/plan 你的任务'),'err');return}
    const t=document.getElementById('task');
-   if(t)t.value=arg+'\n\n'+'[计划模式] 只做规划，不要执行：用 todo_write 写出 3-8 个可执行步骤'
-    +'（每步写清要做什么、产出物、以及怎么算做完），然后直接返回 final 把计划呈现给用户；'
-    +'本轮不要调用任何会改动文件/系统/网络的工具，也不要 create_goal。';
+   if(t)t.value=arg;
+   planModeOnce=true;        // 由后端强制只读，不只靠提示词
    runTask()}},
  {id:'help',label:'help',aliases:['help','?','帮助'],
   desc:'列出全部可用命令',run:()=>{const t=document.getElementById('task');
@@ -401,6 +400,7 @@ async function deepResearchNow(query){
    native：POST /v1/agent/pick-directory（系统文件夹对话框）
    browse：GET /v1/agent/browse（应用内树，对话框打不开时用） */
 let wsCurrent='';
+let planModeOnce=false;   // /plan 触发：本轮请求带 plan_mode，后端强制只读
 /* 工作区分组折叠状态（localStorage，跨刷新保留） */
 function wsCollapsedList(){try{return JSON.parse(localStorage.getItem('cbp-ws-collapsed')||'[]')||[]}catch(e){return []}}
 function wsIsCollapsed(k){return wsCollapsedList().indexOf(k)>=0}
@@ -2195,7 +2195,8 @@ function setTaskMode(m){taskMode=m;
 async function runTask(){
  let task=document.getElementById('task').value.trim();if(!task)return;
  let atts=IMG_STORES.task.map(a=>a.dataUrl);
- let b={model:document.getElementById('model').value,messages:[{role:'user',content:task}],stream:false,session_id:((document.getElementById('sid')||{}).value||'').trim()||('task-'+Date.now().toString(36)),workspace:document.getElementById('workspace').value.trim()||null,reuse_session:true,agent_mode:taskMode==='agent',attachments:atts};
+ let _plan=planModeOnce; planModeOnce=false;
+ let b={model:document.getElementById('model').value,plan_mode:_plan,messages:[{role:'user',content:task}],stream:false,session_id:((document.getElementById('sid')||{}).value||'').trim()||('task-'+Date.now().toString(36)),workspace:document.getElementById('workspace').value.trim()||null,reuse_session:true,agent_mode:taskMode==='agent',attachments:atts};
  current=b.session_id;
  currentModel=b.model;      // 会话页模型选择器随即显示本次任务用的模型
  IMG_STORES.task=[];renderThumbs();

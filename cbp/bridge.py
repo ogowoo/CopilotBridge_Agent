@@ -21,7 +21,7 @@ from .memory import MemoryStore
 from .session_store import SessionStore
 from .snapshots import SnapshotStore
 from .spans import SpanRecorder, set_recorder
-from .tools import ToolError, ToolRegistry
+from .tools import SANDBOX_MODES, ToolError, ToolRegistry
 
 BASE = Path(__file__).resolve().parent.parent  # 包在 cbp/ 内，项目根目录再上一层
 CFG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
@@ -244,6 +244,10 @@ class AgentRequest(BaseModel):
     agent_mode: bool = True
     # 粘贴的图片/截图附件（data URL），仅 Copilot 网页会话支持
     attachments: list[str] | None = None
+    # 计划模式：本轮强制只读，模型产出方案后调用 exit_plan_mode 结束
+    plan_mode: bool = False
+    # 沙箱档位覆盖（read-only / workspace-write / danger-full-access）；不传用配置
+    sandbox_mode: str | None = None
 
 
 def log(s):
@@ -3017,6 +3021,23 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
         existing=AGENT_SESSIONS.get(sid)
         workspace=(req.workspace.strip() if req.workspace else None) or (existing or {}).get("workspace") or DEFAULT_WORKSPACE
         AGENT_TOOLS.set_root(workspace,False)
+        # 沙箱档位 / 计划模式按**本次请求**生效（配置是默认值）：
+        # 计划模式 = 强制只读，模型只探索并产出方案，调用 exit_plan_mode 后解除。
+        _mode = str(getattr(req, "sandbox_mode", None) or AGENT_CFG.get("sandbox_mode")
+                    or "workspace-write").lower()
+        AGENT_TOOLS.sandbox_mode = _mode if _mode in SANDBOX_MODES else "workspace-write"
+        AGENT_TOOLS.plan_mode = bool(getattr(req, "plan_mode", False))
+        if AGENT_TOOLS.plan_mode:
+            log(f"会话 {sid} 进入计划模式（只读）")
+            plan_hint = (
+                "\n\n[计划模式] 本轮**强制只读**：任何写文件/执行命令/改外部系统的工具都会被拒绝。"
+                "请先只读探索（读代码、搜索、看目录），然后产出可执行方案，"
+                "并用 exit_plan_mode(plan=<方案 Markdown>) 提交。"
+                "提交后**立即返回 final** 把方案呈现给用户，不要在同一轮开始执行——"
+                "用户确认（说\"继续\"）后才按方案动手。")
+            task = f"{task}{plan_hint}"
+            if existing:
+                AGENT_SESSIONS.patch(sid, plan_mode=1)
         # 记忆作用域随工作区切换：工作区记忆不跨项目泄露；来源会话用于溯源
         AGENT_TOOLS.memory_scope = memory_scope_for(AGENT_TOOLS.root)
         AGENT_TOOLS.current_session_id = sid

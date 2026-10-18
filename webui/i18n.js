@@ -455,8 +455,8 @@ Object.assign(I18N_EN, {
  "列出全部可用命令": "List all available commands",
  "目标模式：建立目标后多轮推进，未完成不会停":
    "Goal mode: creates a goal and keeps pushing across rounds until done",
- "计划模式：只产出分步计划并停下，不动文件":
-   "Plan mode: produces a step-by-step plan and stops, without touching files",
+ "计划模式（只读）：探索后产出方案，exit_plan_mode 提交":
+   "Plan mode (read-only): explore, then submit a plan via exit_plan_mode",
  "用法：/goal 你的目标": "Usage: /goal your objective",
  "用法：/plan 你的任务": "Usage: /plan your task",
  "进行中": "active",

@@ -1697,6 +1697,18 @@ class AgentRunner:
                                 result["spill"] = _spill
                             step["spill"] = _spill
                         step.update({"status": "ok", "result": result})
+                        # 计划模式：提交方案就结束本轮（模型不一定听话地返回 final，
+                        # 实测它提交完会继续动手执行——那等于计划模式没起作用）。
+                        if tool == "exit_plan_mode" and isinstance(result, dict) and result.get("ok"):
+                            # 先把这一步记进时间线：早退会跳过循环末尾的常规落库，
+                            # 否则"探索→提交方案"的过程在界面上完全看不到。
+                            history.append(step); all_steps.append(step); self.step_saver(step)
+                            plan_text = str(result.get("plan") or "").strip()
+                            final_step = {"step": total + 2, "status": "plan_submitted",
+                                          "reason": "计划已提交，等待用户确认后执行"}
+                            history.append(final_step); all_steps.append(final_step)
+                            self.step_saver(final_step)
+                            return AgentResult(plan_text or "计划已提交", all_steps)
                         if tool in _action_tools:
                             self._action_done = True
                         event = result.get("file_event") if isinstance(result, dict) else None
