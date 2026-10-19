@@ -330,6 +330,14 @@ function noteText(data, fallback) {
 
 /* ── 长尾补充（面板/记忆/技能/回滚/删除明细/演示数据/HTML 片段）────────── */
 Object.assign(I18N_EN, {
+  // 审批：授权后时间线要给出正面记录，不再停在"未获授权"
+  "已授权": "Authorized",
+  "已授权，已执行": "Authorized and executed",
+  "授权已下达": "Authorization granted",
+  "授权已下达，该操作已继续执行": "Authorization granted; the operation continued",
+  "（用后即焚）": " (single-use)",
+  "（本会话内不再逐次询问）": " (not asked again in this session)",
+  "note.approval_session_granted": "Session-wide authorization granted; this tool will not ask again in this session",
   " 个</div>": " item(s)</div>",
   " 个菜单项，无新增）": " menu entries, nothing new)",
   " 字符]</span>": " chars]</span>",

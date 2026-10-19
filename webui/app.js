@@ -977,8 +977,28 @@ function renderSteps(steps,force){
   filtered?`${shown.length}/${lastSteps.length}`+tr(' 条（筛选）')
           :(lastSteps.length?lastSteps.length+tr(' 条'):'');
  fillStepTools();
- shown.slice(renderedSteps).forEach(s=>{
+ // 已被后续成功步骤"解决"的审批拦截：同一个 tool 在本步之后有 ok 步骤，
+ // 说明用户后来授权并执行成功了——这条不该继续以"失败"的样子留在时间线里。
+ // 注意区分两种解决方式：真的执行了（ok）才敢写"已执行"，只有授权记录时只说"已授权"。
+ const resolvedApprovals=new Map();   // index -> 'ok' | 'granted'
+ shown.forEach((s,i)=>{
+  if(s.status!=='approval_required')return;
+  const tool=String(s.tool||'');
+  let by=null;
+  for(let j=i+1;j<shown.length;j++){
+   const t=shown[j];
+   if(String(t.tool||'')!==tool)continue;
+   if(t.status==='ok'||t.status==='approval_granted'){
+    if(t.status==='ok'){by='ok';break}
+    by=by||'granted';
+   }}
+  if(by)resolvedApprovals.set(i,by)});
+ shown.slice(renderedSteps).forEach((s,_k)=>{
+  const idx=renderedSteps+_k;
+  const resolvedBy=resolvedApprovals.get(idx);
+  const granted=(s.status==='approval_granted')||!!resolvedBy;
   let cls=s.status==='ok'?'ok':(s.status==='error'||s.status==='invalid_action'?'error':'info');
+  if(granted)cls='ok';                     // 已授权：按成功样式呈现，不再误导为失败
   let e=document.createElement('div');e.className='step '+cls;
   let tm=s._time?new Date(s._time*1000).toLocaleTimeString('zh-CN',{hour12:false}):'';
   let detail='';
@@ -990,7 +1010,19 @@ function renderSteps(steps,force){
     `<div class="stepview" data-mode="render">${stepResultRender(s)}</div>`+
     `<div class="stepview" data-mode="json" style="display:none"><div class="jsonview">${jv(s.result)}</div></div>`+
     `</details>`}
-  e.innerHTML=`<div class="head"><b>${tr('步骤')} ${esc(s.step??'-')} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(s.status||'')}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(s.reason||s.error||'')}</div>${detail}`;
+  let chipTxt=(s.status==='approval_granted')?tr('已授权')
+    :(resolvedBy==='ok'?tr('已授权，已执行'):(resolvedBy?tr('已授权'):(s.status||'')));
+  // approval_granted 这步的 reason 是后端中文原文：这里按语言重写，并保留授权范围信息
+  let whyTxt;
+  if(s.status==='approval_granted'){
+   const _scope=(s.result||{}).scope;
+   whyTxt=tr('授权已下达')+(String(_scope)==='session'?tr('（本会话内不再逐次询问）'):tr('（用后即焚）'));
+  }else if(resolvedBy){
+   whyTxt=(resolvedBy==='ok')?tr('授权已下达，该操作已继续执行'):tr('授权已下达');
+  }else{
+   whyTxt=s.reason||s.error||'';
+  }
+  e.innerHTML=`<div class="head"><b>${tr('步骤')} ${esc(s.step??'-')} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(chipTxt)}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(whyTxt)}</div>${detail}`;
   box.prepend(e)});
  renderedSteps=shown.length;
  if(!shown.length&&!box.innerHTML.trim()){

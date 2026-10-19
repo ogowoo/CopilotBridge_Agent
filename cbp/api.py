@@ -1525,6 +1525,24 @@ async def grant_approval(sid: str, payload: dict):
         b.AGENT_SESSIONS.patch(sid, last_error=None, approval_pending=None)
     except Exception:
         pass
+    # 时间线要有一条**正面**记录：否则拦下那条 "approval_required" 会成为唯一
+    # 显示，看起来像"一直没授权"（用户实测反馈）。
+    try:
+        _step_no = int((session or {}).get("total_steps", 0)) + 1
+        _step = {"step": _step_no, "status": "approval_granted", "tool": tool,
+                 "reason": ("已授予本会话级授权" if scope == "session" else "已授权一次（用后即焚）"),
+                 "result": {"tool": tool, "args_hash": args_hash, "scope": scope}}
+        b.AGENT_SESSIONS.add_step(sid, _step_no, int((session or {}).get("conversation_index", 0)), _step)
+    except Exception:
+        pass
+    # 恢复时明确告诉模型"已授权"，否则它可能沿用历史里"需要授权"的判断而放弃重试
+    try:
+        _hint = ("用户已授权对 %s 执行**这一次**操作（参数指纹 %s%s），请继续刚才被拦下的步骤。"
+                 % (tool, args_hash,
+                    "，本会话内该工具不再逐次询问" if scope == "session" else "，用后即焚"))
+        b.set_resume_hint(sid, _hint)
+    except Exception:
+        pass
     return {"ok": True, "tool": tool, "args_hash": args_hash,
             "scope": scope, "note": note, "note_code": note_code}
 

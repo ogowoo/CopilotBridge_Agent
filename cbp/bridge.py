@@ -2112,6 +2112,18 @@ async def ensure_browser_ready() -> bool:
 
 
 _RESUMING: set = set()
+# 恢复时给模型的一句话补充（目前用于"用户已授权"）：一次性消费，用完即清。
+_RESUME_HINTS: dict = {}
+
+
+def set_resume_hint(sid: str, hint: str) -> None:
+    """登记一次性的恢复提示（例如"用户已授权 delete_path（仅这一次）"）。"""
+    if sid and str(hint or "").strip():
+        _RESUME_HINTS[sid] = str(hint).strip()
+
+
+def discard_resume_hint(sid: str) -> None:
+    _RESUME_HINTS.pop(sid, None)
 # 已排队但还没拿到锁的 resume 任务：同一会话来新消息时应当被取代，
 # 否则 resume 用的旧任务文本会和用户新消息各跑一遍（顺序双跑、重复动作）。
 _PENDING_RESUME: dict = {}
@@ -2155,9 +2167,16 @@ async def resume_session_task(sid: str) -> bool:
     _RESUMING.add(sid)
     try:
         AGENT_SESSIONS.patch(sid, state="ready", last_error=None)
+        # 一次性授权后的恢复要**明确告诉模型"已授权"**：历史里留着"需要用户授权"
+        # 的拦截消息，若恢复时只重发原任务，模型很可能据此认定该操作被拒而放弃
+        # （实测：授权后工具根本不重试，时间线只剩那条"未获授权"）。
+        _task = state.get("original_task") or "继续"
+        _hint = _RESUME_HINTS.pop(sid, "")
+        if _hint:
+            _task = _task + "\n\n" + _hint
         req = AgentRequest(
             model=normalize_model_soft(state.get("model") or DEFAULT_MODEL),
-            messages=[Message(role="user", content=state.get("original_task") or "继续")],
+            messages=[Message(role="user", content=_task)],
             stream=False, session_id=sid, workspace=state.get("workspace"))
         task = asyncio.create_task(run_agent(req))
         _PENDING_RESUME[sid] = task
