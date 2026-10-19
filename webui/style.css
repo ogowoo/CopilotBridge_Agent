@@ -942,3 +942,10 @@ body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
    （手册按钮加了 focus 描边后特别明显）。内边距归零，靠 place-items 居中即可。 */
 .iconbtn{padding:0}
 .iconbtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* TIMELINE-TAB: 时间线并入实时面板后，面板内自己滚动（与其他 .livepane 一致）。
+   注意：卡片是 display:block，flex 撑高不生效，必须用 max-height 约束，
+   否则面板会长到内容高度（实测 48 步时 4740px，整页被拉长）。 */
+#timeline{padding:0;max-height:48vh;overflow:hidden;display:flex;flex-direction:column}
+#timeline>.chead{flex:none;padding:8px 12px;border-bottom:1px solid var(--line)}
+#timeline>#steps{flex:1 1 auto;min-height:0;overflow:auto}

@@ -2436,9 +2436,25 @@ function openTask(){
 
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closePlugins();closeWs();closePanels();k()}});
 
+/* 把独立的「步骤时间线」卡片并入实时面板标签页（像 DSH 那样一个面板看全部）。
+   直接搬 DOM 节点：筛选下拉、导出按钮、每步的展开/收起全部照旧，不重写渲染逻辑。 */
+function mountTimelineIntoTab(){
+ const steps=document.getElementById('steps');
+ const pane=document.getElementById('timeline');
+ if(!steps||!pane||pane.dataset.mounted)return;
+ const sec=steps.closest('section.card');
+ if(sec){
+  const head=sec.querySelector('.chead');
+  if(head)pane.appendChild(head);
+ }
+ pane.appendChild(steps);
+ if(sec)sec.remove();
+ pane.dataset.mounted='1';
+}
+
 /* ── 实时面板选项卡 + 放大查看 ── */
-const LIVE_NAMES={activity:'当前执行状态',answer:'当前回答',prompt:'最近发送的内容',chat:'继续对话'};
-const LIVE_TAB={activity:'tabActivity',answer:'tabAnswer',prompt:'tabPrompt',chat:'tabChat'};
+const LIVE_NAMES={activity:'当前执行状态',answer:'当前回答',prompt:'最近发送的内容',chat:'继续对话',timeline:'步骤时间线'};
+const LIVE_TAB={activity:'tabActivity',answer:'tabAnswer',prompt:'tabPrompt',chat:'tabChat',timeline:'tabTimeline'};
 let liveTabName='activity';
 let lastAns='';
 let lastAnsHtml='';
@@ -3141,6 +3157,7 @@ attachPasteHandler('followup','follow');
   }
  applyI18n(document);   // 静态界面按当前语言渲染（data-i18n + 静态 DOM 直译）
  applyLangButton();
+ mountTimelineIntoTab();
  loadModels();browserState();mergePluginI18n(true);
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();

@@ -275,6 +275,32 @@ class _Extra:
             exe, "-NoProfile", "-NonInteractive", "-Command", command,
             cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
 
+    @staticmethod
+    async def _kill_tree(proc: Any) -> None:
+        """杀掉整个进程树。
+
+        Windows 上 `proc.kill()` 只结束直接子进程（pwsh.exe），它启动的
+        孙进程（python/git/pip）会继续持有 stdout 管道——`communicate()` 永远
+        等不到 EOF，于是"超时"形同虚设（实测：一条 pip/测试命令把任务卡了 8 分钟
+        还没返回，界面上只显示"等待 Copilot 回答"）。
+        """
+        import os
+        import subprocess as sp
+        try:
+            if os.name == "nt":
+                await asyncio.create_subprocess_exec(
+                    "taskkill", "/T", "/F", "/PID", str(proc.pid),
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL)
+            else:
+                import signal
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
     async def pwsh(self, command: str, workdir: str = "", timeout_seconds: float | None = None,
                    run_in_background: bool = False) -> dict[str, Any]:
         """执行 PowerShell 命令。run_in_background=true 时返回 job_id（用 job_output 取输出）。"""
@@ -322,11 +348,20 @@ class _Extra:
         try:
             out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
+            await self._kill_tree(proc)
             try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
-            raise ExtraToolError(f"命令超时（>{timeout:.0f}s），已终止: {command[:120]}")
+                out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=5)
+            except Exception:
+                out_b, err_b = b"", b""
+            partial = (out_b or b"").decode("utf-8", "replace")[-800:]
+            tail = (err_b or b"").decode("utf-8", "replace")[-400:]
+            msg = (f"命令超时（>{timeout:.0f}s），已终止整个进程树: {command[:160]}\n"
+                   "换策略：拆小命令、加更精确的筛选参数，或用 run_in_background=true 后 job_output 轮询。")
+            if partial:
+                msg += f"\n超时前输出（末尾）：\n{partial}"
+            if tail:
+                msg += f"\nstderr：\n{tail}"
+            raise ExtraToolError(msg)
         except Exception as exc:
             raise ExtraToolError(f"执行失败: {exc}") from exc
         out = (out_b or b"").decode("utf-8", "replace")

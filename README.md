@@ -633,6 +633,18 @@ curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C
 
 > 尚未接入：旧版 **HTTP+SSE 双端点**传输（2024-11-05 老规范，只支持 streamable HTTP）。
 
+### 5.3.2 长命令与"看不到在跑什么"
+
+- **`pwsh` 超时会终止整棵进程树**：只 `proc.kill()` 会留下孙进程（`python`/`git`/`pip`）
+  继续持有 stdout 管道，`communicate()` 永远等不到 EOF——实测一条 `pip install PySide6`
+  把任务卡住 10 分钟、超时形同虚设。现在 `taskkill /T /F`（POSIX `killpg`）+ 5s 兜底
+  取回部分输出，错误里直接提示"换策略：拆小命令 / 用 run_in_background + job_output"。
+- **实时面板显示正在执行的步骤**：`runtime.phase` 在 step 开始时置为 `executing`
+  （`正在执行第 N 步 · 工具名`），结束后回到 `thinking`。以前整个执行期间界面都停在
+  上一轮的 "waiting · 等待 Copilot 回答"，看着像挂死。
+- **时间线并入实时面板**：`当前执行状态 / 当前回答 / 最近发送内容 / 继续对话 / 步骤时间线`
+  五个标签共用一个面板（像 DSH 一屏看全），时间线在该标签内滚动；筛选与导出照旧。
+
 ### 5.3.1 编辑工具：容错匹配 + 补丁（治"改文件失败→回合爆炸"）
 
 痛点：模型抄片段时缩进（tab/空格、层级）、行尾空白稍有出入，`replace_text` 就匹配失败，

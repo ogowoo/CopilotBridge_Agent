@@ -3409,8 +3409,15 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
         AGENT_TOOLS.set_snapshot_hook(self_snapshot_hook(sid))
         AGENT_TOOLS.self_rollback_fn = lambda: SNAPSHOTS.restore(self_scope(sid), BASE)
         runner=AgentRunner(AGENT_TOOLS,turn,AGENT_CFG,get,save,add_step,add_file,add_conv_stat,
-                        step_begin=lambda no,tool,h: AGENT_SESSIONS.begin_step(sid, _conv_index(sid), no, tool, h),
-                        step_finish=lambda no,st='done': AGENT_SESSIONS.finish_step(sid, _conv_index(sid), no, st),
+                        step_begin=lambda no, tool, h: (
+                            AGENT_SESSIONS.begin_step(sid, _conv_index(sid), no, tool, h),
+                            # 让界面显示"正在执行 X"，而不是停在上一轮的 waiting
+                            runtime_update(sid, phase="executing",
+                                           detail=f"正在执行第 {no} 步 · {tool}",
+                                           step_started=time.time())),
+                        step_finish=lambda no, st='done': (
+                            AGENT_SESSIONS.finish_step(sid, _conv_index(sid), no, st),
+                            runtime_update(sid, phase="thinking", detail=f"第 {no} 步已完成（{st}）")),
                         approval_check=lambda tool,h: AGENT_SESSIONS.take_approval(sid, tool, h))
         try:
             PLUGINS.emit("session_start", session_id=sid, task=effective_task, model=req.model)
