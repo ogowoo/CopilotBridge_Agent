@@ -406,6 +406,12 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 /* ── 删除结果弹窗 ── */
 .mask{position:fixed;inset:0;background:var(--mask-bg);display:none;align-items:center;justify-content:center;z-index:60;padding:22px}
 .mask.open{display:flex}
+/* 通用提示/确认层（#gmMask）必须压在所有 .mask 之上：它是"从某个弹层里再弹出"的
+   二级对话框——例如目录选择器（#wsMask）里点「新建目录」就是弹它。
+   所有 .mask 同为 z-index:60 时**同级由 DOM 顺序决定**，而 #wsMask 在 DOM 里
+   排在 #gmMask 之后，于是提示框被目录选择器盖住（用户实测：新建文件夹的窗口在
+   目录选择器下面）。这里把二级对话框抬到 70，彻底不依赖 DOM 顺序。 */
+#gmMask{z-index:70}
 .dlg{width:min(640px,94vw);max-height:86vh;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line2);border-radius:14px;box-shadow:0 24px 70px var(--dlg-shadow);overflow:hidden;animation:dlgIn .16s ease-out}
 @keyframes dlgIn{from{transform:translateY(8px);opacity:0}}
 .dhead{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);font-weight:650;font-size:15px}
