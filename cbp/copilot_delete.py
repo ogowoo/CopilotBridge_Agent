@@ -145,6 +145,37 @@ async def _conversation_belongs_to_session(url: str, session_prefix: str) -> boo
     return session_prefix in (body or "")
 
 
+async def _ensure_page_for_delete() -> None:
+    """删除远端会话前确保浏览器**可用且已登录**。
+
+    两个真实故障：
+    1. 浏览器按需启动（/health browser=idle），而删除流程直接用 `page.goto` →
+       弹窗显示 `'NoneType' object has no attribute 'goto'`（用户："重试远程删除失败"）；
+    2. 浏览器起来了但**登录态过期**（browser=needs_login）→ 点侧栏到处超时，
+       报一个跟登录毫无关系的错。这里提前给出可执行的提示。
+    """
+    if _b.page is None:
+        ensure = getattr(_b, "ENSURE_BROWSER", None)
+        if ensure is not None:
+            try:
+                await ensure()
+            except Exception as exc:                 # noqa: BLE001
+                raise RuntimeError(f"浏览器启动失败，无法删除远端会话：{exc}") from exc
+        if _b.page is None:
+            raise RuntimeError(
+                "浏览器未就绪：无法删除远端会话。"
+                "请先在界面上打开一次 Copilot（或点顶部「重试浏览器」），或改为仅清理本地记录。")
+    # 登录态检查（探测本身失败不阻断，让后续流程自己报错）
+    try:
+        ready = await wait_copilot_ready(timeout=20)
+    except Exception:
+        ready = True
+    if not ready:
+        raise RuntimeError(
+            "Copilot 未就绪（需要登录）：请在自动化浏览器窗口完成登录后重试，"
+            "或改为仅清理本地记录。")
+
+
 async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
     page = _b.page  # 模块级缓存会拿到死引用（浏览器重启会换对象），每函数取值
     """Delete a saved Copilot conversation by URL, with a same-session marker guard.
@@ -155,6 +186,8 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
     result = {"url": url, "expected_title": expected_title, "deleted": False,
               "error": None, "method": "url-plus-session-marker"}
     try:
+        await _ensure_page_for_delete()
+        page = _b.page
         marker_match = re.match(r"^(\[CBP-AGENT\]\[[^\]]+\])\[C\d+\]$", expected_title)
         if not marker_match:
             raise RuntimeError("拒绝删除：目标没有合法 CBP-AGENT 标识")
@@ -440,6 +473,15 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
 
 
 async def finalize_session_remote_deletion(sid: str, remote_results: list) -> list:
+    if not remote_results:
+        return remote_results          # 没有远端条目就不用（也不该）碰浏览器
+    try:
+        await _ensure_page_for_delete()
+    except RuntimeError as exc:
+        for item in remote_results:
+            if not item.get("deleted"):
+                item["error"] = item.get("error") or str(exc)
+        return remote_results
     page = _b.page  # 模块级缓存会拿到死引用（浏览器重启会换对象），每函数取值
     """对账式终验：以 [CBP-AGENT][sid] 侧栏标记为准，而不是逐个 URL 的弹窗识别。
 
