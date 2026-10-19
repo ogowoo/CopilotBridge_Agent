@@ -1568,10 +1568,13 @@ let _focusBeforeMask=null;
 function _maskFocusables(root){
  return [...root.querySelectorAll('button,input,textarea,select,a[href],[tabindex]:not([tabindex="-1"])')]
   .filter(e=>!e.disabled&&e.getAttribute('aria-hidden')!=='true'&&e.offsetParent!==null)}
+let _maskZ=100;
 function openMask(id){
  const m=document.getElementById(id);if(!m)return;
  _focusBeforeMask=document.activeElement;
  m.classList.add('open');
+ // **后打开的盖住先打开的**：面板从插件管理里打开时必须在上层（实测被挡住）。
+ m.style.zIndex=String(++_maskZ);
  const f=_maskFocusables(m);if(f.length)setTimeout(()=>{try{f[0].focus()}catch(e){}},60)}
 function closeMask(id){
  const m=document.getElementById(id);if(m)m.classList.remove('open');
@@ -1734,7 +1737,18 @@ async function applyRuntime(r){
  try{renderGoalBar(r)}catch(e){}
  currentUrl=r.current_url||currentUrl;
   document.getElementById('pulse').className=r.busy?'pulse':'dot-off';
-  const _actTxt=`阶段: ${r.phase||r.session_state}\n${r.detail||''}\n总步骤: ${r.total_steps}\n当前会话步骤: ${r.conversation_steps}\nToken估算: ${r.estimated_tokens}\n会话序号: ${(r.conversation_index??0)+1}\n${r.queue_pending?`队列: ${r.queue_pending} 条待处理\n`:''}最后更新: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():''}${r.model_warning?`\n\n⚠ ${r.model_warning}`:''}`;
+  const _dash=(v)=> (v===undefined||v===null||v==='')?'—':v;
+   const _actTxt=`${tr('阶段')}: ${_dash(r.phase||r.session_state)}`
+    +`\n${r.detail||''}`
+    +`\n${tr('总步骤')}: ${_dash(r.total_steps)}`
+    +`\n${tr('当前会话步骤')}: ${_dash(r.conversation_steps)}`
+    +`\n${tr('Token估算')}: ${_dash(r.estimated_tokens)}`
+    +`\n${tr('会话序号')}: ${(r.conversation_index??0)+1}`
+    +(r.queue_pending?`${tr('队列')}: ${r.queue_pending} ${tr('条待处理')}\n`:'')
+    // 暂停/失败时把原因摆出来：以前只显示一个空的「最后更新:」
+    +(r.last_error?`\n${tr('最近错误')}: ${r.last_error}`:'')
+    +`\n${tr('最后更新')}: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():'—'}`
+    +(r.model_warning?`\n\n⚠ ${r.model_warning}`:'');
   const _actEl=document.getElementById('activity');
   if(_actEl.textContent!==_actTxt)_actEl.textContent=_actTxt;   // 内容没变不重写：否则每秒打断文本选择/重排
   let _ans=r.answer_preview||'等待模型回答…',_ae=document.getElementById('answer'),_pj=null;
@@ -1948,14 +1962,16 @@ let lastDeleteResult=null;
 function showDeleteResult(d){
  lastDeleteResult=d;
  let list=d.remote_results||[],ok=list.filter(x=>x.deleted).length,fail=list.length-ok;
- document.getElementById('dlgHint').textContent=list.length?`共 ${list.length} 个 Copilot 会话 · 成功 ${ok} · 失败 ${fail}`:'';
- let msg=document.getElementById('dlgMsg');msg.style.display=d.message?'':'none';msg.textContent=d.message||'';
+ document.getElementById('dlgHint').textContent=list.length
+  ?tr('共 {n} 个 Copilot 会话 · 成功 {a} · 失败 {b}',{n:list.length,a:ok,b:fail}):'';
+ let msg=document.getElementById('dlgMsg');msg.style.display=d.message?'':'none';
+ msg.textContent=d.message?tr(d.message):'';
  let box=document.getElementById('dlgList');box.innerHTML='';
- if(!list.length)box.innerHTML='<div class="dmsg">没有远程删除明细。</div>';
+ if(!list.length)box.innerHTML='<div class="dmsg">'+esc(tr('没有远程删除明细。'))+'</div>';
  list.forEach(r=>{let e=document.createElement('div');e.className='dres '+(r.deleted?'ok':'fail');
-  e.innerHTML=`<div class="rhead"><span class="ric">${r.deleted?'✓':'✗'}</span><span class="ttl" title="${esc(r.expected_title||'')}">${esc(r.expected_title||'(无标记)')}</span><span class="mth">${esc(r.method||'')}</span></div>`+
-   (r.url?`<div class="url" title="点击复制完整 URL">${esc(r.url)}</div>`:'')+
-   (r.error?`<div class="err">${esc(r.error)}</div>`:'');
+  e.innerHTML=`<div class="rhead"><span class="ric">${r.deleted?'✓':'✗'}</span><span class="ttl" title="${esc(r.expected_title||'')}">${esc(r.expected_title||tr('(无标记)'))}</span><span class="mth">${esc(r.method||'')}</span></div>`+
+   (r.url?`<div class="url" title="${tr('点击复制完整 URL')}">${esc(r.url)}</div>`:'')+
+   (r.error?`<div class="err">${esc(tr(r.error))}</div>`:'');
   if(r.url)e.querySelector('.url').onclick=ev=>{try{navigator.clipboard.writeText(r.url);ev.target.textContent=tr('已复制 ✓  ')+r.url}catch(_){dlgAlert(r.url,tr('链接'))}};
   box.appendChild(e)});
  document.getElementById('dlgForce').style.display=fail?'':'none';

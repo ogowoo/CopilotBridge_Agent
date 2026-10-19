@@ -1014,7 +1014,8 @@ async def control(sid: str, action: str):
 
 
 @app.delete("/v1/agent/sessions/{sid}")
-async def delete_session(sid: str, delete_remote: bool = False, force_local: bool = False):
+async def delete_session(sid: str, delete_remote: bool = False, force_local: bool = False,
+                         request: HttpRequest = None):
     state = b.AGENT_SESSIONS.get(sid)
     if not state:
         raise HTTPException(404, "Session 不存在")
@@ -1040,11 +1041,17 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
             b._forget_selected_model()  # 删除过程中页面在多个会话间跳转
         failed = [x for x in remote_results if not x["deleted"]]
         if failed and not force_local:
+            lang = _lang_of(request)
+            for item in remote_results:
+                if item.get("error"):
+                    item["error"] = backend_i18n.translate(str(item["error"]), lang)
             return {
                 "deleted": False,
                 "local_deleted": False,
                 "remote_results": remote_results,
-                "message": "部分 Copilot 会话删除失败，本地 Session 已保留。可检查后使用 force_local=true 仅清理本地记录。",
+                "message": backend_i18n.translate(
+                    "部分 Copilot 会话删除失败，本地 Session 已保留。可检查后使用 "
+                    "force_local=true 仅清理本地记录。", lang),
             }
 
     local_deleted = b.AGENT_SESSIONS.delete(sid)
@@ -1058,11 +1065,16 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
         # 自升级"选中，把服务代码恢复到某个已不存在任务的旧原像。
         b.SNAPSHOTS.clear(sid)
         b.SNAPSHOTS.clear(b.self_scope(sid))
+    lang = _lang_of(request)
+    for item in remote_results:
+        if item.get("error"):
+            item["error"] = backend_i18n.translate(str(item["error"]), lang)
     return {
         "deleted": local_deleted,
         "local_deleted": local_deleted,
         "remote_results": remote_results,
-        "remote_skipped": "未记录任何远端会话 URL，跳过远端删除" if delete_remote and not remote_results else None,
+        "remote_skipped": backend_i18n.translate("未记录任何远端会话 URL，跳过远端删除", lang)
+        if delete_remote and not remote_results else None,
     }
 
 

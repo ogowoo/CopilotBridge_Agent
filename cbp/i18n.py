@@ -39,6 +39,16 @@ EXACT: dict[str, str] = {
     "指令不能为空": "Instruction must not be empty",
     "内容不能为空": "Content must not be empty",
     "写入失败": "Write failed",
+    # 远端会话删除（200 响应里的 message / remote_results[*].error，不是 HTTPException，
+    # 所以要在这里登记，由 API 层按 X-CBP-Lang 翻译）
+    "部分 Copilot 会话删除失败，本地 Session 已保留。可检查后使用 force_local=true 仅清理本地记录。":
+        "Some Copilot conversations could not be deleted; the local session is kept. "
+        "Inspect the list, then use force_local=true to delete only the local record.",
+    "未记录任何远端会话 URL，跳过远端删除":
+        "No remote conversation URLs recorded; skipped remote deletion",
+    "左侧 Chats 中找不到与保存 URL 对应的会话；侧栏未能读出会话列表，无法确认是否已删除":
+        "Could not find the conversation matching the saved URL in the left Chats list, "
+        "and the sidebar list was unreadable, so deletion cannot be confirmed",
     "删除失败": "Delete failed",
     "非法文件名": "Invalid file name",
     "headless 必须是布尔值": "headless must be a boolean",

@@ -964,3 +964,10 @@ body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
   font-variant-numeric:tabular-nums;
 }
 #chat, #timeline{background:var(--panel)}
+
+/* PANE-BOTTOM-RADIUS: 面板自己做底部圆角。
+   卡片（.card）是 12px 圆角但 overflow:visible，面板的白底会盖住卡片的下半圆角，
+   看起来"底部是方角"（用户截图）。五个面板统一带上底部圆角，配合各自 overflow:hidden
+   把内容裁在圆角内。 */
+#chat, #timeline, #activity, #answer, #prompt{border-radius:0 0 11px 11px}
+#chat, #timeline{overflow:hidden}

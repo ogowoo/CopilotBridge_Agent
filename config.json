@@ -28,7 +28,7 @@
     "session_timeout_seconds": 86400,
     "completed_session_retention_days": 30,
     "session_store": "data/agent.db",
-    "auto_resume": true,
+    "auto_resume": false,
     "auto_compact": true,
     "auto_rollover": true,
     "max_read_chars": 120000,

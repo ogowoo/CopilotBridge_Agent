@@ -472,6 +472,24 @@ def _subagent_panel_filters_by_parent() -> None:
                 f"webui/app.js:{line} 拉子代理没带 parent=（会串台显示别人的子代理）")
 
 
+@invariant("页面里所有静态文案都有英文键")
+def _static_text_translated() -> None:
+    """`index.html` 里的中文文本与属性都必须能在 i18n.js 找到英文词条。
+
+    与运行态覆盖审计的分工：运行态只能看到**当时打开**的界面，隐藏弹窗（删除结果、
+    放大查看等）里的文案它永远扫不到——实测就是这样漏掉了「删除结果」「复制结果 JSON」
+    「没有远程删除明细。」。这里做静态全量扫描，`data-i18n-skip` 标记的子树按数据跳过。
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "i18n_static_scan", ROOT / "scripts" / "i18n_static_scan.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)          # type: ignore[union-attr]
+    missing = mod.check()
+    if missing:
+        raise InvariantError(f"这些静态文案没有英文词条: {missing[:6]}")
+
+
 @invariant("静态属性文案都有英文键")
 def _static_attrs_translated() -> None:
     """`index.html` 里含中文的 title/placeholder/aria-label/alt 必须有英文词条。
