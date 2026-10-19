@@ -1827,20 +1827,43 @@ async function control(a){if(!current)return;try{let r=await api(`/v1/agent/sess
 async function activate(){if(!current)return;try{let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/activate`,{method:'POST'});currentUrl=d.url;toast(tr('已将自动化 Edge 切换到该会话'),'ok')}catch(e){toast(tr('操作失败: ')+e,'err')}}
 function openCopilot(){if(currentUrl){if(!/^https?:\/\//i.test(currentUrl)){toast(tr('地址不是 http(s)，已拒绝打开'),'err');return}window.open(currentUrl,'_blank','noopener,noreferrer')}
  else toast(isProviderModel(currentModel)?tr('该会话用的是 API 提供商模型，没有可打开的网页对话'):tr('该 Session 暂无网页会话地址'),'err')}
-async function removeSession(remote){
+/* 删除会话：**自动判断是否用过 Copilot**，用过就一并删远端记录。
+   实测痛点：任务删不掉——一是用户不知道该点"仅删本地"还是"连同 Copilot"，
+   二是远端删不掉时整个删除被中止、任务留在列表里。现在合并成一个入口。 */
+async function removeSession(auto){
  if(!current)return;
- let extra=remote?tr('，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）'):'';
-  let msg=tr('即将删除的会话：\n\n  ID: {id}\n  标题: {title}\n\n仅删除本地 Session{extra}。此操作不可撤销，确定继续？',
-  {id:current,title:(document.getElementById('title').textContent||'').trim(),extra:extra});
-  if(!await dlgConfirm(msg,tr('删除确认'),true))return;
- try{let url='/v1/agent/sessions/'+encodeURIComponent(current)+(remote?'?delete_remote=true':'');
+ const sid=current;
+ let plan=null;
+ try{ plan=await api('/v1/agent/sessions/'+encodeURIComponent(sid)+'/deletion-plan') }catch(e){ plan=null }
+ if(plan&&plan.running){toast(tr('该任务正在运行，先停止再删除'),'err');return}
+ const remote=plan? !!plan.suggest_delete_remote : !!auto;
+ const extra=remote
+   ?tr('，并删除该任务关联的 {n} 个 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）',{n:(plan&&plan.remote_count)||1})
+   :'';
+ const msg=(remote
+   ?tr('这个任务用过 Copilot，将同时删除远端对话记录。\n\n  ID: {id}\n  标题: {title}\n\n本地 Session{extra}。此操作不可撤销，确定继续？',
+       {id:sid,title:(document.getElementById('title').textContent||'').trim(),extra:extra})
+   :tr('即将删除的会话：\n\n  ID: {id}\n  标题: {title}\n\n仅删除本地 Session（这个任务没有用过 Copilot 网页会话）。此操作不可撤销，确定继续？',
+       {id:sid,title:(document.getElementById('title').textContent||'').trim()}));
+ if(!await dlgConfirm(msg,tr('删除确认'),true))return;
+ try{
+  let url='/v1/agent/sessions/'+encodeURIComponent(sid);
+  const qs=[];
+  if(remote)qs.push('delete_remote=true');
+  // 用过 Copilot 但远端删不掉时，本地也要清掉（否则任务永远留在列表里）
+  if(remote)qs.push('force_local=true');
+  if(qs.length)url+='?'+qs.join('&');
   let d=await api(url,{method:'DELETE'});
-  if(!d.deleted){showDeleteResult(d);return}
-   stopEvents();          // 删掉当前会话必须停 SSE，否则重连定时器会一直敲已删除的会话
-  current=null;
-  document.getElementById('sessionView').style.display='none';
-  document.getElementById('emptyState').style.display='flex';
-  await refreshSessions()}catch(e){toast(tr('删除失败: ')+(e.text||e),'err')}}
+  const failed=(d.remote_results||[]).filter(x=>!x.deleted);
+  if(failed.length&&d.deleted){showDeleteResult(d)}      // 本地已删，展示远端失败明细
+  else if(!d.deleted){showDeleteResult(d);return}
+  if(d.deleted){
+   stopEvents();         // 删掉当前会话必须停 SSE，否则重连定时器会一直敲已删除的会话
+   current=null;
+   document.getElementById('sessionView').style.display='none';
+   document.getElementById('emptyState').style.display='flex';
+   await refreshSessions()}
+ }catch(e){toast(tr('删除失败: ')+(e.text||e),'err')}}
 /* ── 限流倒计时：居中卡片，可收起为右下角小标 ── */
 let retryDismissedAt=null;   // 用户已收起的那个终点时间戳（新一轮限流会自动再展开）
 let lastRuntime=null;        // 最近一次 runtime 响应，供小标展开时立即重绘

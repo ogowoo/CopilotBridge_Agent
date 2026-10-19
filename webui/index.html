@@ -81,8 +81,8 @@
               <button type="button" data-act="openPlugins">插件管理…</button>
               <button type="button" data-act="rollbackSession">回滚任务改动…</button>
               <button type="button" class="danger" data-act="rollbackSelfUpgrade">回滚服务自升级…</button>
-              <button type="button" data-act="removeSession" data-arg="false">仅删除本地记录</button>
-              <button type="button" class="danger" data-act="removeSession" data-arg="true">同时删除 Copilot 会话</button>
+            <button type="button" class="danger" data-act="removeSession" data-arg="auto"
+                    data-i18n="删除任务（自动含 Copilot 记录）">删除任务（自动含 Copilot 记录）</button>
               <button type="button" data-act="restartService" title="就地重启本服务（更新代码后用它；正在跑的任务会中断，状态已落库，开着 auto_resume 会自动续跑）">↻ 重启服务</button>
               <button type="button" class="danger" data-act="shutdownService" title="优雅停止本服务进程（正在跑的任务会中断，状态已落库，重启后可恢复）">⏻ 终止服务 / 退出</button>
             </div></div>

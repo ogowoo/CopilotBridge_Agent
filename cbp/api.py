@@ -1013,6 +1013,33 @@ async def control(sid: str, action: str):
     return b.AGENT_SESSIONS.patch(sid, **maps[action])
 
 
+@app.get("/v1/agent/sessions/{sid}/deletion-plan")
+async def session_deletion_plan(sid: str):
+    """删除前先问一句：这个任务用过 Copilot 网页会话吗？
+
+    WebUI 用它做成"一次点击、自动判断"的删除：用过 Copilot 就一并删远端记录，
+    只跑过 API 提供商模型的就只删本地——用户不必自己分辨该点哪个菜单项。
+    """
+    state = b.AGENT_SESSIONS.get(sid)
+    if not state:
+        raise HTTPException(404, "Session 不存在")
+    urls = list(dict.fromkeys(state.get("conversation_urls") or []))
+    if state.get("current_url") and state["current_url"] not in urls:
+        urls.append(state["current_url"])
+    model = str(state.get("model") or "")
+    used_copilot = bool(urls) or model.startswith("copilot")
+    return {
+        "session_id": sid,
+        "used_copilot": used_copilot,
+        "model": model,
+        "conversation_urls": urls,
+        "remote_count": len(urls),
+        "running": b.ACTIVE_SESSION_ID == sid,
+        # 本地记录永远可删；远端只在真用过 Copilot 时才有意义
+        "suggest_delete_remote": used_copilot and bool(urls),
+    }
+
+
 @app.delete("/v1/agent/sessions/{sid}")
 async def delete_session(sid: str, delete_remote: bool = False, force_local: bool = False,
                          request: HttpRequest = None):
@@ -1040,6 +1067,9 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
             remote_results = await cd.finalize_session_remote_deletion(sid, remote_results)
             b._forget_selected_model()  # 删除过程中页面在多个会话间跳转
         failed = [x for x in remote_results if not x["deleted"]]
+        # force_local=true（WebUI 的"一并删，本地必须清掉"）不在这里中断：
+        # 远端删不掉时仍然要删本地，并把失败的远端明细如实带回（否则用户看到的就是
+        # "任务删不掉"——实测报错"左侧 Chats 中找不到…"时任务会留在列表里）。
         if failed and not force_local:
             lang = _lang_of(request)
             for item in remote_results:
