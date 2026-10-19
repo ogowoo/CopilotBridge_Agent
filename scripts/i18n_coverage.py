@@ -33,13 +33,20 @@ CJK = re.compile(r"[\u4e00-\u9fff]")
 
 # 数据容器：内容是模型输出/文件内容/用户名，不是界面文案
 SKIP_SELECTORS = [
-    "#chatlog", "#steps", "#answer", "#activity", "#prompt", "#queueBox",
+    # 注意：**不要**把 `#steps` 整个跳过（以前就是这么写的，导致步骤时间线
+    # 从来没被审计过：「查看结果 / 渲染 / 45 行 / 展开」这些漏翻全藏在下面）。
+    # 只跳过真正属于"数据"的容器。
+    "#chatlog", "#answer", "#activity", "#prompt", "#queueBox",
     ".chatlog", ".steplist", ".msg", ".sessions", "#sessions",
     "#manualBody", "#pluginsBody",
     "#gsResults", "#toasts .toast", "#bootText", "#connText",
     ".answerbody", ".promptview", "#findInput", ".attachlist",
     # 数据而非界面文案：会话标题、子代理任务描述、记忆正文与统计数字、标签
     "#title", ".sa-desc", ".sa-title", "#memList .mem-text", "#memList .mem-meta span",
+    # 步骤详情里的**数据**（渲染出的 kv 列表 / JSON / 代码正文），不是界面文案
+    ".stepview .kvlist", ".stepview .jsonview", ".stepview .md-code", ".stepview .sectlabel",
+    # 步骤的理由/参数是**模型写的**（中文很正常），不是界面文案；.head 仍是 chrome
+    "#steps .why", "#steps .stepview",
 ]
 
 COLLECT = r"""
@@ -125,6 +132,34 @@ def states(page):
         page.wait_for_timeout(450)
         yield name
 
+    # 额外状态：步骤时间线的**详情**（渲染 + JSON 两个视图）。
+    # 这些文案只有展开后才存在；以前 `#steps` 整个在跳过名单里，从来没被审计过。
+    try:
+        page.evaluate("""() => {
+          try { closeMaskAll() } catch (e) {}
+          // 关键：前面的状态（新任务弹窗/手册/插件…）会把 #sessionView 藏起来，
+          // 不恢复的话后面所有状态都扫不到东西（实测 13 个状态全是 0 处）。
+          try {
+            const sv = document.getElementById('sessionView');
+            const es = document.getElementById('emptyState');
+            if (sv) sv.style.display = 'block';
+            if (es) es.style.display = 'none';
+          } catch (e) {}
+          try { liveTab('timeline') } catch (e) {}
+          const first = document.querySelector('#steps .step');
+          if (first) {
+            const d = first.querySelector('details');
+            if (d) d.open = true;
+            const jb = [...first.querySelectorAll('[data-act="stepView"]')]
+                        .find(b => b.dataset.arg === 'json');
+            if (jb) jb.click();
+          }
+        }""")
+        page.wait_for_timeout(500)
+    except Exception:
+        pass
+    yield "步骤时间线详情"
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -155,8 +190,8 @@ def main() -> int:
             for it in items:
                 findings.append({"state": name, **it})
             print(f"  {name}: {len(items)} 处")
-        # 标签页单独采
-        for tab in ("steps", "chat"):   # 合并后只剩实时流与时间线
+        # 标签页单独采（合并后只剩实时流与时间线）
+        for tab in ("steps", "chat"):
             try:
                 page.evaluate(f"liveTab('{tab}')")
                 page.wait_for_timeout(500)

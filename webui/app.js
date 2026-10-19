@@ -710,8 +710,8 @@ function jv(v,key){
  if(typeof v==='boolean')return '<span class="bl">'+v+'</span>';
  if(typeof v==='number')return '<span class="nm">'+v+'</span>';
  if(typeof v==='string'){
-  if(key==='content_b64')return '<span class="nl">[Base64 内容，共 '+v.length+' 字符]</span>';
-  let t=v.length>4000?v.slice(0,4000)+'\n…[共 '+v.length+' 字符，已截断]':v;
+  if(key==='content_b64')return '<span class="nl">'+esc(tr('[Base64 内容，共 {n} 字符]',{n:v.length}))+'</span>';
+  let t=v.length>4000?v.slice(0,4000)+'\n'+tr('…[共 {n} 字符，已截断]',{n:v.length}):v;
   return '<span class="st">"'+esc(t)+'"</span>'}
  if(Array.isArray(v)){if(!v.length)return '[]';
   return '[<div class="ind">'+v.map(x=>'<div>'+jv(x)+'</div>').join('')+'</div><span class="nl">]</span>'}
@@ -1055,9 +1055,9 @@ function renderSteps(steps,force){
   let tm=s._time?new Date(s._time*1000).toLocaleTimeString('zh-CN',{hour12:false}):'';
   let detail='';
   if(s.result!==undefined&&s.result!==null){
-   detail=`<details><summary>查看结果</summary>`+
+   detail=`<details><summary>${esc(tr('查看结果'))}</summary>`+
     `<div class="stepviewbar">`+
-    `<button type="button" class="btn seg on" data-act="stepView" data-arg="render">渲染</button>`+
+    `<button type="button" class="btn seg on" data-act="stepView" data-arg="render">${esc(tr('渲染'))}</button>`+
     `<button type="button" class="btn seg" data-act="stepView" data-arg="json">JSON</button></div>`+
     `<div class="stepview" data-mode="render">${stepResultRender(s)}</div>`+
     `<div class="stepview" data-mode="json" style="display:none"><div class="jsonview">${jv(s.result)}</div></div>`+
@@ -1289,7 +1289,7 @@ function codeMenu(btn){
   ['📋 复制代码','data-act="mCopy"',false],
   ['⬇ 下载为文件','data-act="mDownload"',false],
   ['# '+(noLines?'显示行号':'隐藏行号'),'data-act="mLines"',noLines],
-  ['↩ '+(noWrap?'自动换行':'关闭换行'),'data-act="mWrap"',noWrap],
+  ['↩ '+tr(noWrap?'自动换行':'关闭换行'),'data-act="mWrap"',noWrap],
   ['⌃ '+(folded?'展开全部':'折叠代码'),'data-act="mFold"',folded]];
  const el=document.createElement('div');
  el.className='codemenu';
@@ -1500,19 +1500,19 @@ function renderJsonReply(obj){
  const t=obj&&obj.type;
  if(t==='final'){
   const body=(obj.content!=null?String(obj.content):'');
-  return '<div class="act-badge ok">最终答复</div><div class="md-body">'+mdToHtml(body)+'</div>'}
+  return '<div class="act-badge ok">'+esc(tr('最终答复'))+'</div><div class="md-body">'+mdToHtml(body)+'</div>'}
  if(t==='tool')return actionCardHtml(obj);
  if(t==='actions'){
   const list=Array.isArray(obj.actions)?obj.actions:[];
-  return '<div class="act-badge">批量动作 · '+list.length+' 个</div>'+
+  return '<div class="act-badge">'+esc(tr('批量动作 · {n} 个',{n:list.length}))+'</div>'+
    list.map(actionCardHtml).join('')}
- return '<div class="act-badge">JSON 回复</div>'+jsonViewBox(obj)}
+ return '<div class="act-badge">'+esc(tr('JSON 回复'))+'</div>'+jsonViewBox(obj)}
 function renderAssistantBody(content){
  const raw=String(content==null?'':content);
  const obj=tryParseJson(raw);
  if(obj)return renderJsonReply(obj);
  // 看起来像 JSON 但解析不了：明确告诉用户是原文，而不是让人以为界面坏了
- if(/^\s*[{[]/.test(raw))return '<div class="act-badge warn">JSON 解析失败（原文）</div>'+
+ if(/^\s*[{[]/.test(raw))return '<div class="act-badge warn">'+esc(tr('JSON 解析失败（原文）'))+'</div>'+
    '<div class="md-body">'+mdToHtml(raw)+'</div>';
  return '<div class="md-body">'+mdToHtml(raw)+'</div>'}
 function msgEl(role,content,ts,opts){
@@ -1566,12 +1566,12 @@ function codeBlockHtml(rawCode,lang,opts){
  const long=opts.fold!==false&&n>22;
  return `<div class="md-codewrap${long?' foldable collapsed':''}"><div class="md-codebar">`+
   `<span class="md-lang">${esc(opts.label||langLabel(lang2))}</span>`+
-  (long?`<span class="md-lines">${n} 行</span>`:'')+
+  (long?`<span class="md-lines">${esc(tr('{n} 行',{n:n}))}</span>`:'')+
   '<span class="md-actions">'+
-  `<button type="button" class="md-copsel" data-act="copySelLines" style="display:none">复制选中 0 行</button>`+
+  `<button type="button" class="md-copsel" data-act="copySelLines" style="display:none">${esc(tr('复制选中 0 行'))}</button>`+
   `<button type="button" class="md-icon" title="${esc(tr('复制代码'))}" data-act="copyCode">⧉</button>`+
   `<button type="button" class="md-icon" title="${esc(tr('更多'))}" data-act="codeMenu">…</button>`+
-  (long?`<button type="button" class="md-fold" data-act="toggleCodeFold">展开</button>`:'')+
+  (long?`<button type="button" class="md-fold" data-act="toggleCodeFold">${esc(tr('展开'))}</button>`:'')+
   `</span></div><pre class="md-code"><code>${wrapCodeLines(codeHtml)}</code></pre></div>`}
 
 /* ── 轻量 Markdown 渲染（零依赖、离线可用）─────────────────────────
