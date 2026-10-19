@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from .prompt import AGENT_PROTOCOL, AGENT_TEAM, PromptRegistry
+from .prompt import AGENT_PROTOCOL, AGENT_TEAM, PromptRegistry, FILE_OPS_RULE
 from .spans import set_recorder, span
 from .tools import ToolRegistry
 
@@ -201,6 +201,20 @@ class AgentRunner:
         # 分隔符为空串且顺序与原拼接一致，因此输出**逐字不变**（有 golden 比对守着）。
         reg = PromptRegistry()
         reg.add("protocol", AGENT_PROTOCOL, order=-1000)
+        # 文件操作只用 Python 系工具，禁止拿 shell 改文件：
+        # PowerShell 的 Get-Content -Raw / Set-Content -Encoding utf8 会破坏 UTF-8
+        # 源码（实测把中文写成 "é¦–è½®æ…" 这类乱码，只能整篇重写）。文件工具本身
+        # 就是 pathlib 实现（显式 utf-8、保留 CRLF），没有理由绕道 shell。
+        # 顺序必须在 tools(100) 之后：提示词里"可用工具：\n"要**紧跟**工具清单 JSON，
+        # 否则 test_web_tool_provider_gate 解析不到（实测踩过）。
+        _pwsh_ready = "pwsh" in self._active_tool_names()
+        if _pwsh_ready:
+            reg.add("tools", json.dumps(self.tools.descriptions(only=self._active_tool_names()),
+                                        ensure_ascii=False), order=100)
+            reg.add("file_ops", FILE_OPS_RULE, order=120)
+        else:
+            reg.add("tools", json.dumps(self.tools.descriptions(only=self._active_tool_names()),
+                                        ensure_ascii=False), order=100)
         reg.add("tools", json.dumps(self.tools.descriptions(only=self._active_tool_names()),
                                     ensure_ascii=False), order=100)
         # 任务分工（子代理）：只在工具面里含 subagent 时才注入，避免不可用时误导模型

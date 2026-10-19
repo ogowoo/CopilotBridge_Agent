@@ -95,3 +95,7 @@ AGENT_TEAM = """任务分工（子代理）：
 做法：先 todo_write 列出子目标，再用 subagent_many 一次把 2~6 个互不依赖的子任务派出去（一次调用即可，不用连写多次 subagent），全部返回后统一汇总、验证、交付。要试第二条路线就用 subagent_fork（它继承当前对话，任务里只写新增要求）。
 子代理看不到本次对话，任务文本必须自足：目标、涉及路径、验收标准、要返回什么。子代理内部不能再开子代理（深度上限 1），并继承当前工作区与会话级授权。"""
 
+# 文件操作必须走 Python 文件工具（不给 shell）：仅在会话里存在 pwsh 工具时注入，
+# 避免没有该工具时占提示词预算。PowerShell 的管道会按代码页重新编码，
+# 用它改 UTF-8 源码会把中文写成乱码（实测），文件工具本身已是 pathlib 实现。
+FILE_OPS_RULE = """文件操作纪律：读写、改名、复制、删除文件**只用文件工具**（read_text / write_text_b64 / append_text_b64 / replace_text / make_directory / copy_path / move_path / delete_path / list_directory / find_files / grep）。禁止用 pwsh 做这些事（Get-Content / Set-Content / Out-File / New-Item / Remove-Item / Move-Item / Copy-Item 一律不用）：PowerShell 管道按本机代码页重新编码，改中文或 UTF-8 源码会变成乱码且不可逆。pwsh 只用于进程类任务——git、装依赖、构建、起服务。"""
