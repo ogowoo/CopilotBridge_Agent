@@ -1051,6 +1051,78 @@ function stepView(btn){
   v.style.display=(v.dataset.mode===mode)?'':'none'});
  applyCodePrefs(wrap)}
 
+/* ── 实时流：把消息与步骤按时间穿插成一条（DSH 的轨迹） ──
+   两个数据源都有 epoch 时间：消息用 created，步骤用 _time，直接归并排序即可。
+   消息沿用 msgEl()（气泡、附件、编辑、代码块全都照旧），步骤是新做的紧凑行。 */
+let streamSig='';
+function stepRowEl(s){
+ const st=String(s.status||'');
+ const errText=String(s.error||'').trim();
+ // 没有工具名的步骤是**系统级记录**（发送失败、回合状态），不是"汇总"：
+ // 以前一律显示"汇总"，把这些报错藏了起来（实测 19 条 send_failed 全被显示成"汇总"）。
+ const failed=!!errText||['error','send_failed','invalid_action','approval_required',
+                          'repeat_guard'].includes(st);
+ const cls=failed?'error':(st==='ok'?'ok':'info');
+ const el=document.createElement('div');
+ el.className='streamstep '+cls;
+ const icon=st==='ok'&&!failed?'✓':(failed?(st==='approval_required'?'🔐':'✗'):'•');
+ const time=s._time?new Date(Number(s._time)*1000).toLocaleTimeString():'';
+ const tool=String(s.tool||'').trim()||(failed?tr('系统'):tr('汇总'));
+ const reason=errText||String(s.reason||'').trim();
+ el.innerHTML='<span class="ss-ic">'+esc(icon)+'</span>'
+   +'<span class="ss-tool">'+esc(tool)+'</span>'
+   +'<span class="ss-reason" title="'+esc(reason)+'">'+esc(reason)+'</span>'
+   +'<span class="ss-clock">'+esc(time)+'</span>';
+ const det=document.createElement('details');
+ det.className='ss-det';
+ const sum=document.createElement('summary');
+ sum.textContent=tr('查看参数与结果');
+ det.appendChild(sum);
+ const pre=document.createElement('pre');
+ const payload={};
+ if(s.arguments!==undefined&&s.arguments!==null&&s.arguments!=='')payload.arguments=s.arguments;
+ if(s.result!==undefined)payload.result=s.result;
+ if(s.error)payload.error=s.error;
+ if(s.status)payload.status=s.status;
+ try{pre.textContent=JSON.stringify(payload,null,1)}catch(e){pre.textContent=String(payload)}
+ det.appendChild(pre);
+ el.appendChild(det);
+ return el;
+}
+function renderStream(messages,steps,opts){
+ opts=opts||{};
+ const box=document.getElementById('chatlog');
+ if(!box)return;
+ lastMessages=messages||[];
+ const items=[];
+ (messages||[]).forEach(m=>items.push({t:Number(m.created)||0,kind:'msg',v:m}));
+ (steps||[]).forEach(s=>items.push({t:Number(s._time)||0,kind:'step',v:s}));
+ items.sort((a,b)=>a.t-b.t||((a.v.step||0)-(b.v.step||0)));
+ const sig=items.length+'|'+(items.length?items[items.length-1].t+'|'+items[items.length-1].kind:'');
+ if(sig===streamSig&&!opts.force)return;      // 没变化不重建（保住展开的 details）
+ streamSig=sig;
+ const atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<60;
+ box.innerHTML='';
+ if(!items.length){
+  box.innerHTML='<div class="meta">'+esc(tr('当前没有对话记录。下面发送的消息会发给该 Session 正在使用的模型。'))+'</div>';
+  return;
+ }
+ for(const it of items){
+  if(it.kind==='msg'){
+   box.appendChild(msgEl(it.v.role,it.v.content,it.v.created,
+     {attachments:it.v.attachments||[],id:it.v.id}));
+  }else{
+   box.appendChild(stepRowEl(it.v));
+  }
+ }
+ applyMsgFold(box);
+ try{applyCodePrefs(box)}catch(e){}
+ try{translateAttrs(box)}catch(e){}
+ if(findQuery)applyFind();
+ try{renderLiveBubble()}catch(e){}
+ if(atBottom||opts.scrollEnd)box.scrollTop=box.scrollHeight;
+}
+
 function renderMessages(messages,opts){
  opts=opts||{};
  let box=document.getElementById('chatlog');box.innerHTML='';
@@ -1632,7 +1704,8 @@ async function load(id){
  // 写到用户已切过去的新会话界面上（经典 stale-response）。
  if(current!==id)return;
  if(d.token_budget)setKpis({token_budget:d.token_budget,estimated_tokens:s.estimated_tokens??0});
- currentModel=s.model||null;currentUrl=s.current_url;renderMessages(d.messages||[]);
+ currentModel=s.model||null;currentUrl=s.current_url;
+ renderStream(d.messages||[],d.steps||[],{scrollEnd:true,force:true});
  // 跟进消息应跟随 Session 自己的模型，而不是左侧新任务表单的选择
  let _ms=document.getElementById('model');
  if(currentModel&&[..._ms.options].some(o=>o.value===currentModel))_ms.value=currentModel;
@@ -1859,7 +1932,8 @@ async function applyRuntime(r){
    try{
     let d=await api('/v1/agent/sessions/'+encodeURIComponent(myId));
     if(current!==myId)return;
-    renderSteps(d.steps);lastStepCount=d.steps.length
+    renderSteps(d.steps);lastStepCount=d.steps.length;
+    try{renderStream(d.messages||[],d.steps||[],{})}catch(e){}
    }catch(e){console.warn('时间线刷新失败:',(e&&e.text)||e)}}}
 
 /* ── SSE 实时推送（EventSource）────────────────────────────────────
@@ -1897,7 +1971,7 @@ async function refreshChat(){
  try{let d=await api('/v1/agent/sessions/'+encodeURIComponent(myId));
   if(current!==myId)return;
   let as=(d.messages||[]).filter(m=>m.role==='assistant').length;
-  renderMessages(d.messages,{animateLast:as>lastAssistantCount});
+  renderStream(d.messages||[],d.steps||[]);
   lastAssistantCount=as}catch(e){}}
 
 /* ── 操作 ── */

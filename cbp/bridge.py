@@ -2754,6 +2754,28 @@ async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_chec
         f"Copilot 单步等待超过硬上限 {int(hard_timeout)} 秒，请查看 last_page.txt"
     )
 
+def strip_suggestion_tail(text: str) -> str:
+    """去掉 Copilot 回答尾部的"后续建议"文字。
+
+    实测（task-afa55d82ff7a）：回答正文是一个完整 JSON 动作，后面紧跟三行建议——
+    「继续读取匹配代码 / 搜索菜单初始化函数 / 查看快捷键相关测试」。
+    那些是页面上的建议按钮，被 `inner_text` 一起读进来了。JSON 动作本身不受影响
+    （解析器只取第一个完整对象），但存库/展示的正文会被污染。
+    """
+    raw = text or ""
+    body = raw.strip()
+    if not body.startswith("{"):
+        return raw
+    try:
+        _obj, end = json.JSONDecoder().raw_decode(body)
+    except Exception:
+        return raw                      # 解析不了就原样返回，交给后面的解析容错
+    tail = body[end:].strip()
+    if not tail:
+        return body
+    return body[:end].rstrip()
+
+
 async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pause_check=None,
                           interrupt_check=None) -> str:
     """Send one Agent turn and bind the response to a unique visible turn marker.
@@ -2781,8 +2803,9 @@ async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pa
         raise TimeoutError(f"未确认 Agent 回合 {turn_id} 进入 Copilot 会话，已停止以避免读取旧回答")
 
     runtime_update(phase="waiting", detail=f"Agent 回合 {turn_id} 已确认，等待 Copilot 回答")
-    return await wait_agent_answer(previous, pause_check=pause_check,
-                                   interrupt_check=interrupt_check)
+    _answer = await wait_agent_answer(previous, pause_check=pause_check,
+                                      interrupt_check=interrupt_check)
+    return strip_suggestion_tail(_answer)
 
 # API 提供商的协议强化：网页 Copilot 对 JSON 协议遵循度高，但 DeepSeek/Kimi
 # 等聊天模型爱在动作外面加解释或输出两段 JSON（撞严格防线烧回合）。
@@ -3469,19 +3492,22 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                         approval_check=lambda tool,h: AGENT_SESSIONS.take_approval(sid, tool, h))
         try:
             PLUGINS.emit("session_start", session_id=sid, task=effective_task, model=req.model)
-            result = await runner.run(effective_task,req.model)
-            # 落消息：Agent 模式此前只写 steps/turn_results，不写 messages，导致
-            # WebUI 的对话/实时流面板对所有 copilot 任务都是空的（实测 messages=0）。
-            # 幂等：该会话还没有 user 消息时才补，避免重跑重复。
+            # 用户任务先落库：**必须在跑之前**——消息与步骤在实时流里按时间穿插，
+            # 跑完再写会让"用户提问"排到它自己触发的几十个步骤后面（顺序就乱了）。
             try:
                 _conv = _conv_index(sid)
                 _have = AGENT_SESSIONS.messages(sid) or []
                 if not any(m.get("role") == "user" for m in (_have or [])):
                     AGENT_SESSIONS.add_message(sid, "user", effective_task, _conv)
+            except Exception as exc:
+                log(f"落用户消息失败（忽略）：{exc}")
+            result = await runner.run(effective_task,req.model)
+            try:
                 if (result.content or "").strip():
-                    AGENT_SESSIONS.add_message(sid, "assistant", result.content, _conv)
-            except Exception as exc:      # 落消息失败不影响任务结果
-                log(f"落消息失败（忽略）：{exc}")
+                    AGENT_SESSIONS.add_message(sid, "assistant", result.content,
+                                               _conv_index(sid))
+            except Exception as exc:
+                log(f"落助手消息失败（忽略）：{exc}")
             # 父任务收尾：仍在跑的子代理没人收结果，直接取消（否则面板一直显示 running）
             try:
                 _n = AGENT_SESSIONS.cancel_running_children(sid, "父任务已完成")

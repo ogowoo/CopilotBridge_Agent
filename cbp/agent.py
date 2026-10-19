@@ -709,7 +709,13 @@ class AgentRunner:
         unique = []
         seen = set()
         for obj in candidates:
-            if str(obj.get('type', '')).lower() not in {'tool', 'final', 'actions'}:
+            _t = str(obj.get('type', '')).lower()
+            if not _t and str(obj.get('tool') or '').strip():
+                # 紧凑格式：模型有时只给 {"tool": "...", "arguments": {...}} 而不带 type。
+                # 以前这里直接丢，导致整轮被判成"无法解析的动作"（实测连挂 13 步）。
+                obj['type'] = 'tool'
+                _t = 'tool'
+            if _t not in {'tool', 'final', 'actions'}:
                 continue
             key = json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
             if key not in seen:
