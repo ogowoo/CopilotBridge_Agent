@@ -289,6 +289,8 @@ class ToolRegistry:
             "append_text_b64": self.append_text_b64,
             "replace_text": self.replace_text,
             "replace_lines": self.replace_lines,
+            "convert_indentation": self.convert_indentation,
+            "indent_lines": self.indent_lines,
             "make_directory": self.make_directory,
             "copy_path": self.copy_path,
             "move_path": self.move_path,
@@ -790,12 +792,14 @@ class ToolRegistry:
         items = [
             {"name": "list_directory", "description": "列出工作区目录", "arguments": {"path": "相对路径，默认 ."}},
             {"name": "find_files", "description": "按 glob 查找文件", "arguments": {"pattern": "如 **/*.log"}},
-            {"name": "read_text", "description": "读取 UTF-8 文本；默认读全文件（上限 max_read_chars）。超大文件用 offset/limit 按字符分段，或 line_start/line_count 按行读（带行号，便于精确改某几行）", "arguments": {"path": "相对路径", "offset": "字符偏移，默认0", "limit": "本次最多返回字符数，默认120000", "line_start": "按行读：起始行号，1 起（传了就忽略 offset）", "line_count": "按行读：读多少行，默认到文件末尾"}},
+            {"name": "read_text", "description": "读取 UTF-8 文本；默认读全文件（上限 max_read_chars）。超大文件用 offset/limit 按字符分段，或 line_start/line_count 按行读（带行号，便于精确改某几行）", "arguments": {"path": "相对路径", "offset": "字符偏移，默认0", "limit": "本次最多返回字符数，默认120000", "line_start": "按行读：起始行号，1 起（传了就忽略 offset）", "line_count": "按行读：读多少行，默认到文件末尾", "reveal_whitespace": "把空格显示成 ·、制表符显示成 →（查缩进必用）"}},
             {"name": "write_text", "description": "覆盖写入 UTF-8 明文；文档类（.md/.txt/.log）可整篇写，代码类仅限 ≤1500 字符的短文件（更长请用 b64 分块）", "arguments": {"path": "相对路径", "content": "文本"}},
             {"name": "append_text", "description": "追加 UTF-8 明文；文档类分块续写用它，代码类仅限 ≤1500 字符（更长用 append_text_b64）", "arguments": {"path": "相对路径", "content": "文本"}},
             {"name": "write_text_b64", "description": "Base64 解码后覆盖写入 UTF-8；代码、JSON、HTML、Markdown 必须用此工具", "arguments": {"path": "相对路径", "content_b64": "UTF-8 内容的 Base64"}},
             {"name": "append_text_b64", "description": "Base64 解码后追加 UTF-8；代码、JSON、HTML、Markdown 必须用此工具", "arguments": {"path": "相对路径", "content_b64": "UTF-8 内容的 Base64"}},
             {"name": "replace_text", "description": "在现有文件中精确替换短文本，修改代码时优先使用", "arguments": {"path": "相对路径", "old": "原文本", "new": "新文本", "count": "替换次数，默认1"}},
+            {"name": "convert_indentation", "description": "把**行首**缩进在制表符/空格之间一次转换完（只动行首，不碰行内与字符串）；修缩进别再用 replace_text 一处一处改", "arguments": {"path": "相对路径", "mode": "tabs2spaces（默认）或 spaces2tabs", "width": "制表位宽度，默认4", "line_start": "只改这一段：起始行，1 起（可省略）", "line_count": "改多少行（可省略）"}},
+            {"name": "indent_lines", "description": "给指定行区间**增减行首空格**（delta 正=加缩进，负=减）；修缩进用它，别在 replace_text 里塞空格", "arguments": {"path": "相对路径", "line_start": "起始行，1 起", "line_count": "多少行，默认1", "delta": "加减几个空格（正=加，负=减）"}},
             {"name": "replace_lines", "description": "按行号替换整行区间（1 起，含首尾），保留文件原有换行风格；改缩进/整段替换时用它，比 replace_text 更稳；不需要 shell", "arguments": {"path": "相对路径", "start": "起始行号，1 起", "count": "替换几行，默认1", "content": "新内容（可含多行；传空串表示删除这几行）"}},
             {"name": "make_directory", "description": "创建目录", "arguments": {"path": "相对路径"}},
             {"name": "copy_path", "description": "复制文件或目录", "arguments": {"source": "相对路径", "destination": "相对路径"}},
@@ -1082,7 +1086,8 @@ class ToolRegistry:
         return {"pattern": pattern, "matches": matches, "truncated": len(matches) >= 1000}
 
     async def read_text(self, path: str, offset: int = 0, limit: int = 0,
-                        line_start: int = 0, line_count: int = 0) -> dict[str, Any]:
+                        line_start: int = 0, line_count: int = 0,
+                        reveal_whitespace: bool = False) -> dict[str, Any]:
         target = self._path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}")
@@ -1110,10 +1115,20 @@ class ToolRegistry:
             want = max(1, min(want, 2000, self.max_read // 40 or 1))
             lo = line_start - 1
             hi = min(total_lines, lo + want)
-            body = "\n".join(f"{i + 1}: {lines[i]}" for i in range(lo, hi))
-            return {"path": path, "lines": body, "line_start": line_start,
+            def _vis(t: str) -> str:
+                # 空白可视化：空格→·、制表符→→。模型以前只能用
+                # PowerShell 的 .Replace(' ','·') 才看得见缩进差异（还会踩编码坑），
+                # 直接给它这个开关更省回合。
+                return t.replace("\t", "→").replace(" ", "·")
+            body = "\n".join(
+                ((f"{i + 1}: " + _vis(lines[i])) if reveal_whitespace
+                 else f"{i + 1}: {lines[i]}") for i in range(lo, hi))
+            _res = {"path": path, "lines": body, "line_start": line_start,
                     "line_count": hi - lo, "total_lines": total_lines,
                     "truncated": hi < total_lines, "numbered": True}
+            if reveal_whitespace:
+                _res["whitespace"] = "空格=·  制表符=→"
+            return _res
         if offset or limit:
             # 分段读取：整文件统计 total_chars 后按字符切片。供 Agent 翻页
             # 读大文件——单次读取的上下文预算约 6000 字符，超过就读不到尾部，
@@ -1250,10 +1265,15 @@ class ToolRegistry:
             raise ToolError("old 不能为空")
         if len(new) > self.max_write:
             raise ToolError("替换内容超过限制")
+        # count=0 表示"全部替换"：模型做"把制表符统一换成 4 空格"这类批量替换时，
+        # 默认 count=1 只改第一处，于是它一遍遍改、一遍遍读——真实时间线里正是
+        # 这样空转了几十步（用户："一直在重复替换空格/制表的动作"）。保留 1 的默认，
+        # 但接受 0=全部，并在有残留时把数量明确回给模型。
         try:
-            count = max(1, min(int(count), 100))
+            count = int(count)
         except (TypeError, ValueError):
-            raise ToolError("count 必须是整数")
+            raise ToolError("count 必须是整数（0 = 全部替换）")
+        count = 0 if count <= 0 else min(count, 100)
         target = self._path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}")
@@ -1287,12 +1307,22 @@ class ToolRegistry:
         if found == 0:
             raise ToolError("未找到要替换的原文本，请先 read_text 后使用精确短片段"
                             + self._nearest_hint(text, old))
-        replaced = min(found, count)
+        replaced = found if count == 0 else min(found, count)
         before=self._hash(target)
         self._snap("replace_text", path, target)
-        with target.open("w", encoding="utf-8", newline="") as f: f.write(text.replace(old_used,new_used,count))
+        with target.open("w", encoding="utf-8", newline="") as f:
+            f.write(text.replace(old_used, new_used) if count == 0
+                    else text.replace(old_used, new_used, count))
         after=self._hash(target)
-        return {"path":path,"replaced":replaced,"remaining_matches":max(0,found-replaced),"file_event":{"tool":"replace_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
+        _left = max(0, found - replaced)
+        _out = {"path":path,"replaced":replaced,"remaining_matches":_left,"file_event":{"tool":"replace_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
+        if _left:
+            _out["hint"] = (f"还有 {_left} 处要替换：要一次全改请传 count=0（0=全部）；"
+                            "改缩进/空白这类批量编辑更稳的是 convert_indentation 或 replace_lines")
+        if before == after:
+            _out["warning"] = ("内容没有变化：old 与 new 可能等价，或该片段被前导空白干扰没匹配上。"
+                               "先 read_text(reveal_whitespace=true) 看清真实空白再改")
+        return _out
 
     async def replace_lines(self, path: str, start: int = 0, count: int = 1,
                             content: str = "") -> dict[str, Any]:
@@ -1343,6 +1373,148 @@ class ToolRegistry:
                 "inserted_lines": len(new_lines), "total_lines": len(out_lines),
                 "changed": before != after,
                 "file_event": {"tool": "replace_lines", "path": path,
+                               "before_hash": before, "after_hash": after, "result": "ok"}}
+
+
+    async def convert_indentation(self, path: str, mode: str = "tabs2spaces",
+                                  width: int = 4, line_start: int = 0,
+                                  line_count: int = 0) -> dict[str, Any]:
+        """把**行首**缩进在制表符与空格之间确定性地转换（一次搞定）。
+
+        为什么需要单列一个工具：真实任务里模型要"把制表符统一换成 4 个空格"，
+        只能用 replace_text 一处一处改（默认 count=1），改一处、读一次、
+        发现还有、再改……一个 377 步的任务里几十步都耗在这上面，还换了 6 次
+        Copilot 会话（用户原话："一直在重复替换空格/制表的动作"）。
+        这个工具只动**行首空白**（行内、字符串里的制表符一律不碰），
+        一次调用完成全文件或指定行区间，并回报改了多少行。
+        """
+        mode = str(mode or "tabs2spaces").strip().lower()
+        if mode in ("tab2space", "tabs2space", "expand", "spaces"):
+            mode = "tabs2spaces"
+        elif mode in ("space2tab", "spaces2tab", "compress", "tabs"):
+            mode = "spaces2tabs"
+        if mode not in ("tabs2spaces", "spaces2tabs"):
+            raise ToolError("mode 只能是 tabs2spaces 或 spaces2tabs")
+        try:
+            width = max(1, min(int(width), 16))
+            line_start = int(line_start or 0)
+            line_count = int(line_count or 0)
+        except (TypeError, ValueError):
+            raise ToolError("width / line_start / line_count 必须是整数")
+        target = self._path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        try:
+            with target.open("r", encoding="utf-8", errors="strict", newline="") as f:
+                raw = f.read()
+        except UnicodeDecodeError as exc:
+            raise ToolError(f"文件不是有效的 UTF-8 文本，拒绝改写（防止乱码写回）: {exc}")
+        crlf = "\r\n" in raw
+        lines = raw.replace("\r\n", "\n").split("\n")
+        lo = max(0, (line_start - 1) if line_start > 0 else 0)
+        hi = len(lines) if not line_count else min(len(lines), lo + max(0, line_count))
+        changed = 0
+        out = list(lines)
+        for i in range(lo, hi):
+            body = lines[i]
+            # 只取行首空白（空格与制表符），其余原样保留
+            m = re.match(r"[ \t]*", body)
+            indent = m.group(0) if m else ""
+            rest = body[len(indent):]
+            if mode == "tabs2spaces":
+                if "\t" not in indent:
+                    continue
+                # 制表位按 width 展开（4 空格制表位）
+                new_indent = indent.expandtabs(width)
+            else:
+                if " " not in indent:
+                    continue
+                n = len(indent)
+                new_indent = "\t" * (n // width) + " " * (n % width)
+            if new_indent != indent:
+                out[i] = new_indent + rest
+                changed += 1
+        if not changed:
+            return {"path": path, "changed_lines": 0, "changed": False,
+                    "hint": "行首缩进已经符合目标格式，无需改动"}
+        text = "\n".join(out)
+        if crlf:
+            text = text.replace("\n", "\r\n")
+        before = self._hash(target)
+        self._snap("convert_indentation", path, target)
+        with target.open("w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        after = self._hash(target)
+        return {"path": path, "mode": mode, "width": width,
+                "changed_lines": changed, "changed": before != after,
+                "line_range": [lo + 1, hi],
+                "file_event": {"tool": "convert_indentation", "path": path,
+                               "before_hash": before, "after_hash": after, "result": "ok"}}
+
+
+    async def indent_lines(self, path: str, line_start: int = 1, line_count: int = 1,
+                           delta: int = 0) -> dict[str, Any]:
+        """给指定行区间**增减行首空格**（delta 为正加缩进、为负减缩进）。
+
+        为什么不能靠 replace_text：缩进要写在参数字符串里，而 Copilot 的回答经
+        HTML 渲染后**行首/连续空格会被折叠成一个**,于是 old == new、写入无变化、
+        模型以为没生效又改一次（真实时间线里 15 次空操作、空转几十步）。
+        这里用**数字**表达缩进，不依赖字符串里的空白，一次调用确定生效。
+        """
+        try:
+            line_start = int(line_start or 1)
+            line_count = int(line_count or 1)
+            delta = int(delta or 0)
+        except (TypeError, ValueError):
+            raise ToolError("line_start / line_count / delta 必须是整数")
+        if line_start < 1:
+            raise ToolError("line_start 从 1 开始")
+        if line_count < 1:
+            raise ToolError("line_count 至少 1")
+        target = self._path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        try:
+            with target.open("r", encoding="utf-8", errors="strict", newline="") as f:
+                raw = f.read()
+        except UnicodeDecodeError as exc:
+            raise ToolError(f"文件不是有效的 UTF-8 文本，拒绝改写（防止乱码写回）: {exc}")
+        crlf = "\r\n" in raw
+        lines = raw.replace("\r\n", "\n").split("\n")
+        lo = line_start - 1
+        hi = min(len(lines), lo + line_count)
+        if lo >= len(lines):
+            raise ToolError(f"line_start={line_start} 超出文件行数（共 {len(lines)} 行）")
+        changed = 0
+        for i in range(lo, hi):
+            body = lines[i]
+            if not body.strip():
+                continue                      # 空行不动
+            m = re.match(r"[ \t]*", body)
+            indent = m.group(0) if m else ""
+            rest = body[len(indent):]
+            n = len(indent.expandtabs(4))
+            n2 = max(0, n + delta)
+            if n2 == n and "\t" not in indent:
+                continue
+            new_indent = " " * n2
+            if new_indent + rest != body:
+                lines[i] = new_indent + rest
+                changed += 1
+        if not changed:
+            return {"path": path, "changed_lines": 0, "changed": False,
+                    "hint": "这些行的缩进已经是目标值，无需改动"}
+        text = "\n".join(lines)
+        if crlf:
+            text = text.replace("\n", "\r\n")
+        before = self._hash(target)
+        self._snap("indent_lines", path, target)
+        with target.open("w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        after = self._hash(target)
+        return {"path": path, "changed_lines": changed, "delta": delta,
+                "changed": before != after,
+                "file_event": {"tool": "indent_lines", "path": path,
                                "before_hash": before, "after_hash": after, "result": "ok"}}
 
     async def make_directory(self, path: str) -> dict[str, Any]:

@@ -1519,7 +1519,7 @@ let _gmResolve=null;
 function gmShow(o){if(_gmResolve){const prev=_gmResolve;_gmResolve=null;prev(null)}  // 重入时先了结上一个，防 Promise 悬挂
  return new Promise(res=>{
  _gmResolve=res;
- document.getElementById('gmTitle').textContent=o.title||'提示';
+ document.getElementById('gmTitle').textContent=o.title||tr('提示');
  let m=document.getElementById('gmMsg');m.textContent=o.msg||'';m.style.display=o.msg?'':'none';
  let inp=document.getElementById('gmInput');
  if(o.input!==undefined&&o.input!==null){inp.style.display='';inp.value=o.input}else{inp.style.display='none'}
@@ -1529,8 +1529,8 @@ function gmShow(o){if(_gmResolve){const prev=_gmResolve;_gmResolve=null;prev(nul
   modes.style.display=o.modes?'':'none';
   if(o.modes){let pick=modes.querySelector('input[value="'+o.modes.default+'"]');
    if(pick)pick.checked=true}}
- let c=document.getElementById('gmCancel');c.style.display=o.cancelText===null?'none':'';c.textContent=o.cancelText||'取消';
- let ok=document.getElementById('gmOk');ok.textContent=o.okText||'确定';ok.className='btn '+(o.danger?'danger':'accent');
+ let c=document.getElementById('gmCancel');c.style.display=o.cancelText===null?'none':'';c.textContent=o.cancelText||tr('取消');
+ let ok=document.getElementById('gmOk');ok.textContent=o.okText||tr('确定');ok.className='btn '+(o.danger?'danger':'accent');
  openMask('gmMask');
  if(inp.style.display!=='none')setTimeout(()=>{inp.focus();inp.select()},60)})}
 /* ── 弹窗焦点管理（无障碍）────────────────────────────────────────────
@@ -1576,7 +1576,7 @@ const dlgPrompt=(msg,def='',okText='',title='输入')=>gmShow({title,msg,input:d
 const dlgInjectPrompt=(msg,def,title,defaultMode)=>{
  const modes=document.getElementById('gmModes');
  const lastMode=(()=>{try{return localStorage.getItem('cbp-inject-mode')||defaultMode||'step'}catch(e){return defaultMode||'step'}})();
- return gmShow({title,msg,input:def,okText:'插入',modes:{default:lastMode}})};
+ return gmShow({title,msg,input:def,okText:tr('插入'),modes:{default:lastMode}})};
 
 /* ── 跟进消息模式切换（卡片头部按钮，不再占用输入区） ── */
 let followupMode='agent';
@@ -2715,7 +2715,7 @@ document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e
 async function injectMessage(){
  if(!current){toast(tr('请先选择 Session'),'err');return}
  let pick=await dlgInjectPrompt(
-  '插入指令（运行中即时生效，会立即中断当前回合后按新指令继续）。插入方式决定语义：',
+  tr('插入指令（运行中即时生效，会立即中断当前回合后按新指令继续）。插入方式决定语义：'),
   '', tr('强行插入'),'step');
  if(pick===null)return;
  let content=String(pick.text||'').trim();

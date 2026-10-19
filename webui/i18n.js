@@ -334,6 +334,13 @@ Object.assign(I18N_EN, {
   // 审批：授权后时间线要给出正面记录，不再停在"未获授权"
   "已授权": "Authorized",
   // 重启服务
+  // 强行插入弹窗（gmShow 默认按钮 + 说明）
+  "插入": "Inject",
+  "取消": "Cancel",
+  "确定": "OK",
+  "提示": "Notice",
+  "插入指令（运行中即时生效，会立即中断当前回合后按新指令继续）。插入方式决定语义：":
+    "Inject an instruction (takes effect immediately while running and interrupts the current turn). The mode decides the semantics:",
   "重启服务": "Restart service",
   // 待办（todo_write 维护的清单，区别于 /plan 计划模式）
   "待办": "Todo",

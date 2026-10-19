@@ -1186,6 +1186,25 @@ async def body_text():
         return ""
 
 
+async def body_text_raw():
+    """取**未经渲染折叠**的正文（textContent），用来救回 JSON 参数里的空白。
+
+    为什么需要两套：`inner_text` 是"渲染后"文本，HTML 会把**连续空格折叠成一个**、
+    行首缩进也会被吃掉。Agent 回复是一段 JSON 动作，模型常把缩进写进参数
+    （如 `new: "        u32.ShowWindow(...)"`,8 个空格）——经 inner_text 变成 1 个，
+    于是 `old == new`,replace_text 空操作、文件没变、模型以为没生效、再改一次…
+    真实时间线里 58 次 replace_text 有 **15 次 old==new**,整段任务空转几十步、
+    换了 6 次 Copilot 会话（用户："一直在重复替换空格/制表的动作"）。
+    `textContent` 保留原始空白，但块间缺换行——因此只作**补充来源**，不替换主流程。
+    """
+    try:
+        return (await page.evaluate(
+            "() => (document.querySelector('main') || document.body).textContent || ''"
+        ) or "").replace("\r\n", "\n")
+    except Exception:
+        return ""
+
+
 def extract_latest_answer(text):
     # Select only the final Copilot said block to avoid sidebar/history text.
     pos, marker_len = _last_turn(text or "", MARKERS["assistant_turn"])
@@ -1281,7 +1300,31 @@ async def answer_markdown(plain: str = "") -> str:
 async def current_answer():
     # Agent 模式必须保持纯文本：回复是 JSON 动作，markdown 转换可能破坏它。
     # 聊天显示的 markdown 版本由 plain_chat_turn 单独取（见 answer_markdown）。
-    return extract_latest_answer(await body_text())
+    text = extract_latest_answer(await body_text())
+    return await _prefer_unfolded(text)
+
+
+async def _prefer_unfolded(text: str) -> str:
+    """若渲染文本把 JSON 参数里的连续空格折叠了，改用 textContent 版本。
+
+    只做**保守替换**：两份里都找得到动作、且原文版本确实保留了更多连续空白，
+    才采用原文版本（否则保持原行为，避免 textContent 缺换行带来的副作用）。
+    """
+    try:
+        if not text or '"tool"' not in text:
+            return text
+        raw = extract_latest_answer(await body_text_raw())
+        if not raw or '"tool"' not in raw:
+            return text
+        def _longest_space_run(s: str) -> int:
+            import re as _re
+            runs = _re.findall(r" {2,}", s)
+            return max((len(x) for x in runs), default=0)
+        if _longest_space_run(raw) > _longest_space_run(text):
+            return raw
+    except Exception:
+        pass
+    return text
 
 
 async def generating():

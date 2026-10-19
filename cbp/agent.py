@@ -659,8 +659,47 @@ class AgentRunner:
             '_truncated_partial': True,
         }
 
+
+    @staticmethod
+    def _repair_json_escapes(text: str) -> str:
+        """修复模型常见的**非法 JSON 转义**，避免整条动作作废。
+
+        真实时间线（`for debug/…-timeline-2026-10-19-10-35-24.json`）里
+        58 次 invalid_action **全部**是这个原因：模型写 PowerShell 命令时沿用了
+        shell/Python 习惯，把 `'x'` 写成 `\'x\'`——JSON 没有 `\'` 这个转义，
+        整条 JSON 直接解析失败，于是白烧一个 Copilot 回合（那次任务因此耗了
+        377 步、7 个会话）。
+
+        只改"确定非法"的转义：反斜杠+单引号 → 单引号、反斜杠+反引号 → 反引号；
+        `\\uXXXX` 等合法转义一律不动。注意 `\\'`（转义反斜杠后跟引号）是合法的，
+        不能误改，所以按反斜杠奇偶判断。
+        """
+        if "\\'" not in text and "\\`" not in text:
+            return text
+        out, i, n = [], 0, len(text)
+        while i < n:
+            ch = text[i]
+            if ch != "\\":
+                out.append(ch); i += 1; continue
+            # 数连续反斜杠：奇数个才是转义起点
+            j = i
+            while j < n and text[j] == "\\":
+                j += 1
+            run = j - i
+            nxt = text[j] if j < n else ""
+            if run % 2 == 1 and nxt in ("'", "`"):
+                # 丢掉一个反斜杠：\' -> '
+                out.append("\\" * (run - 1))
+                out.append(nxt)
+                i = j + 1
+                continue
+            out.append("\\" * run); i = j
+        return "".join(out)
+
     @classmethod
     def _parse(cls, text: str) -> dict[str, Any]:
+        # 先修非法转义再解析：模型常带 `\'` 这类 JSON 不认的转义进来
+        text = cls._repair_json_escapes(text or "")
         candidates = list(cls._objects(text))
         # Copilot may print the same action twice. Deduplicate identical actions,
         # but never silently choose between distinct actions in one response.
@@ -1703,6 +1742,34 @@ class AgentRunner:
                         _dispatch_hash = hashlib.sha1(json.dumps(arguments, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()[:16]
 
                         _approval_hash = hashlib.sha1((str(tool) + '|' + json.dumps(arguments, ensure_ascii=False, sort_keys=True)).encode('utf-8')).hexdigest()[:16]
+                        # ── 重复动作护栏：同一个工具 + 同样参数**连续/累计**做了多次，
+                        # 说明这条路走不通（典型：改"制表符→4空格"用 replace_text 默认
+                        # count=1，改一处、读一次、还有、再改……真实任务里这样空转了几
+                        # 十步、换会话 6 次）。到阈值就不再执行，直接告诉它换工具。
+                        _rep_key = (str(tool), _dispatch_hash)
+                        _rep_n = (self._repeat_counts.get(_rep_key, 0) + 1
+                                  if hasattr(self, "_repeat_counts") else 1)
+                        if not hasattr(self, "_repeat_counts"):
+                            self._repeat_counts = {}
+                        self._repeat_counts[_rep_key] = _rep_n
+                        _REPEAT_LIMIT = int(self.config.get("repeat_guard_limit", 3) or 3)
+                        if _rep_n > _REPEAT_LIMIT and str(tool) not in ("validate_python", "run_unittest"):
+                            _hint = ("同一动作（工具与参数完全相同）已做过 %d 次仍无进展，就不要再重复它。"
+                                     % (_rep_n - 1))
+                            if str(tool) in ("replace_text", "replace_lines", "convert_indentation"):
+                                _hint += ("改缩进/空白：缩进一次性转换用 convert_indentation"
+                                          "（tabs2spaces, width=4）；按行改某几行用 replace_lines；"
+                                          "要全部替换把 replace_text 的 count 传 0。"
+                                          "先 read_text(line_start=…, reveal_whitespace=true) 看清真实空白。")
+                            else:
+                                _hint += "换一个工具或换一种思路（先 read_text 看清现状再动手）。"
+                            _st = {"step": total + 1, "status": "repeat_guard", "tool": str(tool),
+                                   "reason": "重复动作被拦下（没有推进）", "error": _hint}
+                            history.append(_st); all_steps.append(_st); self.step_saver(_st)
+                            self.state_saver(total_steps=total + 1,
+                                             recent_steps=history[-self.keep_recent:],
+                                             last_error=_hint)
+                            continue
                         # ── 一次性审批门（fail-closed）：破坏性工具必须有本步专属的授权，授权用后即焚；
                         # 没有回调就视为不放行（绝不自动批准）——对应 DSH 的 allowed-once 语义。
                         if self.tools.requires_approval(str(tool)):
