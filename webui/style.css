@@ -949,3 +949,18 @@ body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
 #timeline{padding:0;max-height:48vh;overflow:hidden;display:flex;flex-direction:column}
 #timeline>.chead{flex:none;padding:8px 12px;border-bottom:1px solid var(--line)}
 #timeline>#steps{flex:1 1 auto;min-height:0;overflow:auto}
+
+/* PANE-CONSISTENT: 五个标签面板统一观感。
+   实测差异：activity/answer/prompt 是 <pre class="term">（等宽字体、浅蓝底、12px 内边距），
+   chat/timeline 是普通 div（无内边距、透明底、由子元素排版）——同一条面板里两套视觉。
+   这里统一：同一背景、同一内边距、同一字体与行高；文本面板保留 pre-wrap 以免丢格式，
+   内部仍可用 tabular-nums 对齐数字。 */
+#activity, #answer, #prompt{
+  background:var(--panel); color:var(--text);
+  font-family:inherit; font-size:13px; line-height:1.75;
+  padding:12px 16px; margin:0;
+  white-space:pre-wrap; word-break:break-word;
+  border-radius:0 0 11px 11px;
+  font-variant-numeric:tabular-nums;
+}
+#chat, #timeline{background:var(--panel)}
