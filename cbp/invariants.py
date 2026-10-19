@@ -553,9 +553,15 @@ def _manual_bilingual_parity() -> None:
         raise InvariantError(f"手册中英章节数不一致: {counts}")
 
 
-@invariant("toast 文案必须走 tr()")
-def _toast_strings_translated() -> None:
-    """toast 里的中文必须包在 tr() 里。
+# 所有"文案型"前端调用：参数里的中文必须走 tr()（否则英文界面原样露中文）
+_UI_TEXT_CALLS = ("toast", "dlgConfirm", "dlgPrompt", "dlgAlert", "dlgText",
+                  "showConnBanner", "showStopped", "showDeleteResult",
+                  "showBoot", "gmShow", "noteText", "setStatus")
+
+
+@invariant("弹窗/提示文案必须走 tr()")
+def _ui_text_calls_translated() -> None:
+    """toast、dlgConfirm/dlgPrompt（确认框正文）、横幅等调用里的中文必须包在 tr() 里。
 
     真事：`toast('已折叠 ' + n + ' ' + tr('个子代理归属会话'))` —— 只包了后半句，
     英文界面下弹出 "已折叠 2 subagent sessions"（用户实测抓到）。
@@ -563,9 +569,10 @@ def _toast_strings_translated() -> None:
     """
     cjk = re.compile(r"[\u4e00-\u9fff]")
     bad = []
+    names = "|".join(_UI_TEXT_CALLS)
     for f in sorted((ROOT / "webui").glob("*.js")):
         text = f.read_text(encoding="utf-8")
-        for m in re.finditer(r"toast\(", text):
+        for m in re.finditer(rf"(?<![\w.$])({names})\(", text):
             depth, j = 1, m.end()
             while j < len(text) and depth:
                 if text[j] == "(":
@@ -575,10 +582,11 @@ def _toast_strings_translated() -> None:
                 j += 1
             expr = text[m.end():j - 1]
             if cjk.search(expr) and "tr(" not in expr:
-                bad.append(f"{f.name}:{text[:m.start()].count(chr(10)) + 1}")
+                line = text[:m.start()].count("\n") + 1
+                bad.append(f"{f.name}:{line}({m.group(1)})")
     if bad:
         raise InvariantError(
-            f"这些 toast 直接传了中文（必须包 tr()）: {bad[:8]}")
+            f"这些调用直接传了中文（必须包 tr()）: {bad[:10]}")
 
 
 @invariant("i18n 调用没有被写成字符串字面量")

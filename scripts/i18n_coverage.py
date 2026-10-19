@@ -107,6 +107,8 @@ def states(page):
         ("新任务填充", "() => { try{closeMore()}catch(e){}; openTask(); "
                       "const t=document.getElementById('taskInput'); if(t){t.value='检查多语言覆盖'} "
                       "const s=document.getElementById('taskStart'); if(s) s.disabled=false }"),
+        ("确认弹窗", "() => { try{closeMaskAll()}catch(e){}; "
+                    "dlgConfirm('audit body', 'audit title', false) }"),
         ("限制条件面板", "() => { try{closeMaskAll()}catch(e){}; "
                         "const b=document.getElementById('sessModel'); if(b) b.focus() }"),
     ]

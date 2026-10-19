@@ -620,7 +620,7 @@ async function api(u,o={}){
         try{
           const tk=await dlgPrompt(tr('本服务启用了 api_token，请输入访问令牌（只保存在本机浏览器）'),apiToken(),'','需要访问令牌');
           if(tk){try{localStorage.setItem('cbp-token',tk);tokenPromptCancelled=false}catch(e){}}
-          else{tokenPromptCancelled=true;showConnBanner('未授权：已取消令牌输入（点此重新输入）',true)}
+          else{tokenPromptCancelled=true;showConnBanner(tr('未授权：已取消令牌输入（点此重新输入）'),true)}
           return tk;
         }finally{tokenPrompting=null}
       })();
@@ -1807,9 +1807,10 @@ function openCopilot(){if(currentUrl){if(!/^https?:\/\//i.test(currentUrl)){toas
  else toast(isProviderModel(currentModel)?tr('该会话用的是 API 提供商模型，没有可打开的网页对话'):tr('该 Session 暂无网页会话地址'),'err')}
 async function removeSession(remote){
  if(!current)return;
- let extra=remote?'，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）':'';
- let msg=`即将删除的会话：\n\n  ID: ${current}\n  标题: ${(document.getElementById('title').textContent||'').trim()}\n\n仅删除本地 Session${extra}。此操作不可撤销，确定继续？`;
- if(!await dlgConfirm(msg,'删除确认',true))return;
+ let extra=remote?tr('，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）'):'';
+  let msg=tr('即将删除的会话：\n\n  ID: {id}\n  标题: {title}\n\n仅删除本地 Session{extra}。此操作不可撤销，确定继续？',
+  {id:current,title:(document.getElementById('title').textContent||'').trim(),extra:extra});
+  if(!await dlgConfirm(msg,tr('删除确认'),true))return;
  try{let url='/v1/agent/sessions/'+encodeURIComponent(current)+(remote?'?delete_remote=true':'');
   let d=await api(url,{method:'DELETE'});
   if(!d.deleted){showDeleteResult(d);return}
@@ -1897,9 +1898,11 @@ async function rollbackSession(){
     let vv=byRev[r];
     let t=new Date((vv[0].captured||0)*1000).toLocaleTimeString('zh-CN',{hour12:false});
     let paths=vv.map(x=>x.path).slice(0,5).join('、')+(vv.length>5?`…共 ${vv.length} 个`:'');
-    return `  · 回合 ${r}（${t}）：${paths}`;
+        return tr('  · 回合 {r}（{t}）：{paths}',{r:r,t:t,paths:paths});
    }).join('\n');
-   let input=await dlgPrompt(`该任务共 ${revs.length} 个回合版本（按时间先后）：\n\n${lines}\n\n输入「0」或留空 = 整任务回滚到开始前；输入版本号 = 撤销该回合之后的改动。`,'0','','回滚到哪个版本？');
+       let input=await dlgPrompt(
+      tr('该任务共 {n} 个回合版本（按时间先后）：\n\n{lines}\n\n输入「0」或留空 = 整任务回滚到开始前；输入版本号 = 撤销该回合之后的改动。',
+         {n:revs.length,lines:lines}),'0','',tr('回滚到哪个版本？'));
    if(input===null)return;
    version=parseInt(input,10);
    if(isNaN(version))version=0;
@@ -1907,9 +1910,10 @@ async function rollbackSession(){
   }
   let preview=files.slice(0,12).map(f=>`· [${f.kind}] ${f.path}`).join('\n');
   let more=files.length>12?`\n… 另有 ${files.length-12} 个`:'';
-  let target=version?`回滚到版本 ${version}（撤销该回合之后的改动）`:`整任务回滚到开始前`;
-  let msg=`${target}：${files.length} 个路径。\n修改过的还原、任务新建的删除。\n\n${preview}${more}\n\n此操作不可撤销，确定继续？`;
-  if(!await dlgConfirm(msg,'回滚任务改动',true))return;
+     let target=version?tr('回滚到版本 {v}（撤销该回合之后的改动）',{v:version}):tr('整任务回滚到开始前');
+     let msg=tr('{target}：{n} 个路径。\n修改过的还原、任务新建的删除。\n\n{preview}{more}\n\n此操作不可撤销，确定继续？',
+     {target:target,n:files.length,preview:preview,more:more});
+     if(!await dlgConfirm(msg,tr('回滚任务改动'),true))return;
   let body=version?{version}:{};
   let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/rollback`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   let tail=d.failed?`，失败 ${d.failed}`:'';
@@ -1925,8 +1929,9 @@ async function rollbackSelfUpgrade(){
   for(const scope of st.snapshot_scopes.slice(0,5)){
    try{let s=await api('/v1/agent/self/snapshots?sid='+encodeURIComponent(scope.replace(/^_self_/,'')));list.push(`${scope}：${(s.files||[]).length} 个文件`)}catch(e){}
   }
-  let msg=`将把服务自身代码恢复到自升级前的状态（最近一次）：\n\n${list.join('\n')}\n\n回滚后必须重启服务才生效。确定继续？`;
-  if(!await dlgConfirm(msg,'回滚服务自升级',true))return;
+     let msg=tr('将把服务自身代码恢复到自升级前的状态（最近一次）：\n\n{list}\n\n回滚后必须重启服务才生效。确定继续？',
+     {list:list.join('\n')});
+     if(!await dlgConfirm(msg,tr('回滚服务自升级'),true))return;
   let d=await api('/v1/agent/self/rollback?last=true',{method:'POST'});
   toast(tr('自升级已回滚：还原 {a}、删除 {b}{fail} · 请重启服务',{a:d.restored||0,b:d.deleted||0,fail:d.failed?tr('，失败 {n}',{n:d.failed}):''}), d.failed?'err':'ok');
  }catch(e){toast(tr('自升级回滚失败: ')+e,'err')}}
@@ -1943,7 +1948,7 @@ function showDeleteResult(d){
   e.innerHTML=`<div class="rhead"><span class="ric">${r.deleted?'✓':'✗'}</span><span class="ttl" title="${esc(r.expected_title||'')}">${esc(r.expected_title||'(无标记)')}</span><span class="mth">${esc(r.method||'')}</span></div>`+
    (r.url?`<div class="url" title="点击复制完整 URL">${esc(r.url)}</div>`:'')+
    (r.error?`<div class="err">${esc(r.error)}</div>`:'');
-  if(r.url)e.querySelector('.url').onclick=ev=>{try{navigator.clipboard.writeText(r.url);ev.target.textContent=tr('已复制 ✓  ')+r.url}catch(_){dlgAlert(r.url,'链接')}};
+  if(r.url)e.querySelector('.url').onclick=ev=>{try{navigator.clipboard.writeText(r.url);ev.target.textContent=tr('已复制 ✓  ')+r.url}catch(_){dlgAlert(r.url,tr('链接'))}};
   box.appendChild(e)});
  document.getElementById('dlgForce').style.display=fail?'':'none';
  openMask('dlgMask')}
@@ -3030,20 +3035,20 @@ async function shutdownService(){
   showStopped(d?noteText(d,''):'');
  }catch(e){
   // 连接可能比响应先断：同样视为已停止，不要报"操作失败"
-  showStopped('服务已终止（连接已断开）');
+    showStopped(tr('服务已终止（连接已断开）'));
  }
 }
 /* ── 重启服务：优雅退出 → 就地 exec 重启；本页轮询 /health，恢复后自动刷新 ── */
 let restarting=false, restartStartedAt=0;
 async function restartService(){
  if(restarting)return;
- if(!await dlgConfirm(
-   '即将重启本服务（用于让改过的代码生效）：\n\n'
-   +'· 服务会先优雅退出，然后**就地重启**（同一个进程，端口不变）\n'
-   +'· 正在运行的任务会中断（状态已落库；开着 auto_resume 会自动续跑）\n'
-   +'· 自动化浏览器会重新连接\n'
-   +'· 本页会在服务恢复后**自动刷新**，无需手动操作\n\n'
-   +'确定重启？',tr('重启服务'),false))return;
+  if(!await dlgConfirm(
+    tr('即将重启本服务（用于让改过的代码生效）：\n\n' +
+       '· 服务会先优雅退出，然后**就地重启**（同一个进程，端口不变）\n' +
+       '· 正在运行的任务会中断（状态已落库；开着 auto_resume 会自动续跑）\n' +
+       '· 自动化浏览器会重新连接\n' +
+       '· 本页会在服务恢复后**自动刷新**，无需手动操作\n\n' +
+       '确定重启？'),tr('重启服务'),false))return;
  restarting=true; restartStartedAt=Date.now();
  try{ await api('/v1/restart',{method:'POST'}) }catch(e){}
  showRestarting();
@@ -3094,7 +3099,7 @@ function showStopped(note){
 async function pollBoot(){
  if(serviceStopped)return;
  try{const h=await api('/health');showBoot(h.browser_state,h.copilot_ready,h.browser_error)}
- catch(e){if(!serviceStopped)showBoot('failed',false,'健康检查失败')}
+ catch(e){if(!serviceStopped)showBoot('failed',false,tr('健康检查失败'))}
 }
 try{setInterval(pollBoot,8000);setTimeout(pollBoot,1200)}catch(e){}
 
@@ -3119,9 +3124,9 @@ attachPasteHandler('followup','follow');
   // 现在按类型分流，且**只有显式 ?demo=1 才允许进演示模式**。
   const isAuth=(e&&e.status===401);
   const isNet=(e instanceof TypeError)||!/\b\d{3}\b/.test(String(e&&e.message||e));
-  if(isAuth){showConnBanner('需要 api_token：'+(e.detail||'请输入访问令牌'),false)}
-  else if(isNet){showConnBanner('无法连接本地服务（127.0.0.1:8765 是否在运行？）',false)}
-  else{showConnBanner('加载会话失败：'+(e.text||e),false)}
+  if(isAuth){showConnBanner(tr('需要 api_token：')+(e.detail||tr('请输入访问令牌')),false)}
+  else if(isNet){showConnBanner(tr('无法连接本地服务（127.0.0.1:8765 是否在运行？）'),false)}
+  else{showConnBanner(tr('加载会话失败：')+(e.text||e),false)}
   if(location.search.includes('demo=1')){DEMO=true;
    document.getElementById('demoBadge').style.display='block';
    document.getElementById('demoBadge').textContent=tr('演示模式（?demo=1）——数据为本地假数据')}
