@@ -64,8 +64,16 @@ button,input,textarea,select{font:inherit;color:inherit}
 .stag{flex:none;font-size:10.5px;color:var(--muted);border:1px solid var(--line2);border-radius:20px;padding:2px 8px}
 .sess-empty{color:var(--faint);text-align:center;padding:26px 10px;font-size:12.5px}
 
-input,textarea,select{background:var(--input-bg);border:1px solid var(--line2);border-radius:8px;padding:8px 10px;outline:none;width:100%}
-input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4f8ef722}
+/* 只给"文本类"输入框套文本框样式。**必须排除 radio/checkbox**：
+   原先的 `input{...width:100%}` 把单选框撑成整行宽（实测 422px），把标签文字
+   挤成"一个字一行"的竖排——「强行插入」对话框整个变形。 */
+input:not([type=radio]):not([type=checkbox]):not([type=range]):not([type=file]),
+textarea,select{background:var(--input-bg);border:1px solid var(--line2);border-radius:8px;padding:8px 10px;outline:none;width:100%}
+input:not([type=radio]):not([type=checkbox]):not([type=range]):not([type=file]):focus,
+textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4f8ef722}
+/* 选择类控件保持原生尺寸与外观 */
+input[type=radio],input[type=checkbox]{width:auto;height:auto;margin:0;padding:0;
+  background:none;border:0;flex:none;accent-color:var(--accent)}
 textarea{resize:vertical}
 
 .btn{border:1px solid var(--line2);background:var(--btn-bg);border-radius:8px;padding:7px 13px;cursor:pointer;font-size:13px;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;line-height:1.2}
