@@ -662,6 +662,8 @@ Object.assign(I18N_EN, {
  "长期记忆": "Long-term memory",
  "上一级": "Go up one level",
  "默认": "Default",
+ "未同步": "Not synced",
+ "任务已结束，但待办状态没有同步（模型收尾时没有更新 todo）。": "The task has ended, but the todo list was not synced (the model did not update it while finishing).",
  "删除任务（自动含 Copilot 记录）": "Delete task (includes its Copilot records)",
  "，并删除该任务关联的 {n} 个 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）": ", plus the {n} Copilot conversation(s) this task created (their titles may no longer carry the [CBP-AGENT] marker; ownership is verified against the conversation body)",
  "这个任务用过 Copilot，将同时删除远端对话记录。\n\n  ID: {id}\n  标题: {title}\n\n本地 Session{extra}。此操作不可撤销，确定继续？": "This task used Copilot, so its remote conversation records will be deleted too.\n\n  ID: {id}\n  Title: {title}\n\nLocal session{extra}. This cannot be undone — continue?",

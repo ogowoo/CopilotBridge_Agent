@@ -3470,6 +3470,13 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
         try:
             PLUGINS.emit("session_start", session_id=sid, task=effective_task, model=req.model)
             result = await runner.run(effective_task,req.model)
+            # 父任务收尾：仍在跑的子代理没人收结果，直接取消（否则面板一直显示 running）
+            try:
+                _n = AGENT_SESSIONS.cancel_running_children(sid, "父任务已完成")
+                if _n:
+                    log(f"父任务 {sid} 完成，取消 { _n } 个仍在运行的子代理")
+            except Exception:
+                pass
             PLUGINS.emit("session_end", session_id=sid, content=result.content,
                          steps=len(result.steps), state="completed")
             runtime_update(sid, phase="completed", detail=result.content, answer_preview=result.content)

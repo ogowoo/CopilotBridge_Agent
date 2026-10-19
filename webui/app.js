@@ -1687,12 +1687,27 @@ function toggleTodos(){
 }
 const TODO_ICON={completed:'✓',in_progress:'◐',pending:'○'};
 const TODO_TXT={completed:'已完成',in_progress:'进行中',pending:'待办'};
+let _goalSig='';
 function renderGoalBar(r){
  const el=document.getElementById('goalBar');
  if(!el)return;
- const goal=(r&&r.goal&&typeof r.goal==='object')?r.goal:null;
- const todos=(r&&Array.isArray(r.todos))?r.todos:[];
- if(!goal&&!todos.length){el.hidden=true;el.innerHTML='';return}
+ // 局部快照（SSE 可能只带部分字段）不要当成"没有待办"而清空——那会造成面板
+ // 一秒消失再出现的闪烁（用户实测）。只有快照里**确实带了**这两个字段才刷新。
+ const hasGoal=r&&Object.prototype.hasOwnProperty.call(r,'goal');
+ const hasTodos=r&&Object.prototype.hasOwnProperty.call(r,'todos');
+ if(!hasGoal&&!hasTodos)return;
+ const goal=(r.goal&&typeof r.goal==='object')?r.goal:null;
+ const todos=Array.isArray(r.todos)?r.todos:[];
+ if(!goal&&!todos.length){
+  if(_goalSig!=='none'){el.hidden=true;el.innerHTML='';_goalSig='none'}
+  return}
+ // 内容没变就不动 DOM：以前每秒重建 innerHTML，展开的待办列表会闪
+ // 注意：session_state 也决定渲染（结束态要把未完成项标"未同步"），必须进签名，
+   // 否则"运行中 → 已完成"这次变化会被当成"内容没变"而跳过重绘（实测踩过）。
+   const _sig=JSON.stringify([r.session_state||'',goal&&[goal.status,goal.rounds,
+                            goal.max_rounds,goal.objective],todos,todosOpen]);
+ if(_sig===_goalSig)return;
+ _goalSig=_sig;
  el.hidden=false;
  const parts=[];
  if(goal){
@@ -1715,13 +1730,26 @@ function renderGoalBar(r){
  if(todos.length&&todosOpen){
   const list=document.createElement('div');
   list.className='todolist';
+  // 会话已经结束（completed/failed/cancelled）却还留着没做完的项：
+  // 这时把它们说成「进行中」是假的——标注为「未同步」并给一行提示。
+  const _st=String(r.session_state||'');
+  const _ended=['completed','failed','cancelled','archived','paused'].includes(_st);
+  const _unfinished=todos.some(x=>{const v=String((x&&x.status)||'');return v==='pending'||v==='in_progress'});
   list.innerHTML=todos.map((x,i)=>{
-   const st=String((x&&x.status)||(x&&x.done?'completed':'pending'));
+   let st=String((x&&x.status)||(x&&x.done?'completed':'pending'));
+   const stale=_ended&&(st==='pending'||st==='in_progress');
    const ic=TODO_ICON[st]||'○';
-   return '<div class="todoitem todo-'+esc(st)+'"><span class="tic">'+esc(ic)+'</span>'
+   const label=stale?tr('未同步'):tr(TODO_TXT[st]||st);
+   return '<div class="todoitem todo-'+esc(st)+(stale?' todo-stale':'')+'"><span class="tic">'+esc(ic)+'</span>'
     +'<span class="ttxt">'+esc(String((x&&x.content)||''))+'</span>'
-    +'<span class="tst">'+esc(tr(TODO_TXT[st]||st))+'</span></div>';
+    +'<span class="tst">'+esc(label)+'</span></div>';
   }).join('');
+  if(_ended&&_unfinished){
+   const hint=document.createElement('div');
+   hint.className='todohint';
+   hint.textContent=tr('任务已结束，但待办状态没有同步（模型收尾时没有更新 todo）。');
+   list.appendChild(hint);
+  }
   el.appendChild(list);
  }
 }

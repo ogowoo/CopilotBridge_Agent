@@ -633,6 +633,18 @@ curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C
 
 > 尚未接入：旧版 **HTTP+SSE 双端点**传输（2024-11-05 老规范，只支持 streamable HTTP）。
 
+### 5.3.3 测试脚本的浏览器回收
+
+连续跑 UI 审计/截图脚本会在系统里攒下泄漏的 Playwright 浏览器（实测 **21 个** msedge，
+每个都带 `--user-data-dir=%TEMP%\playwright_*`）。它们既吃内存，也会让人误以为
+"有程序在捣乱"。`scripts/reap_browsers.py` 按年龄回收（默认 >15 分钟的才杀，
+不影响正在跑的脚本），`scripts/regression.py` 启动时会自动调用它。
+
+```bash
+python scripts/reap_browsers.py            # 只报告
+python scripts/reap_browsers.py --kill     # 回收
+```
+
 ### 5.3.2 长命令与"看不到在跑什么"
 
 - **`pwsh` 超时会终止整棵进程树**：只 `proc.kill()` 会留下孙进程（`python`/`git`/`pip`）

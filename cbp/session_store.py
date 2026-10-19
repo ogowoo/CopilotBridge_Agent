@@ -663,6 +663,22 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                     pass  # 老库可能缺表：删主记录成功即视为成功
             return existed
 
+    def cancel_running_children(self, parent_sid: str, note: str = "父任务已结束") -> int:
+        """父会话结束时，把仍在 running/waiting 的子会话标记为 cancelled。
+
+        实测：主任务早已 `completed`，子代理却还在"等 Copilot 回答"（步骤还在涨），
+        面板上显示 "1 running"。子会话与父会话同属一个任务，父任务收尾后没人会去
+        收它们的结果，留着既占浏览器又会继续消耗配额。
+        """
+        if not parent_sid:
+            return 0
+        with self.lock, self._connect() as con:
+            cur = con.execute(
+                "UPDATE sessions SET state='cancelled', cancel_requested=1, "
+                "last_error=?, updated=? WHERE parent_id=? AND state IN ('running','waiting')",
+                (note, time.time(), parent_sid))
+            return cur.rowcount
+
     def recover_interrupted(self):
         with self.lock, self._connect() as con:
             con.execute("UPDATE sessions SET state='paused', last_error='服务中断，可从检查点恢复', updated=? WHERE state IN ('running','waiting')",(time.time(),))

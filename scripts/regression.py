@@ -313,6 +313,13 @@ def main() -> int:
     args = ap.parse_args()
 
     OUT.mkdir(parents=True, exist_ok=True)
+    # 先回收上一轮可能泄漏的 Playwright 浏览器：实测连续跑几天 UI 审计会攒出 20+ 个
+    # msedge（脚本在异常路径上没走到 browser.close()）。只回收"活得够久"的，不影响正在跑的。
+    try:
+        subprocess.run([sys.executable, str(BASE / "scripts" / "reap_browsers.py"), "--kill"],
+                       cwd=BASE, check=False, capture_output=True, timeout=120)
+    except Exception:
+        pass
     c = Ctx(args.url, args.model, args.keep, args.skip_slow, args.timeout)
     t0 = time.time()
     print(f"回归目标: {c.url} · 模型 {c.model}\n")
