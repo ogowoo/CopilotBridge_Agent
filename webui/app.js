@@ -2650,8 +2650,7 @@ let liveTabName='chat';
 let lastAns='';
 let lastAnsHtml='';
 function liveTab(n){
- if(!LIVE_NAMES[n]){                       // 旧标签名（activity/answer/prompt）已合并
-  toast(tr('该面板已合并进「实时流」'),'info');n='chat'}
+ if(!LIVE_NAMES[n])n='chat';   // 旧标签名（activity/answer/prompt）已合并进去，静默切到实时流
  liveTabName=n;
  for(const k in LIVE_NAMES){
   const pane=document.getElementById(k);if(pane)pane.style.display=k===n?'':'none';

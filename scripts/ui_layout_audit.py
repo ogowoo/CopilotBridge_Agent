@@ -106,6 +106,12 @@ MEASURE_JS = r"""
   };
   fixed.forEach(f => {
     if (f.r.right < 0 || f.r.left > vw || f.r.bottom < 0 || f.r.top > vh) return;
+    // pointer-events:none 的浮层挡不住任何点击（例如 toast 只是提示、几秒后自己消失），
+    // 几何上有重叠也不算"遮挡用户可操作的内容"。
+    try {
+      const coverEl = document.querySelector(f.sel || '');
+      if (coverEl && getComputedStyle(coverEl).pointerEvents === 'none') return;
+    } catch (e) {}
     KEY.forEach(sel => {
       document.querySelectorAll(sel).forEach(el => {
         const cs2 = getComputedStyle(el);

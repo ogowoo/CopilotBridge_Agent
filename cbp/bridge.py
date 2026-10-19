@@ -451,6 +451,19 @@ async def dismiss():
 
 
 async def new_chat():
+    """开一个空对话。**必须验证真的空了**。
+
+    实测（task-316f6502774b）：新任务第一轮 prompt 里明明是新任务（建 ok.txt），
+    模型却接着另一条"pyshot 快捷键"对话的思路去读 pyshot/main.py。
+    说明点"New chat"之后页面并没有变成空对话——后续 prompt 落在了旧上下文里，
+    任务被"串"到上一条对话上（用户："为什么会窜到 pyshot 里的？"）。
+    """
+    async def _empty() -> bool:
+        try:
+            return await count_user_markers() == 0
+        except Exception:
+            return False
+
     b = await visible([
         'button[aria-label*="New chat" i]',
         'a[aria-label*="New chat" i]',
@@ -463,6 +476,22 @@ async def new_chat():
     else:
         await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
         await asyncio.sleep(2)
+
+    if not await _empty():
+        # 点击没生效 / 页面被复用：直接回基础地址重试一次
+        log("新建对话后页面仍有历史消息，回基础地址重试")
+        try:
+            await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+        except Exception:
+            pass
+        for _ in range(20):                 # 最多等 10s
+            await asyncio.sleep(0.5)
+            if await _empty():
+                break
+    if not await _empty():
+        raise CopilotSendFailed(
+            "新对话未创建成功（页面仍在旧会话）：已中止，避免把新任务接到上一条对话的上下文里。"
+            "请点『重试浏览器』或稍后再试。")
     # 新聊天会把模型重置为 Copilot 默认（Auto）：缓存记为 copilot-auto，
     # 注意这是页面行为而非我们的 default_model 配置。
     _forget_selected_model(reset_to="copilot-auto")
@@ -3389,7 +3418,13 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 marker = _agent_chat_marker(sid, int(st.get("conversation_index", 0)))
                 # Copilot derives the sidebar title from the beginning of the first
                 # message. This is more stable than automating the Rename editor.
-                send_prompt = (marker + "\n" + prompt) if make_new else prompt
+                if make_new:
+                    # 新任务：明确要求忽略此前对话话题——实测 Copilot 新对话会
+                    # 沿用上一条聊天的话题，把新任务带到别的项目上（窜任务）。
+                    send_prompt = (marker + "\n【新任务】忽略此前任何对话的话题与进度，"
+                                   "只按下述内容执行。\n" + prompt)
+                else:
+                    send_prompt = prompt
                 remember_initial_prompt(sid, send_prompt)   # 与实际发送内容一致
                 # ── 回合结果缓存（P1-1）：同一会话/对话/提示词的回合若已真正发出并落过步数，
                 # 恢复或重试时直接复用答案，不再重发（省一次远端回合 = 省时间与额度）。
