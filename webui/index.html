@@ -108,17 +108,20 @@
       </section>
       <section class="card">
         <div class="chead"><span id="pulse" class="dot-off"></span>
+          <!-- 标签顺序按"看 → 用"排：先看它在干什么（状态/时间线），再看模型说了什么
+               （回答/发送内容），最后才是交互（继续对话）。原来时间线排最后、
+               对话夹在内容中间，观察和操作两条线是交叉的。 -->
           <div class="tabs">
             <button type="button" class="tab on" id="tabActivity" data-act="liveTab" data-arg="activity">当前执行状态</button>
+            <button type="button" class="tab" id="tabTimeline" data-act="liveTab" data-arg="timeline">步骤时间线</button>
             <button type="button" class="tab" id="tabAnswer" data-act="liveTab" data-arg="answer">当前回答</button>
             <button type="button" class="tab" id="tabPrompt" data-act="liveTab" data-arg="prompt">最近发送内容</button>
             <button type="button" class="tab" id="tabChat" data-act="liveTab" data-arg="chat">继续对话</button>
-            <button type="button" class="tab" id="tabTimeline" data-act="liveTab" data-arg="timeline">步骤时间线</button>
           </div>
           <span class="hint"><button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px" title="查看该会话首回合发给模型的完整提示词（含系统提示词、工具清单、项目约定）" data-act="showPromptView">📄 初始提示词</button><button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px" title="放大查看当前面板" data-act="expandLive">⤢ 放大</button></span>
         </div>
-        <div id="timeline" class="livepane timelinepane" style="display:none"></div>
         <pre id="activity" class="term livepane">—</pre>
+        <div id="timeline" class="livepane timelinepane" style="display:none"></div>
         <pre id="answer" class="term livepane" style="display:none">等待回答…</pre>
         <pre id="prompt" class="term livepane" style="display:none">—</pre>
         <div id="chat" class="livepane chatwrap" style="display:none">
