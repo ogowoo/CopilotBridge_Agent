@@ -180,6 +180,15 @@ b.ENSURE_BROWSER = ensure_browser   # 桥接层按需拉起浏览器的入口
 
 app = FastAPI(title="Copilot Local Bridge Agent", version="10.2.1", lifespan=lifespan)
 
+def _lang_of(request) -> str:
+    """从 X-CBP-Lang 头取界面语言（缺省中文）。"""
+    try:
+        raw = (request.headers.get(_LANG_HEADER) or "zh").lower()[:2]
+    except Exception:
+        return "zh"
+    return raw
+
+
 # ── 错误文案本地化：全局异常处理器按 X-CBP-Lang 翻译 detail ─────────────
 # 只改**展示**：日志、协议、模型看到的仍是中文原文（评测与协议绑定）。
 _LANG_HEADER = "X-CBP-Lang"
@@ -463,7 +472,7 @@ async def set_sandbox(payload: dict | None = None):
 
 
 @app.post("/v1/agent/deep-research")
-async def agent_deep_research(payload: dict | None = None):
+async def agent_deep_research(payload: dict | None = None, request: HttpRequest = None):
     """一键深研：research 插件收集证据 → Agent 综合成带来源的报告（新会话）。"""
     data = payload or {}
     query = str(data.get("query") or "").strip()
@@ -471,7 +480,8 @@ async def agent_deep_research(payload: dict | None = None):
         raise HTTPException(400, "query 不能为空")
     try:
         return await b.deep_research_task(query, str(data.get("model") or ""),
-                                          int(data.get("angles") or 3))
+                                          int(data.get("angles") or 3), 3,
+                                          lang=_lang_of(request))
     except b.ToolError as exc:
         raise HTTPException(400, str(exc))
 
@@ -505,6 +515,12 @@ async def plugin_uninstall(payload: dict | None = None):
         return b.PLUGINS.uninstall(name, bool(data.get("keep_backup", True)))
     except b.PluginError as exc:
         raise HTTPException(400, str(exc))
+
+
+@app.get("/v1/plugins/i18n")
+async def plugin_i18n():
+    """已加载插件自带的译文（前端合并进字典，让 tr() 覆盖插件文案）。"""
+    return b.PLUGINS.i18n()
 
 
 @app.get("/v1/plugins/panels")
@@ -565,6 +581,23 @@ async def subagent_fork(sid: str, payload: dict | None = None):
     try:
         return await b.fork_subagent(sid, str(data.get("description") or ""),
                                      int(data.get("keep_messages") or 60))
+    except b.ToolError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/v1/agent/fanout")
+async def agent_fanout(payload: dict | None = None):
+    """确定性扇出：把 N 个任务直接各派一个子代理（不经模型判断）。
+
+    {tasks: ["任务1", "任务2"] | [{task, description}], model?, workspace?, max_steps?}
+    返回父会话 id 与每个子任务的结果；结果同时写进父会话消息，可在会话列表里查看。
+    """
+    data = payload or {}
+    try:
+        return await b.fanout(data.get("tasks") or [], str(data.get("model") or ""),
+                              str(data.get("workspace") or ""),
+                              int(data.get("max_steps") or 40),
+                              str(data.get("title") or ""))
     except b.ToolError as exc:
         raise HTTPException(400, str(exc))
 

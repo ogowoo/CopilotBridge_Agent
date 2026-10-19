@@ -3551,7 +3551,7 @@ def browse_directories(path: str | None = None) -> dict:
 
 # ── 深研一键任务（WebUI「深研」按钮）──────────────────────────────────
 async def deep_research_task(query: str, model: str = "", angles: int = 3,
-                             fetch_top: int = 3) -> dict:
+                             fetch_top: int = 3, lang: str = "zh") -> dict:
     """一键深研：插件收集证据包 → **一次直接调用模型**综合成带来源的报告。
 
     为什么不走 Agent 循环：实测走循环时模型会把"写报告"变成**分块写文件**
@@ -3590,8 +3590,10 @@ async def deep_research_task(query: str, model: str = "", angles: int = 3,
     use_model = normalize_model_soft(model or DEFAULT_MODEL)
     pm = providers_mod.split_provider_model(use_model)
     sid = "research-" + uuid.uuid4().hex[:10]
-    AGENT_SESSIONS.create(sid, f"[深研] {query}", str(AGENT_TOOLS.root), use_model)
-    AGENT_SESSIONS.add_message(sid, "user", f"[深研] {query}", 0)
+    # 系统生成的标题也要跟界面语言走（否则英文界面里冒出一行中文 "[深研] …"）
+    tag = "[Research]" if str(lang).lower().startswith("en") else "[深研]"
+    AGENT_SESSIONS.create(sid, f"{tag} {query}", str(AGENT_TOOLS.root), use_model)
+    AGENT_SESSIONS.add_message(sid, "user", f"{tag} {query}", 0)
     AGENT_SESSIONS.patch(sid, state="running")
     t0 = time.time()
     try:
@@ -3657,8 +3659,29 @@ async def run_plugin_task(task: str, model: str = "", workspace: str = "",
 # ── 子代理引擎（subagent / ralph / workflow 的底座）────────────────────
 # 子会话 = 独立 Copilot 对话（或 provider 独立历史），跑完父会话下一回合会自动
 # 导航回自己的对话 URL（browser turn 的 expected URL 守卫），不污染父上下文。
-_SUBAGENT_DEPTH = {"depth": 0}
 _SUBAGENT_MAX_DEPTH = 1          # 防递归：子代理不能再开子代理
+# 在跑的子代理：{child_sid: 开始时间}。**不用裸计数器**——实测一轮子代理被中断
+# （浏览器上下文被关掉/回合被取消）时计数没回落，进程内后续所有子代理就永久报
+# "不能再创建子代理"，只有重启才恢复。这里按"子会话是否仍在跑 + TTL"自愈。
+_SUBAGENT_ACTIVE: dict[str, float] = {}
+_SUBAGENT_STALE_SECONDS = 1800
+
+
+def subagent_depth() -> int:
+    """当前活跃子代理数（自愈：已完成/超时的记录自动清掉）。"""
+    now = time.time()
+    for sid, started in list(_SUBAGENT_ACTIVE.items()):
+        state = (AGENT_SESSIONS.get(sid) or {}).get("state")
+        if state not in ("running", "waiting") or now - started > _SUBAGENT_STALE_SECONDS:
+            _SUBAGENT_ACTIVE.pop(sid, None)
+    return len(_SUBAGENT_ACTIVE)
+
+
+async def fanout(tasks, model: str = "", workspace: str = "",
+                 max_steps: int = 40, parent_title: str = "") -> dict:
+    """确定性扇出（实现在 cbp/fanout.py，延迟导入避免循环依赖）。"""
+    from .fanout import fanout as _fanout
+    return await _fanout(tasks, model, workspace, max_steps, parent_title)
 
 
 async def run_subagent(task: str, description: str = "", model: str = "",
@@ -3670,7 +3693,7 @@ async def run_subagent(task: str, description: str = "", model: str = "",
     task = str(task or "").strip()
     if not task:
         raise ToolError("task 不能为空")
-    if _SUBAGENT_DEPTH["depth"] >= _SUBAGENT_MAX_DEPTH:
+    if subagent_depth() >= _SUBAGENT_MAX_DEPTH:
         raise ToolError("子代理不能再创建子代理（防止无限递归）")
     parent_sid = ACTIVE_SESSION_ID
     parent_root = str(AGENT_TOOLS.root)
@@ -3702,7 +3725,7 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
     （实测：subagent_send 卡了 600 秒直到客户端超时）。
     """
     global ACTIVE_SESSION_ID
-    _SUBAGENT_DEPTH["depth"] += 1
+    _SUBAGENT_ACTIVE[child_sid] = time.time()
     try:
         AGENT_SESSIONS.patch(child_sid, state="running")
         # 子会话也要有对话记录：否则面板点进去只有步骤时间线、看不到"问了什么答了什么"
@@ -3786,7 +3809,7 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
             return {"agent_id": child_sid, "description": (description or task)[:120],
                     "content": "", "steps": 0, "model": model_id, "error": str(exc)}
     finally:
-        _SUBAGENT_DEPTH["depth"] -= 1
+        _SUBAGENT_ACTIVE.pop(child_sid, None)
         ACTIVE_SESSION_ID = parent_sid
         AGENT_TOOLS.current_session_id = parent_sid or ""
         AGENT_TOOLS.set_root(parent_root, False)
@@ -3809,7 +3832,7 @@ async def continue_subagent(session_id: str, message: str, model: str = "",
     msg = str(message or "").strip()
     if not msg:
         raise ToolError("message 不能为空")
-    if _SUBAGENT_DEPTH["depth"] >= _SUBAGENT_MAX_DEPTH:
+    if subagent_depth() >= _SUBAGENT_MAX_DEPTH:
         raise ToolError("子代理不能在子代理里继续（防止递归）")
     model_id = normalize_model_soft((model or child.get("model") or DEFAULT_MODEL).strip())
     pm = providers_mod.split_provider_model(model_id)

@@ -36,6 +36,12 @@
     "config": {
       "tick_seconds": 20,
       "default_model": ""
+    },
+    "i18n": {
+      "en": {
+        "定时任务": "Scheduled tasks",
+        "按间隔/每天/一次性时间点执行的任务": "Tasks that run on an interval, daily, or once at a set time"
+      }
     }
   }
 }

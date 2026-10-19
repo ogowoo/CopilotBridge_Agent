@@ -457,6 +457,33 @@ def _ui_assets_whitelisted() -> None:
         raise InvariantError(f"白名单里有页面未引用的条目（可能已废弃）: {stale}")
 
 
+@invariant("静态属性文案都有英文键")
+def _static_attrs_translated() -> None:
+    """`index.html` 里含中文的 title/placeholder/aria-label/alt 必须有英文词条。
+
+    `translateAttrs()` 在运行时按**整串精确匹配**翻这些属性；键缺失就会在英文界面
+    原样露出中文（真事：工作区弹窗的「上一级 / 回到默认工作区 / 在此新建目录 /
+    选择此目录」只有中文，英文模式下全露出来）。运行时扫描能抓到，但只有静态核对
+    能在**改代码时**就拦住。
+    """
+    html = (ROOT / "webui" / "index.html").read_text(encoding="utf-8")
+    i18n = (ROOT / "webui" / "i18n.js").read_text(encoding="utf-8")
+    keys = set(re.findall(r'"([^"\n]{1,80})"\s*:', i18n))
+    missing = []
+    for m in re.finditer(r'(title|placeholder|aria-label|alt)="([^"]*)"', html):
+        attr, value = m.group(1), m.group(2)
+        if not re.search(r"[\u4e00-\u9fff]", value):
+            continue
+        if value in keys:
+            continue
+        # 动态模板（含 {{ }} 或 data-i18n 标记）跳过
+        if "{" in value:
+            continue
+        missing.append(f'{attr}="{value[:30]}"')
+    if missing:
+        raise InvariantError(f"这些静态属性没有英文词条: {sorted(set(missing))[:6]}")
+
+
 @invariant("后端错误文案都有英文翻译")
 def _backend_errors_translated() -> None:
     """`HTTPException(4xx, "中文…")` 的 detail 必须能被 `cbp/i18n.py` 翻成英文。

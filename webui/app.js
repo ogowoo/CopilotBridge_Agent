@@ -310,7 +310,7 @@ async function openPlugins(){
   btn.textContent=p.enabled?tr('禁用'):tr('启用');
   btn.onclick=async()=>{ btn.disabled=true;
     try{ await api('/v1/plugins/'+encodeURIComponent(p.name)+'/'+(p.enabled?'disable':'enable'),{method:'POST'});
-      toast(tr('已')+(p.enabled?tr('禁用'):tr('启用'))+': '+p.name,'ok'); await openPlugins(); }
+      toast(tr('已')+(p.enabled?tr('禁用'):tr('启用'))+': '+p.name,'ok'); await openPlugins();mergePluginI18n(false); }
     catch(e){ btn.disabled=false; toast(tr('操作失败: ')+(e.text||e),'err') } };
   const rb=document.createElement('button');rb.type='button';rb.className='btn ghost';rb.textContent=tr('重载');
   rb.onclick=async()=>{ try{ await api('/v1/plugins/'+encodeURIComponent(p.name)+'/reload',{method:'POST'});
@@ -332,6 +332,12 @@ const SLASH_COMMANDS=[
    if(!arg){toast(tr('用法：/research 你的问题'),'err');return}
    const t=document.getElementById('task'); if(t)t.value='';
    deepResearchNow(arg)}},
+ {id:'fanout',label:'fanout',aliases:['fanout','扇出','并行'],
+  desc:'扇出：把多个互不依赖的任务各派一个子代理（用 | 分隔），不经模型判断',
+  run:(arg)=>{
+   const tasks=String(arg||'').split('|').map(x=>x.trim()).filter(Boolean);
+   if(tasks.length<2){toast(tr('用法：/fanout 任务1 | 任务2 | 任务3（至少两个）'),'err');return}
+   fanoutNow(tasks)}},
  {id:'agent',label:'agent',aliases:['agent','执行'],
   desc:'切到 Agent 执行模式',run:()=>{setTaskMode('agent');toast(tr('已切到 Agent 执行'),'ok')}},
  {id:'chat',label:'chat',aliases:['chat','对话'],
@@ -455,6 +461,35 @@ function slashKey(e){
  }
  if(e.key==='Escape'){box.hidden=true;box.innerHTML='';e.preventDefault();return true}
  return false;
+}
+
+/* 插件自带的译文：拉一次并合并进字典，让 tr() 能覆盖插件文案。
+   平台不知道第三方插件写了哪些中文，由插件清单声明（cbp.i18n）最不失真。 */
+async function mergePluginI18n(quiet){
+ try{
+  const d=await api('/v1/plugins/i18n');
+  const en=d.en||{}, tw=d.tw||{};
+  let n=0;
+  Object.keys(en).forEach(k=>{ if(I18N_EN[k]!==en[k]){I18N_EN[k]=en[k];n++} });
+  Object.keys(tw).forEach(k=>{ if(I18N_TW_OVERRIDE[k]!==tw[k]){I18N_TW_OVERRIDE[k]=tw[k];n++} });
+  if(n){ applyI18n(document); if(!quiet) toast(tr('已合并 {n} 条插件译文',{n:n}),'ok') }
+  return n;
+ }catch(e){ return 0 }
+}
+/* 显式扇出：不经过模型判断，直接把 N 个任务派给 N 个子代理（确定性）。
+   与"让模型自己决定要不要用子代理"互补——弱模型经常有捷径就自己串行做完了。 */
+async function fanoutNow(tasks){
+ closeDlg();
+ toast(tr('已派出 {n} 个子代理，正在跑…',{n:tasks.length}),'ok');
+ try{
+  const d=await api('/v1/agent/fanout',{method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({tasks,model:currentModel||undefined})});
+  const ok=d.succeeded||0,fail=d.failed||0;
+  toast(tr('扇出完成：成功 {a} · 失败 {b} · {t} 秒',{a:ok,b:fail,t:d.seconds||0}),
+        fail?'err':'ok');
+  if(d.session_id) load(d.session_id);
+ }catch(e){toast(tr('扇出失败: ')+e,'err')}
 }
 function slashRun(text){
  const m=/^\/(\S+)\s*([\s\S]*)$/.exec(String(text||'').trim());
@@ -2850,7 +2885,7 @@ attachPasteHandler('followup','follow');
   }
  applyI18n(document);   // 静态界面按当前语言渲染（data-i18n + 静态 DOM 直译）
  applyLangButton();
- loadModels();browserState();
+ loadModels();browserState();mergePluginI18n(true);
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();
 /* 流式期间加快刷新：常规 1s 太慢，看起来是一秒一跳；"正在发送/流式返回/等待回答"

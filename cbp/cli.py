@@ -101,6 +101,33 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_fanout(args) -> int:
+    """确定性扇出：每个 --task 派一个子代理，结果写回一个父会话。"""
+    tasks = [t for t in (args.task or []) if t.strip()]
+    if len(tasks) < 2:
+        return _fail("至少给两个 --task（每个任务一个子代理）")
+    body = {"tasks": tasks, "model": args.model or "", "max_steps": args.max_steps}
+    if args.workspace:
+        body["workspace"] = args.workspace
+    with _client(args) as c:
+        try:
+            d = c.post("/v1/agent/fanout", json=body)
+        except httpx.ConnectError:
+            return _fail(f"连不上服务 {args.url or DEFAULT_URL}")
+        if d.status_code >= 400:
+            return _fail(f"HTTP {d.status_code}: {d.text[:300]}")
+        data = d.json()
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+    else:
+        print(f"父会话 {data.get('session_id')} · 成功 {data.get('succeeded')} · "
+              f"失败 {data.get('failed')} · {data.get('seconds')}s")
+        for r in data.get("results") or []:
+            head = f"[{r['index']}] {'ok ' if r.get('ok') else 'ERR'}"
+            print(f"{head} {str(r.get('content') or r.get('error') or '')[:200]}")
+    return 0 if not data.get("failed") else 1
+
+
 def cmd_status(args) -> int:
     with _client(args) as c:
         try:
@@ -245,6 +272,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status", help="健康检查")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("fanout", help="确定性扇出：多个任务各派一个子代理")
+    p.add_argument("--task", action="append", required=True,
+                   help="子任务（可重复；至少两个）")
+    p.add_argument("--model", default="")
+    p.add_argument("--workspace", default="")
+    p.add_argument("--max-steps", type=int, default=40)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_fanout)
 
     p = sub.add_parser("sessions", help="列出会话")
     p.add_argument("--limit", type=int, default=20)

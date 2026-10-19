@@ -493,6 +493,14 @@ Object.assign(I18N_EN, {
  "计划": "Plan",
  "第": "round",
  "用法：/research 你的问题": "Usage: /research your question",
+ "扇出：多角度并行调研（用 | 分隔任务）": "Fan-out: parallel research (separate tasks with |)",
+ "扇出：把多个互不依赖的任务各派一个子代理（用 | 分隔），不经模型判断":
+   "Fan-out: give each independent task its own subagent (separate with |), without asking the model",
+ "用法：/fanout 任务1 | 任务2 | 任务3（至少两个）":
+   "Usage: /fanout task1 | task2 | task3 (at least two)",
+ "已派出 {n} 个子代理，正在跑…": "Dispatched {n} subagents, running…",
+ "扇出完成：成功 {a} · 失败 {b} · {t} 秒": "Fan-out done: {a} ok · {b} failed · {t} s",
+ "扇出失败: ": "Fan-out failed: ",
  "已切到 Agent 执行": "Switched to Agent mode",
  "已切到普通对话": "Switched to plain chat",
  "时间线中的": "In the timeline, ",
@@ -624,6 +632,12 @@ Object.assign(I18N_EN, {
  "长期记忆": "Long-term memory",
  "上一级": "Go up one level",
  "默认": "Default",
+ "主题：跟随系统（点击切换）": "Theme: follow system (click to switch)",
+ "语言 / 語言 / Language（点击切换）": "Language / 語言 / Language (click to switch)",
+ "跟进消息": "Follow-up message",
+ "输入": "Input",
+ "收起（右下角小标可再展开）": "Collapse (expand again from the badge at the bottom right)",
+ "限流中：点击展开倒计时": "Rate limited: click to expand the countdown",
  "定时任务": "Scheduled tasks",
  "MCP 服务器": "MCP servers",
  "按间隔/每天/一次性时间点执行的任务": "Tasks that run on an interval, daily, or once at a set time",
@@ -692,6 +706,14 @@ const I18N_TW_OVERRIDE = {
   "后台": "後台", "进程": "行程", "线程": "執行緒", "缓存": "快取", "屏幕": "螢幕",
   "视频": "影片", "音频": "音訊", "鼠标": "滑鼠", "键盘": "鍵盤", "粘贴": "貼上",
   "搜索": "搜尋", "刷新": "重新整理", "加载": "載入", "卸载": "解除安裝",
+  // 二〇二五补：技术术语按词修正（简繁不是一对一，字级转换会把"数据"变"數據"）
+  "数据": "資料", "数据库": "資料庫", "字段": "欄位", "会话": "對話", "消息": "訊息",
+  "服务器": "伺服器", "客户端": "用戶端", "令牌": "權杖", "密码": "密碼", "账户": "帳戶",
+  "脚本": "指令碼", "代码": "程式碼", "项目": "專案", "插件": "外掛", "接口": "介面",
+  "日志": "日誌", "状态": "狀態", "内容": "內容", "计划": "計畫", "目标": "目標",
+  "子代理": "子代理", "子任务": "子任務", "会话列表": "對話列表", "工作区": "工作區",
+  "邮件": "郵件", "审批": "核准", "快照": "快照", "重启": "重新啟動", "升级": "升級",
+  "安装": "安裝", "目录": "目錄", "路径": "路徑", "文件名": "檔名", "文件夹名": "資料夾名稱",
 };
 
 /* 简→繁字符表（只收界面里会出现的常用字；短语表优先） */
@@ -817,7 +839,9 @@ const S2T_CHARS = (() => {
 function toTraditional(text) {
   let s = String(text == null ? "" : text);
   // 先按短语覆盖（词汇级），再做字形转换
-  Object.keys(I18N_TW_OVERRIDE).forEach((k) => {
+  // **按词长降序**应用：否则"服务"会先吃掉"服务器"的前两个字，
+  // 让"服务器→伺服器"这类长词永远匹配不到（实测 服務器）。
+  Object.keys(I18N_TW_OVERRIDE).sort((a, b) => b.length - a.length).forEach((k) => {
     if (s.includes(k)) s = s.split(k).join("\u0000" + I18N_TW_OVERRIDE[k] + "\u0000");
   });
   let out = "";

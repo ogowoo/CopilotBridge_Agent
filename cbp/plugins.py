@@ -94,12 +94,16 @@ class PluginManifest:
     contributes: dict[str, Any] = field(default_factory=dict)
     config: dict[str, Any] = field(default_factory=dict)
     dsh: dict[str, Any] = field(default_factory=dict)     # DSH 兼容元数据（只读透传）
+    # 插件自带译文：{"en": {"中文原文": "English"}, "tw": {...}}
+    # 平台不知道第三方插件写了哪些中文，让它自己在清单里带上最不失真。
+    i18n: dict[str, dict[str, str]] = field(default_factory=dict)
     dir: Path | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {"name": self.name, "version": self.version, "description": self.description,
                 "entry": self.entry, "permissions": self.permissions,
-                "contributes": self.contributes, "config": self.config, "dsh": self.dsh}
+                "contributes": self.contributes, "config": self.config, "dsh": self.dsh,
+                "i18n": self.i18n}
 
 
 def _read_manifest(plugin_dir: Path) -> PluginManifest | None:
@@ -132,6 +136,9 @@ def _read_manifest(plugin_dir: Path) -> PluginManifest | None:
             version=str(block.get("version") or raw.get("version") or "0.1.0"),
             description=str(block.get("description") or raw.get("description") or ""),
             entry=str(block.get("entry") or "plugin.py"),
+            i18n={str(k): {str(a): str(bb) for a, bb in (v or {}).items()}
+                  for k, v in (block.get("i18n") or {}).items()
+                  if isinstance(v, dict) and k in ("en", "tw")},
             permissions=perms,
             contributes=dict(block.get("contributes") or {}),
             config=dict(block.get("config") or {}),
@@ -602,6 +609,27 @@ class PluginHost:
         if bdir.is_dir():
             backups = sorted(p.name for p in bdir.iterdir() if p.is_dir())[-20:]
         return {"plugins": out, "backups": backups}
+
+    def i18n(self) -> dict[str, dict[str, str]]:
+        """汇总所有**已加载**插件自带的译文：{"en": {...}, "tw": {...}}。
+
+        平台不知道第三方插件写了哪些中文，让它自己在清单里带译文最不会失真。
+        前端启动/重载插件后取一次，合并进字典即可让 tr() 覆盖插件文案。
+        """
+        merged: dict[str, dict[str, str]] = {"en": {}, "tw": {}}
+        for name, rec in self.records.items():
+            if rec.get("status") != "loaded":
+                continue
+            try:
+                man = _read_manifest(self.plugin_root / name)
+            except Exception:
+                continue
+            if not man or not man.i18n:
+                continue
+            for lang, table in man.i18n.items():
+                if lang in merged and isinstance(table, dict):
+                    merged[lang].update({str(k): str(v) for k, v in table.items()})
+        return merged
 
     def plugin_function(self, plugin: str, fn_name: str) -> Callable[..., Any] | None:
         """取已加载插件的模块级函数（桥接层复用插件能力用，如 research.deep_research）。"""
