@@ -61,8 +61,11 @@ async def fanout(tasks: list | None, model: str = "", workspace: str = "",
 
     results: list[dict[str, Any]] = []
     t0 = time.time()
+    # 用**任务上下文**绑定父会话（并发安全）；全局变量只作展示用途，
+    # 若同时有真实任务在跑，写全局会把别人的子代理挂到我们这儿来（实测过）。
+    tok_sid = b._SESSION_CTX.set(parent_sid)
     prev_active = b.ACTIVE_SESSION_ID
-    b.ACTIVE_SESSION_ID = parent_sid          # 子代理的 parent_id 指向父会话
+    b.ACTIVE_SESSION_ID = parent_sid
     # 是否并行：只有 **API 提供商** 模型能并行（HTTP 请求彼此独立）；网页 Copilot
     # 通道只有一个 page，并发会互相踩页（真并发得为每个子代理开独立浏览器上下文，
     # 代价是 N 个 Copilot 会话 + 限流风险）。并发上限由 agent.subagent_parallel 控制。
@@ -122,6 +125,10 @@ async def fanout(tasks: list | None, model: str = "", workspace: str = "",
                     b.AGENT_SESSIONS.add_message(
                         parent_sid, "assistant", f"### 子任务 {idx} 失败\n{exc}", 0)
     finally:
+        try:
+            b._SESSION_CTX.reset(tok_sid)
+        except Exception:
+            pass
         b.ACTIVE_SESSION_ID = prev_active
     ok = [r for r in results if r["ok"]]
     b.AGENT_SESSIONS.patch(parent_sid, state="completed")

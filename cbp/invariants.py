@@ -457,6 +457,21 @@ def _ui_assets_whitelisted() -> None:
         raise InvariantError(f"白名单里有页面未引用的条目（可能已废弃）: {stale}")
 
 
+@invariant("子代理面板按父会话过滤")
+def _subagent_panel_filters_by_parent() -> None:
+    """前端拉子代理列表时必须带 `parent=`。
+
+    真事：面板调用 `/v1/agent/subagents` 不带 parent，后端返回**全部**子代理，
+    于是用户真实任务的"Subagents"里冒出 19 个与它无关的子代理（一次测试扇出留下的）。
+    """
+    src = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
+    for m in re.finditer(r"api\('([^']*?/v1/agent/subagents[^']*)'", src):
+        if "parent=" not in m.group(1):
+            line = src[:m.start()].count("\n") + 1
+            raise InvariantError(
+                f"webui/app.js:{line} 拉子代理没带 parent=（会串台显示别人的子代理）")
+
+
 @invariant("静态属性文案都有英文键")
 def _static_attrs_translated() -> None:
     """`index.html` 里含中文的 title/placeholder/aria-label/alt 必须有英文词条。

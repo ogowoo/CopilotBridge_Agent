@@ -150,23 +150,30 @@ function showQuestionBar(q){
 /* ── 子代理面板（看到有哪些子代理、在跑什么、进度到哪）──────────────
    数据来自 GET /v1/agent/subagents；点一行可切到该子会话查看详情。 */
 let lastSubagentFetch=0, subagentBusy=false;
+let lastSubagentParent=null;
 async function refreshSubagents(force){
  const now=Date.now();
  if(subagentBusy) return;
+ // 切了会话必须立刻刷新（否则会短暂显示**上一个会话**的子代理，看起来像"串台"）
+ if(current!==lastSubagentParent){force=true;lastSubagentParent=current}
  if(!force && now-lastSubagentFetch<3000) return;
+ // **必须按父会话过滤**：不带 parent 会返回全部子代理，面板里就会混进别的任务的
+ // 子代理（实测：用户真实会话里冒出 19 个与它无关的子代理）。
+ if(!current){renderSubagents([]);return}
  subagentBusy=true;lastSubagentFetch=now;
  try{
-  const d=await api('/v1/agent/subagents');
+  const d=await api('/v1/agent/subagents?parent='+encodeURIComponent(current));
   renderSubagents(d.subagents||[]);
  }catch(e){}
  finally{subagentBusy=false}
 }
 function renderSubagents(list){
+ if(!current){list=[]}
  const bar=document.getElementById('subagentBar');
  const box=document.getElementById('subagentList');
  const cnt=document.getElementById('subagentCount');
  if(!bar||!box) return;
- if(!list.length){bar.style.display='none';box.innerHTML='';return}
+ if(!list.length){bar.style.display='none';box.innerHTML='';if(cnt)cnt.textContent='';return}
  // 用 'block' 而非 ''：'' 会回退到样式表里的 .subagents{display:none}（实测踩到）
  bar.style.display='block';
  const running=list.filter(s=>s.state==='running').length;
@@ -174,14 +181,15 @@ function renderSubagents(list){
  box.innerHTML='';
  list.slice(0,8).forEach(s=>{
   const row=document.createElement('div');
-  row.className='subagentrow'+(s.id===current?' sel':'');
-  row.dataset.act='openSubagent';row.dataset.arg=s.id;
+  const _sid=s.agent_id||s.id||'';
+  row.className='subagentrow'+(_sid===current?' sel':'');
+  row.dataset.act='openSubagent';row.dataset.arg=_sid;
   const dot=document.createElement('span');
   dot.className=s.state==='running'?'dot-on':(s.state==='failed'?'dot-bad':'dot-off');
   const desc=document.createElement('span');desc.className='sa-desc';
   // 子代理描述是模型给的任务文本（数据），不参与 i18n 覆盖率判定
   desc.setAttribute('data-i18n-skip','1');
-  desc.textContent=s.description||s.task||s.id;
+  desc.textContent=s.description||s.task||_sid;
   const meta=document.createElement('span');meta.className='sa-meta';
   meta.textContent=stateText(s.state)+' · '+s.steps+' '+tr('步')+(s.phase?' · '+s.phase:'');
   row.appendChild(dot);row.appendChild(desc);row.appendChild(meta);

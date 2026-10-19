@@ -3835,7 +3835,10 @@ async def run_subagent(task: str, description: str = "", model: str = "",
         raise ToolError("task 不能为空")
     if subagent_chain_depth() >= _SUBAGENT_MAX_DEPTH:
         raise ToolError("子代理不能再创建子代理（防止无限递归）")
-    parent_sid = ACTIVE_SESSION_ID
+    # **必须用任务上下文**：模块全局 ACTIVE_SESSION_ID 会被并发任务覆盖，
+    # 用它当父会话会把子代理挂到别人的会话下（实测：测试扇出的子代理挂到了
+    # 用户正在跑的真实任务里，界面上莫名出现 19 个 Subagents）。
+    parent_sid = current_session()
     parent_root = str(AGENT_TOOLS.root)
     child_sid = "sub-" + uuid.uuid4().hex[:10]
     parent_state = AGENT_SESSIONS.get(parent_sid) or {}

@@ -662,6 +662,7 @@ Object.assign(I18N_EN, {
  "长期记忆": "Long-term memory",
  "上一级": "Go up one level",
  "默认": "Default",
+ "待办清单：Agent 用 todo_write 维护，点一下展开/收起；与 /plan 计划模式无关": "Todo list: maintained by the agent via todo_write; click to expand/collapse (unrelated to /plan mode)",
  "未授权：已取消令牌输入（点此重新输入）": "Unauthorized: token prompt cancelled (click to enter it again)",
  "即将删除的会话：\n\n  ID: {id}\n  标题: {title}\n\n仅删除本地 Session{extra}。此操作不可撤销，确定继续？": "About to delete this session:\n\n  ID: {id}\n  Title: {title}\n\nDeleting the local session only{extra}. This cannot be undone — continue?",
  "  · 回合 {r}（{t}）：{paths}": "  · turn {r} ({t}): {paths}",
