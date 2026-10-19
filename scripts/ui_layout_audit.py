@@ -29,10 +29,26 @@ MEASURE_JS = r"""
     tag: el.tagName.toLowerCase(),
     id: el.id || '',
     cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40),
-    text: (el.textContent || '').trim().slice(0, 24)
+    text: (el.textContent || '').trim().slice(0, 24),
+    ws: getComputedStyle(el).whiteSpace,
+    parent: (el.parentElement ? (el.parentElement.id ? '#' + el.parentElement.id
+             : el.parentElement.tagName.toLowerCase() +
+               (el.parentElement.className && typeof el.parentElement.className === 'string'
+                 ? '.' + el.parentElement.className.split(' ')[0] : '')) : '')
   });
 
   // 1) 横向溢出：右边界超出视口或左边界为负
+  //    例外：祖先有 overflow-x:hidden/auto/scroll → 内容已被裁剪或可滚动，
+  //    用户看不到"跑到视口外"，不算布局错位（与遮挡检查的 clipOf 同一判据）。
+  const clippedByAncestor = el => {
+    let n = el.parentElement;
+    while (n && n !== document.body) {
+      const c = getComputedStyle(n);
+      if (/hidden|auto|scroll/.test(c.overflowX)) return true;
+      n = n.parentElement;
+    }
+    return false;
+  };
   document.querySelectorAll('body *').forEach(el => {
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden') return;   // 固定元素也要查：
@@ -41,6 +57,7 @@ MEASURE_JS = r"""
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) return;
     if (r.right > vw + 1 || r.left < -1) {
+      if (clippedByAncestor(el)) return;      // 已被祖先裁剪：用户看不到，不报
       res.offenders.push({...describe(el), left: Math.round(r.left), right: Math.round(r.right),
                           w: Math.round(r.width)});
     }
@@ -247,8 +264,10 @@ def audit(widths: list[tuple[int, int]], url: str, stress: bool = False) -> int:
             if m["offenders"]:
                 top = m["offenders"][:4]
                 problems.append(f"{w}x{h}: {len(m['offenders'])} 个元素超出视口（例："
-                                + "; ".join(f"{o['tag']}#{o['id'] or o['cls']}[{o['left']}..{o['right']}]"
-                                            for o in top) + ")")
+                                + "; ".join(
+                                    f"{o['tag']}#{o['id'] or o['cls']}[{o['left']}..{o['right']}]"
+                                    f"「{o.get('text', '')[:24]}」{{ws={o.get('ws', '')}}}"
+                                    for o in top) + ")")
             for oc in m.get("occlusions", []):
                 problems.append(f"{w}x{h}: 浮层 {oc['cover']} 遮挡 {oc['target']} "
                                 f"{oc['ratio']}%（{oc['overlap']}）")
