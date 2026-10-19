@@ -633,6 +633,33 @@ curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C
 
 > 尚未接入：旧版 **HTTP+SSE 双端点**传输（2024-11-05 老规范，只支持 streamable HTTP）。
 
+### 5.3.4 待办清单：从 TODO 文件自动同步 + 按清单派子代理
+
+用户实测痛点（pyshot 整改）：说"按 todo 完成整改"之后，**面板清单一直 0/5**，
+而子代理面板里那 4 个还是上一阶段的遗留，"像摆设"。
+
+**① TODO 文件自动同步**（`cbp/todo_sync.py`）
+- 每步开始时按 **mtime** 检查工作区里的 `*todo*.md`（也认 `.txt`），解析 `- [ ] / - [x]`
+  复选框（没有方框时退化成 `- 项` 列表），写进会话 `todos`；
+- **不覆盖进度**：同一项已是 `completed` 不会被文件里的 `[ ]` 拉回；文件里删掉的
+  已完成项会保留；文件消失时**不清空**现有清单；
+- 之前 CBP 完全不看 `pyshot_todo.md`（23KB 的计划文件），面板只认 `todo_write`。
+
+**② 按清单自动派子代理**（`cbp/auto_team.py`，**默认关闭**）
+- 条件：`agent.auto_team_enabled=true`、存在 **≥2 个** `pending` 且**作用域不重叠**
+  （按文件路径/标识符判断互不依赖）、当前没有子代理在跑；
+- 动作：把这几项转成自足的任务文本（目标、验收、汇报格式）交给 `fanout`，
+  子代理 id 记回对应待办，清单里能看到"谁在跑"；
+- 为什么默认关：每个子代理都是一条独立 Copilot 对话，**成倍消耗额度**。
+
+配置项：
+
+```json
+{"agent": {"auto_team_enabled": false, "auto_team_max_agents": 4, "auto_team_max_steps": 30}}
+```
+
+**③ 子代理面板可折叠**：标题栏「折叠 / 展开」，状态记在 `localStorage`，刷新后保持。
+
 ### 5.3.3 测试脚本的浏览器回收
 
 连续跑 UI 审计/截图脚本会在系统里攒下泄漏的 Playwright 浏览器（实测 **21 个** msedge，

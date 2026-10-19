@@ -662,6 +662,7 @@ Object.assign(I18N_EN, {
  "长期记忆": "Long-term memory",
  "上一级": "Go up one level",
  "默认": "Default",
+ "折叠": "Collapse",
  "系统": "system",
  "与": "with",
  "继续": "continue",

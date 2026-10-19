@@ -45,7 +45,10 @@
     "service_retry_base_seconds": 30,
     "service_retry_max_seconds": 600,
     "allow_self_upgrade": false,
-    "approval_scope": "session"
+    "approval_scope": "session",
+    "auto_team_enabled": false,
+    "auto_team_max_agents": 4,
+    "auto_team_max_steps": 30
   },
   "models": {},
   "providers": {},

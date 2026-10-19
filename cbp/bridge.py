@@ -3220,6 +3220,20 @@ def event_source() -> str:
     return val if val in ("columns", "projection") else "columns"
 
 
+def sync_session_todos(sid: str) -> bool:
+    """按需把工作区 TODO 文件同步进会话待办（解析失败/没变化时安静返回）。
+
+    用户诉求："todo 应该自己分析 todo.md 之类的来更新"——文件里写的是计划，
+    以前 CBP 完全不看它，面板只能靠模型自觉调 todo_write（实测整改阶段只调了 1 次）。
+    """
+    try:
+        from .todo_sync import sync_todos_from_files
+
+        return bool(sync_todos_from_files(AGENT_SESSIONS, sid))
+    except Exception:
+        return False
+
+
 def pending_steps_via(sid: str, source: str | None = None) -> list[dict]:
     """"结果未知"的步骤（未收尾）——可按 columns 或 projection 读取。
 
@@ -3522,13 +3536,25 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                             # 让界面显示"正在执行 X"，而不是停在上一轮的 waiting
                             runtime_update(sid, phase="executing",
                                            detail=f"正在执行第 {no} 步 · {tool}",
-                                           step_started=time.time())),
+                                           step_started=time.time()),
+                            # 工作区 TODO 文件变了就同步进待办面板（mtime 未变是空操作）
+                            sync_session_todos(sid)),
                         step_finish=lambda no, st='done': (
                             AGENT_SESSIONS.finish_step(sid, _conv_index(sid), no, st),
                             runtime_update(sid, phase="thinking", detail=f"第 {no} 步已完成（{st}）")),
                         approval_check=lambda tool,h: AGENT_SESSIONS.take_approval(sid, tool, h))
         try:
             PLUGINS.emit("session_start", session_id=sid, task=effective_task, model=req.model)
+            # 按 todo 自动派子代理（默认关：config.agent.auto_team_enabled）。
+            # 每个子代理都是一条独立 Copilot 对话 = 成倍额度，所以必须显式打开。
+            try:
+                from .auto_team import maybe_dispatch
+
+                _n = await maybe_dispatch(AGENT_SESSIONS, sid, AGENT_CFG)
+                if _n:
+                    log(f"按待办自动派发 { _n } 个子代理")
+            except Exception as exc:      # 自动派发失败绝不影响主任务
+                log(f"自动派发失败（忽略）：{exc}")
             # 用户任务先落库：**必须在跑之前**——消息与步骤在实时流里按时间穿插，
             # 跑完再写会让"用户提问"排到它自己触发的几十个步骤后面（顺序就乱了）。
             try:
@@ -4072,8 +4098,10 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
         cfg_child["max_total_steps"] = max(3, min(int(max_steps or subagent_max_steps()), 200))
         runner = AgentRunner(AGENT_TOOLS, turn, cfg_child, get, save, add_step, add_file,
                              add_conv_stat,
-                             step_begin=lambda no, tool, h: AGENT_SESSIONS.begin_step(
-                                 child_sid, _conv_index(child_sid), no, tool, h),
+                             step_begin=lambda no, tool, h: (
+                                 AGENT_SESSIONS.begin_step(
+                                     child_sid, _conv_index(child_sid), no, tool, h),
+                                 sync_session_todos(child_sid)),
                              step_finish=lambda no, st='done': AGENT_SESSIONS.finish_step(
                                  child_sid, _conv_index(child_sid), no, st),
                              approval_check=lambda tool, h: AGENT_SESSIONS.take_approval(

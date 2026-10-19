@@ -167,6 +167,26 @@ async function refreshSubagents(force){
  }catch(e){}
  finally{subagentBusy=false}
 }
+/* 子代理面板折叠：状态记在 localStorage，刷新后保持。 */
+function toggleSubagents(){
+ const bar=document.getElementById('subagentBar');
+ if(!bar)return;
+ const collapsed=!bar.classList.contains('collapsed');
+ bar.classList.toggle('collapsed',collapsed);
+ try{localStorage.setItem('cbp.subagentsCollapsed',collapsed?'1':'0')}catch(e){}
+ const btn=document.getElementById('subagentToggle');
+ if(btn)btn.textContent=collapsed?tr('展开'):tr('折叠');
+}
+function applySubagentsCollapsed(){
+ const bar=document.getElementById('subagentBar');
+ if(!bar)return;
+ let collapsed=false;
+ try{collapsed=localStorage.getItem('cbp.subagentsCollapsed')==='1'}catch(e){}
+ bar.classList.toggle('collapsed',collapsed);
+ const btn=document.getElementById('subagentToggle');
+ if(btn)btn.textContent=collapsed?tr('展开'):tr('折叠');
+}
+
 function renderSubagents(list){
  if(!current){list=[]}
  const bar=document.getElementById('subagentBar');
@@ -3361,7 +3381,7 @@ attachPasteHandler('followup','follow');
   }
  applyI18n(document);   // 静态界面按当前语言渲染（data-i18n + 静态 DOM 直译）
  applyLangButton();
- mountTimelineIntoTab();
+ mountTimelineIntoTab();applySubagentsCollapsed();
  loadModels();browserState();mergePluginI18n(true);
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();
@@ -3406,6 +3426,7 @@ const ACTIONS={
  removeSession:(el)=>removeSession(el.dataset.arg==='true'),
  liveTab:(el)=>liveTab(el.dataset.arg),
  toggleStreamDetail:()=>toggleStreamDetail(),
+ toggleSubagents:()=>toggleSubagents(),
  showLastPrompt:()=>showLastPrompt(),
  openSubagent:(el)=>load(el.dataset.arg),
  openPlugins:()=>openPlugins(),

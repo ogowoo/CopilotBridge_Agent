@@ -1041,3 +1041,7 @@ body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
 /* hidden 属性会被 .livepane/.term 的 display 规则盖掉（作者样式优先于 UA 的 [hidden]），
    结果「详情」块默认就是展开的。显式补一条。 */
 #activity[hidden], #answer[hidden], #prompt[hidden]{display:none !important}
+
+/* SUBAGENT-COLLAPSE: 子代理面板可折叠（列表长时占地方）。 */
+#subagentBar.collapsed #subagentList{display:none}
+#subagentBar.collapsed .chead{border-bottom:0}
