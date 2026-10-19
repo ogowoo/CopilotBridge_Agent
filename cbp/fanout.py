@@ -77,9 +77,13 @@ async def fanout(tasks: list | None, model: str = "", workspace: str = "",
                     try:
                         out = await b.run_subagent(item["task"], item["description"],
                                                    model, max_steps)
-                        return {"index": idx, "task": item["task"][:120], "ok": True,
+                        # _drive_child **不抛异常**也会带着 error 返回（子会话失败时），
+                        # 只看有没有异常会把失败当成功（实测：子代理 500 了却报 ok=true）
+                        err = out.get("error")
+                        return {"index": idx, "task": item["task"][:120], "ok": not err,
                                 "agent_id": out.get("agent_id"), "steps": out.get("steps"),
-                                "content": out.get("content")}
+                                "content": out.get("content") or "",
+                                **({"error": err} if err else {})}
                     except Exception as exc:      # noqa: BLE001 单项失败不影响其余
                         return {"index": idx, "task": item["task"][:120], "ok": False,
                                 "error": f"{type(exc).__name__}: {exc}"}
@@ -102,12 +106,16 @@ async def fanout(tasks: list | None, model: str = "", workspace: str = "",
                 try:
                     out = await b.run_subagent(item["task"], item["description"],
                                                model, max_steps)
+                    err = out.get("error")
                     results.append({"index": idx, "task": item["task"][:120],
-                                    "ok": True, "agent_id": out.get("agent_id"),
-                                    "steps": out.get("steps"), "content": out.get("content")})
+                                    "ok": not err, "agent_id": out.get("agent_id"),
+                                    "steps": out.get("steps"),
+                                    "content": out.get("content") or "",
+                                    **({"error": err} if err else {})})
                     b.AGENT_SESSIONS.add_message(
                         parent_sid, "assistant",
-                        f"### 子任务 {idx}\n{out.get('content') or ''}", 0)
+                        (f"### 子任务 {idx}\n{out.get('content') or ''}" if not err
+                         else f"### 子任务 {idx} 失败\n{err}"), 0)
                 except Exception as exc:              # noqa: BLE001 单项失败不影响其余
                     results.append({"index": idx, "task": item["task"][:120], "ok": False,
                                     "error": f"{type(exc).__name__}: {exc}"})

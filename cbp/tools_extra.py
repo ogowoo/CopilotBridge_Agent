@@ -535,9 +535,13 @@ class _Extra:
                 async with sem:
                     try:
                         out = await self.subagent_fn(task, label, model, max_steps)
-                        return {"index": idx, "task": task[:120], "ok": True,
+                        # 子代理失败时 _drive_child 是**带 error 返回**而不是抛异常，
+                        # 只看异常会把失败算成功（实测：子代理 500 却 ok=true）
+                        err = out.get("error")
+                        return {"index": idx, "task": task[:120], "ok": not err,
                                 "agent_id": out.get("agent_id"), "steps": out.get("steps"),
-                                "content": out.get("content")}
+                                "content": out.get("content") or "",
+                                **({"error": err} if err else {})}
                     except Exception as exc:              # noqa: BLE001 单项失败要能继续
                         return {"index": idx, "task": task[:120], "ok": False,
                                 "error": f"{type(exc).__name__}: {exc}"}
@@ -547,9 +551,11 @@ class _Extra:
             for idx, task, label in plan:
                 try:
                     out = await self.subagent_fn(task, label, model, max_steps)
-                    results.append({"index": idx, "task": task[:120], "ok": True,
+                    err = out.get("error")
+                    results.append({"index": idx, "task": task[:120], "ok": not err,
                                     "agent_id": out.get("agent_id"), "steps": out.get("steps"),
-                                    "content": out.get("content")})
+                                    "content": out.get("content") or "",
+                                    **({"error": err} if err else {})})
                 except Exception as exc:                      # noqa: BLE001 单项失败要能继续
                     results.append({"index": idx, "task": task[:120], "ok": False,
                                     "error": f"{type(exc).__name__}: {exc}"})

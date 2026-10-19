@@ -225,6 +225,26 @@ class ApiProvider:
                 "可在 providers 配置里设 proxy，或设 use_system_proxy=false 强制直连")
 
     @staticmethod
+    @staticmethod
+    async def _check_status_stream(resp: httpx.Response) -> None:
+        """`client.stream()` 里的状态检查。
+
+        流式响应还没被消费时访问 `resp.text` 会抛
+        "Attempted to access streaming response content, without having called `read()`"
+        ——实测把整个提供商通道的 Agent 回合打成 500。错误时先 `aread()` 再读 body。
+        """
+        if resp.status_code < 400:
+            return
+        try:
+            await resp.aread()
+            body = resp.text[:500]
+        except Exception:
+            body = "(无法读取响应体)"
+        if resp.status_code in (408, 409, 425, 429) or resp.status_code >= 500:
+            raise ProviderUnavailable(f"HTTP {resp.status_code}: {body}")
+        raise ProviderError(f"HTTP {resp.status_code}: {body}")
+
+    @staticmethod
     def _check_status(resp: httpx.Response) -> None:
         if resp.status_code < 400:
             return
@@ -318,7 +338,7 @@ class ApiProvider:
             try:
                 async with self._client() as client:
                     async with client.stream("POST", "/v1/messages", json=body) as resp:
-                        self._check_status(resp)
+                        await self._check_status_stream(resp)
                         async for line in resp.aiter_lines():
                             line = line.strip()
                             if not line.startswith("data:"):
@@ -342,7 +362,7 @@ class ApiProvider:
         try:
             async with self._client() as client:
                 async with client.stream("POST", "/chat/completions", json=body) as resp:
-                    self._check_status(resp)
+                    await self._check_status_stream(resp)
                     async for line in resp.aiter_lines():
                         line = line.strip()
                         if not line.startswith("data:"):
