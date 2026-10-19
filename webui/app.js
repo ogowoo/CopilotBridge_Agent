@@ -726,7 +726,11 @@ function stateClass(s){return s==='running'?'run':(s==='paused'||s==='waiting')?
 function setPill(s){let e=document.getElementById('statepill');e.textContent=stateText(s);e.className='pill '+stateClass(s)}
 function setKpis(o){
  if(o.token_budget){budget=o.token_budget;document.getElementById('kpiBudget').textContent=' / '+Number(budget).toLocaleString()}
- document.getElementById('kpiState').textContent=stateText(o.state||o.session_state);
+ const _st=String(o.state||o.session_state||'ready');
+ document.getElementById('kpiState').textContent=stateText(_st);
+ // 状态卡片按状态变色（CSS 用 data-state 着色，见 style.css 的 KPI-STATE）
+ const _card=document.getElementById('kpiStateCard');
+ if(_card&&_card.dataset.state!==_st)_card.dataset.state=_st;
  document.getElementById('kpiSteps').textContent=o.total_steps??0;
  document.getElementById('kpiConv').textContent=o.conversation_steps??0;
  document.getElementById('kpiRoll').textContent=o.conversation_index??0;
@@ -1979,6 +1983,11 @@ async function applyRuntime(r){
  try{renderGoalBar(r)}catch(e){}
  currentUrl=r.current_url||currentUrl;
   document.getElementById('pulse').className=r.busy?'pulse':'dot-off';
+  try{
+    const _sc=document.getElementById('kpiStateCard');
+    const _st2=String(r.session_state||r.state||'');
+    if(_sc&&_st2&&_sc.dataset.state!==_st2)_sc.dataset.state=_st2;
+  }catch(e){}
   const _dash=(v)=> (v===undefined||v===null||v==='')?'—':v;
    const _actTxt=`${tr('阶段')}: ${_dash(r.phase||r.session_state)}`
     +`\n${r.detail||''}`

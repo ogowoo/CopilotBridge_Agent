@@ -122,7 +122,9 @@ textarea{resize:vertical}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
 @media(min-width:1281px){.kpis .kpi:last-child{grid-column:span 2}}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 14px}
-.kpi span{display:block;font-size:11px;letter-spacing:1px;color:var(--faint);margin-bottom:5px}
+/* 标签原本用 --faint：对比度审计（改用 canvas 正确解析 color-mix 后）实测
+   4.0~4.34，低于正文 4.5；改用 --muted。 */
+.kpi span{display:block;font-size:11px;letter-spacing:1px;color:var(--muted);margin-bottom:5px}
 .kpi b{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
 .meter{height:7px;background:var(--meter);border-radius:5px;overflow:hidden;margin-top:8px}
 .meter span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .5s}
@@ -507,7 +509,8 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 /* ── 主题：护眼（Solarized 米白） ── */
 :root[data-theme="solarized"]{
   --bg:#fdf6e3;--panel:#fffdf5;--panel2:#f5efdd;--line:#e4dcc4;--line2:#d5cdb4;
-  --text:#586e75;--muted:#61777e;--faint:#687878;--sid-fg:#5a6868;--accent-fg:#11161d;
+  --text:#586e75;--muted:#54686f;--faint:#687878;--sid-fg:#5a6868;--accent-fg:#11161d;
+  /* --muted 原为 #61777e：11px 标签在米白底上只有 4.15（<4.5），压深一档到 #54686f */
   --accent:#268bd2;--accent2:#2176b8;
   --green:#859900;--amber:#b58900;--red:#dc322f;--blue:#268bd2;--purple:#6c71c4;
   --scrollbar:#d5cdb4;--input-bg:#fffdf5;--btn-bg:#fffdf5;--btn-hover-text:#073642;
@@ -1074,3 +1077,28 @@ section.card.collapsed .cardchev svg{transform:rotate(-90deg)}
    （布局审计实测：span.st 宽 896px 在 1280 视口外）。只在需要时断词，不影响缩进对齐。 */
 .jsonview{max-width:100%;overflow-wrap:anywhere}
 .jsonview .st,.jsonview .ky,.jsonview .nm{overflow-wrap:anywhere;white-space:pre-wrap}
+
+/* KPI-STATE: 状态卡片按会话状态动态着色。
+   底色用 color-mix 把主题色兑进面板色，深浅主题都自适应；左侧加一条实色竖条
+   做状态指示（不止靠颜色，色弱也能看出来）。
+   running/waiting 用主色、completed 绿、failed/cancelled 红、paused 琥珀。 */
+.kpi.kpi-state{position:relative;transition:background-color .2s ease,border-color .2s ease}
+.kpi.kpi-state::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  border-radius:12px 0 0 12px;background:var(--line2);transition:background-color .2s ease}
+.kpi.kpi-state[data-state="running"]{background:color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-color:color-mix(in srgb, var(--accent) 35%, var(--line))}
+.kpi.kpi-state[data-state="running"]::before{background:var(--accent)}
+.kpi.kpi-state[data-state="waiting"]{background:color-mix(in srgb, var(--accent) 6%, var(--panel));
+  border-color:color-mix(in srgb, var(--accent) 25%, var(--line))}
+.kpi.kpi-state[data-state="waiting"]::before{background:var(--accent)}
+.kpi.kpi-state[data-state="completed"]{background:color-mix(in srgb, var(--green) 10%, var(--panel));
+  border-color:color-mix(in srgb, var(--green) 35%, var(--line))}
+.kpi.kpi-state[data-state="completed"]::before{background:var(--green)}
+.kpi.kpi-state[data-state="failed"],
+.kpi.kpi-state[data-state="cancelled"]{background:color-mix(in srgb, var(--red) 10%, var(--panel));
+  border-color:color-mix(in srgb, var(--red) 35%, var(--line))}
+.kpi.kpi-state[data-state="failed"]::before,
+.kpi.kpi-state[data-state="cancelled"]::before{background:var(--red)}
+.kpi.kpi-state[data-state="paused"]{background:color-mix(in srgb, var(--amber, #d97706) 10%, var(--panel));
+  border-color:color-mix(in srgb, var(--amber, #d97706) 35%, var(--line))}
+.kpi.kpi-state[data-state="paused"]::before{background:var(--amber, #d97706)}

@@ -37,15 +37,29 @@ TARGETS = [
     (".menuList button.danger", 4.5, "危险菜单项"),
     # 下面两条是"展开后才存在"的元素 —— 以前只在暗色下看过，浅色主题里
     # 变量名写错（--term-fg vs --term-text）导致白底白字，肉眼才发现。
+    (".kpi.kpi-state b", 3.0, "KPI 状态大字（大字号阈值 3.0）"),
     (".streamstep details pre", 4.5, "步骤详情 JSON（展开态）"),
     (".md-codewrap pre", 4.5, "代码块（Markdown）"),
 ]
 
 JS = r"""
 (targets) => {
+  // 颜色解析必须走 canvas：主题里用了 color-mix()，getComputedStyle 会返回
+  // `color(srgb …)` / `oklab(…)` 这类新语法，用正则取数字会把 0.99 当 0.99/255 算，
+  // 对比度直接算错（实测 light 主题虚报 1.27，实际 16+）。
+  const _cv = document.createElement('canvas'); _cv.width = _cv.height = 1;
+  const _ctx = _cv.getContext('2d');
+  const rgbOf = c => {
+    _ctx.clearRect(0, 0, 1, 1);
+    _ctx.fillStyle = '#000';
+    _ctx.fillStyle = c;                 // 现代语法由浏览器自己解析
+    _ctx.fillRect(0, 0, 1, 1);
+    const d = _ctx.getImageData(0, 0, 1, 1).data;
+    return [d[0], d[1], d[2]];
+  };
   const lum = c => {
-    const m = c.match(/[\d.]+/g); if (!m) return null;
-    const [r, g, b] = m.slice(0, 3).map(x => x / 255);
+    if (!c) return null;
+    const [r, g, b] = rgbOf(c).map(x => x / 255);
     const f = v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
     return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
   };
