@@ -2494,10 +2494,12 @@ async def _process_queued_message(sid: str, item: dict):
         try:
             result, _ = await run_agent(req, attach_paths=attach_paths)
             answer = result.content
+            # run_agent 收尾时**已经**把最终回答落库了（幂等）。这里以前也存一次，
+            # 于是同一条回答出现两条（实测 message id 181/182，同一秒同内容）。
+            # 与 L2510 那次修复同类问题，只是当年 agent 路径不走 run_agent 的落库。
         except Exception as exc:
             answer = f"[错误] {exc}"
-        # run_agent 只返回 content 不存消息 → 这里存
-        AGENT_SESSIONS.add_message(sid, "assistant", answer, conv_idx)
+            AGENT_SESSIONS.add_message(sid, "assistant", answer, conv_idx)
         runtime_update(sid, phase="followup_completed", answer_preview=answer[-12000:],
                        detail="跟进消息处理完成")
     else:

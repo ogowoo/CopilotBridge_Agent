@@ -1095,7 +1095,14 @@ function renderStream(messages,steps,opts){
  if(!box)return;
  lastMessages=messages||[];
  const items=[];
- (messages||[]).forEach(m=>items.push({t:Number(m.created)||0,kind:'msg',v:m}));
+ // 相邻同内容消息只留一条：历史上后端有两条路径各写一次（run_agent 与队列 worker），
+ // 库里会真的出现两条一样的回答（id 181/182）。数据修好之前，显示层先挡住。
+ (messages||[]).forEach(m=>{
+   const prev=items.length?items[items.length-1]:null;
+   if(prev&&prev.kind==='msg'&&prev.v.role===m.role
+      && String(prev.v.content||'').trim()===String(m.content||'').trim())return;
+   items.push({t:Number(m.created)||0,kind:'msg',v:m});
+ });
  (steps||[]).forEach(s=>items.push({t:Number(s._time)||0,kind:'step',v:s}));
  items.sort((a,b)=>a.t-b.t||((a.v.step||0)-(b.v.step||0)));
  const sig=items.length+'|'+(items.length?items[items.length-1].t+'|'+items[items.length-1].kind:'');

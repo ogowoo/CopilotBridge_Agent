@@ -327,11 +327,26 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 result.append(item)
             return result
 
+    DEDUPE_WINDOW = 5.0      # 同内容 assistant 消息在这个窗口内视为重复
+
     def add_message(self, sid: str, role: str, content: str, conversation_index: int = 0,
                     attachments: list[str] | None = None):
         if role not in {"user", "assistant", "system"}:
             raise ValueError("invalid role")
         atts = json.dumps([str(a) for a in (attachments or [])], ensure_ascii=False) if attachments else None
+        # 兜底去重：同一条回答被两条代码路径各写一次时，只留第一条。
+        # 实测事故：队列 worker 与 run_agent 各写一次 → 同一秒同内容两条
+        # （message id 181/182），界面里回答显示两遍。
+        if role == "assistant":
+            with self.lock, self._connect() as con:
+                last = con.execute(
+                    "SELECT content, created FROM messages WHERE session_id=? "
+                    "AND conversation_index=? AND role='assistant' "
+                    "ORDER BY id DESC LIMIT 1",
+                    (sid, conversation_index)).fetchone()
+            if (last and (last["content"] or "").strip() == (content or "").strip()
+                    and abs(time.time() - float(last["created"] or 0)) <= self.DEDUPE_WINDOW):
+                return None
         with self.lock, self._connect() as con:
             cur = con.execute("INSERT INTO messages(session_id,created,role,content,conversation_index,attachments) VALUES(?,?,?,?,?,?)",
                               (sid, time.time(), role, content, int(conversation_index), atts))
