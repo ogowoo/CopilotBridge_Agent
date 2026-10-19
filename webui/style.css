@@ -597,6 +597,13 @@ section.card:has(#stepCount){margin-top:14px}
 #manualBody details{border:1px solid var(--line);border-radius:9px;padding:8px 12px;margin:10px 0;background:var(--panel2)}
 #manualBody summary{cursor:pointer;font-weight:600;font-size:13.5px}
 #manualBody summary::marker{color:var(--muted)}
+/* 手册里的四级标题与代码块（比如自升级任务模板）：pre 必须能横向滚动，
+   否则长行会把弹窗撑破。配色复用对话里代码块的令牌，视觉一致。 */
+#manualBody h4{margin:14px 0 6px;font-size:13px;font-weight:600;color:var(--fg)}
+#manualBody pre{margin:8px 0;padding:10px 12px;border:1px solid var(--jv-border);border-radius:9px;
+  background:var(--jv-bg);color:var(--jv-text);font-size:12px;line-height:1.65;white-space:pre-wrap;
+  overflow-wrap:anywhere;overflow-x:auto;
+  font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace}
 
 /* ── Copilot 未就绪提示条 ───────────────────────────────────────── */
 #bootBar{position:fixed;left:0;right:0;top:0;transform:none;max-width:none;width:auto;

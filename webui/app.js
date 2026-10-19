@@ -2035,6 +2035,62 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <li>回滚：<code>POST /v1/agent/self/rollback</code>（在线）或 <code>python scripts/rollback.py</code>（离线）。</li>
 </ol>
 <p class="hint">工作区不允许指向服务安装目录（除非已开启自升级）——否则普通文件工具即可改服务代码，绕过权限门。</p>
+<h4>开了之后怎么跟它说要改自己</h4>
+<p>先说结论：<b>不是"描述你想要什么"就够，而是"指文件 + 说清改什么 + 给验收标准"</b>。
+新开一个会话（上下文干净），照下面这个模板说：</p>
+<pre>【自升级任务】
+文件：cbp/bridge.py（安装目录相对路径，不要写绝对路径）
+现状：&lt;你观察到的行为，例如 resume 时提示只拼原任务&gt;
+要改：&lt;越具体越好，能贴函数名/字段名/代码片段就贴&gt;
+边界：只改上面这个文件或这段逻辑，其它不要动
+验收：self_validate + self_unittest 双通过
+交付：告诉我改了哪些行、验证结果、需要重启、以及回滚命令</pre>
+<p>也可以直接说短句，效果一样：</p>
+<ul>
+<li>「把 <code>webui/style.css</code> 里侧栏默认宽度 318px 改成 300px，改完跑 self_validate 和 self_unittest」</li>
+<li>「看 <code>cbp/api.py</code> 的 <code>/v1/shutdown</code>，把优雅停机超时从 8 秒改成 15 秒，其他别动」</li>
+</ul>
+<p>先确认开关真的生效：问它一句「你有哪些 self_ 开头的工具」，应该能列出
+<code>self_read_text</code> / <code>self_write_text_b64</code> / <code>self_append_text_b64</code> /
+<code>self_replace_text</code> / <code>self_validate</code> / <code>self_unittest</code> /
+<code>self_rollback</code> 共 7 个；关着的时候是 0 个。</p>
+<h4>它会遵守的硬约束</h4>
+<ul>
+<li><b>只能改白名单</b>：<code>cbp/</code> <code>webui/</code> <code>scripts/</code> <code>docs/</code>
+<code>tests/</code> <code>skills/</code> 以及 <code>app.py</code> <code>start.py</code>
+<code>install.py</code> <code>requirements.txt</code> <code>AGENT.md</code>
+<code>README.md</code> <code>config.example.json</code>。</li>
+<li><b>禁写</b>：<code>config.json</code>、<code>data/</code>、<code>EdgeProfile/</code>、
+<code>for debug/</code>、<code>.git/</code>、<code>__pycache__/</code>。要调配置<b>你自己改</b>，
+它写会被拒。</li>
+<li><b>验证门</b>：写完必须 <code>self_validate</code> + <code>self_unittest</code> 都通过，
+否则不能宣称完成（系统会拦下 final）。</li>
+<li><b>自动快照</b>：每次写/替换都在 <code>data/snapshots/_self_&lt;sid&gt;/</code> 存旧版本，
+可按任务整体回滚。</li>
+</ul>
+<h4>出问题怎么退（三条路，从近到远）</h4>
+<ol>
+<li>界面：「更多 ▾」→ <b>回滚服务自升级…</b></li>
+<li>接口：<code>POST /v1/agent/self/rollback?last=true</code></li>
+<li><b>服务起不来时</b>（唯一可用）：<code>python scripts/rollback.py --scope self --last --yes</code></li>
+</ol>
+<p class="hint">第 3 条是救命通道：把服务改到启动即崩，网页和接口都进不去，只能本地命令行退。</p>
+<h4>五个常见坑</h4>
+<ul>
+<li><b>一次只让它做一件事</b>：回滚粒度是"整个任务"，混进多个不相关改动就只能全退。</li>
+<li><b>别只信"验证通过"</b>：<code>self_validate</code> 只查语法、<code>self_unittest</code>
+只跑 <code>tests/</code>，都不等于行为正确。正确流程是：它改 → 你 <code>git diff</code> 审 →
+重启 → 实际点一遍。</li>
+<li><b>改提示词/工具描述算高危</b>：<code>_system_prompt()</code> 与工具 description 会直接改变
+Agent 行为，改完必须实测一轮真实任务。</li>
+<li><b>没重启 ≠ 没效果</b>：改的是磁盘文件，进程里还是旧代码。觉得"没生效"先确认重启。</li>
+<li><b>大文件要分块写</b>：<code>self_write_text_b64</code> 每块 ≤3000 字符，用
+<code>self_append_text_b64</code> 续写；没写完就验证必然失败，那不是缺陷。</li>
+</ul>
+<p class="hint">风险提醒：自升级等于允许 Agent 改自己的代码；若同时开了
+<code>allow_shell</code> / <code>allow_python</code> / <code>allow_delete</code>，
+实质是给本机完全控制权。建议只在有人盯着时开、改完关回去，且每次改完自己
+<code>git diff</code> 审一遍再提交。</p>
 
 <h3>常见问题</h3>
 <ul>
@@ -2195,6 +2251,68 @@ the task may finish.</li>
 </ol>
 <p class="hint">A workspace may not point at the service install directory (unless self-upgrade is enabled) —
 otherwise ordinary file tools could edit the service code and bypass the permission gate.</p>
+<h4>How to ask it to change itself</h4>
+<p>Bottom line: <b>"describe what you want" is not enough — name the file, say exactly what to change, and
+give the acceptance criteria</b>. Open a fresh session (clean context) and use this template:</p>
+<pre>[Self-upgrade task]
+File: cbp/bridge.py (install-dir relative path, never an absolute path)
+Current: &lt;the behaviour you observed, e.g. resume only re-sends the original task&gt;
+Change: &lt;be specific; paste function/field names or a code snippet if you can&gt;
+Scope: only the file or logic above — touch nothing else
+Accept: self_validate + self_unittest both pass
+Deliver: which lines changed, verification result, restart needed, and the rollback command</pre>
+<p>Short one-liners work just as well:</p>
+<ul>
+<li>"Change the default sidebar width in <code>webui/style.css</code> from 318px to 300px, then run
+self_validate and self_unittest"</li>
+<li>"Look at <code>/v1/shutdown</code> in <code>cbp/api.py</code> and raise the graceful-shutdown timeout
+from 8s to 15s; change nothing else"</li>
+</ul>
+<p>First confirm the switch really took effect: ask "which tools do you have that start with self_?" —
+you should get 7: <code>self_read_text</code>, <code>self_write_text_b64</code>,
+<code>self_append_text_b64</code>, <code>self_replace_text</code>, <code>self_validate</code>,
+<code>self_unittest</code>, <code>self_rollback</code>. With the flag off there are zero.</p>
+<h4>Hard limits it must respect</h4>
+<ul>
+<li><b>Allowlisted paths only</b>: <code>cbp/</code> <code>webui/</code> <code>scripts/</code>
+<code>docs/</code> <code>tests/</code> <code>skills/</code> plus <code>app.py</code>
+<code>start.py</code> <code>install.py</code> <code>requirements.txt</code>
+<code>AGENT.md</code> <code>README.md</code> <code>config.example.json</code>.</li>
+<li><b>Never writable</b>: <code>config.json</code>, <code>data/</code>, <code>EdgeProfile/</code>,
+<code>for debug/</code>, <code>.git/</code>, <code>__pycache__/</code>. Config changes are <b>yours to
+make</b> — its writes are rejected.</li>
+<li><b>Verification gate</b>: <code>self_validate</code> + <code>self_unittest</code> must both pass;
+otherwise it may not claim completion (the system blocks the final answer).</li>
+<li><b>Automatic snapshots</b>: every write/replace stores the previous version under
+<code>data/snapshots/_self_&lt;sid&gt;/</code>, so a whole task can be rolled back.</li>
+</ul>
+<h4>If it goes wrong (three levels, nearest first)</h4>
+<ol>
+<li>UI: "More ▾" → <b>Roll back self-upgrade…</b></li>
+<li>API: <code>POST /v1/agent/self/rollback?last=true</code></li>
+<li><b>When the service will not start</b> (the only option left):
+<code>python scripts/rollback.py --scope self --last --yes</code></li>
+</ol>
+<p class="hint">Option 3 is the lifeline: if a change makes the service crash on startup, neither the web UI nor the
+API is reachable — only the local command can undo it.</p>
+<h4>Five traps</h4>
+<ul>
+<li><b>One thing at a time</b>: rollback granularity is a whole task, so several unrelated edits can only be
+reverted together.</li>
+<li><b>Do not trust "verification passed"</b>: <code>self_validate</code> is syntax only and
+<code>self_unittest</code> only runs <code>tests/</code>; neither proves correct behaviour. The right flow is:
+it edits → <b>you review <code>git diff</code></b> → restart → actually click through it.</li>
+<li><b>Prompt and tool-description edits are high risk</b>: <code>_system_prompt()</code> and tool
+descriptions change agent behaviour directly — always run one real task after such a change.</li>
+<li><b>"No effect" usually means "not restarted"</b>: the file on disk changed, the process still runs the old
+code. Confirm the restart before asking for another attempt.</li>
+<li><b>Write large files in chunks</b>: <code>self_write_text_b64</code> is ≤3000 chars per chunk; continue
+with <code>self_append_text_b64</code>. Validating a half-written file always fails — that is not a defect.</li>
+</ul>
+<p class="hint">Risk note: self-upgrade lets the agent rewrite its own code; combined with
+<code>allow_shell</code> / <code>allow_python</code> / <code>allow_delete</code> that is effectively full control
+of the machine. Prefer turning it on only while you watch, turning it off afterwards, and reviewing
+<code>git diff</code> yourself before committing.</p>
 
 <h3>FAQ</h3>
 <ul>
