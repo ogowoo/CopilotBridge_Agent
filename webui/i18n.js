@@ -133,6 +133,7 @@ const I18N_EN = {
   "等待服务": "Waiting for service",
   "就绪": "Ready",
   "已完成": "Completed",
+  "进行中": "In progress",
   "失败": "Failed",
   "已取消": "Cancelled",
   "已过期": "Expired",
@@ -334,6 +335,10 @@ Object.assign(I18N_EN, {
   "已授权": "Authorized",
   // 重启服务
   "重启服务": "Restart service",
+  // 待办（todo_write 维护的清单，区别于 /plan 计划模式）
+  "待办": "Todo",
+  "待办清单：Agent 用 todo_write 维护，完成一个勾一个；与 /plan 计划模式无关":
+    "Todo list: maintained by the agent via todo_write, one item ticked per completion; unrelated to /plan mode",
   "就地重启本服务（更新代码后用它；正在跑的任务会中断，状态已落库，开着 auto_resume 会自动续跑）":
     "Restart the service in place (use this after changing code; running tasks are interrupted, state is persisted, and auto_resume continues them)",
   "↻ 重启服务": "↻ Restart service",
@@ -505,8 +510,6 @@ Object.assign(I18N_EN, {
    "Plan mode (read-only): explore, then submit a plan via exit_plan_mode",
  "用法：/goal 你的目标": "Usage: /goal your objective",
  "用法：/plan 你的任务": "Usage: /plan your task",
- "进行中": "active",
- "已完成": "done",
  "已阻塞": "blocked",
  "已暂停": "paused",
  "轮": "round",

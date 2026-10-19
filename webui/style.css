@@ -844,7 +844,19 @@ section.card:has(#stepCount){margin-top:14px}
 .goalbar[hidden]{display:none}
 .goalbar .gb-goal{color:var(--text);font-weight:600}
 .goalbar .gb-meta{color:var(--faint)}
-.goalbar .gb-todo{color:var(--accent2)}
+.goalbar .gb-todo{color:var(--accent2);background:none;border:0;padding:0 2px;cursor:pointer;font:inherit}
+.goalbar .gb-todo:hover{text-decoration:underline}
+/* 待办清单展开区（点「待办 x/y」展开）：一行一条，左侧状态符号，右侧状态文字 */
+.goalbar{flex-wrap:wrap}
+.todolist{flex:1 1 100%;margin:2px 0 0;display:flex;flex-direction:column;gap:2px;
+  border-left:2px solid var(--line2);padding:4px 0 2px 10px}
+.todoitem{display:flex;align-items:baseline;gap:8px;font-size:12.5px;line-height:1.6}
+.todoitem .tic{flex:none;width:14px;color:var(--faint)}
+.todoitem .ttxt{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--text)}
+.todoitem .tst{flex:none;font-size:11.5px;color:var(--faint)}
+.todoitem.todo-completed .tic{color:var(--green)}
+.todoitem.todo-completed .ttxt{color:var(--faint);text-decoration:line-through}
+.todoitem.todo-in_progress .tic{color:var(--accent)}
 .goalbar .gb-sep{color:var(--line2)}
 
 /* -- 插件面板（声明式渲染 kv/list/table/json/markdown）-------------- */

@@ -1644,7 +1644,19 @@ async function runtime(){
  }catch(e){}
  finally{runtimeInflight=false}}
 /* 渲染 runtime 快照：轮询与 SSE 推送共用（SSE 直接送快照，省一次往返） */
-/* 目标 / 计划条：goal 模式显示第几轮，plan 模式显示待办完成度 */
+/* 目标 / 计划条：goal 模式显示第几轮；待办清单显示完成度并可展开看条目。
+   待办数据结构是 {content, status}（status: pending|in_progress|completed），
+   **不是 {done}** —— 以前按 `x.done` 计数，永远算出 0/N（用户看到的"0/5"
+   一直不涨就是这个原因）。 */
+let todosOpen=false;
+try{todosOpen=localStorage.getItem('cbp-todos-open')==='1'}catch(e){}
+function toggleTodos(){
+ todosOpen=!todosOpen;
+ try{localStorage.setItem('cbp-todos-open',todosOpen?'1':'0')}catch(e){}
+ renderGoalBar(lastRuntime);
+}
+const TODO_ICON={completed:'✓',in_progress:'◐',pending:'○'};
+const TODO_TXT={completed:'已完成',in_progress:'进行中',pending:'待办'};
 function renderGoalBar(r){
  const el=document.getElementById('goalBar');
  if(!el)return;
@@ -1662,13 +1674,30 @@ function renderGoalBar(r){
     +esc(String(goal.max_rounds||0))+' '+esc(tr('轮'))+' · '+esc(stTxt)+'</span>');
  }
  if(todos.length){
-  const done=todos.filter(x=>x&&x.done).length;
-  parts.push('<span class="gb-todo">☑ '+esc(tr('计划'))+' '+done+'/'+todos.length+'</span>');
+  // 按 status 计数；兼容旧的 done 字段
+  const isDone=x=>!!x&&(x.status==='completed'||x.done===true);
+  const done=todos.filter(isDone).length;
+  parts.push('<button type="button" class="gb-todo" data-act="toggleTodos" '
+    +'title="'+esc(tr('待办清单：Agent 用 todo_write 维护，点一下展开/收起；与 /plan 计划模式无关'))+'">'
+    +'☑ '+esc(tr('待办'))+' '+done+'/'+todos.length+' '+(todosOpen?'▾':'▸')+'</button>');
  }
  el.innerHTML=parts.join('<span class="gb-sep">·</span>');
+ if(todos.length&&todosOpen){
+  const list=document.createElement('div');
+  list.className='todolist';
+  list.innerHTML=todos.map((x,i)=>{
+   const st=String((x&&x.status)||(x&&x.done?'completed':'pending'));
+   const ic=TODO_ICON[st]||'○';
+   return '<div class="todoitem todo-'+esc(st)+'"><span class="tic">'+esc(ic)+'</span>'
+    +'<span class="ttxt">'+esc(String((x&&x.content)||''))+'</span>'
+    +'<span class="tst">'+esc(tr(TODO_TXT[st]||st))+'</span></div>';
+  }).join('');
+  el.appendChild(list);
+ }
 }
 async function applyRuntime(r){
  if(!r)return;
+ lastRuntime=r;              // 供 toggleTodos 重绘待办清单
  const myId=current;
  // SSE 推送与 1s/350ms 轮询可能并发到达同一函数：统一以"当前会话"为准，
  // 迟到的或属于别的会话的快照直接丢弃（否则会把 A 的步骤渲染进 C 的时间线）。
@@ -3175,6 +3204,7 @@ const ACTIONS={
  toggleGlobalSearch:()=>toggleGlobalSearch(),
  shutdownService:()=>shutdownService(),
  restartService:()=>restartService(),
+ toggleTodos:()=>toggleTodos(),
  imgZoom:(el)=>imgZoom(el),
  mCopy:(el)=>{const m=codeMenuEl;if(m)copyText(m.dataset.code||'',el);closeCodeMenu()},
  mDownload:(el)=>{
