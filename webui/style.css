@@ -993,5 +993,6 @@ body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
 .todohint{margin-top:4px;font-size:11.5px;color:var(--faint)}
 
 /* TODO-GAP: 待办卡片与上方「任务操作按钮行」零间距，两个卡片贴成一块（用户截图）。
-   给上下都留出 10px 的呼吸；展开/收起的姿态一致。 */
-#goalBar{margin:10px 0 12px}
+   间距跟页面其它面板保持一致：`.kpis{margin:14px 0}`、`.card{margin-top:14px}`，
+   所以这里也用 14px（实测页面标准面板间距就是 14）。 */
+#goalBar{margin:14px 0}
