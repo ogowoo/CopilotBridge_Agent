@@ -1117,20 +1117,37 @@ function stepRowEl(s){
    +'<span class="ss-tool">'+esc(tool)+'</span>'
    +'<span class="ss-reason" title="'+esc(reason)+'">'+esc(reason)+'</span>'
    +'<span class="ss-clock">'+esc(time)+'</span>';
- const det=document.createElement('details');
- det.className='ss-det';
- const sum=document.createElement('summary');
- sum.textContent=tr('查看参数与结果');
- det.appendChild(sum);
- const pre=document.createElement('pre');
- const payload={};
- if(s.arguments!==undefined&&s.arguments!==null&&s.arguments!=='')payload.arguments=s.arguments;
- if(s.result!==undefined)payload.result=s.result;
- if(s.error)payload.error=s.error;
- if(s.status)payload.status=s.status;
- try{pre.textContent=JSON.stringify(payload,null,1)}catch(e){pre.textContent=String(payload)}
- det.appendChild(pre);
- el.appendChild(det);
+ // 详情**照抄步骤时间线的渲染**（用户："可以像步骤时间线那样"）：
+ // 渲染视图（kvlist / 表格 / jsonview）+ 渲染↔JSON 切换，比裸 JSON 好读得多。
+ const hasResult = s.result !== undefined && s.result !== null;
+ const hasArgs = s.arguments !== undefined && s.arguments !== null && s.arguments !== '';
+ if(hasResult || hasArgs || s.error){
+  const det=document.createElement('details');
+  det.className='ss-det';
+  const sum=document.createElement('summary');
+  sum.textContent=tr('查看结果');
+  det.appendChild(sum);
+  const bar=document.createElement('div');
+  bar.className='stepviewbar';
+  bar.innerHTML='<button type="button" class="btn seg on" data-act="stepView" data-arg="render">'
+    +esc(tr('渲染'))+'</button><button type="button" class="btn seg" data-act="stepView" '
+    +'data-arg="json">JSON</button>';
+  det.appendChild(bar);
+  const rv=document.createElement('div');
+  rv.className='stepview'; rv.dataset.mode='render';
+  rv.innerHTML=stepResultRender(s);
+  det.appendChild(rv);
+  const jvv=document.createElement('div');
+  jvv.className='stepview'; jvv.dataset.mode='json'; jvv.style.display='none';
+  const payload = hasResult ? s.result
+    : (hasArgs ? s.arguments : {error: String(s.error||''), status: String(s.status||'')});
+  const jbox=document.createElement('div');
+  jbox.className='jsonview';
+  jbox.innerHTML=jv(payload);
+  jvv.appendChild(jbox);
+  det.appendChild(jvv);
+  el.appendChild(det);
+ }
  return el;
 }
 function renderStream(messages,steps,opts){
@@ -1861,6 +1878,26 @@ async function showLastPrompt(){
 }
 
 
+/* 推断"当前在做哪一项"：模型不更新 todo 时，面板也不能干挂着 17 条 pending。
+   规则：最近一步的文本里出现 `P0-1` 这类编号 → 命中对应项；否则取第一条 pending。
+   标注成「进行中（推断）」，不写库、不假装完成。 */
+function inferCurrentTodo(todos){
+ const list=todos||[];
+ const idx=list.findIndex(t=>String(t.status)==='in_progress');
+ if(idx>=0)return idx;
+ const recent=(lastSteps||[]).slice(-6).map(s=>{
+   try{return (String(s.reason||'')+' '+(s.arguments?JSON.stringify(s.arguments):''))}catch(e){return String(s.reason||'')}
+ }).join(' ');
+ const m=recent.match(/[A-Z]\d+-\d+/g);
+ if(m){
+  for(const tok of m.reverse()){
+   const hit=list.findIndex(t=>String(t.content||'').includes(tok));
+   if(hit>=0)return hit;
+  }
+ }
+ return list.findIndex(t=>String(t.status)==='pending');
+}
+
 function renderGoalBar(r){
  const el=document.getElementById('goalBar');
  if(!el)return;
@@ -1911,8 +1948,12 @@ function renderGoalBar(r){
   list.innerHTML=todos.map((x,i)=>{
    let st=String((x&&x.status)||(x&&x.done?'completed':'pending'));
    const stale=_ended&&(st==='pending'||st==='in_progress');
+   // 没有 in_progress 时，把推断出的当前项**临时**按进行中显示并标注「（推断）」
+   const inferred=(!stale&&st==='pending'&&!todos.some(t=>String(t.status)==='in_progress')
+                   && i===inferCurrentTodo(todos));
+   if(inferred)st='in_progress';
    const ic=TODO_ICON[st]||'○';
-   const label=stale?tr('未同步'):tr(TODO_TXT[st]||st);
+   const label=stale?tr('未同步'):(inferred?tr('进行中（推断）'):tr(TODO_TXT[st]||st));
    return '<div class="todoitem todo-'+esc(st)+(stale?' todo-stale':'')+'"><span class="tic">'+esc(ic)+'</span>'
     +'<span class="ttxt">'+esc(String((x&&x.content)||''))+'</span>'
     +'<span class="tst">'+esc(label)+'</span></div>';

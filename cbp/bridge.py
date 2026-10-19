@@ -1756,7 +1756,10 @@ TOKEN_BUDGET = int(AGENT_CFG.get("context_token_budget", 24000))
 SESSION_DB = Path(AGENT_CFG.get("session_store", "data/agent.db"))
 if not SESSION_DB.is_absolute(): SESSION_DB = BASE / SESSION_DB
 AGENT_SESSIONS = SessionStore(SESSION_DB)
-AGENT_SESSIONS.recover_interrupted()
+# 注意：**不要**在这里调用 recover_interrupted()。
+# 模块级副作用会污染任何 import cbp.bridge 的进程（单元测试、检查脚本、CLI）——
+# 它们会把正在跑的会话全部标成 paused（"服务中断，可从检查点恢复"），
+# 实测用户任务被反复打断就是这个原因。恢复只在服务启动时做（见 cbp/api.py lifespan）。
 
 # ── 工作区快照：写操作前记录原像，支持"回滚整个任务的改动" ──────────
 SNAPSHOT_DIR = BASE / "data" / "snapshots"
@@ -3238,16 +3241,63 @@ def event_source() -> str:
     return val if val in ("columns", "projection") else "columns"
 
 
+# 距上次 todo 更新走了多少步（sid -> 步数）。超过阈值就提醒模型更一次。
+_TODO_NUDGE: dict[str, int] = {}
+_TODO_NUDGE_EVERY = 12
+
+
+def nudge_todo_update(sid: str, step_no: int) -> None:
+    """每 N 步没更新待办，就往 next-step 队列塞一句提醒。
+
+    模型普遍"列一次清单就再也不管"（实测整改 15 步只调 1 次 todo_write），
+    面板因此永远看不出进度。这里用既有的 pending_steps 注入通道软提醒，
+    不打断执行、也不改它的规划，只是让它把状态勾一下。
+    """
+    try:
+        st = AGENT_SESSIONS.get(sid) or {}
+        todos = st.get("todos") or []
+        if not todos:
+            return
+        last = _TODO_NUDGE.get(sid)
+        if last is None:
+            _TODO_NUDGE[sid] = int(step_no)
+            return
+        if int(step_no) - last < _TODO_NUDGE_EVERY:
+            return
+        _TODO_NUDGE[sid] = int(step_no)
+        pend = [str(x) for x in (st.get("pending_steps") or []) if str(x).strip()]
+        msg = ("【待办】请顺手调用一次 todo_write：把已完成的项置 completed、"
+               "当前正在做的项置 in_progress（整表重写）。这是用户看进度的唯一途径。")
+        if msg in pend:
+            return
+        AGENT_SESSIONS.patch(sid, pending_steps=pend + [msg])
+    except Exception:
+        pass
+
+
 def sync_session_todos(sid: str) -> bool:
     """按需把工作区 TODO 文件同步进会话待办（解析失败/没变化时安静返回）。
 
     用户诉求："todo 应该自己分析 todo.md 之类的来更新"——文件里写的是计划，
     以前 CBP 完全不看它，面板只能靠模型自觉调 todo_write（实测整改阶段只调了 1 次）。
+    另外：同步后若一条 `in_progress` 都没有，就把第一条 pending 置为 in_progress，
+    否则面板上永远看不出"现在在做哪一项"（用户："都没见更新做到哪的"）。
     """
     try:
         from .todo_sync import sync_todos_from_files
 
-        return bool(sync_todos_from_files(AGENT_SESSIONS, sid))
+        changed = bool(sync_todos_from_files(AGENT_SESSIONS, sid))
+        st = AGENT_SESSIONS.get(sid) or {}
+        todos = list(st.get("todos") or [])
+        if todos and str(st.get("state")) in ("running", "waiting") \
+                and not any(str(t.get("status")) == "in_progress" for t in todos):
+            for i, t in enumerate(todos):
+                if str(t.get("status")) == "pending":
+                    todos[i] = dict(t, status="in_progress")
+                    AGENT_SESSIONS.patch(sid, todos=todos)
+                    changed = True
+                    break
+        return changed
     except Exception:
         return False
 
@@ -3559,7 +3609,8 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                                            detail=f"正在执行第 {no} 步 · {tool}",
                                            step_started=time.time()),
                             # 工作区 TODO 文件变了就同步进待办面板（mtime 未变是空操作）
-                            sync_session_todos(sid)),
+                            sync_session_todos(sid),
+                            nudge_todo_update(sid, no)),
                         step_finish=lambda no, st='done': (
                             AGENT_SESSIONS.finish_step(sid, _conv_index(sid), no, st),
                             runtime_update(sid, phase="thinking", detail=f"第 {no} 步已完成（{st}）")),

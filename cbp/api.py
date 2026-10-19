@@ -143,6 +143,12 @@ async def ensure_browser(wait_seconds: float = 240) -> bool:
 async def lifespan(app):
     # 按需启动（默认）：启动时不碰浏览器——没有 Copilot 也能用 WebUI 与提供商模型。
     # 需要热启动（例如常驻自用）就把 config.json 的 browser_startup 设为 "eager"。
+    # 上次服务异常退出时留下的 running/waiting 会话，标记为可从检查点恢复。
+    # （以前这句写在 cbp/bridge.py 的模块级，导致任何 import 都会误伤在跑的任务。）
+    try:
+        b.AGENT_SESSIONS.recover_interrupted()
+    except Exception as exc:
+        b.log(f"恢复中断会话失败（忽略）：{exc}")
     boot = None
     mode = str(b.CFG.get("browser_startup", "lazy")).lower()
     if mode == "eager":

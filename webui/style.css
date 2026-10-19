@@ -1033,10 +1033,15 @@ body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
 .streamstep .ss-clock{flex:none;color:var(--faint);font-variant-numeric:tabular-nums;font-size:11.5px}
 .streamstep .ss-det{flex:1 1 100%;margin:2px 0 0}
 .streamstep .ss-det summary{cursor:pointer;color:var(--accent2);font-size:11.5px}
-.streamstep .ss-det pre{margin:6px 0 0;max-height:220px;overflow:auto;padding:8px 10px;
+/* 排版对齐聊天里的代码块（.md-codewrap pre：12.5px / 20px 行高 / 细边框）：
+   原来 11.5px + 通用 monospace，看着比合并前的"查看结果"更挤更难读。 */
+.streamstep .ss-det pre{margin:6px 0 0;max-height:260px;overflow:auto;padding:9px 11px;
   white-space:pre-wrap;overflow-wrap:anywhere;
-  border-radius:6px;background:var(--term-bg, #0f172a);color:var(--term-text);
-  font-size:11.5px;line-height:1.5}
+  border:1px solid var(--line2);border-radius:8px;
+  background:var(--term-bg);color:var(--term-text);
+  font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New",
+              "Microsoft YaHei Mono","Sarasa Mono SC",monospace;
+  font-size:12.5px;line-height:20px}
 
 /* hidden 属性会被 .livepane/.term 的 display 规则盖掉（作者样式优先于 UA 的 [hidden]），
    结果「详情」块默认就是展开的。显式补一条。 */
