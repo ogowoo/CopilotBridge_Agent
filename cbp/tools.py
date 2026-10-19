@@ -260,6 +260,16 @@ class ToolRegistry:
             "app.py", "start.py", "install.py", "requirements.txt",
             "AGENT.md", "README.md", "config.example.json",
         )) if self.allow_self_upgrade else ()
+        # 代码类文件禁止"一大段明文塞进单个 JSON 动作"：模型在 JSON 里塞长代码
+        # 会被转义/截断搞坏（实测），所以代码类超过这个字符数必须走 b64 分块。
+        # 文档类（md/txt/log）不受限：写 20KB 报告本来就该明文分块，不该逼模型
+        # 去产 Base64（历史上正是这个压力把它推去用 PowerShell heredoc，然后踩编码坑）。
+        self.code_exts = (".py", ".pyi", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx",
+                          ".json", ".html", ".htm", ".css", ".scss", ".yml", ".yaml",
+                          ".toml", ".ini", ".cfg", ".sh", ".ps1", ".bat", ".sql",
+                          ".xml", ".vue", ".svelte")
+        self.plain_code_limit = int(config.get("plain_code_limit", 1500))
+
         # "需要 Copilot 网页会话"的工具：provider（API）会话里禁用（见 set_web_copilot_tools）
         self.web_copilot_tools = ("copilot_attach", "copilot_file")
         self.allow_web_copilot_tools = True
@@ -781,8 +791,8 @@ class ToolRegistry:
             {"name": "list_directory", "description": "列出工作区目录", "arguments": {"path": "相对路径，默认 ."}},
             {"name": "find_files", "description": "按 glob 查找文件", "arguments": {"pattern": "如 **/*.log"}},
             {"name": "read_text", "description": "读取 UTF-8 文本；默认读全文件（上限 max_read_chars）。超大文件用 offset/limit 按字符分段，或 line_start/line_count 按行读（带行号，便于精确改某几行）", "arguments": {"path": "相对路径", "offset": "字符偏移，默认0", "limit": "本次最多返回字符数，默认120000", "line_start": "按行读：起始行号，1 起（传了就忽略 offset）", "line_count": "按行读：读多少行，默认到文件末尾"}},
-            {"name": "write_text", "description": "覆盖写入 UTF-8 文本；仅用于新文件或完整短文件", "arguments": {"path": "相对路径", "content": "文本"}},
-            {"name": "append_text", "description": "追加普通 UTF-8 文本", "arguments": {"path": "相对路径", "content": "文本"}},
+            {"name": "write_text", "description": "覆盖写入 UTF-8 明文；文档类（.md/.txt/.log）可整篇写，代码类仅限 ≤1500 字符的短文件（更长请用 b64 分块）", "arguments": {"path": "相对路径", "content": "文本"}},
+            {"name": "append_text", "description": "追加 UTF-8 明文；文档类分块续写用它，代码类仅限 ≤1500 字符（更长用 append_text_b64）", "arguments": {"path": "相对路径", "content": "文本"}},
             {"name": "write_text_b64", "description": "Base64 解码后覆盖写入 UTF-8；代码、JSON、HTML、Markdown 必须用此工具", "arguments": {"path": "相对路径", "content_b64": "UTF-8 内容的 Base64"}},
             {"name": "append_text_b64", "description": "Base64 解码后追加 UTF-8；代码、JSON、HTML、Markdown 必须用此工具", "arguments": {"path": "相对路径", "content_b64": "UTF-8 内容的 Base64"}},
             {"name": "replace_text", "description": "在现有文件中精确替换短文本，修改代码时优先使用", "arguments": {"path": "相对路径", "old": "原文本", "new": "新文本", "count": "替换次数，默认1"}},
@@ -1143,9 +1153,30 @@ class ToolRegistry:
             for chunk in iter(lambda:f.read(1048576),b""): h.update(chunk)
         return h.hexdigest()
 
-    async def write_text(self, path: str, content: str) -> dict[str, Any]:
+    def _check_plain_code_size(self, path: str, content: str) -> None:
+        """代码类文件不允许"一大段明文塞进单个 JSON 动作"。
+
+        为什么：模型把长代码直接放进 action JSON 时，引号/反斜杠转义和输出截断
+        会把内容搞坏（实测）。所以代码类超过 `plain_code_limit`(默认 1500) 时
+        要求改用 write_text_b64 / append_text_b64 分块。
+        **文档类（md/txt/log 等）不受此限**：写长报告本来就该明文分块，不该逼
+        模型去产 Base64——历史上正是这个压力把它推去用 PowerShell heredoc，
+        然后踩了编码坑（见 for debug 里的时间线）。
+        """
+        suffix = Path(path).suffix.lower()
+        if suffix in self.code_exts and len(content) > self.plain_code_limit:
+            raise ToolError(
+                f"{path} 是代码类文件，单次明文写入上限 {self.plain_code_limit} 字符"
+                f"（本次 {len(content)}）。请改用 write_text_b64 / append_text_b64："
+                "Base64 分块每块不超过 3000 字符，写第一块用 write_text_b64、后续用 "
+                "append_text_b64 追加。文档类（.md/.txt/.log）才允许明文分块直接写。")
+
+    async def write_text(self, path: str, content: str, via_b64: bool = False) -> dict[str, Any]:
         if len(content) > self.max_write:
             raise ToolError("写入内容超过限制")
+        # via_b64=True 时不限明文长度：Base64 分块就是代码类大文件的正路
+        if not via_b64:
+            self._check_plain_code_size(path, content)
         target = self._path(path)
         self._snap("write_text", path, target)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1155,9 +1186,11 @@ class ToolRegistry:
         after=self._hash(target)
         return {"path":path,"written_chars":len(content),"file_event":{"tool":"write_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
 
-    async def append_text(self, path: str, content: str) -> dict[str, Any]:
+    async def append_text(self, path: str, content: str, via_b64: bool = False) -> dict[str, Any]:
         if len(content) > self.max_write:
             raise ToolError("追加内容超过限制")
+        if not via_b64:
+            self._check_plain_code_size(path, content)
         target = self._path(path)
         self._snap("append_text", path, target)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1183,13 +1216,13 @@ class ToolRegistry:
 
     async def write_text_b64(self, path: str, content_b64: str) -> dict[str, Any]:
         content = self._decode_b64(content_b64)
-        result = await self.write_text(path, content)
+        result = await self.write_text(path, content, via_b64=True)
         result["tool"] = "write_text_b64"
         return result
 
     async def append_text_b64(self, path: str, content_b64: str) -> dict[str, Any]:
         content = self._decode_b64(content_b64)
-        result = await self.append_text(path, content)
+        result = await self.append_text(path, content, via_b64=True)
         result["tool"] = "append_text_b64"
         return result
 
