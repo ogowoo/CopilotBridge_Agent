@@ -65,12 +65,18 @@ MODELS = {
     # GPT 父项下二级子菜单的叶子选项（实测菜单里只有这两个可选）：
     # 内置一份，未扫描前也能直接选中；扫描后若菜单改名会被自动发现覆盖。
     "copilot-gpt-5-6-sol-quick-response": {
-        "ui_names": ["GPT-5.6 Sol Quick response"],
+        # 页面实测标签会省掉后缀（"GPT-5.6 Sol Quick"），全列出来免得锚定匹配落空
+        "ui_names": ["GPT-5.6 Sol Quick response", "GPT-5.6 Sol Quick",
+                     "Sol Quick response", "Sol Quick"],
         "description": "GPT-5.6 Sol 快速响应（GPT 子菜单）",
         "description_en": "GPT-5.6 Sol Quick response (GPT sub-menu)",
     },
     "copilot-gpt-5-6-sol-think-deeper": {
-        "ui_names": ["GPT-5.6 Sol Think deeper"],
+        # 真事：菜单/按钮上实际显示 "GPT-5.6 Sol Think"（没有 deeper），
+        # 而这里只有 "GPT-5.6 Sol Think deeper" → 每回合都报"未在菜单中找到"，
+        # 白跑一次菜单展开。把实测变体都列上。
+        "ui_names": ["GPT-5.6 Sol Think deeper", "GPT-5.6 Sol Think",
+                     "Sol Think deeper", "Sol Think"],
         "description": "GPT-5.6 Sol 深入思考（GPT 子菜单）",
         "description_en": "GPT-5.6 Sol Think deeper (GPT sub-menu)",
     },
@@ -507,6 +513,37 @@ def _model_id_from_label(label: str) -> str:
     return f"copilot-{slug}" if slug else ""
 
 
+_LABEL_NOISE = re.compile(r"[\s·•\-\._\(\)\[\]:：,，/|]+")
+
+
+def normalize_label(text: str) -> str:
+    """标签归一：小写 + 去掉空格/标点/分隔符，用于容错比较。
+
+    实测 Copilot 菜单里的标签会有细微差别（"GPT-5.6 Sol Think" vs
+    "GPT-5.6 Sol Think deeper"、全角/半角标点、多余空格），用锚定正则匹配
+    会直接落空，然后白跑一遍菜单探测。
+    """
+    return _LABEL_NOISE.sub("", str(text or "").lower())
+
+
+def label_matches(target_names, label: str) -> bool:
+    """该菜单标签是否对应目标模型（归一后相等，或一方包含另一方）。"""
+    got = normalize_label(label)
+    if not got:
+        return False
+    for name in target_names:
+        want = normalize_label(name)
+        if not want:
+            continue
+        if got == want:
+            return True
+        # "solthink" ⊂ "gpt56solthinkdeeper" 之类：短的一方至少 6 个字符才允许包含匹配，
+        # 否则 "gpt" 会匹配一切。
+        if len(got) >= 6 and len(want) >= 6 and (got in want or want in got):
+            return True
+    return False
+
+
 def _menu_target_locators(target):
     """Locate a model entry by name across the menu roles Copilot uses."""
     return [
@@ -932,6 +969,17 @@ async def select_model(model_id):
             if option:
                 break
             base_labels = await _menu_label_set()
+    if not option:
+        # 归一化兜底：把可见菜单项按 normalize_label 比较一次，命中就直接点它。
+        # （精确正则用的是整串锚定，标签少一个后缀就落空）
+        try:
+            for item, label, _hint in await _visible_menu_items():
+                if label_matches(target_names, label):
+                    option = item
+                    log(f"模型标签按归一化匹配命中：{label!r} → {normalized}")
+                    break
+        except Exception as exc:
+            log(f"归一化匹配失败（忽略）：{exc}")
     if not option:
         try: await page.keyboard.press("Escape")
         except Exception: pass
