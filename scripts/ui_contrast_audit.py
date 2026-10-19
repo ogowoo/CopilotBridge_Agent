@@ -18,7 +18,9 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-THEMES = [("dark", ""), ("amber", "amber"), ("jade", "jade"), ("light", "light"),
+# 注意：每一项都要**显式**设 dataset.theme（原先 dark 那项传空串、跳过设置，
+# 于是量到的是页面默认主题 → dark 列和 light 列数字一模一样，形同没测暗色）。
+THEMES = [("dark", "dark"), ("amber", "amber"), ("jade", "jade"), ("light", "light"),
           ("solarized", "solarized"), ("mint", "mint")]
 
 # (选择器, 需求对比度, 说明) —— 4.5 = 正文，3.0 = 大字/非文本
@@ -33,6 +35,10 @@ TARGETS = [
     (".tab.on", 4.5, "选中标签文字"),
     (".toast.ok", 4.5, "成功提示"),
     (".menuList button.danger", 4.5, "危险菜单项"),
+    # 下面两条是"展开后才存在"的元素 —— 以前只在暗色下看过，浅色主题里
+    # 变量名写错（--term-fg vs --term-text）导致白底白字，肉眼才发现。
+    (".streamstep details pre", 4.5, "步骤详情 JSON（展开态）"),
+    (".md-codewrap pre", 4.5, "代码块（Markdown）"),
 ]
 
 JS = r"""
@@ -55,6 +61,7 @@ JS = r"""
   const ratio = (a, b) => { const x = lum(a), y = lum(b);
     const hi = Math.max(x, y), lo = Math.min(x, y); return Math.round((hi + 0.05) / (lo + 0.05) * 100) / 100; };
   const out = [];
+  document.querySelectorAll('details').forEach(d => { d.open = true; });
   for (const [sel, need, label] of targets) {
     let el = document.querySelector(sel);
     if (need === 3.0) {   // 空态大字：临时切到空态才存在
@@ -96,8 +103,7 @@ def main() -> int:
         page = browser.new_page(viewport={"width": 1440, "height": 900})
         for name, attr in THEMES:
             page.goto(args.url, wait_until="domcontentloaded")
-            if attr:
-                page.evaluate(f"document.documentElement.dataset.theme={json.dumps(attr)}")
+            page.evaluate(f"document.documentElement.dataset.theme={json.dumps(attr)}")
             # 选一个会话让 KPI/状态/标签等元素真实存在
             sid = page.evaluate("async()=>{try{const d=await (await fetch('/v1/agent/sessions')).json();"
                                 "return (d.sessions&&d.sessions[0]&&d.sessions[0].id)||''}catch(e){return ''}}")

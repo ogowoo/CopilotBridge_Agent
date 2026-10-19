@@ -1035,7 +1035,7 @@ body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
 .streamstep .ss-det summary{cursor:pointer;color:var(--accent2);font-size:11.5px}
 .streamstep .ss-det pre{margin:6px 0 0;max-height:220px;overflow:auto;padding:8px 10px;
   white-space:pre-wrap;overflow-wrap:anywhere;
-  border-radius:6px;background:var(--term-bg, #0f172a);color:var(--term-fg, #e2e8f0);
+  border-radius:6px;background:var(--term-bg, #0f172a);color:var(--term-text);
   font-size:11.5px;line-height:1.5}
 
 /* hidden 属性会被 .livepane/.term 的 display 规则盖掉（作者样式优先于 UA 的 [hidden]），
