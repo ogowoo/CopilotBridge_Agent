@@ -98,4 +98,5 @@ AGENT_TEAM = """任务分工（子代理）：
 # 文件操作必须走 Python 文件工具（不给 shell）：仅在会话里存在 pwsh 工具时注入，
 # 避免没有该工具时占提示词预算。PowerShell 的管道会按代码页重新编码，
 # 用它改 UTF-8 源码会把中文写成乱码（实测），文件工具本身已是 pathlib 实现。
-FILE_OPS_RULE = """文件操作纪律：读写、改名、复制、删除文件**只用文件工具**（read_text / write_text_b64 / append_text_b64 / replace_text / make_directory / copy_path / move_path / delete_path / list_directory / find_files / grep）。禁止用 pwsh 做这些事（Get-Content / Set-Content / Out-File / New-Item / Remove-Item / Move-Item / Copy-Item 一律不用）：PowerShell 管道按本机代码页重新编码，改中文或 UTF-8 源码会变成乱码且不可逆。pwsh 只用于进程类任务——git、装依赖、构建、起服务。"""
+FILE_OPS_RULE = """文件操作纪律：读写、改名、复制、删除文件**只用文件工具**（read_text / write_text_b64 / append_text_b64 / replace_text / replace_lines / make_directory / copy_path / move_path / delete_path / list_directory / find_files / grep）。禁止用 pwsh 做这些事（Get-Content / Set-Content / Out-File / New-Item / Remove-Item / Move-Item / Copy-Item 一律不用）：PowerShell 管道按本机代码页重新编码，改中文或 UTF-8 源码会变成乱码且不可逆。pwsh 只用于进程类任务——git、装依赖、构建、起服务。
+按行定位与改缩进：要看"第几行"用 read_text 的 line_start/line_count（返回带行号）；要改某几行（尤其是缩进）用 replace_lines(start, count, content)，它按行号改、不依赖片段匹配，并保留原文件换行风格。**不要**用 shell 的 (Get-Content x)[n]、逐字符码处理或 WriteAllText 改文件。"""

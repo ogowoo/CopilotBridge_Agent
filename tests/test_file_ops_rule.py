@@ -24,12 +24,54 @@ BASE = Path(__file__).resolve().parent.parent
 
 
 class FileToolsArePurePythonTests(unittest.TestCase):
-    def test_no_powershell_in_file_tools(self):
-        src = (BASE / "cbp" / "tools.py").read_text(encoding="utf-8")
-        bad = [kw for kw in ("powershell", "Get-ChildItem", "Get-Content", "Set-Content",
-                             "New-Item", "Remove-Item", "Move-Item", "Copy-Item", "Out-File")
-               if kw.lower() in src.lower()]
-        self.assertEqual(bad, [], f"文件工具里出现了 PowerShell 调用: {bad}")
+    """用 AST 查**真实调用**，而不是扫文本——注释里提到 PowerShell 不算违规
+    （`replace_lines`/`read_text` 的文档就引用了 Get-Content 作为对照）。"""
+
+    SPAWN_ATTRS = {"create_subprocess_exec", "create_subprocess_shell", "run", "Popen",
+                   "call", "check_output", "system", "popen"}
+
+    def _tree(self):
+        import ast
+        return ast.parse((BASE / "cbp" / "tools.py").read_text(encoding="utf-8"))
+
+    def test_file_tools_never_spawn_a_process(self):
+        import ast
+        targets = {"read_text", "write_text", "append_text", "write_text_b64",
+                   "append_text_b64", "replace_text", "replace_lines", "list_directory",
+                   "find_files", "make_directory", "copy_path", "move_path", "delete_path",
+                   "grep"}
+        offenders = []
+        for node in ast.walk(self._tree()):
+            if not isinstance(node, ast.FunctionDef) or node.name not in targets:
+                continue
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Attribute) and sub.attr in self.SPAWN_ATTRS:
+                    offenders.append(f"{node.name} -> .{sub.attr}")
+                if isinstance(sub, ast.Import):
+                    for a in sub.names:
+                        if a.name.split(".")[0] in ("subprocess",):
+                            offenders.append(f"{node.name} -> import {a.name}")
+        self.assertEqual(offenders, [], f"文件工具里出现了进程调用: {offenders}")
+
+    def test_no_powershell_program_passed_to_exec(self):
+        import ast
+        bad = []
+        for node in ast.walk(self._tree()):
+            if not isinstance(node, ast.Call):
+                continue
+            fname = ""
+            if isinstance(node.func, ast.Attribute):
+                fname = node.func.attr
+            elif isinstance(node.func, ast.Name):
+                fname = node.func.id
+            if fname not in self.SPAWN_ATTRS:
+                continue
+            for arg in node.args[:2]:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    low = arg.value.lower()
+                    if "powershell" in low or low.endswith("pwsh") or "/pwsh" in low:
+                        bad.append(arg.value[:60])
+        self.assertEqual(bad, [], f"有子进程调用 PowerShell: {bad}")
 
     def test_file_tools_use_pathlib_with_explicit_utf8(self):
         src = (BASE / "cbp" / "tools.py").read_text(encoding="utf-8")

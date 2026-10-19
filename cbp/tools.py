@@ -278,6 +278,7 @@ class ToolRegistry:
             "write_text_b64": self.write_text_b64,
             "append_text_b64": self.append_text_b64,
             "replace_text": self.replace_text,
+            "replace_lines": self.replace_lines,
             "make_directory": self.make_directory,
             "copy_path": self.copy_path,
             "move_path": self.move_path,
@@ -779,12 +780,13 @@ class ToolRegistry:
         items = [
             {"name": "list_directory", "description": "列出工作区目录", "arguments": {"path": "相对路径，默认 ."}},
             {"name": "find_files", "description": "按 glob 查找文件", "arguments": {"pattern": "如 **/*.log"}},
-            {"name": "read_text", "description": "读取 UTF-8 文本；默认读全文件（上限 max_read_chars），文件超大时用 offset/limit 分段（每段可到 20000 字符，别分太碎）", "arguments": {"path": "相对路径", "offset": "字符偏移，默认0", "limit": "本次最多返回字符数，默认120000"}},
+            {"name": "read_text", "description": "读取 UTF-8 文本；默认读全文件（上限 max_read_chars）。超大文件用 offset/limit 按字符分段，或 line_start/line_count 按行读（带行号，便于精确改某几行）", "arguments": {"path": "相对路径", "offset": "字符偏移，默认0", "limit": "本次最多返回字符数，默认120000", "line_start": "按行读：起始行号，1 起（传了就忽略 offset）", "line_count": "按行读：读多少行，默认到文件末尾"}},
             {"name": "write_text", "description": "覆盖写入 UTF-8 文本；仅用于新文件或完整短文件", "arguments": {"path": "相对路径", "content": "文本"}},
             {"name": "append_text", "description": "追加普通 UTF-8 文本", "arguments": {"path": "相对路径", "content": "文本"}},
             {"name": "write_text_b64", "description": "Base64 解码后覆盖写入 UTF-8；代码、JSON、HTML、Markdown 必须用此工具", "arguments": {"path": "相对路径", "content_b64": "UTF-8 内容的 Base64"}},
             {"name": "append_text_b64", "description": "Base64 解码后追加 UTF-8；代码、JSON、HTML、Markdown 必须用此工具", "arguments": {"path": "相对路径", "content_b64": "UTF-8 内容的 Base64"}},
             {"name": "replace_text", "description": "在现有文件中精确替换短文本，修改代码时优先使用", "arguments": {"path": "相对路径", "old": "原文本", "new": "新文本", "count": "替换次数，默认1"}},
+            {"name": "replace_lines", "description": "按行号替换整行区间（1 起，含首尾），保留文件原有换行风格；改缩进/整段替换时用它，比 replace_text 更稳；不需要 shell", "arguments": {"path": "相对路径", "start": "起始行号，1 起", "count": "替换几行，默认1", "content": "新内容（可含多行；传空串表示删除这几行）"}},
             {"name": "make_directory", "description": "创建目录", "arguments": {"path": "相对路径"}},
             {"name": "copy_path", "description": "复制文件或目录", "arguments": {"source": "相对路径", "destination": "相对路径"}},
             {"name": "move_path", "description": "移动文件或目录", "arguments": {"source": "相对路径", "destination": "相对路径"}},
@@ -1069,12 +1071,39 @@ class ToolRegistry:
                 break
         return {"pattern": pattern, "matches": matches, "truncated": len(matches) >= 1000}
 
-    async def read_text(self, path: str, offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    async def read_text(self, path: str, offset: int = 0, limit: int = 0,
+                        line_start: int = 0, line_count: int = 0) -> dict[str, Any]:
         target = self._path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}")
         offset = max(0, self._int_arg(offset, 0, "offset"))
         limit = max(0, self._int_arg(limit, 0, "limit"))
+        line_start = max(0, self._int_arg(line_start, 0, "line_start"))
+        line_count = max(0, self._int_arg(line_count, 0, "line_count"))
+        # 按行读（line_start 1 起）：真实任务里模型要"看第 514 行/改缩进"，
+        # 而 offset 是**字符**偏移，表达不了"第几行"，于是它去用
+        # PowerShell 的 (Get-Content x)[514] —— 那一步就踩到编码坑（见
+        # for debug 里那份时间线：Set-Content 把整文件写成乱码，花 10 步修）。
+        # 这里给出行号与精确行区间，按行定位不再需要 shell。
+        if line_start:
+            try:
+                with target.open("r", encoding="utf-8", newline="") as f:
+                    raw = f.read()
+            except UnicodeDecodeError as exc:
+                raise ToolError(f"文件不是有效的 UTF-8 文本: {exc}")
+            lines = raw.replace("\r\n", "\n").split("\n")
+            total_lines = len(lines) - (1 if lines and lines[-1] == "" else 0)
+            if line_start > total_lines:
+                return {"path": path, "lines": "", "line_start": line_start,
+                        "line_count": 0, "total_lines": total_lines, "truncated": False}
+            want = line_count or (total_lines - line_start + 1)
+            want = max(1, min(want, 2000, self.max_read // 40 or 1))
+            lo = line_start - 1
+            hi = min(total_lines, lo + want)
+            body = "\n".join(f"{i + 1}: {lines[i]}" for i in range(lo, hi))
+            return {"path": path, "lines": body, "line_start": line_start,
+                    "line_count": hi - lo, "total_lines": total_lines,
+                    "truncated": hi < total_lines, "numbered": True}
         if offset or limit:
             # 分段读取：整文件统计 total_chars 后按字符切片。供 Agent 翻页
             # 读大文件——单次读取的上下文预算约 6000 字符，超过就读不到尾部，
@@ -1231,6 +1260,57 @@ class ToolRegistry:
         with target.open("w", encoding="utf-8", newline="") as f: f.write(text.replace(old_used,new_used,count))
         after=self._hash(target)
         return {"path":path,"replaced":replaced,"remaining_matches":max(0,found-replaced),"file_event":{"tool":"replace_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
+
+    async def replace_lines(self, path: str, start: int = 0, count: int = 1,
+                            content: str = "") -> dict[str, Any]:
+        """按行号替换整行区间（1 起，含首尾），保留文件原有换行风格。
+
+        为什么需要：改缩进/整段替换用 `replace_text` 很脆——模型给的片段里
+        前导空格容易在 JSON 里失真，实测一个真实任务因此反复失败，最后去用
+        PowerShell 逐行改（然后踩了编码坑）。按行号改不依赖片段匹配。
+        """
+        try:
+            start = int(start)
+            count = max(1, min(int(count), 5000))
+        except (TypeError, ValueError):
+            raise ToolError("start / count 必须是整数")
+        if start < 1:
+            raise ToolError("start 从 1 开始（第 1 行）")
+        if len(content) > self.max_write:
+            raise ToolError("替换内容超过限制")
+        target = self._path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        try:
+            with target.open("r", encoding="utf-8", errors="strict", newline="") as f:
+                raw = f.read()
+        except UnicodeDecodeError as exc:
+            raise ToolError(f"文件不是有效的 UTF-8 文本，拒绝改写（防止乱码写回）: {exc}")
+        crlf = "\r\n" in raw
+        lines = raw.replace("\r\n", "\n").split("\n")
+        trailing_nl = raw.endswith(("\n"))
+        body = lines[:-1] if trailing_nl else lines[:]
+        total = len(body)
+        if start > total + 1:
+            raise ToolError(f"start={start} 超出文件行数（共 {total} 行）")
+        lo = start - 1
+        hi = min(total, lo + count)
+        new_lines = content.split("\n") if content != "" else []
+        out_lines = body[:lo] + new_lines + body[hi:]
+        text = "\n".join(out_lines) + ("\n" if trailing_nl or not body else "")
+        # 行尾风格跟随原文件：CRLF 文件不因为这次编辑被改成 LF（避免整文件 diff）
+        if crlf:
+            text = text.replace("\n", "\r\n")
+        before = self._hash(target)
+        self._snap("replace_lines", path, target)
+        with target.open("w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        after = self._hash(target)
+        return {"path": path, "replaced_lines": hi - lo, "start": start,
+                "inserted_lines": len(new_lines), "total_lines": len(out_lines),
+                "changed": before != after,
+                "file_event": {"tool": "replace_lines", "path": path,
+                               "before_hash": before, "after_hash": after, "result": "ok"}}
 
     async def make_directory(self, path: str) -> dict[str, Any]:
         target = self._path(path)
