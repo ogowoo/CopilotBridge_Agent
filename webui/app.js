@@ -1688,6 +1688,55 @@ function toggleTodos(){
 const TODO_ICON={completed:'✓',in_progress:'◐',pending:'○'};
 const TODO_TXT={completed:'已完成',in_progress:'进行中',pending:'待办'};
 let _goalSig='';
+/* 实时流顶部的状态条：一行看清"在干什么"。
+   原来这块是「当前执行状态」标签页的整页文本，现在压成一行；点一下展开完整详情。 */
+/* 聊天栏那句"与 Copilot 继续 · Ctrl+J …"是 JS 拼的（不是静态 HTML），
+   语言切换时 applyI18n 管不到它，必须自己重绘——否则切语言后它停在旧语言上。 */
+function refreshChatBarMeta(){
+ const meta=document.getElementById('chatBarMeta');
+ if(!meta)return;
+ meta.innerHTML=esc(tr('与'))+' <b>'+esc(assistantLabel())+'</b> '+esc(tr('继续'))+
+   ' · <b>Ctrl+J</b> '+esc(tr('强行插入指令（运行中即时生效）'));
+}
+
+function updateStreamStatus(r){
+ const el=document.getElementById('streamStatus');
+ if(!el||!r)return;
+ const st=String(r.session_state||r.phase||'');
+ const phase=String(r.phase||'');
+ const parts=[];
+ parts.push('<b class="ss-phase ss-'+esc(st||'running')+'">'+esc(tr(st||phase||'未知'))+'</b>');
+ if(r.detail)parts.push('<span class="ss-detail" data-i18n-skip="1">'+esc(String(r.detail))+'</span>');
+ if(r.total_steps!==undefined&&r.total_steps!==null)
+  parts.push('<span class="ss-meta">'+esc(tr('步'))+' '+esc(String(r.total_steps))+'</span>');
+ if(r.estimated_tokens)parts.push('<span class="ss-meta">'+esc(tr('Token'))+' '+esc(String(r.estimated_tokens))+'</span>');
+ if(r.last_error)parts.push('<span class="ss-err">⚠ '+esc(String(r.last_error).slice(0,60))+'</span>');
+ if(r.model_warning)parts.push('<span class="ss-err">⚠ '+esc(String(r.model_warning).slice(0,60))+'</span>');
+ const html=parts.join('<span class="ss-sep">·</span>');
+ el.title=tr('点一下展开/收起完整状态');
+ if(el.innerHTML!==html)el.innerHTML=html;      // 没变不重写，避免闪烁
+}
+function toggleStreamDetail(){
+ const d=document.getElementById('activity');
+ if(!d)return;
+ d.hidden=!d.hidden;
+ const el=document.getElementById('streamStatus');
+ if(el)el.classList.toggle('open',!d.hidden);
+}
+/* 「最近发送」：把最近一次真正发给模型的完整内容显示出来（原「最近发送内容」标签页）。 */
+async function showLastPrompt(){
+ if(!current){toast(tr('请先选择 Session'),'err');return}
+ try{
+  const r=await api('/v1/agent/sessions/'+encodeURIComponent(current)+'/runtime');
+  const txt=String(r.prompt_preview||'');
+  document.getElementById('liveTitle').textContent=tr('最近发送');
+  document.getElementById('liveBody').innerHTML=
+    '<pre class="termpane" data-i18n-skip="1">'+esc(txt||tr('（还没有发送记录）'))+'</pre>';
+  openMask('liveMask');
+ }catch(e){toast(tr('读取失败: ')+(e.text||e),'err')}
+}
+
+
 function renderGoalBar(r){
  const el=document.getElementById('goalBar');
  if(!el)return;
@@ -1779,6 +1828,7 @@ async function applyRuntime(r){
     +(r.model_warning?`\n\n⚠ ${r.model_warning}`:'');
   const _actEl=document.getElementById('activity');
   if(_actEl.textContent!==_actTxt)_actEl.textContent=_actTxt;   // 内容没变不重写：否则每秒打断文本选择/重排
+  updateStreamStatus(r);
   let _ans=r.answer_preview||'等待模型回答…',_ae=document.getElementById('answer'),_pj=null;
   try{_pj=JSON.parse(_ans)}catch(e){}
   // 结构化动作走 JSON 视图；普通回答按 Markdown 渲染（`.term` 面板里 code 块仍可读）
@@ -2520,14 +2570,19 @@ function mountTimelineIntoTab(){
 }
 
 /* ── 实时面板选项卡 + 放大查看 ── */
-const LIVE_NAMES={activity:'当前执行状态',answer:'当前回答',prompt:'最近发送的内容',chat:'继续对话',timeline:'步骤时间线'};
-const LIVE_TAB={activity:'tabActivity',answer:'tabAnswer',prompt:'tabPrompt',chat:'tabChat',timeline:'tabTimeline'};
-let liveTabName='activity';
+const LIVE_NAMES={chat:'实时流',timeline:'步骤时间线'};
+const LIVE_TAB={chat:'tabChat',timeline:'tabTimeline'};
+let liveTabName='chat';
 let lastAns='';
 let lastAnsHtml='';
-function liveTab(n){liveTabName=n;
- for(const k in LIVE_NAMES){document.getElementById(k).style.display=k===n?'':'none';
-  document.getElementById(LIVE_TAB[k]).className='tab'+(k===n?' on':'')}}  // className 覆盖即清除新内容圆点
+function liveTab(n){
+ if(!LIVE_NAMES[n]){                       // 旧标签名（activity/answer/prompt）已合并
+  toast(tr('该面板已合并进「实时流」'),'info');n='chat'}
+ liveTabName=n;
+ for(const k in LIVE_NAMES){
+  const pane=document.getElementById(k);if(pane)pane.style.display=k===n?'':'none';
+  const btn=document.getElementById(LIVE_TAB[k]);if(btn)btn.className='tab'+(k===n?' on':'')}
+ if(n==='chat'){try{scrollChatToEnd()}catch(e){}}}  // className 覆盖即清除新内容圆点
 function expandLive(){
  document.getElementById('liveTitle').textContent=LIVE_NAMES[liveTabName];
  // 对话页只复制聊天记录，避免把输入框（含重复 ID）一并搬进弹窗
@@ -2608,8 +2663,10 @@ function updateChannelUI(){
   let el=document.getElementById(id);if(el)el.style.display=prov?'none':''});
  // 分组框也要跟着隐藏：否则提供商会话下留一个空 div 和一条多余的分隔竖线
  let _wg=document.getElementById('webGrp');if(_wg)_wg.style.display=prov?'none':'';
- let meta=document.querySelector('#chat .chatbar .meta');
- if(meta)meta.innerHTML=`与 <b>${esc(assistantLabel())}</b> 继续 · <b>Ctrl+J</b> 强行插入指令（运行中即时生效）`}
+ let meta=document.getElementById('chatBarMeta');
+ // 走 tr()：以前这里是硬编码中文整句，英文界面下也会冒出中文（i18n 审计抓到的就是它）
+ if(meta)meta.innerHTML=esc(tr('与'))+' <b>'+esc(assistantLabel())+'</b> '+esc(tr('继续'))+
+   ' · <b>Ctrl+J</b> '+esc(tr('强行插入指令（运行中即时生效）'))}
 
 /* ── 排队消息：查看 / 编辑 / 删除 ── */
 async function refreshQueue(){
@@ -3268,6 +3325,8 @@ const ACTIONS={
  rollbackSelfUpgrade:()=>rollbackSelfUpgrade(),
  removeSession:(el)=>removeSession(el.dataset.arg==='true'),
  liveTab:(el)=>liveTab(el.dataset.arg),
+ toggleStreamDetail:()=>toggleStreamDetail(),
+ showLastPrompt:()=>showLastPrompt(),
  openSubagent:(el)=>load(el.dataset.arg),
  openPlugins:()=>openPlugins(),
  openPanels:()=>openPanels(),

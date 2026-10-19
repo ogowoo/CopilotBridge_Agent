@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from .prompt import AGENT_PROTOCOL, AGENT_TEAM, PromptRegistry, FILE_OPS_RULE
+from .prompt import (AGENT_PROTOCOL, AGENT_TEAM, DELIVERABLE_RULE, PromptRegistry,
+                     FILE_OPS_RULE)
 from .spans import set_recorder, span
 from .tools import ToolRegistry
 
@@ -217,6 +218,8 @@ class AgentRunner:
                                         ensure_ascii=False), order=100)
         reg.add("tools", json.dumps(self.tools.descriptions(only=self._active_tool_names()),
                                     ensure_ascii=False), order=100)
+        # 交付物表述（"已在本地工作区"而不是"可下载"）：与 pwsh 是否可用无关，统一注入
+        reg.add("deliverable", DELIVERABLE_RULE, order=125)
         # 任务分工（子代理）：只在工具面里含 subagent 时才注入，避免不可用时误导模型
         if "subagent" in self._active_tool_names():
             reg.add("team", AGENT_TEAM, order=150)

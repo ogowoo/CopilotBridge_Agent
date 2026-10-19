@@ -749,7 +749,8 @@ _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
     "job_kill": ("终止后台任务", {"job_id": "任务 id"}),
     "todo_write": ("写入任务清单（整体替换，最多 50 项）；长任务用它跟踪进度",
                    {"todos": "数组；每项 {content, status=pending|in_progress|completed}"}),
-    "present": ("声明交付物（最多 4 个文件，只记录供 WebUI 展示，不复制文件）",
+    "present": ("声明交付物（最多 4 个文件）。只登记供界面展示：文件本来就在本地工作区，"
+                "不会复制或上传，回答里要说「已生成到 <工作区相对路径>」，不要说「可下载」",
                 {"files": "数组；每项 {path, description}"}),
     "read_image": ("读取图片元数据（格式/尺寸/大小）；analyze=true 时交给 Copilot 视觉描述",
                    {"path": "图片相对路径", "question": "要问 Copilot 的问题（可选）",

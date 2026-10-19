@@ -996,3 +996,20 @@ body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
    间距跟页面其它面板保持一致：`.kpis{margin:14px 0}`、`.card{margin-top:14px}`，
    所以这里也用 14px（实测页面标准面板间距就是 14）。 */
 #goalBar{margin:14px 0}
+
+/* STREAM-STATUS: 合并后「实时流」顶部的状态条（原来是一整个「当前执行状态」标签页）。
+   一行显示状态/在做什么/步数/Token/错误，点一下展开完整详情。 */
+.streamstatus{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  padding:9px 12px;border-bottom:1px solid var(--line);background:var(--panel);
+  font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
+.streamstatus:hover{background:var(--panel2)}
+.streamstatus .ss-phase{color:var(--text);font-weight:600}
+.streamstatus .ss-phase.ss-running{color:var(--accent)}
+.streamstatus .ss-phase.ss-completed{color:var(--green)}
+.streamstatus .ss-phase.ss-failed,.streamstatus .ss-phase.ss-cancelled{color:var(--red)}
+.streamstatus .ss-detail{color:var(--text);max-width:52ch;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.streamstatus .ss-meta{color:var(--faint);font-variant-numeric:tabular-nums}
+.streamstatus .ss-err{color:var(--amber, #d97706)}
+.streamstatus .ss-sep{color:var(--line2)}
+#activity.streamdetail{max-height:34vh;overflow:auto;border-bottom:1px solid var(--line)}

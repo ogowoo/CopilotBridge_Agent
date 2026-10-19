@@ -52,9 +52,13 @@ COLLECT = r"""
     const r = el.getBoundingClientRect();
     return r.width > 1 && r.height > 1;
   };
-  const skipped = el => selectors.some(sel => {
-    try { return el.closest(sel) !== null } catch (e) { return false }
-  });
+  const skipped = el => {
+    // data-i18n-skip：数据型文本（模型回答、后端详情、插件描述等），不当作界面文案
+    if (el.closest && el.closest('[data-i18n-skip]')) return true;
+    return selectors.some(sel => {
+      try { return el.closest(sel) !== null } catch (e) { return false }
+    });
+  };
   const path = el => {
     const bits = [];
     let n = el;
@@ -152,7 +156,7 @@ def main() -> int:
                 findings.append({"state": name, **it})
             print(f"  {name}: {len(items)} 处")
         # 标签页单独采
-        for tab in ("steps", "answer", "activity", "chat"):
+        for tab in ("steps", "chat"):   # 合并后只剩实时流与时间线
             try:
                 page.evaluate(f"liveTab('{tab}')")
                 page.wait_for_timeout(500)

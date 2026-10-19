@@ -662,6 +662,17 @@ Object.assign(I18N_EN, {
  "长期记忆": "Long-term memory",
  "上一级": "Go up one level",
  "默认": "Default",
+ "与": "with",
+ "继续": "continue",
+ "📨 最近发送": "📨 Last prompt",
+ "查看最近一次实际发送给 Copilot 的完整内容": "Show the full content most recently sent to Copilot",
+ "点一下展开/收起完整状态": "Click to expand or collapse full status",
+ "继续当前 Session 对话": "Continue this session",
+ "实时流": "Live stream",
+ "最近发送": "Last prompt",
+ "该面板已合并进「实时流」": "That panel is now merged into Live stream",
+ "Token": "Token",
+ "（还没有发送记录）": "(nothing sent yet)",
  "未同步": "Not synced",
  "任务已结束，但待办状态没有同步（模型收尾时没有更新 todo）。": "The task has ended, but the todo list was not synced (the model did not update it while finishing).",
  "删除任务（自动含 Copilot 记录）": "Delete task (includes its Copilot records)",
@@ -935,6 +946,8 @@ function setLang(lang) {
   if (!I18N[lang]) return;
   try { localStorage.setItem("cbp-lang", lang); } catch (e) {}
   applyI18n(document);
+  // JS 拼出来的文案（聊天栏那句）applyI18n 管不到，切语言后要主动重绘
+  try { if (typeof refreshChatBarMeta === 'function') refreshChatBarMeta(); } catch (e) {}
   applyLangButton();
   try { rerenderForLang(); } catch (e) {}
 }

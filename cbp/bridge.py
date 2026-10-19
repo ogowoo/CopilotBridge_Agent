@@ -3470,6 +3470,18 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
         try:
             PLUGINS.emit("session_start", session_id=sid, task=effective_task, model=req.model)
             result = await runner.run(effective_task,req.model)
+            # 落消息：Agent 模式此前只写 steps/turn_results，不写 messages，导致
+            # WebUI 的对话/实时流面板对所有 copilot 任务都是空的（实测 messages=0）。
+            # 幂等：该会话还没有 user 消息时才补，避免重跑重复。
+            try:
+                _conv = _conv_index(sid)
+                _have = AGENT_SESSIONS.messages(sid) or []
+                if not any(m.get("role") == "user" for m in (_have or [])):
+                    AGENT_SESSIONS.add_message(sid, "user", effective_task, _conv)
+                if (result.content or "").strip():
+                    AGENT_SESSIONS.add_message(sid, "assistant", result.content, _conv)
+            except Exception as exc:      # 落消息失败不影响任务结果
+                log(f"落消息失败（忽略）：{exc}")
             # 父任务收尾：仍在跑的子代理没人收结果，直接取消（否则面板一直显示 running）
             try:
                 _n = AGENT_SESSIONS.cancel_running_children(sid, "父任务已完成")

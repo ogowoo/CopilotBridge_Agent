@@ -125,12 +125,14 @@ def run(url: str, keep_open: bool) -> int:
         else:
             safe_click('[data-act="toggleRail"]', "侧栏折叠(还原)")
         #     四个标签逐个切
-        for t in ("activity", "answer", "prompt", "chat"):
+        for t in ("timeline", "chat"):   # 合并后只剩这两个面板；**最后停在 chat**，
+            # 否则聊天工具栏在隐藏面板里，后面点 toggleChatFind 会一直等（实测踩过）
             if safe_click(f'[data-act="liveTab"][data-arg="{t}"]', f"标签 {t}"):
                 page.wait_for_timeout(250)
                 if not page.evaluate(f"document.getElementById('tab{t.capitalize()}')"
                                      f".classList.contains('on')"):
                     problems.append(f"标签 {t} 点击后未选中")
+        page.evaluate("liveTab('chat')")
         #     toggleChatFind：查找条显隐
         #     判据：状态**翻转**（不能用"点击后应为 flex"——本脚本前面的
         #     "未选会话时 toggleChatFind() 不抛异常" 那一步已经把查找条打开了）。

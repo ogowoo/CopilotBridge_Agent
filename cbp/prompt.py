@@ -100,5 +100,8 @@ AGENT_TEAM = """任务分工（子代理）：
 # 文件操作必须走 Python 文件工具（不给 shell）：仅在会话里存在 pwsh 工具时注入，
 # 避免没有该工具时占提示词预算。PowerShell 的管道会按代码页重新编码，
 # 用它改 UTF-8 源码会把中文写成乱码（实测），文件工具本身已是 pathlib 实现。
+DELIVERABLE_RULE = """交付物表述：产出文件（报告/清单/脚本）写在工作区之后，回答里要写**它已经存在于本地**——给出工作区的相对路径与大小，例如「已生成 `pyshot_todo.md`（工作区根目录，12 KB）」。**不要**说"可下载""点击下载""附件已提供""请下载"：文件本来就在用户本机工作区里，让他再下载一次是自相矛盾的（实测用户对此明确吐槽）。present 只是把文件登记成交付物供界面展示，不会复制或上传。"""
+
+
 FILE_OPS_RULE = """文件操作纪律：读写、改名、复制、删除文件**只用文件工具**（read_text / write_text_b64 / append_text_b64 / replace_text / replace_lines / make_directory / copy_path / move_path / delete_path / list_directory / find_files / grep）。禁止用 pwsh 做这些事（Get-Content / Set-Content / Out-File / New-Item / Remove-Item / Move-Item / Copy-Item 一律不用）：PowerShell 管道按本机代码页重新编码，改中文或 UTF-8 源码会变成乱码且不可逆。pwsh 只用于进程类任务——git、装依赖、构建、起服务。
 按行定位与改缩进：要看"第几行"用 read_text 的 line_start/line_count（返回带行号）；要改某几行（尤其是缩进）用 replace_lines(start, count, content)，它按行号改、不依赖片段匹配，并保留原文件换行风格。**不要**用 shell 的 (Get-Content x)[n]、逐字符码处理或 WriteAllText 改文件。"""
