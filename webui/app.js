@@ -1501,9 +1501,28 @@ async function exportTimeline(){
  if(!current){toast(tr('请先选择 Session'),'err');return}
  try{
   let d=await api('/v1/agent/sessions/'+encodeURIComponent(current));
+  // 把**顺序**与**最新状态**写进文件本身：以前导出里 steps 与 messages 方向让人
+  // 猜（用户实测："219 那个就是新的，所以我不知道算正序还是倒序"）。现在三个数组
+  // 一律正序（旧→新）并在 order 里写清，latest 直接给出最新一步/最新消息时间。
+  const _steps=[...(d.steps||[])].sort((a,b)=>(a.step??0)-(b.step??0));
+  const _msgs=[...(d.messages||[])].sort((a,b)=>(a.id??0)-(b.id??0));
+  const _files=[...(d.files||[])].sort((a,b)=>(a.id??0)-(b.id??0));
+  const _last=_steps.length?_steps[_steps.length-1]:null;
+  const _lastMsg=_msgs.length?_msgs[_msgs.length-1]:null;
   let payload={exported_at:new Date().toISOString(),app:'CopilotBridge Agent',
                api:'/v1/agent/sessions/'+encodeURIComponent(current),
-               session:d.session||{},steps:d.steps||[],messages:d.messages||[],files:d.files||[]};
+               order:{steps:'ascending（旧→新，按 step 号）',
+                      messages:'ascending（旧→新，按 id/时间）',
+                      files:'ascending（旧→新，按 id/时间）',
+                      note:'最新的一条在每个数组的**末尾**'},
+               counts:{steps:_steps.length,messages:_msgs.length,files:_files.length},
+               latest:{step:_last?(_last.step??null):null,
+                       step_status:_last?(_last.status??null):null,
+                       step_tool:_last?(_last.tool??null):null,
+                       message_at:_lastMsg?(_lastMsg.created??null):null,
+                       message_role:_lastMsg?(_lastMsg.role??null):null,
+                       state:(d.session||{}).state??null},
+               session:d.session||{},steps:_steps,messages:_msgs,files:_files};
   let blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
   let a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download='cbp-'+current+'-timeline-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.json';
