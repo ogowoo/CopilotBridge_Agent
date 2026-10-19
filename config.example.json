@@ -106,7 +106,8 @@
       "ask": true
     },
     "approval_scope": "once",
-    "subagent_parallel": 4
+    "subagent_parallel": 4,
+    "subagent_max_steps": 80
   },
   "models": {},
   "providers": {

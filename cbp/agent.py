@@ -1833,4 +1833,13 @@ class AgentRunner:
                                int(state.get("conv_tokens", 0)), int(state.get("conv_chars", 0)),
                                "failed: 达到最大总步骤数", model)
         self.state_saver(state="failed", last_error="达到最大总步骤数")
-        return AgentResult("达到最大总步骤数，任务已停止。", all_steps)
+        # 提示里要带"下一步怎么办"：这条消息会被父会话/用户看到，只说"已停止"没有出路。
+        return AgentResult(
+            "达到最大总步骤数（%d 步），任务已停止。\n"
+            "接着做的方法（择一）：\n"
+            "1) 继续本会话：在「继续对话」里说一句「接着做」，已完成的改动都在，不用重来；\n"
+            "2) 如果是子代理：用 subagent_send 传本会话 id 继续（上下文与文件都保留），"
+            "或把 max_steps 调大重跑；\n"
+            "3) 想放宽默认值：config.json 的 agent.subagent_max_steps（当前上限 %d，界面主会话"
+            "由 agent.max_total_steps 控制）。" % (self.max_total_steps, 200),
+            all_steps)

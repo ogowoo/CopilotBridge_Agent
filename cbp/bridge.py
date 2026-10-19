@@ -188,6 +188,21 @@ def subagent_parallel() -> int:
     return max(1, min(n, 8))
 
 
+def subagent_max_steps() -> int:
+    """子代理默认步数上限（用户实测：默认 40 步常在做完前就用尽）。
+
+    40 是当初拍的值，对"读几个大文件 + 分批写 + 验证"的任务明显偏紧：浏览器通道
+    每回合只推进一点，40 步时任务往往才做到一半（实测 4 个子代理分别停在 39/40/41
+    步）。默认放到 80，并允许用 `agent.subagent_max_steps` 调（夹在 10~200）。
+    注意代价：步数上限越高，Copilot 通道消耗的回合越多（每回合都很贵）。
+    """
+    try:
+        n = int(AGENT_CFG.get("subagent_max_steps", 80))
+    except Exception:
+        n = 80
+    return max(10, min(n, 200))
+
+
 def model_is_provider(model: str) -> bool:
     """该模型是否走 HTTP 提供商（而非网页 Copilot 通道）。"""
     try:
@@ -3760,14 +3775,14 @@ def subagent_depth() -> int:
 
 
 async def fanout(tasks, model: str = "", workspace: str = "",
-                 max_steps: int = 40, parent_title: str = "") -> dict:
+                 max_steps: int = 0, parent_title: str = "") -> dict:
     """确定性扇出（实现在 cbp/fanout.py，延迟导入避免循环依赖）。"""
     from .fanout import fanout as _fanout
     return await _fanout(tasks, model, workspace, max_steps, parent_title)
 
 
 async def run_subagent(task: str, description: str = "", model: str = "",
-                       max_steps: int = 40) -> dict:
+                       max_steps: int = 0) -> dict:
     """在独立子会话里跑一个 Agent 任务，返回结构化结果。"""
     # 必须声明 global：函数内会给 ACTIVE_SESSION_ID 赋值（切到子会话再恢复），
     # 不声明会变成局部变量，前面读取时抛 UnboundLocalError（实测踩到）。
@@ -3871,7 +3886,7 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
             AGENT_SESSIONS.add_conv_stat(child_sid, x)
 
         cfg_child = dict(AGENT_CFG)
-        cfg_child["max_total_steps"] = max(3, min(int(max_steps or 40), 200))
+        cfg_child["max_total_steps"] = max(3, min(int(max_steps or subagent_max_steps()), 200))
         runner = AgentRunner(AGENT_TOOLS, turn, cfg_child, get, save, add_step, add_file,
                              add_conv_stat,
                              step_begin=lambda no, tool, h: AGENT_SESSIONS.begin_step(
@@ -3911,7 +3926,7 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
 
 
 async def continue_subagent(session_id: str, message: str, model: str = "",
-                            max_steps: int = 40) -> dict:
+                            max_steps: int = 0) -> dict:
     """继续一个已存在的子代理会话（同一上下文，追加一轮）。
 
     与 subagent 的区别：subagent 每次新建会话；这里**复用**子会话，模型能接着说，
@@ -3994,7 +4009,7 @@ async def list_subagents(parent_id: str = "", limit: int = 50) -> dict:
 
 
 async def run_ralph(objective: str, max_rounds: int = 5, model: str = "",
-                    max_steps_per_round: int = 40) -> dict:
+                    max_steps_per_round: int = 0) -> dict:
     """目标迭代：每轮用**全新子代理**推进目标，直到子代理声明完成或用尽轮次。"""
     objective = str(objective or "").strip()
     if not objective:

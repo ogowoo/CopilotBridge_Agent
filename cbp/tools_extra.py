@@ -465,9 +465,24 @@ class _Extra:
         return result
 
     # ── team：子代理 / 迭代 / 编排 ──
+    def _steps(self, max_steps: int) -> int:
+        """max_steps<=0 时取配置 agent.subagent_max_steps（默认 80，夹 10~200）。"""
+        try:
+            n = int(max_steps or 0)
+        except Exception:
+            n = 0
+        if n > 0:
+            return max(3, min(n, 200))
+        try:
+            from . import bridge as _b
+            return _b.subagent_max_steps()
+        except Exception:
+            return 80
+
     async def subagent(self, task: str, description: str = "", model: str = "",
-                       max_steps: int = 40) -> dict[str, Any]:
+                       max_steps: int = 0) -> dict[str, Any]:
         """把独立子任务交给子代理（独立会话/独立上下文），返回结果。"""
+        max_steps = self._steps(max_steps)
         if self.subagent_fn is None:
             raise ExtraToolError("当前通道不支持子代理")
         task = str(task or "").strip()
@@ -476,7 +491,7 @@ class _Extra:
         return await self.subagent_fn(task, description, model, max_steps)
 
     async def subagent_many(self, tasks: list | None = None, model: str = "",
-                            max_steps: int = 40, stop_on_error: bool = False) -> dict[str, Any]:
+                            max_steps: int = 0, stop_on_error: bool = False) -> dict[str, Any]:
         """一次派多个**互不依赖**的子任务（扇出），全部跑完再返回汇总。
 
         为什么需要：模型要派 3 个子代理就得连写 3 次 `subagent`，弱模型往往直接
@@ -484,6 +499,7 @@ class _Extra:
         **API 提供商模型真并行**（上限 `agent.subagent_parallel`，默认 4）；网页
         Copilot 通道仍然顺序（只有一个 page，并发会互相踩页）。
         """
+        max_steps = self._steps(max_steps)
         if self.subagent_fn is None:
             raise ExtraToolError("当前通道不支持子代理")
         items = [t for t in (tasks or []) if t]
@@ -545,7 +561,7 @@ class _Extra:
                 "concurrency": _cap, "results": results}
 
     async def subagent_send(self, session_id: str = "", message: str = "",
-                            model: str = "", max_steps: int = 40,
+                            model: str = "", max_steps: int = 0,
                             agent_id: str = "") -> dict[str, Any]:
         """继续一个已有子代理会话（同一上下文追加一轮）。
 
@@ -554,6 +570,7 @@ class _Extra:
         """
         if self.subagent_send_fn is None:
             raise ExtraToolError("当前通道不支持继续子代理")
+        max_steps = self._steps(max_steps)      # 不传就取 agent.subagent_max_steps
         target = str(session_id or agent_id or "").strip()
         if not target:
             raise ExtraToolError("需要 session_id（子代理返回的 agent_id）")
@@ -705,16 +722,16 @@ _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
                     {"action": "complete|blocked|pause|resume|edit", "objective": "action=edit 时的新目标"}),
     "subagent": ("把一段自足的任务交给子代理（独立会话、独立上下文），用于隔离上下文或并行推进调研/分析/局部改造；返回它的最终结果与步数，不返回中间步骤",
                  {"task": "完整的自包含任务：它看不到本次对话，目标/路径/验收标准/返回格式都要写全", "description": "3-5 词标签，仅用于展示",
-                  "model": "子代理模型（默认跟随父会话）", "max_steps": "子任务步数上限，默认 40"}),
+                  "model": "子代理模型（默认跟随父会话）", "max_steps": "子任务步数上限，默认取 agent.subagent_max_steps（通常 80），上限 200"}),
     "subagent_many": ("一次派多个互不依赖的子任务（API 提供商模型并行跑、上限 agent.subagent_parallel；网页 Copilot 通道顺序；全部跑完再返回汇总）；"
                       "把任务拆成 2~6 个独立子目标时用它，一次调用顶多次 subagent",
                       {"tasks": "数组，每项 {task:'自足的任务描述', description:'3-5 词标签'}",
-                       "model": "子代理模型（默认跟随父会话）", "max_steps": "每个子任务步数上限，默认 40",
+                       "model": "子代理模型（默认跟随父会话）", "max_steps": "每个子任务步数上限，默认取 agent.subagent_max_steps（通常 80），上限 200",
                        "stop_on_error": "某一项失败后是否停止后续，默认 false"}),
     "subagent_send": ("在已有子代理会话里追加一轮：它记得之前的上下文，只写新增的要求",
                        {"session_id": "子代理会话 ID（即 subagent 返回的 agent_id；也可用 agent_id 传）",
                         "message": "要追加的话", "model": "模型（默认沿用子会话）",
-                        "max_steps": "本轮步数上限，默认 40"}),
+                        "max_steps": "本轮步数上限，默认取 agent.subagent_max_steps"}),
     "subagent_fork": ("从当前会话分叉出子代理：它继承已完成的对话，适合试第二条路线/另一版实现；"
                       "任务里只写新增要求，别复述已有上下文",
                       {"session_id": "源会话 ID（默认当前会话）", "description": "3-5 词标签，仅用于展示",
