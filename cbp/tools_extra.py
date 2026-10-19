@@ -481,7 +481,8 @@ class _Extra:
 
         为什么需要：模型要派 3 个子代理就得连写 3 次 `subagent`，弱模型往往直接
         自己串行扫完了（实测 Kimi 就这么干）。扇出把它压成**一次调用**。
-        顺序执行：浏览器通道只有一个页面，真并发会互相踩；也避免全局会话指针竞争。
+        **API 提供商模型真并行**（上限 `agent.subagent_parallel`，默认 4）；网页
+        Copilot 通道仍然顺序（只有一个 page，并发会互相踩页）。
         """
         if self.subagent_fn is None:
             raise ExtraToolError("当前通道不支持子代理")
@@ -490,7 +491,8 @@ class _Extra:
             raise ExtraToolError("tasks 不能为空（数组，每项 {task, description} 或直接字符串）")
         if len(items) > 6:
             raise ExtraToolError(f"一次最多 6 个子任务（收到 {len(items)} 个）")
-        results, t0 = [], time.time()
+        # 先把每项校验/归一化：并行时不能一半已启动才发现格式错
+        plan: list[tuple[int, str, str]] = []
         for idx, raw in enumerate(items, 1):
             if isinstance(raw, str):
                 task, label = raw, ""
@@ -501,19 +503,46 @@ class _Extra:
                 raise ExtraToolError(f"第 {idx} 项格式不对（应为字符串或 {task/description} 对象）")
             if not task:
                 raise ExtraToolError(f"第 {idx} 项 task 为空")
-            try:
-                out = await self.subagent_fn(task, label, model, max_steps)
-                results.append({"index": idx, "task": task[:120], "ok": True,
+            plan.append((idx, task, label))
+        results, t0 = [], time.time()
+        try:
+            from . import bridge as _b
+            _mdl = model or str((_b.AGENT_SESSIONS.get(_b.current_session()) or {}).get("model") or "")
+            _parallel = _b.model_is_provider(_mdl)
+            _cap = _b.subagent_parallel() if _parallel else 1
+        except Exception:
+            _parallel, _cap = False, 1
+        if _parallel and len(plan) > 1:
+            sem = asyncio.Semaphore(_cap)
+
+            async def run_one(idx: int, task: str, label: str) -> dict:
+                async with sem:
+                    try:
+                        out = await self.subagent_fn(task, label, model, max_steps)
+                        return {"index": idx, "task": task[:120], "ok": True,
                                 "agent_id": out.get("agent_id"), "steps": out.get("steps"),
-                                "content": out.get("content")})
-            except Exception as exc:                      # noqa: BLE001 单项失败要能继续
-                results.append({"index": idx, "task": task[:120], "ok": False,
-                                "error": f"{type(exc).__name__}: {exc}"})
-                if stop_on_error:
-                    break
+                                "content": out.get("content")}
+                    except Exception as exc:              # noqa: BLE001 单项失败要能继续
+                        return {"index": idx, "task": task[:120], "ok": False,
+                                "error": f"{type(exc).__name__}: {exc}"}
+
+            results = list(await asyncio.gather(*(run_one(i, t, l) for i, t, l in plan)))
+        else:
+            for idx, task, label in plan:
+                try:
+                    out = await self.subagent_fn(task, label, model, max_steps)
+                    results.append({"index": idx, "task": task[:120], "ok": True,
+                                    "agent_id": out.get("agent_id"), "steps": out.get("steps"),
+                                    "content": out.get("content")})
+                except Exception as exc:                      # noqa: BLE001 单项失败要能继续
+                    results.append({"index": idx, "task": task[:120], "ok": False,
+                                    "error": f"{type(exc).__name__}: {exc}"})
+                    if stop_on_error:
+                        break
         ok = [r for r in results if r["ok"]]
         return {"requested": len(items), "succeeded": len(ok), "failed": len(results) - len(ok),
-                "seconds": round(time.time() - t0, 1), "results": results}
+                "seconds": round(time.time() - t0, 1), "parallel": bool(_parallel),
+                "concurrency": _cap, "results": results}
 
     async def subagent_send(self, session_id: str = "", message: str = "",
                             model: str = "", max_steps: int = 40,
@@ -550,7 +579,7 @@ class _Extra:
         return await self.ralph_fn(objective, max_rounds, model)
 
     async def workflow(self, spec: dict, model: str = "") -> dict[str, Any]:
-        """按阶段编排多个子代理（顺序执行）。"""
+        """按阶段编排多个子代理（阶段按顺序推进；阶段内子代理的具体执行仍由 subagent 决定）。"""
         if self.workflow_fn is None:
             raise ExtraToolError("当前通道不支持 workflow")
         return await self.workflow_fn(spec, model)
@@ -677,7 +706,7 @@ _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
     "subagent": ("把一段自足的任务交给子代理（独立会话、独立上下文），用于隔离上下文或并行推进调研/分析/局部改造；返回它的最终结果与步数，不返回中间步骤",
                  {"task": "完整的自包含任务：它看不到本次对话，目标/路径/验收标准/返回格式都要写全", "description": "3-5 词标签，仅用于展示",
                   "model": "子代理模型（默认跟随父会话）", "max_steps": "子任务步数上限，默认 40"}),
-    "subagent_many": ("一次派多个互不依赖的子任务（顺序执行，全部跑完再返回汇总）；"
+    "subagent_many": ("一次派多个互不依赖的子任务（API 提供商模型并行跑、上限 agent.subagent_parallel；网页 Copilot 通道顺序；全部跑完再返回汇总）；"
                       "把任务拆成 2~6 个独立子目标时用它，一次调用顶多次 subagent",
                       {"tasks": "数组，每项 {task:'自足的任务描述', description:'3-5 词标签'}",
                        "model": "子代理模型（默认跟随父会话）", "max_steps": "每个子任务步数上限，默认 40",
@@ -694,7 +723,7 @@ _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
                       {"parent_id": "父会话 ID（可选）", "limit": "最多条数，默认 50"}),
     "ralph": ("目标迭代：每轮用全新子代理推进目标，直到子代理声明 GOAL_COMPLETE 或用尽轮次",
               {"objective": "目标", "max_rounds": "最多轮次，默认 5", "model": "模型（默认跟随父会话）"}),
-    "workflow": ("按阶段编排多个子代理（顺序执行；浏览器通道只有一个页面，不能真并发）",
+    "workflow": ("按阶段编排多个子代理（阶段内顺序；子代理本身在 API 提供商模型上可并行）",
                  {"spec": "对象 {name, phases:[{title, agents:[{prompt,label}]}]}", "model": "模型"}),
 }
 

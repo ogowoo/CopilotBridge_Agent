@@ -138,6 +138,65 @@ lock = asyncio.Lock()
 RUNTIME = {}
 ACTIVE_SESSION_ID = None
 
+# ── 任务级上下文（并行的前提）────────────────────────────────────────
+# 为什么不能只靠模块全局：并行跑两个子代理时，`ACTIVE_SESSION_ID` /
+# `AGENT_TOOLS.current_session_id` / "是否允许网页 Copilot 工具" 都是**全局单值**，
+# 两个任务会互相覆盖——A 的 finally 一执行就把 B 的设置改回去（结果串台、工具集错乱）。
+# contextvars 在 `asyncio.create_task`/`gather` 时**按任务复制**，天然隔离；
+# 全局变量继续保留，只为兼容旧调用与"最近活跃会话"这类展示用途。
+import contextvars
+
+_SESSION_CTX: contextvars.ContextVar = contextvars.ContextVar("cbp_session", default=None)
+_WEB_TOOLS_CTX: contextvars.ContextVar = contextvars.ContextVar("cbp_web_tools", default=None)
+_SUBAGENT_DEPTH_CTX: contextvars.ContextVar = contextvars.ContextVar("cbp_subagent_depth",
+                                                                    default=0)
+
+
+def current_session() -> str | None:
+    """当前任务的会话 id：**优先取任务上下文**，其次模块全局。"""
+    sid = _SESSION_CTX.get()
+    return sid if sid is not None else ACTIVE_SESSION_ID
+
+
+def web_copilot_allowed() -> bool:
+    """当前任务是否允许"需要 Copilot 网页会话"的工具（网页通道为真）。
+
+    注意回落顺序：任务上下文 → **全局标志**（`set_web_copilot_tools` 设的）。
+    不能直接默认 True：显式关掉网页工具的场景（提供商会话、单测）会被悄悄放开，
+    实测就是 `test_web_tool_provider_gate` 抓到的这个问题。
+    """
+    v = _WEB_TOOLS_CTX.get()
+    if v is not None:
+        return bool(v)
+    return bool(getattr(AGENT_TOOLS, "allow_web_copilot_tools", True))
+
+
+def subagent_chain_depth() -> int:
+    """**当前任务链**的子代理深度（并行安全；不是"并发活跃数"）。"""
+    try:
+        return int(_SUBAGENT_DEPTH_CTX.get() or 0)
+    except Exception:
+        return 0
+
+
+def subagent_parallel() -> int:
+    """扇出并发上限（仅对 API 提供商模型生效；浏览器通道恒为 1）。"""
+    try:
+        n = int(AGENT_CFG.get("subagent_parallel", 4))
+    except Exception:
+        n = 4
+    return max(1, min(n, 8))
+
+
+def model_is_provider(model: str) -> bool:
+    """该模型是否走 HTTP 提供商（而非网页 Copilot 通道）。"""
+    try:
+        pm = providers_mod.split_provider_model(str(model or ""))
+    except Exception:
+        return False
+    return bool(pm and pm[0] in PROVIDERS)
+
+
 # ── SSE 事件总线（每个会话一组订阅队列）──────────────────────────────
 # 让前端不必轮询：runtime 快照直接推给浏览器，提供商流式输出就是真·逐字。
 # 队列有界（慢客户端只丢事件、不拖慢 Agent）；没有订阅者时几乎零开销。
@@ -1531,8 +1590,12 @@ TOOLS_EXTRA = register_extra_tools(
     subagent_list_fn=lambda *a, **k: list_subagents(*a, **k))
 
 # 会话状态钩子：扩展工具用它读写当前会话的 goal/todos（Agent 循环据此续轮）
-AGENT_TOOLS.state_getter = lambda: (AGENT_SESSIONS.get(ACTIVE_SESSION_ID) or {})
-AGENT_TOOLS.state_saver = lambda **kw: AGENT_SESSIONS.patch(ACTIVE_SESSION_ID, **kw)
+AGENT_TOOLS.state_getter = lambda: (AGENT_SESSIONS.get(current_session()) or {})
+AGENT_TOOLS.state_saver = lambda **kw: AGENT_SESSIONS.patch(current_session(), **kw)
+# 任务级读值器：工具里的"当前会话 / 是否允许网页工具"按任务取值（并行的前提）。
+# 并行子代理各自的任务上下文互不干扰；单任务时等价于原来的全局行为。
+AGENT_TOOLS.session_id_fn = current_session
+AGENT_TOOLS.web_copilot_allowed_fn = web_copilot_allowed
 
 # ── 插件系统（cbp/plugins.py，与 DSH 插件语义兼容）────────────────────
 # 贡献点：Agent 工具（AGENT_TOOLS）、模型提供商（PROVIDERS）、HTTP 路由、会话事件。
@@ -3712,7 +3775,7 @@ async def run_subagent(task: str, description: str = "", model: str = "",
     task = str(task or "").strip()
     if not task:
         raise ToolError("task 不能为空")
-    if subagent_depth() >= _SUBAGENT_MAX_DEPTH:
+    if subagent_chain_depth() >= _SUBAGENT_MAX_DEPTH:
         raise ToolError("子代理不能再创建子代理（防止无限递归）")
     parent_sid = ACTIVE_SESSION_ID
     parent_root = str(AGENT_TOOLS.root)
@@ -3745,6 +3808,11 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
     """
     global ACTIVE_SESSION_ID
     _SUBAGENT_ACTIVE[child_sid] = time.time()
+    # 任务级上下文：并发跑多个子代理时，会话 id / 网页工具开关 / 递归深度必须
+    # 各自独立（全局单值会互相覆盖）。token 在 finally 里按任务复位。
+    _tok_sid = _SESSION_CTX.set(child_sid)
+    _tok_web = _WEB_TOOLS_CTX.set(not is_provider)
+    _tok_depth = _SUBAGENT_DEPTH_CTX.set(subagent_chain_depth() + 1)
     try:
         AGENT_SESSIONS.patch(child_sid, state="running")
         # 子会话也要有对话记录：否则面板点进去只有步骤时间线、看不到"问了什么答了什么"
@@ -3829,6 +3897,13 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
                     "content": "", "steps": 0, "model": model_id, "error": str(exc)}
     finally:
         _SUBAGENT_ACTIVE.pop(child_sid, None)
+        # 先复位任务级上下文（并行的正确性靠它），再复位全局展示值
+        try:
+            _SESSION_CTX.reset(_tok_sid)
+            _WEB_TOOLS_CTX.reset(_tok_web)
+            _SUBAGENT_DEPTH_CTX.reset(_tok_depth)
+        except Exception:
+            pass
         ACTIVE_SESSION_ID = parent_sid
         AGENT_TOOLS.current_session_id = parent_sid or ""
         AGENT_TOOLS.set_root(parent_root, False)
@@ -3851,7 +3926,7 @@ async def continue_subagent(session_id: str, message: str, model: str = "",
     msg = str(message or "").strip()
     if not msg:
         raise ToolError("message 不能为空")
-    if subagent_depth() >= _SUBAGENT_MAX_DEPTH:
+    if subagent_chain_depth() >= _SUBAGENT_MAX_DEPTH:
         raise ToolError("子代理不能在子代理里继续（防止递归）")
     model_id = normalize_model_soft((model or child.get("model") or DEFAULT_MODEL).strip())
     pm = providers_mod.split_provider_model(model_id)

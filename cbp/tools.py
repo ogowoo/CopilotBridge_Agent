@@ -263,6 +263,11 @@ class ToolRegistry:
         # "需要 Copilot 网页会话"的工具：provider（API）会话里禁用（见 set_web_copilot_tools）
         self.web_copilot_tools = ("copilot_attach", "copilot_file")
         self.allow_web_copilot_tools = True
+        # 并行的前提：会话 id 与"是否允许网页工具"必须**按任务取值**，不能用
+        # 全局单值（两个子代理并发时会互相覆盖）。由 bridge 注入 contextvars 读值器。
+        self.current_session_id = ""
+        self.session_id_fn = None            # () -> str | None
+        self.web_copilot_allowed_fn = None    # () -> bool
         self.self_denylist = ("config.json", "data/", "EdgeProfile/", "for debug/", ".git/", "__pycache__/")
         self._tools: dict[str, Callable[..., Awaitable[Any]]] = {
             "list_directory": self.list_directory,
@@ -344,6 +349,30 @@ class ToolRegistry:
         provider 会话里既不注入也不执行（执行时给可自救的错误信息）。
         """
         self.allow_web_copilot_tools = bool(allowed)
+
+    def web_copilot_allowed(self) -> bool:
+        """当前任务是否允许网页 Copilot 工具。
+
+        优先用注入的读值器（bridge 用 contextvars 按任务隔离）；没有读值器时
+        退回全局标志——这样单任务/浏览器通道的行为与以前完全一致。
+        """
+        fn = self.web_copilot_allowed_fn
+        if fn is not None:
+            try:
+                return bool(fn())
+            except Exception:
+                pass
+        return bool(getattr(self, "allow_web_copilot_tools", True))
+
+    def session_id(self) -> str | None:
+        """当前任务的会话 id（同样优先按任务上下文取值）。"""
+        fn = self.session_id_fn
+        if fn is not None:
+            try:
+                return fn()
+            except Exception:
+                pass
+        return getattr(self, "current_session_id", None) or None
 
     def set_snapshot_hook(self, fn: Callable[[str, str, Path], None] | None) -> None:
         """设置写操作前的快照钩子 fn(tool, relative_path, absolute_target)。
@@ -521,7 +550,7 @@ class ToolRegistry:
         target = "global" if str(scope or "global").lower().startswith("glob") else self.memory_scope
         try:
             r = self._mem().remember(target, text, kind=kind, tags=list(tags or []),
-                                     source_session=getattr(self, "current_session_id", None),
+                                     source_session=self.session_id(),
                                      pinned=bool(pinned))
         except ValueError as exc:
             raise ToolError(str(exc)) from exc

@@ -105,7 +105,8 @@
       "vision": true,
       "ask": true
     },
-    "approval_scope": "once"
+    "approval_scope": "once",
+    "subagent_parallel": 4
   },
   "models": {},
   "providers": {

@@ -63,26 +63,61 @@ async def fanout(tasks: list | None, model: str = "", workspace: str = "",
     t0 = time.time()
     prev_active = b.ACTIVE_SESSION_ID
     b.ACTIVE_SESSION_ID = parent_sid          # 子代理的 parent_id 指向父会话
+    # 是否并行：只有 **API 提供商** 模型能并行（HTTP 请求彼此独立）；网页 Copilot
+    # 通道只有一个 page，并发会互相踩页（真并发得为每个子代理开独立浏览器上下文，
+    # 代价是 N 个 Copilot 会话 + 限流风险）。并发上限由 agent.subagent_parallel 控制。
+    parallel = b.model_is_provider(model or b.DEFAULT_MODEL) and len(items) > 1
+    cap = b.subagent_parallel() if parallel else 1
     try:
-        for idx, item in enumerate(items, 1):
-            try:
-                out = await b.run_subagent(item["task"], item["description"],
-                                           model, max_steps)
-                results.append({"index": idx, "task": item["task"][:120],
-                                "ok": True, "agent_id": out.get("agent_id"),
-                                "steps": out.get("steps"), "content": out.get("content")})
-                b.AGENT_SESSIONS.add_message(
-                    parent_sid, "assistant",
-                    f"### 子任务 {idx}\n{out.get('content') or ''}", 0)
-            except Exception as exc:              # noqa: BLE001 单项失败不影响其余
-                results.append({"index": idx, "task": item["task"][:120], "ok": False,
-                                "error": f"{type(exc).__name__}: {exc}"})
-                b.AGENT_SESSIONS.add_message(
-                    parent_sid, "assistant", f"### 子任务 {idx} 失败\n{exc}", 0)
+        if parallel:
+            sem = asyncio.Semaphore(cap)
+
+            async def run_one(idx: int, item: dict) -> dict:
+                async with sem:
+                    try:
+                        out = await b.run_subagent(item["task"], item["description"],
+                                                   model, max_steps)
+                        return {"index": idx, "task": item["task"][:120], "ok": True,
+                                "agent_id": out.get("agent_id"), "steps": out.get("steps"),
+                                "content": out.get("content")}
+                    except Exception as exc:      # noqa: BLE001 单项失败不影响其余
+                        return {"index": idx, "task": item["task"][:120], "ok": False,
+                                "error": f"{type(exc).__name__}: {exc}"}
+
+            # gather 保序：结果顺序 == 任务顺序（不要按完成先后排，否则汇总会乱）
+            results = list(await asyncio.gather(
+                *(run_one(i, it) for i, it in enumerate(items, 1))))
+            # 父会话消息按顺序写入（并发写同一条时间线会乱序，这里统一落）
+            for r in results:
+                if r["ok"]:
+                    b.AGENT_SESSIONS.add_message(
+                        parent_sid, "assistant",
+                        f"### 子任务 {r['index']}\n{r.get('content') or ''}", 0)
+                else:
+                    b.AGENT_SESSIONS.add_message(
+                        parent_sid, "assistant",
+                        f"### 子任务 {r['index']} 失败\n{r.get('error')}", 0)
+        else:
+            for idx, item in enumerate(items, 1):
+                try:
+                    out = await b.run_subagent(item["task"], item["description"],
+                                               model, max_steps)
+                    results.append({"index": idx, "task": item["task"][:120],
+                                    "ok": True, "agent_id": out.get("agent_id"),
+                                    "steps": out.get("steps"), "content": out.get("content")})
+                    b.AGENT_SESSIONS.add_message(
+                        parent_sid, "assistant",
+                        f"### 子任务 {idx}\n{out.get('content') or ''}", 0)
+                except Exception as exc:              # noqa: BLE001 单项失败不影响其余
+                    results.append({"index": idx, "task": item["task"][:120], "ok": False,
+                                    "error": f"{type(exc).__name__}: {exc}"})
+                    b.AGENT_SESSIONS.add_message(
+                        parent_sid, "assistant", f"### 子任务 {idx} 失败\n{exc}", 0)
     finally:
         b.ACTIVE_SESSION_ID = prev_active
     ok = [r for r in results if r["ok"]]
     b.AGENT_SESSIONS.patch(parent_sid, state="completed")
     return {"session_id": parent_sid, "requested": len(items), "succeeded": len(ok),
             "failed": len(results) - len(ok), "seconds": round(time.time() - t0, 1),
+            "parallel": bool(parallel), "concurrency": cap,
             "model": model or b.DEFAULT_MODEL, "workspace": root, "results": results}

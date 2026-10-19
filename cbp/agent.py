@@ -184,7 +184,7 @@ class AgentRunner:
         # copilot_attach / copilot_file 只在浏览器（Copilot 网页）会话可用。
         # provider 会话里不能提这两个工具名，否则模型会照着提示词去调用
         # （实测：提供商会话里 copilot_file 连续失败 10 次纯烧回合）。
-        if getattr(self.tools, "allow_web_copilot_tools", True):
+        if self.tools.web_copilot_allowed():
             _routing = ("只需分析（总结/找问题/提取信息）的大文件（约 20000 字符以上）优先用 "
                         "copilot_attach 丢给 Copilot 分析，一个回合搞定，不要逐段翻页；\n"
                         "产出**新文件**（脚本/页面/工具/demo/文档）优先用 copilot_file(path, instruction) "
@@ -218,7 +218,7 @@ class AgentRunner:
            提示了只会让模型去调用不存在的工具（实测连续失败 10 次）；
         2. copilot_file 确实在本次工具面里（allow_copilot_file / 工具裁剪都过了）。
         """
-        if not getattr(self.tools, "allow_web_copilot_tools", True):
+        if not self.tools.web_copilot_allowed():
             return False
         try:
             names = self._active_tool_names()
