@@ -1042,6 +1042,15 @@ body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
    结果「详情」块默认就是展开的。显式补一条。 */
 #activity[hidden], #answer[hidden], #prompt[hidden]{display:none !important}
 
-/* SUBAGENT-COLLAPSE: 子代理面板可折叠（列表长时占地方）。 */
-#subagentBar.collapsed #subagentList{display:none}
-#subagentBar.collapsed .chead{border-bottom:0}
+/* CARD-COLLAPSE: 子代理与实时流两块面板都点标题行/▾ 收起（与 todo 一致）。 */
+section.card.collapsed > .subagentlist,
+section.card.collapsed > .livepane,
+section.card.collapsed > .streamstatus,
+section.card.collapsed > .streamdetail{display:none !important}
+section.card.collapsed > .chead{border-bottom:0}
+.cardchev{flex:none;background:none;border:0;padding:0 2px;cursor:pointer;font-size:12px;
+  color:var(--faint);line-height:1;transition:transform .15s ease}
+.cardchev:hover{color:var(--text)}
+section.card.collapsed .cardchev{transform:rotate(-90deg)}
+
+

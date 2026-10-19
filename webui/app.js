@@ -168,24 +168,48 @@ async function refreshSubagents(force){
  finally{subagentBusy=false}
 }
 /* 子代理面板折叠：状态记在 localStorage，刷新后保持。 */
-function toggleSubagents(){
- const bar=document.getElementById('subagentBar');
- if(!bar)return;
- const collapsed=!bar.classList.contains('collapsed');
- bar.classList.toggle('collapsed',collapsed);
- try{localStorage.setItem('cbp.subagentsCollapsed',collapsed?'1':'0')}catch(e){}
- const btn=document.getElementById('subagentToggle');
- if(btn)btn.textContent=collapsed?tr('展开'):tr('折叠');
+/* 实时流面板收起/展开：状态记 localStorage，刷新后保持。 */
+
+
+
+/* 面板收起：**点标题行或左侧 ▾** 收起/展开（与 todo 的交互一致）。
+   支持两块：data-arg="subagents"（子代理）/ "live"（实时流）。
+   状态写 localStorage，刷新后保持；点按钮/标签/下拉不会误触发收起。 */
+function cardOf(kind){
+ if(kind==='subagents')return document.getElementById('subagentBar');
+ if(kind==='live'){
+  const chat=document.getElementById('chat');
+  return chat?chat.closest('section.card'):null;
+ }
+ return null;
 }
-function applySubagentsCollapsed(){
- const bar=document.getElementById('subagentBar');
- if(!bar)return;
- let collapsed=false;
- try{collapsed=localStorage.getItem('cbp.subagentsCollapsed')==='1'}catch(e){}
- bar.classList.toggle('collapsed',collapsed);
- const btn=document.getElementById('subagentToggle');
- if(btn)btn.textContent=collapsed?tr('展开'):tr('折叠');
+function applyCardCollapsed(){
+ [['subagents','cbp.subagentsCollapsed'],['live','cbp.liveCollapsed']].forEach(([kind,key])=>{
+  const card=cardOf(kind);if(!card)return;
+  let collapsed=false;
+  try{collapsed=localStorage.getItem(key)==='1'}catch(e){}
+  card.classList.toggle('collapsed',collapsed);
+ });
 }
+function toggleCard(kind){
+ const card=cardOf(kind);
+ if(!card)return;
+ const collapsed=!card.classList.contains('collapsed');
+ card.classList.toggle('collapsed',collapsed);
+ try{localStorage.setItem(kind==='subagents'?'cbp.subagentsCollapsed':'cbp.liveCollapsed',
+                          collapsed?'1':'0')}catch(e){}
+}
+/* 点标题行 = 切换；但点到标签/按钮/输入框时不动 */
+function onCardHeadClick(ev){
+ const head=ev.target.closest && ev.target.closest('.chead');
+ if(!head)return;
+ if(ev.target.closest('button.tab,button.btn,select,input,a,.cardchev'))return;
+ const card=head.closest('section.card');
+ if(!card)return;
+ if(card.id==='subagentBar')toggleCard('subagents');
+ else if(card.contains(document.getElementById('chat')))toggleCard('live');
+}
+document.addEventListener('click',onCardHeadClick);
 
 function renderSubagents(list){
  if(!current){list=[]}
@@ -3381,7 +3405,7 @@ attachPasteHandler('followup','follow');
   }
  applyI18n(document);   // 静态界面按当前语言渲染（data-i18n + 静态 DOM 直译）
  applyLangButton();
- mountTimelineIntoTab();applySubagentsCollapsed();
+ mountTimelineIntoTab();applyCardCollapsed();
  loadModels();browserState();mergePluginI18n(true);
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();
@@ -3426,7 +3450,7 @@ const ACTIONS={
  removeSession:(el)=>removeSession(el.dataset.arg==='true'),
  liveTab:(el)=>liveTab(el.dataset.arg),
  toggleStreamDetail:()=>toggleStreamDetail(),
- toggleSubagents:()=>toggleSubagents(),
+ cardCollapse:(el)=>toggleCard(el.dataset.arg||'live'),
  showLastPrompt:()=>showLastPrompt(),
  openSubagent:(el)=>load(el.dataset.arg),
  openPlugins:()=>openPlugins(),
