@@ -27,6 +27,7 @@ from cbp.snapshots import SnapshotStore
 
 class LifecycleTests(unittest.TestCase):
     def setUp(self):
+        lifecycle.disarm()                # 清状态 + 取消排队中的延时触发
         self.calls = []
         self.saved_hook = lifecycle._hook
         self.saved_flag = lifecycle._shutting_down
@@ -36,6 +37,7 @@ class LifecycleTests(unittest.TestCase):
         lifecycle._force_seconds = 30          # 别在测试里真的硬退出
 
     def tearDown(self):
+        lifecycle.disarm()           # 作废排队中的兜底定时器
         lifecycle._hook = self.saved_hook
         lifecycle._shutting_down = self.saved_flag
         lifecycle._force_seconds = self.saved_force
@@ -91,6 +93,7 @@ class LifecycleTests(unittest.TestCase):
 
 class ShutdownEndpointTests(unittest.TestCase):
     def setUp(self):
+        lifecycle.disarm()                # 清状态 + 取消排队中的延时触发
         self.tmp = Path(tempfile_dir())
         self.ws = self.tmp / "ws"; self.ws.mkdir()
         self.saved = (b.AGENT_SESSIONS, b.SNAPSHOTS, b.AGENT_TOOLS.root)
@@ -108,6 +111,7 @@ class ShutdownEndpointTests(unittest.TestCase):
         self.c = TestClient(app)
 
     def tearDown(self):
+        lifecycle.disarm()           # 作废排队中的兜底定时器
         (b.AGENT_SESSIONS, b.SNAPSHOTS, b.AGENT_TOOLS.root) = self.saved
         lifecycle._hook = self.saved_hook
         lifecycle._shutting_down = self.saved_flag

@@ -684,7 +684,7 @@ async def shutdown_service():
             "note_code": "shutdown_pending"}
     # 用线程定时器而不是 loop.call_later：与事件循环生命周期无关（服务可能由
     # 不同方式启动/重启），也让"先回响应再停"可被测试观察到。
-    threading.Timer(0.4, lifecycle.request_shutdown).start()
+    lifecycle.schedule("shutdown", 0.4)
     return {"stopping": True,
             "note": "服务即将终止。正在运行的任务会中断（状态已落库，重启后可恢复）。",
             "note_code": "shutdown_soon"}
@@ -1545,6 +1545,27 @@ async def grant_approval(sid: str, payload: dict):
         pass
     return {"ok": True, "tool": tool, "args_hash": args_hash,
             "scope": scope, "note": note, "note_code": note_code}
+
+
+@app.post("/v1/restart")
+async def restart_service():
+    """重启本服务（WebUI「重启服务」菜单）。
+
+    与停机同样的安全模型：**先返回响应、再延迟触发**（直接在这里退会让前端拿到
+    "连接被重置"，看起来像失败）。流程是优雅退出 → 由 start.py 在 `server.run()`
+    返回后 `os.execv` 就地重启，所以端口不会出现竞争窗口。
+
+    正在运行的任务会中断（状态都在 SQLite 里）；开了 `agent.auto_resume` 的会
+    在新进程启动后自动续跑。
+    """
+    if lifecycle.shutdown_pending() or lifecycle.restart_requested():
+        return {"restarting": True, "already": True,
+                "note": "停机/重启已在进行中", "note_code": "restart_pending"}
+    lifecycle.schedule("restart", 0.4)
+    return {"restarting": True,
+            "note": "服务正在重启。正在运行的任务会中断（状态已落库）；"
+                    "本页会在服务恢复后自动刷新。",
+            "note_code": "restart_soon"}
 
 
 @app.get("/v1/agent/spans")

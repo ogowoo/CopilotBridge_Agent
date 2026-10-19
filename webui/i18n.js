@@ -332,6 +332,18 @@ function noteText(data, fallback) {
 Object.assign(I18N_EN, {
   // 审批：授权后时间线要给出正面记录，不再停在"未获授权"
   "已授权": "Authorized",
+  // 重启服务
+  "重启服务": "Restart service",
+  "就地重启本服务（更新代码后用它；正在跑的任务会中断，状态已落库，开着 auto_resume 会自动续跑）":
+    "Restart the service in place (use this after changing code; running tasks are interrupted, state is persisted, and auto_resume continues them)",
+  "↻ 重启服务": "↻ Restart service",
+  "服务正在重启": "Service restarting",
+  "正在等待服务恢复（通常几秒），恢复后本页会自动刷新…":
+    "Waiting for the service to come back (usually a few seconds); this page refreshes itself when it does…",
+  "服务在 90 秒内未恢复，请检查控制台或重新运行 start.py":
+    "The service did not come back within 90 s — check the console or run start.py again",
+  "note.restart_pending": "Stop/restart already in progress",
+  "note.restart_soon": "The service is restarting. Running tasks are interrupted (state is persisted); this page refreshes once the service is back.",
   "已授权，已执行": "Authorized and executed",
   "授权已下达": "Authorization granted",
   "授权已下达，该操作已继续执行": "Authorization granted; the operation continued",

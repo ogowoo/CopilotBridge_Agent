@@ -2985,6 +2985,51 @@ async function shutdownService(){
   showStopped('服务已终止（连接已断开）');
  }
 }
+/* ── 重启服务：优雅退出 → 就地 exec 重启；本页轮询 /health，恢复后自动刷新 ── */
+let restarting=false, restartStartedAt=0;
+async function restartService(){
+ if(restarting)return;
+ if(!await dlgConfirm(
+   '即将重启本服务（用于让改过的代码生效）：\n\n'
+   +'· 服务会先优雅退出，然后**就地重启**（同一个进程，端口不变）\n'
+   +'· 正在运行的任务会中断（状态已落库；开着 auto_resume 会自动续跑）\n'
+   +'· 自动化浏览器会重新连接\n'
+   +'· 本页会在服务恢复后**自动刷新**，无需手动操作\n\n'
+   +'确定重启？',tr('重启服务'),false))return;
+ restarting=true; restartStartedAt=Date.now();
+ try{ await api('/v1/restart',{method:'POST'}) }catch(e){}
+ showRestarting();
+ const ok=await waitServiceBack(90000);
+ if(ok){ location.reload(); return }
+ restarting=false;
+ toast(tr('服务在 90 秒内未恢复，请检查控制台或重新运行 start.py'),'err');
+}
+/* 挂一条重启提示条（复用停止横幅的位置与视觉） */
+function showRestarting(extra){
+ let el=document.getElementById('stoppedBanner');
+ if(!el){el=document.createElement('div');el.id='stoppedBanner';el.className='stoppedbanner';
+  document.body.insertBefore(el,document.body.firstChild)}
+ const secs=Math.max(0,Math.round((Date.now()-restartStartedAt)/1000));
+ el.innerHTML='<b>↻ '+esc(tr('服务正在重启'))+'</b><span>'+esc(extra||tr('正在等待服务恢复（通常几秒），恢复后本页会自动刷新…'))+'</span>'
+  +'<span class="meta" id="restartElapsed">'+esc(String(secs))+'s</span>';
+ el.style.display='flex';
+ try{hideRetryUI()}catch(e){}; try{hideConnBanner()}catch(e){}; try{stopEvents()}catch(e){}
+ syncFixedLanes();
+}
+/* 轮询 /health：任一 2xx 且能解析即认为服务回来了 */
+async function waitServiceBack(timeoutMs){
+ const t0=Date.now();
+ for(;;){
+  if(Date.now()-t0>timeoutMs) return false;
+  const secs=Math.round((Date.now()-restartStartedAt)/1000);
+  const el=document.getElementById('restartElapsed'); if(el) el.textContent=secs+'s';
+  try{
+   const r=await fetch('/health',{cache:'no-store'});
+   if(r.ok){ await r.json(); return true }
+  }catch(e){}
+  await new Promise(r=>setTimeout(r,700));
+ }
+}
 function showStopped(note){
  serviceStopped=true;
  let el=document.getElementById('stoppedBanner');
@@ -3129,6 +3174,7 @@ const ACTIONS={
  delMsg:(el)=>delMsg(el),
  toggleGlobalSearch:()=>toggleGlobalSearch(),
  shutdownService:()=>shutdownService(),
+ restartService:()=>restartService(),
  imgZoom:(el)=>imgZoom(el),
  mCopy:(el)=>{const m=codeMenuEl;if(m)copyText(m.dataset.code||'',el);closeCodeMenu()},
  mDownload:(el)=>{
