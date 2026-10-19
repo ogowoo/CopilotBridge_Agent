@@ -1487,7 +1487,12 @@ async def send(prompt, make_new, model_id):
         raise CopilotSendFailed(
             "Copilot 浏览器未就绪（未登录或启动失败）：可改用提供商模型，"
             "或在界面点『重试浏览器』后重试")
-    await wait_copilot_ready(90)  # 若恰逢重启后的 SSO/ADFS 回跳，先等它就绪
+    # 若恰逢重启后的 SSO/ADFS 回跳，先等它就绪；**等不到就明确失败**，
+    # 否则会一直挂在 phase=sending（实测挂了 2 分钟以上，任务像是卡死）。
+    if not await wait_copilot_ready(90):
+        raise CopilotSendFailed(
+            "Copilot 未就绪（未登录或页面未加载完）：本轮无法发送。"
+            "请在自动化浏览器窗口登录 Copilot，或改用提供商模型后重试。")
     await dismiss()
     if make_new:
         await new_chat()
@@ -2295,6 +2300,19 @@ async def periodic_session_cleanup():
 # 由 api 层注册：按需启动浏览器（lazy 模式下首个 Copilot 请求会触发）。
 # 用钩子而不是直接 import，避免 api ↔ bridge 循环导入。
 ENSURE_BROWSER = None
+
+
+def page_url_safe() -> str:
+    """安全地拿当前页面 URL。
+
+    浏览器是**按需启动**的：恢复任务/续跑时 `page` 可能还是 None，
+    直接读 `page.url` 会抛 `'NoneType' object has no attribute 'url'`
+    （实测：resume 一启动就 failed，任务又被卡住）。
+    """
+    try:
+        return page.url or ""
+    except Exception:
+        return ""
 
 
 async def ensure_browser_ready() -> bool:
@@ -3388,6 +3406,9 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
         else:
             attached = {"done": False}   # 附件只在首个回合附加一次
             async def turn(prompt,model,force_new=False):
+                # 恢复/续跑可能发生在浏览器 idle 时：先确保它有页面，
+                # 否则后面读 page.url / 点输入框都会 NoneType 崩（实测 resume 立刻 failed）。
+                await ensure_browser_ready()
                 SNAPSHOTS.next_turn(sid)   # 一次 Copilot 回合 = 一个快照版本
                 # 上一次的工具调用已派发但结果未知（进程在结果落库前退出）：绝不原样重放，
                 # 先让模型只读核对现状；随后把这些步骤标为 unknown，保证只提示一次。
@@ -3420,7 +3441,7 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                     # 避免回合误入一个全新的空对话。
                     expected = st.get("current_url") or ""
                     m = CONVERSATION_URL_RE.search(expected)
-                    if m and m.group(0) not in (page.url or ""):
+                    if m and m.group(0) not in page_url_safe():
                         await page.goto(expected, wait_until="domcontentloaded", timeout=120000)
                         await asyncio.sleep(1)
                         _forget_selected_model()
@@ -3483,10 +3504,10 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 except AgentPaused:
                     # 回合已发送到 Copilot：保存会话 URL，恢复后继续同一聊天，
                     # 避免暂停-恢复后重复创建新会话。
-                    if make_new and page.url:
+                    if make_new and page_url_safe():
                         paused_url = await stable_conversation_url(timeout=6)
                         if not paused_url:
-                            _cand = page.url or ""
+                            _cand = page_url_safe()
                             paused_url = _cand if CONVERSATION_URL_RE.search(_cand) else ""
                         stp=AGENT_SESSIONS.get(sid); urls=list(stp.get("conversation_urls") or [])
                         if paused_url and paused_url not in urls: urls.append(paused_url)
@@ -3497,7 +3518,7 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 # 不能当会话身份保存（下回合会误入当前打开的任意会话）。
                 final_url = await stable_conversation_url(timeout=15)
                 if not final_url:
-                    _cand = page.url or ""
+                    _cand = page_url_safe()
                     final_url = _cand if CONVERSATION_URL_RE.search(_cand) else ""
                 st=AGENT_SESSIONS.get(sid); urls=list(st.get("conversation_urls") or [])
                 is_new_url = bool(final_url and final_url not in urls)
@@ -3694,7 +3715,7 @@ async def plain_chat_turn(sid: str, content: str, model_id: str, attach_paths: l
                 raise RuntimeError("会话在执行期间被删除")
             chat_url = await stable_conversation_url(timeout=10)
             if not chat_url:
-                _cand = page.url or ""
+                _cand = page_url_safe()
                 chat_url = _cand if CONVERSATION_URL_RE.search(_cand) else ""
             urls = list(current.get("conversation_urls") or [])
             if chat_url and chat_url not in urls: urls.append(chat_url)
@@ -4059,7 +4080,7 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
                 if not make_new:
                     expected = st.get("current_url") or ""
                     m = CONVERSATION_URL_RE.search(expected)
-                    if m and m.group(0) not in (page.url or ""):
+                    if m and m.group(0) not in page_url_safe():
                         await page.goto(expected, wait_until="domcontentloaded", timeout=120000)
                         await asyncio.sleep(1)
                         _forget_selected_model()
