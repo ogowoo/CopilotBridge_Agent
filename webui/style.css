@@ -1109,50 +1109,55 @@ section.card.collapsed .cardchev svg{transform:rotate(-90deg)}
 .kpi.kpi-state[data-state="paused"]{background:color-mix(in srgb, var(--amber, #d97706) 10%, var(--panel));
   border-color:color-mix(in srgb, var(--amber, #d97706) 35%, var(--line))}
 .kpi.kpi-state[data-state="paused"]::before{background:var(--amber, #d97706)}
-/* ── 输入框常驻可见（对齐 DSH：滚内容时输入框不动）────────────────────
-   结构是 .card > #chat(livepane chatwrap) > #chatlog + .composer,
-   composer 在 #chat 内部本来就是 flex:none（钉在面板底部）。问题在**短视口**：
-   整张对话卡落在折叠线以下，得先滚 #sessionView 才能打字。
-   做法：让承载对话的卡片在 #sessionView（它才是滚动容器）里**粘底**——
-   往下滚内容时它贴在可视区底边；卡片自然位置本来就可见时行为不变。 */
-#sessionView > .card:has(> #chat){position:sticky;bottom:0;z-index:6;
-  box-shadow:0 -8px 20px -12px var(--dlg-shadow,rgba(0,0,0,.45))}
-/* 卡片粘底后内部要撑满：对话区自己滚，输入框始终在卡片底部 */
-#sessionView > .card:has(> #chat) > #chat{flex:1 1 auto;min-height:0}
-/* ── 矮窗口：状态卡与子代理面板让位，保证输入框始终可见 ──────────────────
-   800×545 这类矮窗口里，横幅 28 + 顶栏 + KPI + 子代理 + 页签已占掉大半高度，
-   对话卡（含 89px 输入框）被挤到折叠线以下——只靠 sticky 不够（卡片比视口还高）。
-   这里在矮窗口隐藏两块**只读信息**（状态卡、子代理列表），把高度还给对话区；
-   它们仍可在正常高度窗口看到，且不影响任何操作。 */
-@media (max-height: 660px){
-  /* 只读信息让位给对话区；**不要**把 #chat 的 max-height 去掉——那会让对话区
-     不再内部滚动，消息直接顶到固定输入框下面（实测重叠 900px）。 */
-  .kpis{display:none}
-  .subagents{display:none}
-  /* 顶部信息压缩：矮窗口里标题行只留必要内容 */
-  .topbar{padding-top:8px;padding-bottom:8px}
-}
-/* ── 窄/矮窗口：输入框固定在视口底部（常驻可见） ──────────────────────
-   实测 800×545：≤860px 时侧栏被堆到主区上方（吃掉 265px），`.main` 只剩 280px，
-   对话卡（含 89px 输入框）必然落到折叠线以下——只靠 flex/sticky 补不回来（卡片比
-   可视区还高）。这里在窄或矮窗口把输入框**固定在视口底部**，并给对话区留出等量
-   的下内边距，保证内容不被盖住、输入框永远够得到。 */
-@media (max-width: 860px), (max-height: 660px){
-  #chat .composer{position:fixed;left:10px;right:10px;bottom:10px;z-index:45;
-    background:var(--panel);border:1px solid var(--line2);border-radius:12px;
-    padding:10px 12px;box-shadow:0 10px 30px -8px var(--dlg-shadow,rgba(0,0,0,.45))}
-  #chat .composer textarea{max-height:96px}
-  /* 不被固定输入框挡住：对话区与 #sessionView 底部各留一段空间 */
-  #chatlog{padding-bottom:170px}
-}
-/* ── 窄屏(≤860px)回退"自然文档流 + 页面滚动"（这是原本的设计） ───────────
-   宽屏（>860px）整屏布局：页面禁滚，滚动只发生在内部面板；
-   窄屏按原设计允许整页滚动——所以这里把 body 的 overflow 放开、app 高度自适应，
-   否则窄屏内容会被 `overflow:hidden` 永久藏住（我第一版就踩了这个）。
-   输入框仍然固定在视口底部（见上方规则），打字随时可用。 */
+/* ── 主列结构对齐 DSH：header/kpis/内容区 + 输入框（flex 子项，不是浮层）─────
+   以前 composer 藏在 #chat 内部，短视口下整张对话卡掉到折叠线以下，只能靠
+   position:fixed + padding 硬顶（会压住内容、还要按视口调数值）。
+   现在 composer 是 .main 的最后一个子项：内容区自己滚，输入框永远在底部。 */
+.main{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.main > .composer{flex:none;order:99}
+#sessionView{flex:1 1 auto;min-height:0;overflow:auto}
+/* 页面本身永不滚动（宽窄一致）：滚动只发生在 #sessionView / #chatlog / #steps */
+html,body{overflow:hidden}
 @media(max-width:860px){
-  html,body{overflow:auto;height:auto}
-  .app{height:auto;min-height:100%}
-  /* 固定输入框会压住页面底部内容：给整体留出等量空间 */
-  #sessionView{padding-bottom:150px}
+  /* 窄屏保留"侧栏在上、主区在下"的堆叠，但主区仍是 flex 列 → 输入框贴主区底部 */
+  .app{height:100vh;overflow:hidden}
+  .main{display:flex;flex-direction:column;overflow:hidden;min-height:0}
+  #sessionView{display:block;flex:1 1 auto;min-height:0;overflow:auto}
+}
+/* 对话卡撑满 #sessionView 的剩余高度：卡片底边不会再伸到输入框下面。
+   #sessionView 自己也改成 flex 列 + 不滚动（滚动交给 #chatlog / #steps），
+   这样"内容区滚动、输入框固定"才成立（block + overflow:auto 会让卡片溢出）。 */
+#sessionView{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden}
+#sessionView > .card:has(> #chat){flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+#sessionView > .card:has(> #chat) > #chat{flex:1 1 auto;min-height:0;max-height:none;overflow:hidden}
+#sessionView > .content{flex:none;min-height:0}
+@media(max-width:860px){
+  #sessionView{display:flex;flex-direction:column;overflow:hidden}
+}
+/* ── 窄屏(≤860px)：侧栏收成"窄条 + 拉手"，展开时浮在内容上（DSH 式）──
+   原来窄屏把侧栏堆在主区上方，吃掉约 265px：545px 高的窗口里主区只剩 ~280px，
+   顶栏 + KPI + 输入框就把高度占满，对话卡必然溢出。现在收起只留 22px 拉手条，
+   展开时作为浮层盖在内容上（不挤压主区），主区永远拿到整屏高度。 */
+@media(max-width:860px){
+  .app{grid-template-columns:1fr;position:relative;height:100vh;overflow:hidden}
+  .rail{position:absolute;left:0;top:0;bottom:0;width:22px;max-height:none;
+    overflow:hidden;z-index:60;background:var(--panel);
+    border-right:1px solid var(--line);border-bottom:0}
+  /* **只在收起态**隐藏子元素：展开态干脆不写这条，让它们恢复原本的 display */
+  :root:not([data-rail="open"]) .rail>*:not(#railBtn){display:none}
+  :root[data-rail="open"] .rail{width:min(320px,84vw);overflow:auto;
+    box-shadow:0 0 40px -10px rgba(0,0,0,.45)}
+  #railBtn{display:flex;position:absolute;right:0;top:44px;left:auto;
+    width:22px;height:56px;border-radius:0 8px 8px 0}
+  .main{min-width:0}
+}
+/* ── 窄窗口：KPI 压成一行（对齐 DSH 的"信息不占地方"）────────────────────
+   原来 800px 宽时 auto-fit/minmax(150px) 会排成两行，白占约 230px，
+   把对话区挤没了。窄屏改成一行五列 + 紧凑内边距，信息还在但不抢高度。 */
+@media(max-width:900px){
+  .kpis{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin:8px 0}
+  .kpi{padding:6px 8px;border-radius:9px}
+  .kpi span{font-size:10.5px}
+  .kpi b{font-size:15px}
+  .kpi .meter{margin-top:4px;height:5px}
 }

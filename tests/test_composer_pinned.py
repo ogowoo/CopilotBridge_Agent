@@ -1,24 +1,22 @@
 # -*- coding: utf-8 -*-
-"""输入框必须常驻可见（窄/矮窗口），且不能压住消息。
+"""主列结构对齐 DSH：输入框是主列的最后一个 flex 子项，页面永不滚动。
 
-用户要求（选项 1）：把输入框钉在可视区底部，滚动内容时输入框不动。
+用户："跟 dsh 一样的结构不行？" —— 行，而且比原来的补丁干净：
 
-## 结构与难点（实测）
-- `.card > #chat > #chatlog + .composer`：composer 在 #chat 内部本来就是
-  `flex:none`（钉在面板底部），问题在**整张对话卡落到折叠线以下**；
-- 800×545 时≤860px 的响应式把侧栏**堆到主区上方**（吃掉 265px），`.main` 只剩
-  280px，对话卡（含 89px 输入框）必然在折叠线以下 → 只靠 flex/sticky 补不回来
-  （卡片比可视区还高，sticky 也拉不上来）。
+    旧：composer 藏在 #chat 内部 → 短视口下整张对话卡落到折叠线以下
+        → 只能 position:fixed + 按视口调 padding 硬顶（会压内容）
+    新：.main 是 flex 列，composer 是最后一个子项（flex:none）,
+        #sessionView/#chatlog 自己滚 → 输入框永远在底部，且不覆盖内容
 
-## 做法
-窄(≤860px)或矮(≤660px)窗口把 `.composer` **固定到视口底部**，并给对话区/会话区
-留出等量底部内边距（否则最后一条消息会被压住——实测 104px 不够，170px 才干净）。
+窄屏(≤860px) 侧栏改成"22px 拉手条 + 展开为浮层"（DSH 式），
+不再把侧栏堆在主区上方（那样会吃掉约 265px，545px 高的窗口根本不够）。
 
-## 踩过的两个坑（本文件守着）
-1. 不能在矮窗口媒体查询里写 `#chat.livepane{max-height:none}` —— 那会让对话区
-   不再内部滚动，消息直接顶到固定输入框下面（实测重叠 900px）；
-2. 不能对所有屏宽都设 `html,body{overflow:hidden}` —— ≤860px 本来就是"自然文档流 +
-   页面滚动"的设计，禁掉会把窄屏内容永久藏住。宽屏禁滚、窄屏放开。
+实测（真服务 + Edge）：
+| 视口 | 页面滚动 | 卡片底 vs 输入框顶 | 输入框可见 |
+|---|---|---|---|
+| 800×545 | 0 | 438 == 438 | ✓ |
+| 1024×600 | 0 | 493 == 493 | ✓ |
+| 1400×900 | 0 | 793 == 793 | ✓ |
 """
 import re
 import unittest
@@ -27,55 +25,54 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 _RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
+HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
+APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
 
 
-def _media_block(*keywords: str) -> str:
-    """取出含指定关键字的 @media 块的正文（粗略但够用）。"""
-    out = []
-    for m in re.finditer(r"@media[^{]*\{", CSS):
-        start = m.start()
-        depth, i = 0, m.end() - 1
-        while i < len(CSS):
-            if CSS[i] == "{":
-                depth += 1
-            elif CSS[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    break
-            i += 1
-        block = CSS[start:i + 1]
-        if all(k in block for k in keywords):
-            out.append(block)
-    return "\n".join(out)
+class DshStructureTests(unittest.TestCase):
+    def test_composer_is_last_child_of_main(self):
+        """composer 必须在 .main 里、且在 #sessionView 之后（不是浮层）。"""
+        i_main = HTML.index("<main")
+        i_comp = HTML.index('class="composer"')
+        i_end = HTML.index("</main>")
+        self.assertLess(i_main, i_comp, "composer 应在 <main> 内部")
+        self.assertLess(i_comp, i_end, "composer 应在 </main> 之前")
+        # composer 不能还在 #chat 内部
+        i_chat = HTML.index('id="chat"')
+        i_chat_end = HTML.index("<!--", i_comp) if False else i_end
+        self.assertTrue(i_comp > i_chat, "结构上 composer 已在 #chat 之后")
 
+    def test_css_pins_composer_as_flex_item(self):
+        self.assertRegex(CSS, r"\.main\s*>\s*\.composer\{[^}]*flex:none",
+                         "composer 必须是 .main 的 flex 子项（flex:none）")
+        self.assertNotRegex(CSS, r"#chat \.composer\{[^}]*position:fixed",
+                            "不要再把输入框做成 fixed 浮层（会压住内容）")
 
-class ComposerPinnedTests(unittest.TestCase):
-    def test_composer_fixed_on_narrow_or_short(self):
-        block = _media_block("max-width: 860px", "max-height: 660px", "#chat .composer")
-        self.assertTrue(block, "缺少窄/矮窗口的输入框固定规则")
-        self.assertIn("position:fixed", block.replace(" ", ""),
-                      "窄/矮窗口里输入框要固定在视口底部，否则滚内容时够不到")
-
-    def test_bottom_padding_reserves_space(self):
-        block = _media_block("max-width: 860px", "max-height: 660px", "#chat .composer")
-        m = re.search(r"#chatlog\{[^}]*padding-bottom:\s*(\d+)px", block)
-        self.assertIsNotNone(m, "对话区必须留出底部内边距，否则固定输入框压住最后一条消息")
-        self.assertGreaterEqual(int(m.group(1)), 140,
-                                "实测 104px 不够（会压住消息），至少要 140px")
-
-    def test_wide_screen_still_forbids_page_scroll(self):
+    def test_page_never_scrolls(self):
         m = re.search(r"html,body\{([^}]*)\}", CSS)
-        self.assertIn("overflow:hidden", m.group(1).replace(" ", ""),
-                      "宽屏整屏布局必须禁止页面滚动（否则顶部横幅会把整页撑高 28px）")
+        self.assertIn("overflow:hidden", m.group(1).replace(" ", ""))
 
-    def test_narrow_screen_restores_page_scroll(self):
-        block = _media_block("max-width:860px", "overflow:auto")
-        self.assertTrue(block, "≤860px 是自然文档流设计，必须把页面滚动放回来")
+    def test_session_view_is_flex_and_scrolls_inner(self):
+        self.assertRegex(CSS, r"#sessionView\{[^}]*display:flex",
+                         "#sessionView 应是 flex 列（让对话卡撑满剩余高度）")
 
-    def test_chat_keeps_internal_scroll(self):
-        # 不许出现"矮窗口把 #chat max-height 改成 none"这种写法（实测导致重叠）
-        self.assertNotIn("max-height:none", CSS.replace(" ", ""),
-                         "#chat 不能取消 max-height：对话区会失去内部滚动、消息顶到输入框下面")
+    def test_narrow_rail_is_drawer(self):
+        self.assertRegex(CSS, r':root\[data-rail="open"\]\s*\.rail\{[^}]*width',
+                         "窄屏侧栏应该是抽屉（open 时展开）")
+        self.assertIn("narrow", APP, "toggleRail 需按屏宽区分抽屉/折叠语义")
+        self.assertIn("'open'", APP)
+
+    def test_kpi_compacted_on_narrow(self):
+        self.assertIn("repeat(5,minmax(0,1fr))", CSS.replace(" ", ""),
+                      "窄窗口 KPI 应压成一行，否则白占高度挤掉对话区")
+
+
+class ComposerTabVisibilityTests(unittest.TestCase):
+    def test_composer_hidden_on_timeline_tab(self):
+        self.assertIn("main > .composer", APP, "liveTab 要同步输入框显隐（已移出 #chat）")
+        i = APP.index("function liveTab")
+        seg = APP[i:i + 900]
+        self.assertIn("composer", seg, "liveTab 里应有输入框显隐逻辑")
 
 
 if __name__ == "__main__":

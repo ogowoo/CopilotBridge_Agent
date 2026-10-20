@@ -146,15 +146,15 @@
           <div id="chatlog" class="chatlog"><div class="meta">选择 Session 后，可以在这里继续对话。</div></div>
           <div id="followThumbs" class="thumbs"></div>
           <div id="queueBox" class="queuebox"></div>
-          <div class="composer">
-            <textarea id="followup" aria-label="跟进消息" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行；可直接粘贴截图。Ctrl+J = 运行中强行插入指令"></textarea>            <button type="button" id="sendFollowup" class="btn accent" data-act="sendFollowup">发送</button>
-          </div>
         </div>
       </section>
       <div class="content">
         <section class="card"><div class="chead"><span data-i18n="步骤时间线">步骤时间线</span><span class="hint"><span id="stepCount" style="margin-right:8px"></span><select id="stepTool" class="stepfilter" title="只看某个工具的步骤" data-act-input="stepFilter" data-arg="tool"><option value="">全部工具</option></select><select id="stepStatus" class="stepfilter" title="按状态筛选" data-act-input="stepFilter" data-arg="status"><option value="">全部状态</option><option value="ok">仅成功</option><option value="bad">仅失败/被拦</option><option value="event">仅事件</option></select><button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px" title="导出完整时间线 JSON（含每步参数、结果与错误现场），便于调试" data-act="exportTimeline">⬇ 导出</button></span></div><div id="steps" class="steps"></div></section>
       </div>
     </div>
+          <div class="composer">
+            <textarea id="followup" aria-label="跟进消息" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行；可直接粘贴截图。Ctrl+J = 运行中强行插入指令"></textarea>            <button type="button" id="sendFollowup" class="btn accent" data-act="sendFollowup">发送</button>
+          </div>
   </main>
 </div>
 <div class="mask" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" id="dlgMask" data-act="mask" data-arg="dlg">

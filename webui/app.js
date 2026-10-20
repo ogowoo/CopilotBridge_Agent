@@ -2756,6 +2756,9 @@ function liveTab(n){
  for(const k in LIVE_NAMES){
   const pane=document.getElementById(k);if(pane)pane.style.display=k===n?'':'none';
   const btn=document.getElementById(LIVE_TAB[k]);if(btn)btn.className='tab'+(k===n?' on':'')}
+ // 输入框已移到 .main 底部（DSH 结构）：只有"实时流"页需要它
+ const _comp=document.querySelector('.main > .composer');
+ if(_comp)_comp.style.display=n==='chat'?'':'none';
  if(n==='chat'){try{scrollChatToEnd()}catch(e){}}}  // className 覆盖即清除新内容圆点
 function expandLive(){
  document.getElementById('liveTitle').textContent=LIVE_NAMES[liveTabName];
@@ -3184,10 +3187,16 @@ function watchSystemTheme(){
  }catch(e){}
 }
 /* ── 左侧栏折叠（归零只剩边缘拉手） ── */
-function toggleRail(){let r=document.documentElement,c=r.dataset.rail==='closed';
- if(c){delete r.dataset.rail}else{r.dataset.rail='closed'}
+function toggleRail(){let r=document.documentElement;
+ // 窄屏(≤860)把侧栏做成**抽屉浮层**（DSH 式）：默认收起（无属性=收起），
+ // 打开写 'open'；宽屏沿用原语义（无属性=展开、'closed'=收起成拉手）。
+ const narrow=matchMedia('(max-width:860px)').matches;
+ const open=narrow ? (r.dataset.rail==='open') : (r.dataset.rail!=='closed');
+ const c=!open;                                  // 取反后的状态
+ if(narrow){r.dataset.rail=c?'open':'closed'}
+ else if(c){delete r.dataset.rail}else{r.dataset.rail='closed'}
  document.getElementById('railBtn').textContent=c?'‹':'›';
- try{localStorage.setItem('cbp-rail',c?'':'closed')}catch(e){}}
+ try{localStorage.setItem('cbp-rail',narrow?(c?'open':'closed'):(c?'':'closed'))}catch(e){}}
 try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="›"}catch(e){}
 /* ── 长期记忆管理面板 ───────────────────────────────────────────────
    外观复用项目既有的 .mask/.dlg 弹窗类（与确认框同款），图标用内联 SVG
