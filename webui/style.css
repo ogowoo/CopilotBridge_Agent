@@ -938,7 +938,6 @@ section.card:has(#stepCount){margin-top:14px}
 .todolist{flex:1 1 100%;margin:2px 0 0;display:flex;flex-direction:column;gap:2px;
   border-left:2px solid var(--line2);padding:4px 0 2px 10px}
 .todoitem{display:flex;align-items:baseline;gap:8px;font-size:12.5px;line-height:1.6}
-.todoitem .todoitem .todoitem .todoitem.todo-completed .todoitem.todo-completed .todoitem.todo-in_progress .goalbar .gb-sep{color:var(--line2)}
 
 /* -- 插件面板（声明式渲染 kv/list/table/json/markdown）-------------- */
 .panelwrap{display:flex;gap:10px;min-height:280px}
@@ -1366,3 +1365,30 @@ html,body{overflow:hidden}
 #timeline.timelinepane{flex:1 1 0%;min-height:0;max-height:none;overflow:auto}
 /* 同样按"铺满"处理的还有被合并进来的回答/提示词页（它们是 pre，保持可滚） */
 #answer.livepane,#prompt.livepane{flex:1 1 0%;min-height:0;max-height:none;overflow:auto}
+
+/* TEAMCARD: 待办 + 子代理合并在一张卡里。
+   卡内的待办条不再是独立小卡（去掉自身边框/外边距），子代理块用一条分隔线接在下面。 */
+#sessionView > #teamCard{padding:0;overflow:hidden;flex:0 0 auto}   /* #sessionView 是 flex 列：不设 flex:none 会被压成一条线（实测 6px） */
+#teamCard > .goalbar,
+#teamCard > #subagentBar{flex:none;min-height:0}
+#teamCard[hidden]{display:none}
+#teamCard > .goalbar{margin:0;border:0;border-radius:0;background:transparent;
+  padding:9px 14px}
+#teamCard > #subagentBar{border-top:1px solid var(--line);padding:0}
+#teamCard > #subagentBar .chead{padding:8px 14px;border-bottom:0}
+#teamCard > #subagentBar .subagentlist{padding:2px 10px 8px}
+/* 展开待办时，清单仍在卡内滚动，别把卡撑爆 */
+#teamCard > .goalbar .todolist{max-height:34vh;overflow:auto}
+/* 子代理块收起（自己的 ▾）：不再依赖 .card 祖先 */
+#subagentBar.collapsed > .subagentlist{display:none}
+#subagentBar.collapsed > .chead{border-bottom:0}
+#subagentBar.collapsed .cardchev svg{transform:rotate(-90deg)}
+
+/* TEAMCARD-IN-STREAM: 待办 + 子代理作为**行**放在实时流里（状态条上方），
+   样式与 `.streamstatus` 一致：无卡片边框、只有分隔线、同一内边距。 */
+#chat > #teamCard{flex:none;border:0;border-top:1px solid var(--line);border-radius:0;
+  background:var(--panel);padding:0;overflow:hidden}
+#chat > #teamCard > .goalbar{padding:9px 12px}
+#chat > #teamCard > #subagentBar{border-top:1px solid var(--line)}
+#chat > #teamCard > #subagentBar .chead{padding:9px 12px}
+#chat > #teamCard > #subagentBar .subagentlist{padding:0 8px 6px}

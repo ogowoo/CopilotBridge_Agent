@@ -107,8 +107,11 @@
         </div>
         <button type="button" class="cardchev topbarchev" id="topbarChev" data-act="topbarCollapse" aria-expanded="true" title="收起/展开任务条（点标题也行）"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 L6 8 L9.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </header>
-      <div id="goalBar" class="goalbar" hidden></div>
-      <section class="card subagents" id="subagentBar" style="display:none">
+      <!-- 待办与子代理合并成一张卡：两块本来都是"这个任务正在做什么"的信息，
+           拆成两张小卡既占高度又显得零碎（用户：合并吧 / 学 DSH 那样放）。 -->
+      <section class="card teamcard" id="teamCard" hidden>
+        <div id="goalBar" class="goalbar" hidden></div>
+        <section class="subagents" id="subagentBar" style="display:none">
         <div class="chead"><span class="dot-on" id="subagentDot"></span>
           <button type="button" class="cardchev" data-act="cardCollapse" data-arg="subagents"
                   title="收起/展开子代理（点标题也行）"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 L6 8 L9.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -117,7 +120,8 @@
             <button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px"
                     data-act="refreshSubagents" data-i18n="刷新">刷新</button></span>
         </div>
-        <div id="subagentList" class="subagentlist"></div>
+          <div id="subagentList" class="subagentlist"></div>
+        </section>
       </section>
       <section class="card">
         <div class="chead"><span id="pulse" class="dot-off"></span>

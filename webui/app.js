@@ -250,7 +250,7 @@ function renderSubagents(list){
  const box=document.getElementById('subagentList');
  const cnt=document.getElementById('subagentCount');
  if(!bar||!box) return;
- if(!list.length){bar.style.display='none';box.innerHTML='';if(cnt)cnt.textContent='';return}
+ if(!list.length){bar.style.display='none';box.innerHTML='';if(cnt)cnt.textContent='';try{syncTeamCard()}catch(e){};return}
  // 用 'block' 而非 ''：'' 会回退到样式表里的 .subagents{display:none}（实测踩到）
  bar.style.display='block';
  const running=list.filter(s=>s.state==='running').length;
@@ -985,7 +985,9 @@ function drawSessions(){
   box.appendChild(h);
   if(!wsIsCollapsed(k)) groups.get(k).forEach((s)=>{
    renderCard(s);
-   const kids=kidsOf.get(s.id)||[];
+   // 侧栏不再展开子代理行（用户：session 列不要显示 subagents 了）——
+   // 子代理仍可在右侧「子代理」面板里看。
+   const kids=[];
    if(kids.length && expandedSess.has(s.id)) kids.forEach(c=>renderCard(c,{child:true}));
   })});
  try{translateAttrs(box)}catch(e){}}
@@ -1955,6 +1957,29 @@ function inferCurrentTodo(todos){
  return list.findIndex(t=>String(t.status)==='pending');
 }
 
+/* 待办 + 子代理合并成一张卡：两块都空时把卡藏起来（否则界面上挂个空卡片）。 */
+/* 待办 + 子代理并进实时流：放到「completed · steps · token」那条状态条**上面**，
+   与它同一种行式样式（不再是独立卡片）。 */
+function mountTeamCard(){
+ const card=document.getElementById('teamCard');
+ const chat=document.getElementById('chat');
+ const strip=document.getElementById('streamStatus');
+ if(!card||!chat||card.dataset.mounted)return;
+ if(strip&&strip.parentElement===chat)chat.insertBefore(card,strip);
+ else chat.appendChild(card);
+ card.dataset.mounted='1';
+}
+
+function syncTeamCard(){
+ const card=document.getElementById('teamCard');
+ if(!card)return;
+ const gb=document.getElementById('goalBar');
+ const sb=document.getElementById('subagentBar');
+ const hasGoal=!!(gb&&!gb.hidden);
+ const hasSub=!!(sb&&getComputedStyle(sb).display!=='none');
+ card.hidden=!(hasGoal||hasSub);
+}
+
 function renderGoalBar(r){
  const el=document.getElementById('goalBar');
  if(!el)return;
@@ -2023,6 +2048,7 @@ function renderGoalBar(r){
   }
   el.appendChild(list);
  }
+ try{syncTeamCard()}catch(e){}
 }
 async function applyRuntime(r){
  if(!r)return;
@@ -3236,13 +3262,13 @@ async function waitSessionReady(sid){
   await new Promise(r=>setTimeout(r,1000));
  }}
 
-function toggleMore(e,arg){
- // 通用下拉：优先用 data-arg 指定 id，否则取最近的 .menu 里的 .menuList
- e.stopPropagation();
+function toggleMore(el, e){
+ // 事件委托下 e.currentTarget 是 document，`closest('.menu')` 永远为 null——
+ // 之前菜单弹不出来就是这个原因（顶栏「更多」没给 data-arg）。这里以**按钮元素**为准。
+ if(e&&e.stopPropagation)e.stopPropagation();
  let menu=null;
- if(typeof arg==='string'&&arg)menu=document.getElementById(arg);
- if(!menu){const host=e.currentTarget&&e.currentTarget.closest?e.currentTarget.closest('.menu'):null;
-   menu=host?host.querySelector('.menuList'):null}
+ if(el&&el.dataset&&el.dataset.arg)menu=document.getElementById(el.dataset.arg);
+ if(!menu&&el&&el.closest){const host=el.closest('.menu');menu=host?host.querySelector('.menuList'):null}
  if(!menu)return;
  // 同一时间只开一个：否则顶栏「更多」和面板「⋯」会同时展开、互相遮挡
  document.querySelectorAll('.menuList.open').forEach(m=>{if(m!==menu)m.classList.remove('open')});
@@ -3586,7 +3612,7 @@ attachPasteHandler('followup','follow');
   }
  applyI18n(document);   // 静态界面按当前语言渲染（data-i18n + 静态 DOM 直译）
  applyLangButton();
- mountTimelineIntoTab();applyCardCollapsed();applyTopbarCollapsed();
+ mountTimelineIntoTab();mountTeamCard();applyCardCollapsed();applyTopbarCollapsed();
  loadModels();browserState();mergePluginI18n(true);
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();
@@ -3629,7 +3655,7 @@ const ACTIONS={
  continueAgent:()=>continueAgent(),
  activate:()=>activate(),
  openCopilot:()=>openCopilot(),
- toggleMore:(el,e)=>toggleMore(e, el&&el.dataset&&el.dataset.arg),
+ toggleMore:(el,e)=>toggleMore(el, e),
  rollbackSession:()=>rollbackSession(),
  rollbackSelfUpgrade:()=>rollbackSelfUpgrade(),
  removeSession:(el)=>removeSession(el.dataset.arg==='true'),
