@@ -44,8 +44,7 @@
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.6 2h9.4A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
-              </svg></button><button type="button" id="settingsBtn" class="iconbtn" title="设置" data-i18n-title="设置"
-              data-act="openSettings" aria-label="设置"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-1.55-1H2a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 3.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.16.5.6.9 1.15 1H21a2 2 0 1 1 0 4h-.09c-.55.1-.99.5-1.15 1z"/></svg></button>
+              </svg></button>
           </div>
           <div class="nc-right">
             <div class="nc-mode">
@@ -96,11 +95,11 @@
                状态 / 总步骤 / 当前会话步骤 / 会话切换 / TOKEN 估算 都在这里，
                只占按钮行的剩余宽度，宽屏一行放下、窄屏自动换行到按钮下方。 -->
           <section class="kpis kpis-inline">
-            <div class="kpi kpi-state" id="kpiStateCard" data-state="ready" title="状态"><span>状态</span><b id="kpiState">—</b></div>
-            <div class="kpi" title="总步骤"><span>总步骤</span><b id="kpiSteps">0</b></div>
-            <div class="kpi" title="当前会话步骤"><span>当前会话步骤</span><b id="kpiConv">0</b></div>
-            <div class="kpi" title="会话切换"><span>会话切换</span><b id="kpiRoll">0</b></div>
-            <div class="kpi" title="TOKEN 估算"><span>TOKEN 估算</span><b id="kpiToken">0</b><small id="kpiBudget" style="color:var(--faint);font-size:10.5px"> / —</small><div class="meter"><span id="tokenbar"></span></div></div>
+            <div class="kpi kpi-state" id="kpiStateCard" data-state="ready" data-kpi="state" title="状态"><span>状态</span><b id="kpiState">—</b></div>
+            <div class="kpi" data-kpi="steps" title="总步骤"><span>总步骤</span><b id="kpiSteps">0</b></div>
+            <div class="kpi" data-kpi="conv" title="当前会话步骤"><span>当前会话步骤</span><b id="kpiConv">0</b></div>
+            <div class="kpi" data-kpi="roll" title="会话切换"><span>会话切换</span><b id="kpiRoll">0</b></div>
+            <div class="kpi" data-kpi="token" title="TOKEN 估算"><span>TOKEN 估算</span><b id="kpiToken">0</b><small id="kpiBudget" style="color:var(--faint);font-size:10.5px"> / —</small><div class="meter"><span id="tokenbar"></span></div></div>
           </section>
         </div>
         <button type="button" class="cardchev topbarchev" id="topbarChev" data-act="topbarCollapse" aria-expanded="true" title="收起/展开任务条（点标题也行）"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 L6 8 L9.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -212,7 +211,10 @@
 <div class="mask" role="dialog" aria-modal="true" aria-label="设置" id="settingsMask" data-act="mask" data-arg="settings">
   <div class="dlg settingsdlg" style="width:min(720px,94vw)">
     <div class="dhead"><span>⚙ <span data-i18n="设置">设置</span></span><span class="hint" data-i18n="Esc 关闭">Esc 关闭</span></div>
-    <div class="dbody settingsbody" id="settingsBody"></div>
+    <div class="dbody settingsbody">
+      <nav class="setnav" id="settingsNav" role="tablist" aria-label="设置分组" data-i18n-aria-label="设置分组"></nav>
+      <div class="setpane" id="settingsBody" role="tabpanel"></div>
+    </div>
     <div class="dfoot">
       <span id="settingsHint" class="hint" style="margin-right:auto" data-i18n="改完点保存；外观类即时生效">改完点保存；外观类即时生效</span>
       <button type="button" class="btn ghost" data-act="closeSettings" data-i18n="关闭">关闭</button>
@@ -220,6 +222,10 @@
     </div>
   </div>
 </div>
+
+<!-- 设置入口：整个页面左下角浮动（不占侧栏工具行，任何页面状态都在） -->
+<button type="button" id="settingsBtn" class="gearfix" title="设置" data-i18n-title="设置"
+        data-act="openSettings" aria-label="设置"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-1.55-1H2a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 3.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.16.5.6.9 1.15 1H21a2 2 0 1 1 0 4h-.09c-.55.1-.99.5-1.15 1z"/></svg></button>
 <div class="toasts" id="toasts"></div>
 <!-- 通用模态层：通知确认 / 危险确认 / 文本输入 -->
 <div class="mask" role="dialog" aria-modal="true" aria-labelledby="gmTitle" id="gmMask" data-act="maskGm">

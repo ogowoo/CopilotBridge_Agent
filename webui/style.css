@@ -1442,3 +1442,140 @@ html,body{overflow:hidden}
 /* SESS-ALIGN: 会话行去掉前导位后，状态图标/标题再右移一点，与工作区分组头的
    文件夹图标（x≈34）/组名（x≈53）对齐，避免会话行看起来比组头更靠左或更靠右。 */
 #sessions .sess{padding-left:22px}
+
+/* GEAR-FIXED: 设置入口固定在整个页面左下角（不占侧栏工具行，任何状态都够得着）。
+   半径小、阴影轻，hover 才提亮；窄屏避让遮罩用 z-index 跟着弹窗层走。 */
+.gearfix{position:fixed;left:14px;bottom:14px;z-index:56;width:34px;height:34px;
+  display:inline-flex;align-items:center;justify-content:center;padding:0;
+  border:1px solid var(--line2);border-radius:50%;background:var(--panel);
+  color:var(--muted);box-shadow:0 6px 18px -8px var(--menu-shadow);cursor:pointer;
+  transition:color .15s ease,border-color .15s ease,transform .15s ease}
+.gearfix svg{width:16px;height:16px}
+.gearfix:hover{color:var(--accent);border-color:color-mix(in srgb, var(--accent) 45%, var(--line2));
+  transform:rotate(25deg)}
+.mask.open ~ .gearfix,.gearfix.under{z-index:40}
+
+/* KPI-RESPONSIVE: KPI 只占按钮行的剩余宽度，**绝不撑破**那一行——
+   按重要性从低到高依次隐藏：会话切换 → 当前会话步骤 → 总步骤 → token 条。
+   状态永远留着（它是判断任务死活的关键）。 */
+.kpis.kpis-inline{flex-wrap:nowrap;overflow:hidden;justify-content:flex-end}
+.kpis-inline .kpi{flex:0 0 auto}
+@media(max-width:1320px){
+  .kpis-inline .kpi[data-kpi="roll"]{display:none}
+}
+@media(max-width:1180px){
+  .kpis-inline .kpi[data-kpi="conv"]{display:none}
+}
+@media(max-width:1040px){
+  .kpis-inline .kpi[data-kpi="steps"]{display:none}
+}
+@media(max-width:900px){
+  .kpis-inline .kpi[data-kpi="token"] .meter{display:none}
+  .kpis-inline .kpi[data-kpi="token"] small{display:none}
+}
+@media(max-width:760px){
+  .kpis-inline .kpi[data-kpi="token"]{display:none}
+}
+
+/* SETTINGS-POLISH: 设置页重做——分组做成卡片、标题小而弱、控件统一 220px、
+   开关行整行可点、危险区红框、footer 粘底。 */
+.settingsdlg .dbody{padding:0}
+.settingsbody{max-height:66vh;overflow:auto;padding:10px 14px 4px;
+  background:var(--bg)}
+.setgroup{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:10px 12px 6px;margin:0 0 12px}
+.setgroup h4{margin:2px 0 8px;font-size:11px;letter-spacing:1px;text-transform:uppercase;
+  color:var(--faint);font-weight:700}
+.setrow{display:flex;align-items:center;gap:12px;padding:7px 6px;border-radius:8px;
+  font-size:13px;color:var(--text);cursor:pointer}
+.setrow + .setrow{border-top:1px solid color-mix(in srgb, var(--line) 60%, transparent)}
+.setrow:hover{background:var(--menu-hover)}
+.setrow > span:first-child{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.setrow input[type="checkbox"]{order:2;flex:none;width:16px;height:16px;accent-color:var(--accent)}
+.setrow select,.setrow input[type="number"],.setrow input[type="text"]{
+  flex:none;width:220px;max-width:46%;height:32px;padding:0 9px;font-size:12.5px;
+  border:1px solid var(--line2);border-radius:8px;background:var(--input-bg);color:var(--text)}
+.setrow select:focus,.setrow input:focus{outline:2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset:1px;border-color:var(--accent)}
+.setbtns{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 8px}
+.sethint{margin:2px 0 8px;font-size:12px;color:var(--faint);line-height:1.6}
+.setgroup.danger{border-color:color-mix(in srgb, var(--red) 40%, var(--line));
+  background:color-mix(in srgb, var(--red) 5%, var(--panel))}
+.setgroup.danger h4{color:var(--red)}
+.setgroup.danger .btn.danger{color:var(--red);
+  border-color:color-mix(in srgb, var(--red) 45%, var(--line2))}
+.settingsdlg .dfoot{border-top:1px solid var(--line);background:var(--panel);
+  padding:10px 14px;gap:8px;display:flex;align-items:center}
+
+/* SETTINGS-GROUP-CARD: 让分组真的像"卡片"（原来的 --line 太淡，看出一片平）。
+   同时给标题加一条左侧色条，扫一眼就知道换组了。 */
+.settingsbody{background:var(--bg);padding:12px 14px 6px}
+.setgroup{background:var(--panel);border:1px solid var(--line2);border-radius:12px;
+  padding:12px 14px 8px;margin:0 0 14px;
+  box-shadow:0 1px 2px color-mix(in srgb, var(--menu-shadow) 55%, transparent)}
+.setgroup h4{display:flex;align-items:center;gap:7px;margin:0 0 10px;padding:0 0 8px;
+  border-bottom:1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  font-size:11px;letter-spacing:1.2px;color:var(--faint);font-weight:700}
+.setgroup h4::before{content:"";width:3px;height:11px;border-radius:2px;
+  background:var(--accent);opacity:.75}
+.setgroup.danger{border-color:color-mix(in srgb, var(--red) 42%, var(--line2))}
+.setgroup.danger h4::before{background:var(--red)}
+
+/* SETTINGS-TWOCOL: 设置页做成「左分组导航 + 右内容」两栏（像正经设置页，而不是一长条表单）。
+   开关改用拨杆（checkbox 换 appearance），布尔项与文本项都用一致的右对齐控件。 */
+.settingsbody{display:flex;flex-direction:row;align-items:stretch;gap:0;padding:0;
+  max-height:68vh;overflow:hidden;background:var(--bg)}
+.setnav{flex:0 0 148px;display:flex;flex-direction:column;gap:2px;padding:12px 8px;
+  border-right:1px solid var(--line);background:var(--panel2);overflow:auto}
+.setnavbtn{display:block;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:8px;
+  background:transparent;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit}
+.setnavbtn:hover{background:var(--menu-hover);color:var(--text)}
+.setnavbtn.on{background:color-mix(in srgb, var(--accent) 12%, var(--panel));color:var(--text);
+  font-weight:600;box-shadow:inset 2px 0 0 var(--accent)}
+.setnavbtn.danger{color:var(--red)}
+.setnavbtn.danger.on{background:color-mix(in srgb, var(--red) 12%, var(--panel));
+  box-shadow:inset 2px 0 0 var(--red)}
+.setpane{flex:1 1 auto;min-width:0;overflow:auto;padding:14px 16px 6px}
+.setgroup{background:transparent;border:0;border-radius:0;padding:0;margin:0;
+  box-shadow:none}
+.setgroup h4{display:flex;align-items:center;gap:8px;margin:0 0 6px;padding:0;
+  border:0;font-size:11px;letter-spacing:1.2px;color:var(--faint);font-weight:700}
+.setgroup h4::before{content:"";width:3px;height:11px;border-radius:2px;
+  background:var(--accent);opacity:.8}
+.setgroup.danger h4::before{background:var(--red)}
+.setgroup.danger h4{color:var(--red)}
+.setrow{display:flex;align-items:center;gap:14px;padding:9px 6px;border-radius:8px;
+  font-size:13px;color:var(--text);cursor:pointer;
+  border-bottom:1px solid color-mix(in srgb, var(--line) 65%, transparent)}
+.setrow:last-child{border-bottom:0}
+.setrow:hover{background:var(--menu-hover)}
+.setrow > span{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.setrow select,.setrow input[type="number"],.setrow input[type="text"]{
+  flex:none;width:220px;max-width:48%;height:32px;padding:0 9px;font-size:12.5px;
+  border:1px solid var(--line2);border-radius:8px;background:var(--input-bg);color:var(--text);
+  order:2}
+.setrow select:focus,.setrow input:focus{outline:2px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  outline-offset:1px;border-color:var(--accent)}
+/* 拨杆开关：36×20 圆角槽 + 白点，选中变主题色（比裸 checkbox 更像成品） */
+.setrow input[type="checkbox"]{order:2;flex:none;appearance:none;-webkit-appearance:none;
+  width:36px;height:20px;border-radius:999px;background:var(--line2);position:relative;
+  cursor:pointer;transition:background-color .16s ease}
+.setrow input[type="checkbox"]::after{content:"";position:absolute;top:2px;left:2px;
+  width:16px;height:16px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 2px rgba(16,24,40,.25);transition:left .16s ease}
+.setrow input[type="checkbox"]:checked{background:var(--accent)}
+.setrow input[type="checkbox"]:checked::after{left:18px}
+.setrow input[type="checkbox"]:focus-visible{outline:2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset:2px}
+.setbtns{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 10px}
+.sethint{margin:0 0 10px;font-size:12px;color:var(--faint);line-height:1.6}
+.settingsdlg{max-width:780px}
+.settingsdlg .dbody{padding:0}
+.settingsdlg .dfoot{border-top:1px solid var(--line);background:var(--panel);
+  padding:10px 14px;display:flex;align-items:center;gap:8px}
+@media(max-width:760px){
+  .settingsbody{flex-direction:column}
+  .setnav{flex:none;flex-direction:row;flex-wrap:wrap;border-right:0;
+    border-bottom:1px solid var(--line);padding:8px}
+  .setnavbtn{width:auto;padding:6px 10px}
+}

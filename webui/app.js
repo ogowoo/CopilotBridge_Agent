@@ -2811,7 +2811,7 @@ function openTask(){
  const t=document.getElementById('task'); if(t){t.value='';t.focus()}
 }
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closePlugins();closeWs();closePanels();k()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDlg();closeLive();gmClose(null);closeManual();closePlugins();closeWs();closePanels();try{closeSettings()}catch(_){}}});
 
 /* 把独立的「步骤时间线」卡片并入实时面板标签页（像 DSH 那样一个面板看全部）。
    直接搬 DOM 节点：筛选下拉、导出按钮、每步的展开/收起全部照旧，不重写渲染逻辑。 */
@@ -3646,7 +3646,10 @@ const FAST_PHASES=['api_sending','api_streaming','waiting','sending'];
 const SETTINGS_GROUPS=[
  ['ui', '外观'], ['exec', '执行'], ['browser', '浏览器'],
  ['data', '数据'], ['entries', '入口'], ['danger', '危险区']];
-let settingsSchema=null, settingsValues=null;
+let settingsSchema=null, settingsValues=null, settingsTab='ui';
+/* 枚举值的显示名：直接显示 "session"/"each"/"lazy" 太像代码（用户看到的是生词）。 */
+const ENUM_LABEL={each:'每次操作都询问',session:'本会话内不再逐次询问',
+  lazy:'首次使用时启动',eager:'服务启动时预热'};
 
 async function openSettings(){
  const mask=document.getElementById('settingsMask');
@@ -3665,18 +3668,24 @@ function _cfgInput(key,spec,val){
     <span>${esc(tr(spec.label))}</span></label>`;
  }
  if(spec.kind==='enum'){
-  const opts=spec.values.map(v=>`<option value="${esc(v)}" ${String(val)===v?'selected':''}>${esc(tr(v))}</option>`).join('');
+  const opts=spec.values.map(v=>{
+   const label=ENUM_LABEL[v]||v;
+   return `<option value="${esc(v)}" ${String(val)===v?'selected':''}>${esc(tr(label))}</option>`;
+  }).join('');
   return `<label class="setrow" for="${id}"><span>${esc(tr(spec.label))}</span>
     <select id="${id}" data-cfg="${esc(key)}">${opts}</select></label>`;
  }
  const t=spec.kind==='int'?'number':'text';
+ // 没配过的键显示"默认"占位：空输入框会让人以为坏了/以为必须填
+ const ph=(val===undefined||val===null||val==='')?`placeholder="${esc(tr('默认'))}"`:'';
  return `<label class="setrow" for="${id}"><span>${esc(tr(spec.label))}</span>
-   <input type="${t}" id="${id}" data-cfg="${esc(key)}" value="${esc(val??'')}"
+   <input type="${t}" id="${id}" data-cfg="${esc(key)}" value="${esc(val??'')}" ${ph}
      ${spec.min!==undefined?`min="${spec.min}"`:''} ${spec.max!==undefined?`max="${spec.max}"`:''}></label>`;
 }
 async function renderSettings(){
  const box=document.getElementById('settingsBody');
- if(!box)return;
+ const nav=document.getElementById('settingsNav');
+ if(!box||!nav)return;
  if(!settingsValues){
   try{
    const r=await api('/v1/config');
@@ -3684,49 +3693,77 @@ async function renderSettings(){
   }catch(e){ settingsValues={}; settingsSchema={}; }
  }
  const groups={};
- Object.entries(settingsSchema).forEach(([k,spec])=>{ (groups[spec.group||'exec']=groups[spec.group||'exec']||[]).push([k,spec]) });
- let h='';
- SETTINGS_GROUPS.forEach(([gid,label])=>{
-  if(gid==='ui'){
-   // 注意：themeChoice() 对 'dark' 返回空串（历史实现），这里看**存储值**本身。
-   const _tc=(()=>{try{const t=localStorage.getItem('cbp-theme');return (!t||t==='auto')?'auto':t}catch(e){return 'auto'}})();
-   const themeOpts=[['auto','跟随系统'],['light','浅色'],['dark','深色'],['solarized','护眼'],['mint','薄荷'],['amber','琥珀']]
-     .map(([v,t])=>`<option value="${v}" ${_tc===v?'selected':''}>${esc(tr(t))}</option>`).join('');
-   // 语言名用各自的原生写法（中文/English/繁體中文），不翻译 → 标 data-i18n-skip，
-   // 免得多语言审计把它当成"英文界面里残留的中文"。
-   const langOpts=[['zh','中文'],['en','English'],['tw','繁體中文']]
-     .map(([v,t])=>`<option value="${v}" data-i18n-skip="1" ${currentLang()===v?'selected':''}>${esc(t)}</option>`).join('');
-   h+=`<section class="setgroup"><h4>${esc(tr('外观'))}</h4>
-     <label class="setrow"><span>${esc(tr('主题'))}</span><select id="setTheme" data-ui="theme">${themeOpts}</select></label>
-     <label class="setrow"><span>${esc(tr('语言'))}</span><select id="setLang" data-ui="lang">${langOpts}</select></label>
-     </section>`;
-   return;
-  }
-  if(gid==='entries'){
-   h+=`<section class="setgroup"><h4>${esc(tr('入口'))}</h4>
-     <div class="setbtns">
-      <button type="button" class="btn ghost" data-act="openManual">📖 ${esc(tr('使用手册'))}</button>
-      <button type="button" class="btn ghost" data-act="openPlugins">🧩 ${esc(tr('插件管理'))}</button>
-      <button type="button" class="btn ghost" data-act="openPanels">🗂 ${esc(tr('插件面板'))}</button>
-      <button type="button" class="btn ghost" data-act="openWsBrowser">📁 ${esc(tr('工作区浏览'))}</button>
-      <button type="button" class="btn ghost" data-act="closeSettings" data-arg="memory">💬 ${esc(tr('记忆面板'))}</button>
-     </div></section>`;
-   return;
-  }
-  if(gid==='danger'){
-   h+=`<section class="setgroup danger"><h4>${esc(tr('危险区'))}</h4>
-     <div class="setbtns">
-      <button type="button" class="btn ghost" data-act="restartService">↻ ${esc(tr('重启服务'))}</button>
-      <button type="button" class="btn ghost danger" data-act="shutdownService">⏻ ${esc(tr('终止服务 / 退出'))}</button>
-     </div>
-     <p class="sethint">${esc(tr('重启/终止都会中断正在跑的任务；状态已落库，重启后可恢复。'))}</p></section>`;
-   return;
-  }
-  const rows=(groups[gid]||[]).map(([k,spec])=>_cfgInput(k,spec,settingsValues[k]));
-  if(!rows.length)return;
-  h+=`<section class="setgroup"><h4>${esc(tr(label))}</h4>${rows.join('')}</section>`;
+ Object.entries(settingsSchema).forEach(([k,spec])=>{
+  const g=spec.group||'exec';
+  (groups[g]=groups[g]||[]).push([k,spec]);
  });
- box.innerHTML=h;
+ const has=(gid)=>gid==='ui'||gid==='entries'||gid==='danger'||(groups[gid]||[]).length;
+ const visible=SETTINGS_GROUPS.filter(([gid])=>has(gid));
+ if(!visible.some(([gid])=>gid===settingsTab))settingsTab=visible[0][0];
+
+ // 左导航
+ nav.innerHTML=visible.map(([gid,label])=>{
+  const on=gid===settingsTab;
+  return `<button type="button" class="setnavbtn${on?' on':''}${gid==='danger'?' danger':''}"
+     role="tab" aria-selected="${on?'true':'false'}" data-act="settingsTab" data-arg="${gid}">
+     ${esc(tr(label))}</button>`;
+ }).join('');
+
+ // 右内容：所有分组都渲染，非当前的隐藏（值仍留在 DOM，保存不会丢）
+ const pane=(gid,html)=>`<section class="setgroup${gid==='danger'?' danger':''}" data-pane="${gid}"
+    style="${gid===settingsTab?'':'display:none'}">${html}</section>`;
+
+ const uiHtml=`<h4>${esc(tr('外观'))}</h4>
+   <label class="setrow"><span>${esc(tr('主题'))}</span>
+     <select id="setTheme" data-ui="theme">${[['auto','跟随系统'],['light','浅色'],['dark','深色'],['solarized','护眼'],['mint','薄荷'],['amber','琥珀']]
+       .map(([v,t])=>`<option value="${v}" ${_settingsTheme()===v?'selected':''}>${esc(tr(t))}</option>`).join('')}</select></label>
+   <label class="setrow"><span>${esc(tr('语言'))}</span>
+     <select id="setLang" data-ui="lang">${[['zh','中文'],['en','English'],['tw','繁體中文']]
+       .map(([v,t])=>`<option value="${v}" data-i18n-skip="1" ${currentLang()===v?'selected':''}>${esc(t)}</option>`).join('')}</select></label>`;
+
+ const entriesHtml=`<h4>${esc(tr('入口'))}</h4>
+   <div class="setbtns">
+    <button type="button" class="btn ghost" data-act="openManual">📖 ${esc(tr('使用手册'))}</button>
+    <button type="button" class="btn ghost" data-act="openPlugins">🧩 ${esc(tr('插件管理'))}</button>
+    <button type="button" class="btn ghost" data-act="openPanels">🗂 ${esc(tr('插件面板'))}</button>
+    <button type="button" class="btn ghost" data-act="openWsBrowser">📁 ${esc(tr('工作区浏览'))}</button>
+    <button type="button" class="btn ghost" data-act="closeSettings" data-arg="memory">💬 ${esc(tr('记忆面板'))}</button>
+   </div>`;
+
+ const dangerHtml=`<h4>${esc(tr('危险区'))}</h4>
+   <div class="setbtns">
+    <button type="button" class="btn ghost" data-act="restartService">↻ ${esc(tr('重启服务'))}</button>
+    <button type="button" class="btn ghost danger" data-act="shutdownService">⏻ ${esc(tr('终止服务 / 退出'))}</button>
+   </div>
+   <p class="sethint">${esc(tr('重启/终止都会中断正在跑的任务；状态已落库，重启后可恢复。'))}</p>`;
+
+ const cfgPane=(gid,label)=>{
+  const rows=(groups[gid]||[]).map(([k,spec])=>_cfgInput(k,spec,settingsValues[k])).join('');
+  return rows?`<h4>${esc(tr(label))}</h4>${rows}`:'';
+ };
+
+ box.innerHTML=visible.map(([gid,label])=>{
+  if(gid==='ui')return pane('ui',uiHtml);
+  if(gid==='entries')return pane('entries',entriesHtml);
+  if(gid==='danger')return pane('danger',dangerHtml);
+  return pane(gid,cfgPane(gid,label));
+ }).join('');
+ try{translateAttrs(box);translateAttrs(nav)}catch(e){}
+}
+function _settingsTheme(){
+ try{const t=localStorage.getItem('cbp-theme');return (!t||t==='auto')?'auto':t}catch(e){return 'auto'}
+}
+function setSettingsTab(id){
+ const known=SETTINGS_GROUPS.map(g=>g[0]);
+ if(!known.includes(id))return;
+ settingsTab=id;
+ document.querySelectorAll('#settingsNav .setnavbtn').forEach(b=>{
+  const on=b.dataset.arg===id;
+  b.classList.toggle('on',on);b.setAttribute('aria-selected',on?'true':'false');
+ });
+ document.querySelectorAll('#settingsBody .setgroup[data-pane]').forEach(p=>{
+  p.style.display=(p.dataset.pane===id)?'':'none';
+ });
 }
 
 function collectSettings(){
@@ -3789,6 +3826,7 @@ const ACTIONS={
  openCopilot:()=>openCopilot(),
  toggleMore:(el,e)=>toggleMore(el, e),
  openSettings:()=>openSettings(),
+ settingsTab:(el)=>{setSettingsTab(el&&el.dataset?el.dataset.arg:'');},
  openWsBrowser:()=>openWsBrowser(''),
  closeSettings:(el)=>{closeSettings();if(el&&el.dataset&&el.dataset.arg==='memory'){try{openMemory()}catch(e){}}},
  saveSettings:()=>saveSettings(),
@@ -3832,7 +3870,7 @@ const ACTIONS={
  closeLive:()=>closeLive(),
 
  // 点击遮罩**背景**才关闭（点弹窗内部不关）：原来写在内联里的 if(event.target===this)
- mask:(el,e)=>{if(e.target!==el)return;
+ mask:(el,e)=>{if(e.target!==el)return;if(el&&el.id==='settingsMask'){try{closeSettings()}catch(_){};return}
   ({dlg:closeDlg,manual:closeManual,live:closeLive,plugins:closePlugins,ws:closeWs,panel:closePanels}[el.dataset.arg]||(()=>{}))()},
  maskGm:(el,e)=>{if(e.target===el)gmClose(null)},
  // 动态生成内容里的处理器（消息复制/代码折叠/附件移除）
