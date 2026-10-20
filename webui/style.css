@@ -1438,3 +1438,7 @@ html,body{overflow:hidden}
    改为：文字常态色、不加删除线，只靠绿色对勾表示完成；进行中的才有底色与胶囊。 */
 .todoitem.todo-completed .ttxt{color:var(--text);text-decoration:none;opacity:.92}
 .todoitem.todo-completed .tic{color:var(--green)}
+
+/* SESS-ALIGN: 会话行去掉前导位后，状态图标/标题再右移一点，与工作区分组头的
+   文件夹图标（x≈34）/组名（x≈53）对齐，避免会话行看起来比组头更靠左或更靠右。 */
+#sessions .sess{padding-left:22px}

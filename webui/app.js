@@ -958,21 +958,8 @@ function drawSessions(){
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
   const _kind=String(s.id||'').startsWith('cron-')?'⏱':String(s.id||'').startsWith('research-')?'🔎':String(s.id||'').startsWith('sub-')?'子':'';
   e.innerHTML=`<span class="sstat ${stateClass(s.state)}" title="${esc(stateText(s.state))}" aria-label="${esc(stateText(s.state))}">${stateIcon(s.state)}</span><div class="smeta"><b>${_kind?`<span class="skind">${_kind}</span>`:''}${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
-  // **所有行**都占同一个前导位：只有带子会话的行显示 ▸/▾，子行显示 ↳。
-  // 之前只在有子会话时插按钮，导致行首缩进不一致、看起来像逐级嵌套（用户实测）。
-  const lead=document.createElement('span');
-  lead.className='sess-lead';
-  if(opts.child){
-   lead.textContent='↳';
-   lead.title=tr('子代理会话');
-  }else if(kids.length){
-   lead.classList.add('has');
-   const open=expandedSess.has(s.id);
-   lead.textContent=open?'▾':'▸';
-   lead.title=tr('展开/折叠子代理会话')+'（'+kids.length+'）';
-   lead.onclick=ev=>{ev.stopPropagation();toggleSessExpand(s.id)};
-  }
-  e.insertBefore(lead,e.firstChild);
+  // 子代理不再列进侧栏 → 前导位（▸ 的那个位置）也就没用了：
+  // 空着那 12px + gap 会把整行往右推，看起来跟工作区分组头"跳格"（用户实测）。
   let chip=e.querySelector('.sid');
   if(chip)chip.onclick=ev=>{ev.stopPropagation();try{navigator.clipboard.writeText(s.id);chip.textContent=tr('已复制 ✓');setTimeout(()=>chip.textContent=s.id,900)}catch(_){}};
   e.onclick=()=>load(s.id);
@@ -3827,7 +3814,6 @@ const ACTIONS={
  wsChoose:()=>wsChoose(),
  closeWs:()=>closeWs(),
  closePlugins:()=>closePlugins(),
- refreshSubagents:()=>refreshSubagents(true),
  toggleSubagents:()=>toggleSubagents(),
  showPromptView:()=>showPromptView(),
  expandLive:()=>expandLive(),

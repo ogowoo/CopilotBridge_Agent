@@ -114,9 +114,7 @@
           <button type="button" class="cardchev" data-act="cardCollapse" data-arg="subagents"
                   title="收起/展开子代理（点标题也行）"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 L6 8 L9.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <b data-i18n="子代理">子代理</b><span id="subagentCount" class="subcount"></span>
-          <span class="hint" style="margin-left:auto">
-            <button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px"
-                    data-act="refreshSubagents" data-i18n="刷新">刷新</button></span>
+          <!-- 刷新按钮已移除：runtime() 每秒重画子代理列表，按钮多余 -->
         </div>
           <div id="subagentList" class="subagentlist"></div>
         </section>
