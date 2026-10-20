@@ -60,29 +60,33 @@
         <div class="trow"><h1 id="title">—</h1><code id="sidChip" class="sidbig" title="点击复制会话 ID"></code><span id="statepill" class="pill">—</span><select id="sessModel" aria-label="本会话使用的模型" class="sessmodel" title="当前会话使用的模型（下一回合生效，服务重启后仍沿用）"></select><button type="button" id="btnRefreshSess" class="iconbtn" title="刷新模型列表（重新扫描 Copilot 菜单）">↻</button></div>
         <div id="status" class="sub">—</div>
         <div class="actions">
+          <!-- 主操作只留两个高频项（对齐 DSH 的"一行工具栏"）：恢复 / 取消任务；
+               暂停、压缩上下文、继续执行、切换页面、打开会话、深研都收进「更多 ▾」,
+               免得顶栏排两行、把对话区挤掉。 -->
           <div class="grp">
-            <button type="button" class="btn" data-act="control" data-arg="pause">暂停</button>
             <button type="button" class="btn" data-act="control" data-arg="resume">恢复</button>
-            <button type="button" class="btn" data-act="control" data-arg="compact">压缩上下文</button>
-          </div>
-          <div class="grp" id="webGrp">
-            <button type="button" class="btn" data-act="continueAgent">继续执行</button>
-            <button type="button" class="btn" id="btnActivate" data-act="activate">切换到页面</button>
-            <button type="button" class="btn" id="btnOpenChat" data-act="openCopilot">打开会话 ↗</button>
-          </div>
-          <div class="grp" id="researchGrp">
-            <button type="button" class="btn" id="btnDeepResearch" data-act="deepResearch"
-                    title="多角度搜索 + 抓正文，生成带来源的调研报告（新会话）">深研</button>
           </div>
           <div class="grp">
             <button type="button" class="btn danger" data-act="control" data-arg="cancel">取消任务</button>
             <div class="menu"><button type="button" class="btn ghost" id="moreBtn" data-act="toggleMore">更多 ▾</button><div class="menuList" id="moreMenu">
+              <button type="button" data-act="control" data-arg="pause">暂停</button>
+              <button type="button" data-act="control" data-arg="compact">压缩上下文</button>
+              <button type="button" data-act="continueAgent">继续执行</button>
+              <div id="webGrp" class="menugrp">
+                <button type="button" id="btnActivate" data-act="activate">切换到页面</button>
+                <button type="button" id="btnOpenChat" data-act="openCopilot">打开会话 ↗</button>
+              </div>
+              <div id="researchGrp" class="menugrp">
+                <button type="button" id="btnDeepResearch" data-act="deepResearch"
+                        title="多角度搜索 + 抓正文，生成带来源的调研报告（新会话）">深研</button>
+              </div>
+              <div class="mensep"></div>
               <button type="button" data-act="control" data-arg="archive">归档</button>
               <button type="button" data-act="openPlugins">插件管理…</button>
               <button type="button" data-act="rollbackSession">回滚任务改动…</button>
               <button type="button" class="danger" data-act="rollbackSelfUpgrade">回滚服务自升级…</button>
-            <button type="button" class="danger" data-act="removeSession" data-arg="auto"
-                    data-i18n="删除任务（自动含 Copilot 记录）">删除任务（自动含 Copilot 记录）</button>
+              <button type="button" class="danger" data-act="removeSession" data-arg="auto"
+                      data-i18n="删除任务（自动含 Copilot 记录）">删除任务（自动含 Copilot 记录）</button>
               <button type="button" data-act="restartService" title="就地重启本服务（更新代码后用它；正在跑的任务会中断，状态已落库，开着 auto_resume 会自动续跑）">↻ 重启服务</button>
               <button type="button" class="danger" data-act="shutdownService" title="优雅停止本服务进程（正在跑的任务会中断，状态已落库，重启后可恢复）">⏻ 终止服务 / 退出</button>
             </div></div>
