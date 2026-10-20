@@ -71,8 +71,9 @@ class ComposerTabVisibilityTests(unittest.TestCase):
     def test_composer_hidden_on_timeline_tab(self):
         self.assertIn("main > .composer", APP, "liveTab 要同步输入框显隐（已移出 #chat）")
         i = APP.index("function liveTab")
-        seg = APP[i:i + 900]
-        self.assertIn("composer", seg, "liveTab 里应有输入框显隐逻辑")
+        seg = APP[i:i + 1200]
+        # 现在统一走 syncComposer()（它同时判断"空状态可见"和"是否在对话页"）
+        self.assertIn("syncComposer", seg, "liveTab 里应调用 syncComposer 同步输入框显隐")
 
 
 if __name__ == "__main__":

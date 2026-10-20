@@ -1144,15 +1144,23 @@ html,body{overflow:hidden}
    展开时作为浮层盖在内容上（不挤压主区），主区永远拿到整屏高度。 */
 @media(max-width:860px){
   .app{grid-template-columns:1fr;position:relative;height:100vh;overflow:hidden}
-  .rail{position:absolute;left:0;top:0;bottom:0;width:22px;max-height:none;
-    overflow:hidden;z-index:60;background:var(--panel);
-    border-right:1px solid var(--line);border-bottom:0}
+  /* 收起态就是一条**窄轨道**（无边框、与页面同色），按钮做成居中的药丸，
+     不再是一条空白色竖条夹一个小箭头（用户："侧边栏的把手也搞得诡异"）。 */
+  .rail{position:absolute;left:0;top:0;bottom:0;width:34px;max-height:none;
+    overflow:visible;z-index:60;background:transparent;border:0;
+    display:flex;align-items:center;justify-content:center}
   /* **只在收起态**隐藏子元素：展开态干脆不写这条，让它们恢复原本的 display */
   :root:not([data-rail="open"]) .rail>*:not(#railBtn){display:none}
   :root[data-rail="open"] .rail{width:min(320px,84vw);overflow:auto;
     box-shadow:0 0 40px -10px rgba(0,0,0,.45)}
-  #railBtn{display:flex;position:absolute;right:0;top:44px;left:auto;
-    width:22px;height:56px;border-radius:0 8px 8px 0}
+  #railBtn{display:flex;position:static;width:26px;height:44px;border-radius:10px;
+    align-items:center;justify-content:center;font-size:16px;line-height:1;
+    background:var(--panel);border:1px solid var(--line2);color:var(--muted);
+    box-shadow:0 2px 8px -2px rgba(0,0,0,.25);cursor:pointer}
+  #railBtn:hover{color:var(--text);border-color:var(--accent)}
+  :root[data-rail="open"] .rail{background:var(--panel);overflow:auto;
+    display:block;padding:8px 0}
+  :root[data-rail="open"] #railBtn{position:absolute;right:8px;top:10px;left:auto}
   .main{min-width:0}
 }
 /* ── 窄窗口：KPI 压成一行（对齐 DSH 的"信息不占地方"）────────────────────

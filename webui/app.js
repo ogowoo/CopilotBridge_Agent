@@ -2749,6 +2749,27 @@ function mountTimelineIntoTab(){
 }
 
 /* ── 实时面板选项卡 + 放大查看 ── */
+/* ── 底部输入框的显隐统一入口 ─────────────────────────────────────────
+   两个来源会打架：空状态(#emptyState)自带一个"发送消息/Start"输入框，而
+   composer 是常驻在 .main 底部的；同时可见就会出现**两个输入框**（用户截图：
+   672×950 时上下各一个，非常怪）。另外切到"步骤时间线"页也不该显示它。
+   这里统一判断：只有"已选中会话 + 当前在实时流页"才显示。 */
+function syncComposer(){
+ const comp=document.querySelector('.main > .composer');
+ if(!comp)return;
+ const empty=document.getElementById('emptyState');
+ const emptyOn=!!empty && getComputedStyle(empty).display!=='none';
+ let tab='chat';
+ try{if(typeof liveTabName!=='undefined')tab=liveTabName}catch(e){tab='chat'}  // TDZ 保护
+ const show=!emptyOn && tab==='chat';
+ comp.style.display=show?'':'none';}
+try{ // 空状态的显隐有 6 处调用点，用观察器兜住，避免漏掉某一条路径
+ const _empty=document.getElementById('emptyState');
+ if(_empty && typeof MutationObserver==='function')
+  new MutationObserver(()=>{try{syncComposer()}catch(e){}})
+   .observe(_empty,{attributes:true,attributeFilter:['style']});
+}catch(e){}
+
 const LIVE_NAMES={chat:'实时流',timeline:'步骤时间线'};
 const LIVE_TAB={chat:'tabChat',timeline:'tabTimeline'};
 let liveTabName='chat';
@@ -2760,9 +2781,8 @@ function liveTab(n){
  for(const k in LIVE_NAMES){
   const pane=document.getElementById(k);if(pane)pane.style.display=k===n?'':'none';
   const btn=document.getElementById(LIVE_TAB[k]);if(btn)btn.className='tab'+(k===n?' on':'')}
- // 输入框已移到 .main 底部（DSH 结构）：只有"实时流"页需要它
- const _comp=document.querySelector('.main > .composer');
- if(_comp)_comp.style.display=n==='chat'?'':'none';
+ // 输入框的显隐统一走 syncComposer（空状态/页签两种条件）
+ try{syncComposer()}catch(e){}
  if(n==='chat'){try{scrollChatToEnd()}catch(e){}}}  // className 覆盖即清除新内容圆点
 function expandLive(){
  document.getElementById('liveTitle').textContent=LIVE_NAMES[liveTabName];
@@ -3208,9 +3228,14 @@ function toggleRail(){let r=document.documentElement;
  const c=!open;                                  // 取反后的状态
  if(narrow){r.dataset.rail=c?'open':'closed'}
  else if(c){delete r.dataset.rail}else{r.dataset.rail='closed'}
- document.getElementById('railBtn').textContent=c?'‹':'›';
+ // 图标：窄屏收起态用 ☰（"打开会话列表"比一个小尖括号好认），展开态用 ‹ 收起
+ const btn=document.getElementById('railBtn');
+ if(btn)btn.textContent = narrow ? (c?'‹':'☰') : (c?'‹':'›');
  try{localStorage.setItem('cbp-rail',narrow?(c?'open':'closed'):(c?'':'closed'))}catch(e){}}
-try{if(document.documentElement.dataset.rail==="closed")document.getElementById("railBtn").textContent="›"}catch(e){}
+try{const _r=document.documentElement,_b=document.getElementById("railBtn");
+ if(_b){const _narrow=matchMedia("(max-width:860px)").matches;
+  const _open=_narrow?(_r.dataset.rail==="open"):(_r.dataset.rail!=="closed");
+  _b.textContent=_narrow?(_open?"‹":"☰"):(_open?"›":"‹")}}catch(e){}
 /* ── 长期记忆管理面板 ───────────────────────────────────────────────
    外观复用项目既有的 .mask/.dlg 弹窗类（与确认框同款），图标用内联 SVG
    而不是 emoji：emoji 在 Windows 上是彩色位图，和界面风格不搭。 */
@@ -3619,3 +3644,7 @@ document.addEventListener('input',e=>{
 document.addEventListener('keydown',e=>{
  const el=e.target.closest?e.target.closest('[data-act-key]'):null;
  if(!el)return;const fn=ACTIONS[el.dataset.actKey];if(fn)fn(el,e)});
+
+/* 启动后同步一次输入框显隐：空状态默认就可见（没有 style 变更事件），
+   观察器不会触发，必须在这里主动算一次，否则空状态与常驻输入框会同时出现。 */
+try{syncComposer()}catch(e){}
