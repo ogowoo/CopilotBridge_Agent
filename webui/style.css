@@ -1151,18 +1151,16 @@ html,body{overflow:hidden}
     display:flex;align-items:center;justify-content:center}
   /* **只在收起态**隐藏子元素：展开态干脆不写这条，让它们恢复原本的 display */
   :root:not([data-rail="open"]) .rail>*:not(#railBtn){display:none}
-  :root[data-rail="open"] .rail{width:min(320px,84vw);overflow:auto;
-    box-shadow:0 0 40px -10px rgba(0,0,0,.45)}
+/* （与下面那条合并：展开态统一在这里定义） */
   #railBtn{display:flex;position:static;width:26px;height:44px;border-radius:10px;
     align-items:center;justify-content:center;font-size:16px;line-height:1;
     background:var(--panel);border:1px solid var(--line2);color:var(--muted);
     box-shadow:0 2px 8px -2px rgba(0,0,0,.25);cursor:pointer}
   #railBtn:hover{color:var(--text);border-color:var(--accent)}
-  /* 展开态：顶部留出 ☰ 的位置（否则把手压住"+ 新任务"）,并加半透明遮罩 */
-  :root[data-rail="open"] .rail{background:var(--panel);overflow:auto;
-    display:block;padding:52px 0 12px;
+  /* 展开态：顶部留出 ☰ 的位置（否则把手压住"+ 新任务"）；宽度/滚动/阴影都在这一条里 */
+  :root[data-rail="open"] .rail{width:min(320px,84vw);display:block;
+    background:var(--panel);overflow:auto;padding:52px 0 12px;
     box-shadow:0 0 40px -10px rgba(0,0,0,.45)}
-  .railscrim{display:none}
   :root[data-rail="open"] .railscrim{display:block;position:absolute;inset:0;z-index:55;
     background:rgba(15,23,42,.35)}
   /* 抽屉里内容按正常侧栏排布（它是 absolute 的，宽度由 .rail 决定） */
@@ -1205,3 +1203,7 @@ html,body{overflow:hidden}
   .trow{padding-left:40px}   /* 给 ☰ 让位，别压住标题 */
   #railBtn{display:none}     /* 弃用浮在左侧的把手 */
 }
+/* 遮罩默认必须**全局** display:none —— 它虽然是 .app 的子元素，但宽屏下
+   .app 是 grid，没这条就会变成一个网格列，把主区挤成一条窄柱
+   （用户实测 1714px 宽时整个界面被挤到左侧 60px 内、文字逐字换行）。 */
+.railscrim{display:none}
