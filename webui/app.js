@@ -2052,9 +2052,12 @@ function renderGoalBar(r){
    if(inferred)st='in_progress';
    const ic=TODO_ICON[st]||'○';
    const label=stale?tr('未同步'):(inferred?tr('进行中（推断）'):tr(TODO_TXT[st]||st));
-   return '<div class="todoitem todo-'+esc(st)+(stale?' todo-stale':'')+'"><span class="tic">'+esc(ic)+'</span>'
-    +'<span class="ttxt">'+esc(String((x&&x.content)||''))+'</span>'
-    +'<span class="tst">'+esc(label)+'</span></div>';
+    // 已完成的条目不再挂一颗绿胶囊：全部完成时 9 颗一样的胶囊把列表染成一片，
+    // 反而看不出层次（用户反馈"都一个颜色了，有点不协调"）。只留绿勾 + 常态文字。
+    const pill=(st==='completed')?'':'<span class="tst">'+esc(label)+'</span>';
+    return '<div class="todoitem todo-'+esc(st)+(stale?' todo-stale':'')+'"><span class="tic">'+esc(ic)+'</span>'
+     +'<span class="ttxt">'+esc(String((x&&x.content)||''))+'</span>'
+     +pill+'</div>';
   }).join('');
   if(_ended&&_unfinished){
    const hint=document.createElement('div');
@@ -3650,6 +3653,132 @@ const FAST_PHASES=['api_sending','api_streaming','waiting','sending'];
    而内联脚本正是 XSS 的主要放大器；② 动态 HTML 每次重建都要重新绑定。
    现在统一走 data-act / data-act-input / data-act-key + 一个分发器：
    处理器集中在此，可审计；动态内容天然可用；CSP 可以只留 'self'。 */
+/* ── 设置页 ───────────────────────────────────────────────────────────
+   齿轮入口：外观 / 执行 / 浏览器 / 数据 / 入口 / 危险区。
+   服务端配置走 /v1/config（白名单，见 api.CONFIG_SCHEMA），外观与语言即时生效。 */
+const SETTINGS_GROUPS=[
+ ['ui', '外观'], ['exec', '执行'], ['browser', '浏览器'],
+ ['data', '数据'], ['entries', '入口'], ['danger', '危险区']];
+let settingsSchema=null, settingsValues=null;
+
+async function openSettings(){
+ const mask=document.getElementById('settingsMask');
+ if(!mask)return;
+ mask.classList.add('open');
+ await renderSettings();
+}
+function closeSettings(){
+ const mask=document.getElementById('settingsMask');
+ if(mask)mask.classList.remove('open');
+}
+function _cfgInput(key,spec,val){
+ const id='set_'+key.replace(/\./g,'_');
+ if(spec.kind==='bool'){
+  return `<label class="setrow" for="${id}"><input type="checkbox" id="${id}" data-cfg="${esc(key)}" ${val?'checked':''}>
+    <span>${esc(tr(spec.label))}</span></label>`;
+ }
+ if(spec.kind==='enum'){
+  const opts=spec.values.map(v=>`<option value="${esc(v)}" ${String(val)===v?'selected':''}>${esc(tr(v))}</option>`).join('');
+  return `<label class="setrow" for="${id}"><span>${esc(tr(spec.label))}</span>
+    <select id="${id}" data-cfg="${esc(key)}">${opts}</select></label>`;
+ }
+ const t=spec.kind==='int'?'number':'text';
+ return `<label class="setrow" for="${id}"><span>${esc(tr(spec.label))}</span>
+   <input type="${t}" id="${id}" data-cfg="${esc(key)}" value="${esc(val??'')}"
+     ${spec.min!==undefined?`min="${spec.min}"`:''} ${spec.max!==undefined?`max="${spec.max}"`:''}></label>`;
+}
+async function renderSettings(){
+ const box=document.getElementById('settingsBody');
+ if(!box)return;
+ if(!settingsValues){
+  try{
+   const r=await api('/v1/config');
+   settingsValues=r.values||{}; settingsSchema=r.schema||{};
+  }catch(e){ settingsValues={}; settingsSchema={}; }
+ }
+ const groups={};
+ Object.entries(settingsSchema).forEach(([k,spec])=>{ (groups[spec.group||'exec']=groups[spec.group||'exec']||[]).push([k,spec]) });
+ let h='';
+ SETTINGS_GROUPS.forEach(([gid,label])=>{
+  if(gid==='ui'){
+   // 注意：themeChoice() 对 'dark' 返回空串（历史实现），这里看**存储值**本身。
+   const _tc=(()=>{try{const t=localStorage.getItem('cbp-theme');return (!t||t==='auto')?'auto':t}catch(e){return 'auto'}})();
+   const themeOpts=[['auto','跟随系统'],['light','浅色'],['dark','深色'],['solarized','护眼'],['mint','薄荷'],['amber','琥珀']]
+     .map(([v,t])=>`<option value="${v}" ${_tc===v?'selected':''}>${esc(tr(t))}</option>`).join('');
+   // 语言名用各自的原生写法（中文/English/繁體中文），不翻译 → 标 data-i18n-skip，
+   // 免得多语言审计把它当成"英文界面里残留的中文"。
+   const langOpts=[['zh','中文'],['en','English'],['tw','繁體中文']]
+     .map(([v,t])=>`<option value="${v}" data-i18n-skip="1" ${currentLang()===v?'selected':''}>${esc(t)}</option>`).join('');
+   h+=`<section class="setgroup"><h4>${esc(tr('外观'))}</h4>
+     <label class="setrow"><span>${esc(tr('主题'))}</span><select id="setTheme" data-ui="theme">${themeOpts}</select></label>
+     <label class="setrow"><span>${esc(tr('语言'))}</span><select id="setLang" data-ui="lang">${langOpts}</select></label>
+     </section>`;
+   return;
+  }
+  if(gid==='entries'){
+   h+=`<section class="setgroup"><h4>${esc(tr('入口'))}</h4>
+     <div class="setbtns">
+      <button type="button" class="btn ghost" data-act="openManual">📖 ${esc(tr('使用手册'))}</button>
+      <button type="button" class="btn ghost" data-act="openPlugins">🧩 ${esc(tr('插件管理'))}</button>
+      <button type="button" class="btn ghost" data-act="openPanels">🗂 ${esc(tr('插件面板'))}</button>
+      <button type="button" class="btn ghost" data-act="openWsBrowser">📁 ${esc(tr('工作区浏览'))}</button>
+      <button type="button" class="btn ghost" data-act="closeSettings" data-arg="memory">💬 ${esc(tr('记忆面板'))}</button>
+     </div></section>`;
+   return;
+  }
+  if(gid==='danger'){
+   h+=`<section class="setgroup danger"><h4>${esc(tr('危险区'))}</h4>
+     <div class="setbtns">
+      <button type="button" class="btn ghost" data-act="restartService">↻ ${esc(tr('重启服务'))}</button>
+      <button type="button" class="btn ghost danger" data-act="shutdownService">⏻ ${esc(tr('终止服务 / 退出'))}</button>
+     </div>
+     <p class="sethint">${esc(tr('重启/终止都会中断正在跑的任务；状态已落库，重启后可恢复。'))}</p></section>`;
+   return;
+  }
+  const rows=(groups[gid]||[]).map(([k,spec])=>_cfgInput(k,spec,settingsValues[k]));
+  if(!rows.length)return;
+  h+=`<section class="setgroup"><h4>${esc(tr(label))}</h4>${rows.join('')}</section>`;
+ });
+ box.innerHTML=h;
+}
+
+function collectSettings(){
+ const out={};
+ const box=document.getElementById('settingsBody');
+ if(!box)return out;
+ box.querySelectorAll('[data-cfg]').forEach(el=>{
+  const key=el.dataset.cfg;
+  if(!key)return;
+  out[key]=el.type==='checkbox'?el.checked:el.value;
+ });
+ return out;
+}
+
+async function saveSettings(){
+ const themeSel=document.getElementById('setTheme');
+ const langSel=document.getElementById('setLang');
+ if(themeSel&&themeSel.value!==themeChoice()){try{localStorage.setItem('cbp-theme',themeSel.value)}catch(e){};applyTheme(themeSel.value,false);applyLangButton()}
+ if(langSel&&langSel.value!==currentLang()){setLang(langSel.value)}
+ // 只提交**改动过**的字段：整表提交时，空的文本/枚举控件会被后端校验拒掉
+ // （实测 ``default_model: ""`` 让整批保存 400），也会把没动过的键来回写文件。
+ const raw=collectSettings();
+ const cur=settingsValues||{};
+ const values={};
+ Object.keys(raw).forEach(k=>{
+  const before=(cur[k]===undefined||cur[k]===null)?'':String(cur[k]);
+  const now=String(raw[k]);
+  if(now!==before)values[k]=raw[k];
+ });
+ if(!Object.keys(values).length){toast(tr('没有改动'),'ok');return}
+ try{
+  const r=await api('/v1/config',{method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({values,persist:true})});
+  settingsValues=Object.assign({},settingsValues,r.applied||{});
+  toast(tr('设置已保存（{n} 项）',{n:Object.keys(r.applied||{}).length}),'ok');
+ }catch(e){ toast(tr('保存失败: ')+((e&&(e.text||e.detail||e.message))||String(e)),'err') }
+}
+
 const ACTIONS={
  toggleRail:()=>toggleRail(),
  // 窄屏抽屉的遮罩：点一下收起（只有窄屏才有意义，宽屏没有遮罩）
@@ -3672,6 +3801,10 @@ const ACTIONS={
  activate:()=>activate(),
  openCopilot:()=>openCopilot(),
  toggleMore:(el,e)=>toggleMore(el, e),
+ openSettings:()=>openSettings(),
+ openWsBrowser:()=>openWsBrowser(''),
+ closeSettings:(el)=>{closeSettings();if(el&&el.dataset&&el.dataset.arg==='memory'){try{openMemory()}catch(e){}}},
+ saveSettings:()=>saveSettings(),
  rollbackSession:()=>rollbackSession(),
  rollbackSelfUpgrade:()=>rollbackSelfUpgrade(),
  removeSession:(el)=>removeSession(el.dataset.arg==='true'),

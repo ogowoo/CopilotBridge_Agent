@@ -3243,7 +3243,13 @@ def event_source() -> str:
 
 # 距上次 todo 更新走了多少步（sid -> 步数）。超过阈值就提醒模型更一次。
 _TODO_NUDGE: dict[str, int] = {}
-_TODO_NUDGE_EVERY = 12
+def _todo_nudge_every() -> int:
+    """每多少步提醒模型更新待办（0=关闭）。可在设置页/ config.json 的
+    `agent.todo_nudge_every` 里改。"""
+    try:
+        return int(AGENT_CFG.get("todo_nudge_every", 12))
+    except Exception:
+        return 12
 
 
 def nudge_todo_update(sid: str, step_no: int) -> None:
@@ -3256,13 +3262,13 @@ def nudge_todo_update(sid: str, step_no: int) -> None:
     try:
         st = AGENT_SESSIONS.get(sid) or {}
         todos = st.get("todos") or []
-        if not todos:
+        if not todos or _todo_nudge_every() <= 0:
             return
         last = _TODO_NUDGE.get(sid)
         if last is None:
             _TODO_NUDGE[sid] = int(step_no)
             return
-        if int(step_no) - last < _TODO_NUDGE_EVERY:
+        if int(step_no) - last < _todo_nudge_every():
             return
         _TODO_NUDGE[sid] = int(step_no)
         pend = [str(x) for x in (st.get("pending_steps") or []) if str(x).strip()]

@@ -48,9 +48,14 @@
     "approval_scope": "session",
     "auto_team_enabled": false,
     "auto_team_max_agents": 4,
-    "auto_team_max_steps": 30
+    "auto_team_max_steps": 30,
+    "todo_nudge_every": 12
   },
   "models": {},
   "providers": {},
-  "api_token": ""
+  "api_token": "",
+  "auto_resume": false,
+  "allow_copilot_file": false,
+  "spans_enabled": false,
+  "browser_startup": "lazy"
 }

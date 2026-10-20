@@ -1409,3 +1409,32 @@ html,body{overflow:hidden}
 #chat > #teamCard > #subagentBar > .chead b{font-size:12.5px;font-weight:600;color:var(--text)}
 #chat > #teamCard > #subagentBar > .chead .hint{font-size:12px;color:var(--faint)}
 #chat > #teamCard > .goalbar .gb-meta{color:var(--faint);font-size:12px}
+
+/* SETTINGS-DIALOG: 设置页（齿轮入口）。分组标题 + 一行一个设置项，
+   标签在左、控件在右；危险区分隔并染红。 */
+.settingsbody{max-height:64vh;overflow:auto;padding:4px 2px 10px}
+.setgroup{margin:0 0 12px;padding:0 0 8px;border-bottom:1px solid var(--line)}
+.setgroup:last-child{border-bottom:0}
+.setgroup h4{margin:8px 0 6px;font-size:12px;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--faint);font-weight:600}
+.setgroup.danger h4{color:var(--red)}
+.setrow{display:flex;align-items:center;gap:10px;padding:6px 4px;border-radius:7px;
+  font-size:13px;color:var(--text);cursor:pointer}
+.setrow:hover{background:var(--menu-hover)}
+.setrow > span:first-child{flex:1 1 auto;min-width:0}
+.setrow input[type="checkbox"]{flex:none;width:15px;height:15px;accent-color:var(--accent)}
+.setrow select,.setrow input[type="number"],.setrow input[type="text"]{
+  flex:none;width:200px;max-width:48%;height:30px;padding:0 8px;font-size:12.5px;
+  border:1px solid var(--line2);border-radius:8px;background:var(--input-bg);color:var(--text)}
+.setbtns{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 6px}
+.sethint{margin:2px 0 0;font-size:12px;color:var(--faint)}
+
+/* SUBCOUNT-INLINE: 子代理数量紧贴标题（原来作为 .hint 被居中挤到中间，看着像"卡在中间的数字"）。
+   刷新按钮仍然靠右。 */
+#subagentBar .chead .subcount{flex:none;font-size:12px;color:var(--faint);margin-left:2px}
+#subagentBar .chead > .hint{margin-left:auto}
+
+/* TODO-CALM: 已完成的条目别再"灰字 + 删除线 + 绿胶囊"三重叠加（整列看着一个色）。
+   改为：文字常态色、不加删除线，只靠绿色对勾表示完成；进行中的才有底色与胶囊。 */
+.todoitem.todo-completed .ttxt{color:var(--text);text-decoration:none;opacity:.92}
+.todoitem.todo-completed .tic{color:var(--green)}

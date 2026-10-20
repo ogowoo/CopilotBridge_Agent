@@ -158,6 +158,21 @@ def states(page):
         page.wait_for_timeout(500)
     except Exception:
         pass
+    # 设置弹窗：文案由 JS 生成（renderSettings），必须显式打开才能扫到。
+    try:
+        page.evaluate("""async () => {
+          try { closeMaskAll() } catch (e) {}
+          try { await openSettings() } catch (e) {}
+        }""")
+        page.wait_for_timeout(700)
+    except Exception:
+        pass
+    yield "设置弹窗"
+    try:
+        page.evaluate("() => { try { closeSettings() } catch (e) {} }")
+    except Exception:
+        pass
+
     yield "步骤时间线详情"
 
 

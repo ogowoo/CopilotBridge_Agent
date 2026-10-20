@@ -477,6 +477,138 @@ async def set_sandbox(payload: dict | None = None):
     return {"mode": mode, "persisted": persist}
 
 
+# ── 设置页：配置读写（白名单）──────────────────────────────────────
+# 只允许改「有明确语义、不会把服务搞挂」的键；api_token 这类敏感项只读且打码。
+CONFIG_SCHEMA: dict[str, dict] = {
+    # 外观/界面（前端本地保存，这里只登记，便于设置页统一展示）
+    "browser_startup": {"kind": "enum", "values": ["lazy", "eager"], "group": "browser",
+                        "label": "浏览器启动方式"},
+    "headless": {"kind": "bool", "group": "browser", "label": "无头模式（不显示浏览器窗口）"},
+    "auto_resume": {"kind": "bool", "group": "exec", "label": "服务重启后自动续跑任务"},
+    "allow_copilot_file": {"kind": "bool", "group": "exec", "label": "允许 copilot_file 直读文件"},
+    "diagnostics": {"kind": "bool", "group": "exec", "label": "保留诊断信息"},
+    "spans_enabled": {"kind": "bool", "group": "exec", "label": "记录工具耗时区间"},
+    "default_model": {"kind": "str", "group": "exec", "label": "默认模型"},
+    "agent.auto_team_enabled": {"kind": "bool", "group": "exec",
+                                "label": "自动派发子代理（待办≥2 且互不重叠时）"},
+    "agent.todo_nudge_every": {"kind": "int", "min": 0, "max": 200, "group": "exec",
+                               "label": "每 N 步提醒模型更新待办（0=关闭）"},
+    "agent.subagent_parallel": {"kind": "int", "min": 1, "max": 8, "group": "exec",
+                                "label": "子代理并发数"},
+    "agent.subagent_max_steps": {"kind": "int", "min": 5, "max": 500, "group": "exec",
+                                 "label": "子代理最多步数"},
+    "agent.approval_scope": {"kind": "enum", "values": ["each", "session"], "group": "exec",
+                             "label": "审批范围"},
+    "agent.context_token_budget": {"kind": "int", "min": 2000, "max": 2000000, "group": "exec",
+                                   "label": "上下文预算（token）"},
+    "agent.max_sessions": {"kind": "int", "min": 1, "max": 500, "group": "data",
+                           "label": "最多保留会话数"},
+    "agent.snapshot_retention": {"kind": "int", "min": 0, "max": 500, "group": "data",
+                                 "label": "文件快照保留份数"},
+    "agent.completed_session_retention_days": {"kind": "int", "min": 0, "max": 365,
+                                               "group": "data", "label": "已完成会话保留天数"},
+}
+
+
+def _cfg_get(path: str, default=None):
+    node = b.CFG
+    for part in path.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return default
+        node = node[part]
+    return node
+
+
+def _cfg_set(path: str, value) -> None:
+    parts = path.split(".")
+    node = b.CFG
+    for part in parts[:-1]:
+        nxt = node.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            node[part] = nxt
+        node = nxt
+    node[parts[-1]] = value
+
+
+def _coerce(key: str, raw):
+    spec = CONFIG_SCHEMA[key]
+    kind = spec["kind"]
+    if kind == "bool":
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).strip().lower() in ("1", "true", "yes", "on")
+    if kind == "int":
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"{key} 需要整数")
+        lo, hi = spec.get("min"), spec.get("max")
+        if lo is not None and val < lo:
+            raise HTTPException(400, f"{key} 不能小于 {lo}")
+        if hi is not None and val > hi:
+            raise HTTPException(400, f"{key} 不能大于 {hi}")
+        return val
+    if kind == "enum":
+        val = str(raw).strip().lower()
+        if val not in spec["values"]:
+            raise HTTPException(400, f"{key} 必须是 {spec['values']} 之一")
+        return val
+    return str(raw)
+
+
+@app.get("/v1/config")
+async def get_config():
+    """设置页读取：白名单键的当前值 + 规格（界面据此渲染控件）。"""
+    values = {k: _cfg_get(k, b.CFG.get(k) if "." not in k else None) for k in CONFIG_SCHEMA}
+    secrets = {"api_token": "已设置" if b.CFG.get("api_token") else "未设置"}
+    return {"values": values, "schema": CONFIG_SCHEMA, "readonly": secrets}
+
+
+@app.post("/v1/config")
+async def set_config(payload: dict | None = None):
+    """设置页保存：只接受白名单键；persist=true 时写回 config.json。"""
+    data = payload or {}
+    incoming = data.get("values") or {}
+    if not isinstance(incoming, dict) or not incoming:
+        raise HTTPException(400, "values 不能为空")
+    unknown = [k for k in incoming if k not in CONFIG_SCHEMA]
+    if unknown:
+        raise HTTPException(400, f"不支持修改这些键：{unknown}")
+    applied = {k: _coerce(k, incoming[k]) for k in incoming}
+    for key, val in applied.items():
+        _cfg_set(key, val)
+        if key == "headless":
+            b.AGENT_CFG["headless"] = val
+        elif key.startswith("agent."):
+            b.AGENT_CFG[key.split(".", 1)[1]] = val
+        elif key == "auto_resume":
+            b.AGENT_CFG["auto_resume"] = val
+
+    persisted = False
+    if data.get("persist", True):
+        cfg_path = b.BASE / "config.json"
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+            for key, val in applied.items():
+                node = cfg
+                parts = key.split(".")
+                for part in parts[:-1]:
+                    nxt = node.get(part)
+                    if not isinstance(nxt, dict):
+                        nxt = {}
+                        node[part] = nxt
+                    node = nxt
+                node[parts[-1]] = val
+            cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
+                                encoding="utf-8")
+            persisted = True
+        except Exception as exc:
+            raise HTTPException(500, f"写 config.json 失败: {exc}")
+    b.log("设置已更新：" + ", ".join(f"{k}={v}" for k, v in applied.items()))
+    return {"applied": applied, "persisted": persisted}
+
+
 @app.post("/v1/agent/deep-research")
 async def agent_deep_research(payload: dict | None = None, request: HttpRequest = None):
     """一键深研：research 插件收集证据 → Agent 综合成带来源的报告（新会话）。"""

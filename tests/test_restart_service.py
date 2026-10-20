@@ -230,16 +230,26 @@ class RestartApiTests(unittest.TestCase):
 
 class UiWiringTests(unittest.TestCase):
     def test_menu_and_action_registered(self):
+        """重启/终止服务已从「More」搬到**设置页的危险区**（低频操作不占菜单）。"""
         base = Path(__file__).resolve().parent.parent
         html = (base / "webui" / "index.html").read_text(encoding="utf-8")
         js = (base / "webui" / "app.js").read_text(encoding="utf-8")
-        self.assertIn('data-act="restartService"', html, "菜单项缺失")
+        for act in ("restartService", "shutdownService"):
+            # 静态 HTML 里可能没有（设置页的按钮是 JS 渲染的），所以两边都允许
+            self.assertTrue(f'data-act="{act}"' in html or f'data-act="{act}"' in js,
+                            f"{act} 入口缺失")
         self.assertIn("restartService:()=>restartService()", js, "ACTIONS 未注册")
         self.assertIn("/v1/restart", js)
         self.assertIn("waitServiceBack", js, "重启后要能自动重连")
-        # 菜单里重启应挨着终止服务
-        self.assertLess(html.index('data-act="restartService"'),
-                        html.index('data-act="shutdownService"'))
+        # 设置页里重启应挨着终止服务
+        self.assertLess(js.index('data-act="restartService"'),
+                        js.index('data-act="shutdownService"'),
+                        "危险区里重启应排在终止服务之前")
+        # More 菜单不再包含这两个危险动作
+        i = html.index('id="moreMenu"')
+        menu = html[i:html.index("</div></div>", i)]
+        self.assertNotIn('data-act="restartService"', menu)
+        self.assertNotIn('data-act="shutdownService"', menu)
 
 
 class StartScriptRetryTests(unittest.TestCase):
