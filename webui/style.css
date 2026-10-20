@@ -1207,3 +1207,18 @@ html,body{overflow:hidden}
    .app 是 grid，没这条就会变成一个网格列，把主区挤成一条窄柱
    （用户实测 1714px 宽时整个界面被挤到左侧 60px 内、文字逐字换行）。 */
 .railscrim{display:none}
+/* ── 会话行的状态图标（替代原来的文字块）──────────────────────────────
+   原来每行右侧有 `completed` / `就绪` 这种文字块，中文两字还行、英文 "completed"
+   很宽，把标题挤得没地方。现在改成 14×14 描边图标：形状区分状态、颜色再强化一次，
+   完整文案放在 title 里（悬停可见 / 读屏可读）。左侧原来的小圆点也一起去掉，
+   只留这一个指示位。 */
+.sess .sstat{flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:16px;height:16px;color:var(--muted)}
+.sess .sstat.run{color:var(--green)}
+.sess .sstat.warn{color:var(--amber)}
+.sess .sstat.bad{color:var(--red)}
+.sess .sstat.done{color:var(--blue)}
+.sess.sel .sstat{color:var(--accent)}
+.sess .sstat svg .spin{transform-origin:8px 8px;animation:spin 1.6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.sess .sstat svg .spin{animation:none}}

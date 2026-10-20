@@ -722,6 +722,22 @@ function jv(v,key){
 /* ── 状态呈现 ── */
 const STATE_TEXT={running:'运行中',paused:'已暂停',waiting:'等待服务',ready:'就绪',completed:'已完成',failed:'失败',cancelled:'已取消',expired:'已过期',archived:'已归档'};
 function stateText(s){return tr(STATE_TEXT[s]||s||'—')}
+/* 会话状态图标：形状 + 颜色双编码，替掉原来占位的文字块（completed 这种太宽）。
+   14×14 描边图标，title 里仍给完整文案（悬停可见 / 读屏可读）。 */
+const STATE_ICON={
+ running:'<circle cx="8" cy="8" r="6.2" stroke-dasharray="26 12" class="spin"/>',
+ completed:'<circle cx="8" cy="8" r="6.2"/><path d="M5.1 8.2l2 2 3.8-4"/>',
+ failed:'<circle cx="8" cy="8" r="6.2"/><path d="M6 6l4 4M10 6l-4 4"/>',
+ paused:'<circle cx="8" cy="8" r="6.2"/><path d="M6.6 5.8v4.4M9.4 5.8v4.4"/>',
+ waiting:'<circle cx="8" cy="8" r="6.2"/><path d="M8 4.6V8l2.4 1.6"/>',
+ ready:'<circle cx="8" cy="8" r="6.2"/>',
+ cancelled:'<circle cx="8" cy="8" r="6.2"/><path d="M4.4 11.6L11.6 4.4"/>',
+ expired:'<circle cx="8" cy="8" r="6.2"/><path d="M4.4 11.6L11.6 4.4"/>',
+ archived:'<circle cx="8" cy="8" r="6.2"/><path d="M5.4 5.4h5.2v5.2H5.4z"/>'};
+function stateIcon(s){
+ const k=STATE_ICON[s]||STATE_ICON.ready;
+ return '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"'
+   +' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+k+'</svg>'}
 function stateClass(s){return s==='running'?'run':(s==='paused'||s==='waiting')?'warn':(s==='failed')?'bad':(s==='completed')?'done':''}
 function setPill(s){let e=document.getElementById('statepill');e.textContent=stateText(s);e.className='pill '+stateClass(s)}
 function setKpis(o){
@@ -888,7 +904,7 @@ function drawSessions(){
   e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
   const _kind=String(s.id||'').startsWith('cron-')?'⏱':String(s.id||'').startsWith('research-')?'🔎':String(s.id||'').startsWith('sub-')?'子':'';
-  e.innerHTML=`<span class="dot ${stateClass(s.state)}"></span><div class="smeta"><b>${_kind?`<span class="skind">${_kind}</span>`:''}${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div><span class="stag">${esc(stateText(s.state))}</span>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
+  e.innerHTML=`<span class="sstat ${stateClass(s.state)}" title="${esc(stateText(s.state))}" aria-label="${esc(stateText(s.state))}">${stateIcon(s.state)}</span><div class="smeta"><b>${_kind?`<span class="skind">${_kind}</span>`:''}${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
   // **所有行**都占同一个前导位：只有带子会话的行显示 ▸/▾，子行显示 ↳。
   // 之前只在有子会话时插按钮，导致行首缩进不一致、看起来像逐级嵌套（用户实测）。
   const lead=document.createElement('span');
