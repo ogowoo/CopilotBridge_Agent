@@ -209,6 +209,39 @@ function onCardHeadClick(ev){
  if(card.id==='subagentBar')toggleCard('subagents');
  else if(card.contains(document.getElementById('chat')))toggleCard('live');
 }
+
+/* ── 任务条（顶栏）折叠：收起后只留标题行（状态行 / 按钮行 / KPI 一起收）──
+   展开态 3 行 ≈123px，收起后 ≈57px —— 想多看对话时能把这块收掉。
+   状态记 localStorage，跨刷新保留；点箭头或点标题都能切换。 */
+function applyTopbarCollapsed(){
+ const head=document.querySelector('header.topbar');
+ if(!head)return;
+ let collapsed=false;
+ try{collapsed=localStorage.getItem('cbp.topbarCollapsed')==='1'}catch(e){}
+ head.classList.toggle('collapsed',collapsed);
+ const btn=document.getElementById('topbarChev');
+ if(btn)btn.setAttribute('aria-expanded',collapsed?'false':'true');
+}
+function toggleTopbar(){
+ const head=document.querySelector('header.topbar');
+ if(!head)return;
+ const collapsed=!head.classList.contains('collapsed');
+ head.classList.toggle('collapsed',collapsed);
+ const btn=document.getElementById('topbarChev');
+ if(btn)btn.setAttribute('aria-expanded',collapsed?'false':'true');
+ try{localStorage.setItem('cbp.topbarCollapsed',collapsed?'1':'0')}catch(e){}
+}
+/* 点标题行的任意空白处也能收起/展开（用户要求"点上面那部分就能折叠"）。
+   里面的控件各自有活（模型下拉、刷新、任务 ID 点击复制、箭头、标题的 data-act），
+   这些不抢 —— 只处理落在空白/文字上的点击。 */
+document.addEventListener('click',(ev)=>{
+ const t=ev.target;
+ if(!t||!t.closest)return;
+ const trow=t.closest('header.topbar>.trow');
+ if(!trow)return;
+ if(t.closest('button,select,input,textarea,a,#sidChip,[data-act]'))return;
+ toggleTopbar();
+});
 document.addEventListener('click',onCardHeadClick);
 
 function renderSubagents(list){
@@ -2768,17 +2801,20 @@ function mountTimelineIntoTab(){
 /* ── 底部输入框的显隐统一入口 ─────────────────────────────────────────
    两个来源会打架：空状态(#emptyState)自带一个"发送消息/Start"输入框，而
    composer 是常驻在 .main 底部的；同时可见就会出现**两个输入框**（用户截图：
-   672×950 时上下各一个，非常怪）。另外切到"步骤时间线"页也不该显示它。
-   这里统一判断：只有"已选中会话 + 当前在实时流页"才显示。 */
+   672×950 时上下各一个，非常怪）。
+   这里统一判断：只有"已选中会话"才显示。
+   （**两个页签都显示**：原来切到"步骤时间线"就把它藏了，结果两个页签的卡片底边
+   一个在 806、一个拉到 897，高矮不一致很丑 —— 用户要求两页高度协调。） */
 function syncComposer(){
  const comp=document.querySelector('.main > .composer');
  if(!comp)return;
  const empty=document.getElementById('emptyState');
  const emptyOn=!!empty && getComputedStyle(empty).display!=='none';
- let tab='chat';
- try{if(typeof liveTabName!=='undefined')tab=liveTabName}catch(e){tab='chat'}  // TDZ 保护
- const show=!emptyOn && tab==='chat';
- comp.style.display=show?'':'none';}
+ const show=!emptyOn;
+ comp.style.display=show?'':'none';
+ // 输入框藏起来时（空状态）别在底部继续留它的空位
+ const main=comp.closest('.main');
+ if(main) main.classList.toggle('no-composer',!show);}
 try{ // 空状态的显隐有 6 处调用点，用观察器兜住，避免漏掉某一条路径
  const _empty=document.getElementById('emptyState');
  if(_empty && typeof MutationObserver==='function')
@@ -2831,16 +2867,41 @@ async function continueAgent(){
  document.getElementById('followup').value=instruction;
  setFollowupMode('agent');
  await sendFollowup()}
+/* ── 输入框随内容自动长高（照 DSH 的 composer）─────────────────────────
+   原来 #followup 固定 2 行：内容一多就只在框里滚，框本身不动。
+   现在先 `height:auto` 再按 `scrollHeight` 设高（封顶 CSS 的 max-height），
+   到顶之后才内部滚动；清空后自动缩回一行。 */
+function autoGrowFollowup(){
+ const el=document.getElementById('followup');
+ if(!el||!el.offsetParent) return;   // 面板隐藏时 scrollHeight 为 0，别把高度写死
+ const cs=getComputedStyle(el);
+ const min=parseFloat(cs.minHeight)||50, max=parseFloat(cs.maxHeight)||220;
+ el.style.height='auto';
+ const need=el.scrollHeight;
+ el.style.height=Math.max(min,Math.min(need,max))+'px';
+ el.style.overflowY=need>max?'auto':'hidden';
+ // 常态高度写进 --fu-rest：布局只按"常态"给输入条留位置，长高出来的部分盖住上面的内容。
+ // 只在"已经是常态高度"时校准一次，避免输入过程中反复改布局。
+ const box=el.closest('.composer');
+ if(box){
+  // 空输入 = 常态：拿这一刻的真实高度校准，换主题/字体后底部留白照样准
+  if(!el.value.trim()) document.documentElement.style.setProperty('--fu-rest',box.offsetHeight+'px');
+  document.documentElement.style.setProperty('--fu-h',box.offsetHeight+'px');
+ }
+}
+
 async function sendFollowup(){
  if(!current){toast(tr('请先选择 Session'),'err');return}
  let box=document.getElementById('followup'),content=box.value.trim();
  if(!content&&!IMG_STORES.follow.length){toast(tr('消息不能为空'),'err');return}
  let atts=IMG_STORES.follow.map(a=>a.dataUrl);
- let btn=document.getElementById('sendFollowup');btn.disabled=true;btn.textContent=tr('发送中');
+ // 发送按钮是圆形图标按钮：不能再用 textContent 换文案（会把图标冲掉），
+ // 用 disabled + aria-busy 表示发送中（图标/标题保持不变，屏幕阅读器也读得到）
+ let btn=document.getElementById('sendFollowup');btn.disabled=true;btn.setAttribute('aria-busy','true');
  liveTab('chat');  // 发送后确保停留在对话页看回复
  let log=document.getElementById('chatlog');
  let label=content+(atts.length?`\n（附 ${atts.length} 张图片）`:'');
- log.appendChild(msgEl('user',label));log.scrollTop=log.scrollHeight;box.value='';
+ log.appendChild(msgEl('user',label));log.scrollTop=log.scrollHeight;box.value='';autoGrowFollowup();
  IMG_STORES.follow=[];renderThumbs();
  let baseAssistants=0;
  try{let dd=await api('/v1/agent/sessions/'+encodeURIComponent(current));baseAssistants=dd.messages.filter(m=>m.role==='assistant').length}catch(e){}
@@ -2858,7 +2919,7 @@ async function sendFollowup(){
     // 正确做法：重载会话，把刚落库的新消息渲染出来。
     await load(current)}
  }catch(e){log.appendChild(msgEl('assistant',tr('发送失败: ')+e,null,{plain:true,who:tr('错误')}))}
- finally{btn.disabled=false;btn.textContent=tr('发送')}}
+ finally{btn.disabled=false;btn.removeAttribute('aria-busy')}}
 
 /* 队列模式：跟进消息入队后轮询会话消息，助理回复一出现就刷新聊天区 */
 async function awaitFollowupReply(sid,baseAssistants){
@@ -3502,6 +3563,13 @@ try{loadMcpPrompts()}catch(e){}
 document.getElementById('sessModel').onchange=e=>setSessionModel(e.target.value);
 attachPasteHandler('task','task');
 attachPasteHandler('followup','follow');
+/* 输入框自动长高：input 覆盖键入/粘贴/删除，切回会话时再校一次 */
+(function bindFollowupAutoGrow(){
+  const el=document.getElementById('followup');
+  if(!el) return;
+  el.addEventListener('input',autoGrowFollowup);
+  document.addEventListener('visibilitychange',autoGrowFollowup);
+})();
 (async()=>{try{await api('/v1/agent/sessions');hideConnBanner()}
  catch(e){
   // 以前 fetch 网络失败与 401 落进同一个 catch，一律 DEMO=true → 界面显示硬编码假数据，
@@ -3518,7 +3586,7 @@ attachPasteHandler('followup','follow');
   }
  applyI18n(document);   // 静态界面按当前语言渲染（data-i18n + 静态 DOM 直译）
  applyLangButton();
- mountTimelineIntoTab();applyCardCollapsed();
+ mountTimelineIntoTab();applyCardCollapsed();applyTopbarCollapsed();
  loadModels();browserState();mergePluginI18n(true);
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();
@@ -3568,6 +3636,7 @@ const ACTIONS={
  liveTab:(el)=>liveTab(el.dataset.arg),
  toggleStreamDetail:()=>toggleStreamDetail(),
  cardCollapse:(el)=>toggleCard(el.dataset.arg||'live'),
+ topbarCollapse:()=>toggleTopbar(),
  showLastPrompt:()=>showLastPrompt(),
  openSubagent:(el)=>load(el.dataset.arg),
  openPlugins:()=>openPlugins(),

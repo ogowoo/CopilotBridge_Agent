@@ -60,7 +60,7 @@
     </div>
     <div id="sessionView" style="display:none">
       <header class="topbar">
-        <div class="trow"><h1 id="title">—</h1><code id="sidChip" class="sidbig" title="点击复制会话 ID"></code><span id="statepill" class="pill">—</span><select id="sessModel" aria-label="本会话使用的模型" class="sessmodel" title="当前会话使用的模型（下一回合生效，服务重启后仍沿用）"></select><button type="button" id="btnRefreshSess" class="iconbtn" title="刷新模型列表（重新扫描 Copilot 菜单）">↻</button></div>
+        <div class="trow"><h1 id="title" data-act="topbarCollapse" title="点一下收起/展开任务条（也可以点右边的箭头）">—</h1><code id="sidChip" class="sidbig" title="点击复制会话 ID"></code><span id="statepill" class="pill">—</span><select id="sessModel" aria-label="本会话使用的模型" class="sessmodel" title="当前会话使用的模型（下一回合生效，服务重启后仍沿用）"></select><button type="button" id="btnRefreshSess" class="iconbtn" title="刷新模型列表（重新扫描 Copilot 菜单）">↻</button></div>
         <div id="status" class="sub">—</div>
         <div class="actions">
           <!-- 主操作只留两个高频项（对齐 DSH 的"一行工具栏"）：恢复 / 取消任务；
@@ -94,16 +94,20 @@
               <button type="button" class="danger" data-act="shutdownService" title="优雅停止本服务进程（正在跑的任务会中断，状态已落库，重启后可恢复）">⏻ 终止服务 / 退出</button>
             </div></div>
           </div>
+          <!-- KPI 并进「任务」这一行右侧（原来独立一行网格，占掉约 105px 高度）：
+               状态 / 总步骤 / 当前会话步骤 / 会话切换 / TOKEN 估算 都在这里，
+               只占按钮行的剩余宽度，宽屏一行放下、窄屏自动换行到按钮下方。 -->
+          <section class="kpis kpis-inline">
+            <div class="kpi kpi-state" id="kpiStateCard" data-state="ready" title="状态"><span>状态</span><b id="kpiState">—</b></div>
+            <div class="kpi" title="总步骤"><span>总步骤</span><b id="kpiSteps">0</b></div>
+            <div class="kpi" title="当前会话步骤"><span>当前会话步骤</span><b id="kpiConv">0</b></div>
+            <div class="kpi" title="会话切换"><span>会话切换</span><b id="kpiRoll">0</b></div>
+            <div class="kpi" title="TOKEN 估算"><span>TOKEN 估算</span><b id="kpiToken">0</b><small id="kpiBudget" style="color:var(--faint);font-size:10.5px"> / —</small><div class="meter"><span id="tokenbar"></span></div></div>
+          </section>
         </div>
+        <button type="button" class="cardchev topbarchev" id="topbarChev" data-act="topbarCollapse" aria-expanded="true" title="收起/展开任务条（点标题也行）"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 L6 8 L9.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </header>
       <div id="goalBar" class="goalbar" hidden></div>
-      <section class="kpis">
-        <div class="kpi kpi-state" id="kpiStateCard" data-state="ready"><span>状态</span><b id="kpiState">—</b></div>
-        <div class="kpi"><span>总步骤</span><b id="kpiSteps">0</b></div>
-        <div class="kpi"><span>当前会话步骤</span><b id="kpiConv">0</b></div>
-        <div class="kpi"><span>会话切换</span><b id="kpiRoll">0</b></div>
-        <div class="kpi"><span>TOKEN 估算</span><b id="kpiToken">0</b><small id="kpiBudget" style="color:var(--faint);font-size:12px"> / —</small><div class="meter"><span id="tokenbar"></span></div></div>
-      </section>
       <section class="card subagents" id="subagentBar" style="display:none">
         <div class="chead"><span class="dot-on" id="subagentDot"></span>
           <button type="button" class="cardchev" data-act="cardCollapse" data-arg="subagents"
@@ -131,29 +135,25 @@
             <button type="button" class="tab on" id="tabChat" data-act="liveTab" data-arg="chat">实时流</button>
             <button type="button" class="tab" id="tabTimeline" data-act="liveTab" data-arg="timeline">步骤时间线</button>
           </div>
-          <span class="hint"><div class="menu"><button type="button" class="btn ghost padcompact" id="chatMoreBtn" data-act="toggleMore" data-arg="chatMoreMenu" title="面板附加操作（初始提示词 / 最近发送 / 放大）">⋯</button><div class="menuList" id="chatMoreMenu">
-            <button type="button" title="查看该会话首回合发给模型的完整提示词（含系统提示词、工具清单、项目约定）" data-act="showPromptView">📄 初始提示词</button>
-            <button type="button" title="查看最近一次实际发送给 Copilot 的完整内容" data-act="showLastPrompt" data-i18n="📨 最近发送">📨 最近发送</button>
-            <button type="button" title="放大查看当前面板" data-act="expandLive">⤢ 放大</button>
-          </div></div></span>
+          <!-- 模式切换 + 对话区菜单：整组靠右；「面板附加操作」并进了同一个 ⋯（少一个点） -->
+          <div class="chatbar" id="chatBar" title=""><span class="meta" id="chatBarMeta" style="display:none"></span><span style="display:flex;gap:6px;align-items:center">
+            <button type="button" id="modeAgent" class="btn seg on" data-act="setFollowupMode" data-arg="agent">Agent 继续执行</button>
+            <button type="button" id="modeChat" class="btn seg" data-act="setFollowupMode" data-arg="chat">普通对话</button>
+            <div class="menu"><button type="button" class="btn seg padcompact" id="chatActBtn" data-act="toggleMore" data-arg="chatActMenu" title="对话区更多操作（导出 / 搜索 / 强行插入 / 初始提示词 / 最近发送 / 放大）">⋯</button><div class="menuList" id="chatActMenu">
+              <button type="button" title="把当前对话（含附件引用与时间）导出为 Markdown 文件" data-act="exportChatMarkdown">⬇ 导出 MD</button>
+              <button type="button" id="chatFindToggle" title="在对话里搜索（高亮命中，Enter 跳转下一条）" data-act="toggleChatFind">🔍 搜索</button>
+              <button type="button" id="injectBtn" title="运行中插入指令：Agent 下一回合读取并优先执行，不必等这轮跑完（快捷键 Ctrl+J）" data-act="injectMessage">⚡ 强行插入</button>
+              <div class="mensep"></div>
+              <button type="button" title="查看该会话首回合发给模型的完整提示词（含系统提示词、工具清单、项目约定）" data-act="showPromptView">📄 初始提示词</button>
+              <button type="button" title="查看最近一次实际发送给 Copilot 的完整内容" data-act="showLastPrompt" data-i18n="📨 最近发送">📨 最近发送</button>
+              <button type="button" title="放大查看当前面板" data-act="expandLive">⤢ 放大</button>
+            </div></div>
+          </span></div>
         </div>
         <div id="timeline" class="livepane timelinepane" style="display:none"></div>
         <pre id="answer" class="term livepane" style="display:none" hidden>等待回答…</pre>
         <pre id="prompt" class="term livepane" style="display:none" hidden>—</pre>
         <div id="chat" class="livepane chatwrap" style="display:flex;flex-direction:column">
-          <!-- 合并后的顶部：一行状态（点开=完整状态） → 详情块 → 对话 -->
-          <div class="streamstatus" id="streamStatus" data-act="toggleStreamDetail" title="点一下展开/收起完整状态">—</div>
-          <pre id="activity" class="term livepane streamdetail" hidden>—</pre>
-
-          <div class="chatbar" id="chatBar" title=""><span class="meta" id="chatBarMeta" style="display:none"></span><span style="display:flex;gap:6px;align-items:center">
-            <button type="button" id="modeAgent" class="btn seg on" data-act="setFollowupMode" data-arg="agent">Agent 继续执行</button>
-            <button type="button" id="modeChat" class="btn seg" data-act="setFollowupMode" data-arg="chat">普通对话</button>
-            <div class="menu"><button type="button" class="btn seg padcompact" id="chatActBtn" data-act="toggleMore" data-arg="chatActMenu" title="对话区更多操作（导出 / 搜索 / 强行插入）">⋯</button><div class="menuList" id="chatActMenu">
-              <button type="button" title="把当前对话（含附件引用与时间）导出为 Markdown 文件" data-act="exportChatMarkdown">⬇ 导出 MD</button>
-              <button type="button" id="chatFindToggle" title="在对话里搜索（高亮命中，Enter 跳转下一条）" data-act="toggleChatFind">🔍 搜索</button>
-              <button type="button" id="injectBtn" title="运行中插入指令：Agent 下一回合读取并优先执行，不必等这轮跑完（快捷键 Ctrl+J）" data-act="injectMessage">⚡ 强行插入</button>
-            </div></div>
-          </span></div>
           <div id="chatFindBar" class="findbar" style="display:none">
             <input id="chatFind" aria-label="在对话中查找" placeholder="搜索对话内容…（Enter 下一条，Shift+Enter 上一条）" data-act-input="chatFindInput" data-act-key="findStepKey">
             <span id="findCount" class="findcount"></span>
@@ -165,6 +165,10 @@
           <div id="chatlog" class="chatlog"><div class="meta">选择 Session 后，可以在这里继续对话。</div></div>
           <div id="followThumbs" class="thumbs"></div>
           <div id="queueBox" class="queuebox"></div>
+          <!-- 状态条挪到输入框正上方（原来在面板最顶上）：跟 DSH 的「深度求索中…」一个位置，
+               随时能看到当前在干什么，又不用抬头找。点一下仍旧展开/收起完整状态。 -->
+          <div class="streamstatus" id="streamStatus" data-act="toggleStreamDetail" title="点一下展开/收起完整状态">—</div>
+          <pre id="activity" class="term livepane streamdetail" hidden>—</pre>
         </div>
       </section>
       <div class="content">
@@ -172,7 +176,7 @@
       </div>
     </div>
           <div class="composer">
-            <textarea id="followup" aria-label="跟进消息" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行；可直接粘贴截图。Ctrl+J = 运行中强行插入指令"></textarea>            <button type="button" id="sendFollowup" class="btn accent" data-act="sendFollowup">发送</button>
+            <textarea id="followup" aria-label="跟进消息" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行；可直接粘贴截图。Ctrl+J = 运行中强行插入指令"></textarea>            <button type="button" id="sendFollowup" class="btn accent sendRound" data-act="sendFollowup" title="发送" aria-label="发送"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           </div>
   </main>
 </div>

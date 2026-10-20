@@ -99,6 +99,24 @@ def run(url: str, keep_open: bool) -> int:
             except Exception as exc:
                 problems.append(f"点击 {label}（{selector}）失败: {str(exc)[:80]}")
                 return False
+
+        def open_menu(btn_id, menu_id):
+            """把「⋯」菜单点开再用里面的项。
+
+            面板上的 "初始提示词 / 放大" 和对话条的 "搜索" 都收进了菜单里，
+            菜单没开时它们 display:none —— 直接点会等 4 秒超时（老脚本就是这么红的）。
+            """
+            try:
+                opened = page.evaluate(
+                    f"(()=>{{const m=document.getElementById('{menu_id}');"
+                    f"return !!m && m.classList.contains('open')}})()")
+                if not opened:
+                    page.click(f"#{btn_id}", timeout=3000)
+                    page.wait_for_timeout(150)
+                return True
+            except Exception as exc:
+                problems.append(f"展开菜单 {btn_id} 失败: {str(exc)[:80]}")
+                return False
         theme_before = page.evaluate("document.documentElement.dataset.theme||'dark'")
         safe_click('[data-act="toggleTheme"]', "主题切换")
         page.wait_for_timeout(300)
@@ -139,6 +157,7 @@ def run(url: str, keep_open: bool) -> int:
         #     另外判 inline style 而非 computedStyle：面板未激活时 computed 恒为 none。
         bar_before = page.evaluate("(()=>{const b=document.getElementById('chatFindBar');"
                                    "return b?(b.style.display||'none'):null})()")
+        open_menu("chatActBtn", "chatActMenu")
         safe_click('[data-act="toggleChatFind"]', "对话查找")
         page.wait_for_timeout(300)
         bar_after = page.evaluate("(()=>{const b=document.getElementById('chatFindBar');"
@@ -146,6 +165,7 @@ def run(url: str, keep_open: bool) -> int:
         if bar_before == bar_after:
             problems.append(f"点击 对话查找（toggleChatFind）无变化（{bar_before} → {bar_after}）")
         #     showPromptView：初始提示词是 GET，只读安全
+        open_menu("chatActBtn", "chatActMenu")
         if safe_click('[data-act="showPromptView"]', "初始提示词"):
             page.wait_for_timeout(1200)
             # 实测它把内容塞进 #liveBody 并打开 liveMask（不是 prompt 面板）
@@ -160,6 +180,7 @@ def run(url: str, keep_open: bool) -> int:
             # 每个面板各有一个"放大"按钮，必须先切到可见面板再点（Playwright 的 :visible）
             safe_click('[data-act="liveTab"][data-arg="chat"]', "切到对话(为放大)")
             page.wait_for_timeout(250)
+            open_menu("chatActBtn", "chatActMenu")
             safe_click('[data-act="expandLive"]:visible', "放大")
             page.wait_for_timeout(400)
             if not page.evaluate("document.getElementById('liveMask').classList.contains('open')"):

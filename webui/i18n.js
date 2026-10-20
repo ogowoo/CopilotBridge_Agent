@@ -682,6 +682,11 @@ Object.assign(I18N_EN, {
  "收起/展开这块面板（点标题也行）": "Collapse or expand this panel (clicking the title works too)",
  "收起/展开": "Collapse / expand",
  "收起/展开这块面板（只留标题行）": "Collapse or expand this panel (title row only)",
+
+ "收起/展开任务条（点标题也行）": "Collapse or expand the task bar (clicking the title works too)",
+  "对话区更多操作（导出 / 搜索 / 强行插入 / 初始提示词 / 最近发送 / 放大）": "More chat actions (export / search / inject / initial prompt / last prompt / expand)",
+
+ "点一下收起/展开任务条（也可以点右边的箭头）": "Click to collapse or expand the task bar (or use the arrow on the right)",
  "折叠": "Collapse",
  "系统": "system",
  "与": "with",

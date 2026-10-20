@@ -102,7 +102,39 @@ textarea{resize:vertical}
 .empty .big{font-size:44px;font-weight:700;letter-spacing:2px;color:var(--big)}
 .empty kbd{border:1px solid var(--line2);border-radius:6px;padding:2px 7px;font-size:12px;background:var(--panel2)}
 
-.topbar{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+.topbar{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px;
+  /* 顶栏用网格排：行1=标题行(+折叠时上来的 KPI)+箭头，行2=状态行，行3=按钮行 */
+  display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:10px;align-items:center}
+.topbar>.trow{grid-column:1/span 2;grid-row:1;min-width:0}
+.topbar>.topbarchev{grid-column:3;grid-row:1;justify-self:end}
+.topbar>#status{grid-column:1/-1;grid-row:2}
+.topbar>.actions{grid-column:1/-1;grid-row:3}
+/* ── 任务条折叠（点标题行任意空白处、点标题或右侧箭头）：收起后只留一行 ──
+   展开 3 行(状态/按钮+KPI)≈123px，收起≈46px；收起时把「总步骤 / TOKEN」两张 KPI
+   挪到标题行右边（状态看左边的 pill），既省高度又不丢关键信息。
+   状态记 localStorage(cbp.topbarCollapsed)，跨刷新保留。 */
+header.topbar.collapsed{padding-top:9px;padding-bottom:9px}
+header.topbar.collapsed>#status{display:none}
+header.topbar.collapsed>.actions{display:contents}   /* 让 KPI 条变成顶栏的网格项 */
+header.topbar.collapsed .actions .grp{display:none}  /* 按钮行收起 */
+header.topbar.collapsed>.trow{grid-column:1}
+header.topbar.collapsed .kpis-inline{grid-column:2;grid-row:1;margin:0;justify-self:end}
+header.topbar.collapsed .kpis-inline .kpi:nth-child(1),
+header.topbar.collapsed .kpis-inline .kpi:nth-child(3),
+header.topbar.collapsed .kpis-inline .kpi:nth-child(4){display:none}
+/* 窄屏 + 收起态：右边这些（模型下拉 / 刷新 / KPI 两张）全部藏掉，
+   只留「标题 + 会话 ID + 状态 pill + 箭头」，保证永远是一行。 */
+@media(max-width:1100px){
+  header.topbar.collapsed .sessmodel,
+  header.topbar.collapsed #btnRefreshSess,
+  header.topbar.collapsed .kpis-inline{display:none}
+}
+/* 箭头朝向跟卡片一致：收起时转 -90° */
+header.topbar.collapsed .topbarchev svg{transform:rotate(-90deg)}
+header.topbar .topbarchev{flex:none;margin-left:2px}
+/* 标题可点（收起/展开），给个手型和 hover 提示 */
+#title[data-act]{cursor:pointer}
+#title[data-act]:hover{color:var(--accent)}
 .trow{display:flex;align-items:center;gap:12px;min-width:0}
 .trow h1{margin:0;font-size:18px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pill{flex:none;font-size:12px;border-radius:20px;padding:3px 11px;border:1px solid var(--line2);color:var(--muted)}
@@ -111,7 +143,7 @@ textarea{resize:vertical}
 .pill.bad{color:#ffa198;border-color:#f8514966;background:#f8514914}
 .pill.done{color:#79b0ff;border-color:#58a6ff66;background:#58a6ff14}
 .sub{color:var(--muted);font-size:12px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.actions{display:flex;gap:14px;margin-top:12px;flex-wrap:wrap}
+.actions{display:flex;gap:14px;margin-top:12px;flex-wrap:wrap;align-items:center}
 .grp{display:flex;gap:7px;padding-right:14px;border-right:1px solid var(--line);align-items:center;flex-wrap:wrap;min-width:0}
 .grp:last-child{border-right:0;padding-right:0}
 .actions .btn{height:34px;padding-top:0;padding-bottom:0}
@@ -122,7 +154,8 @@ textarea{resize:vertical}
 .menuList button:hover{background:var(--menu-hover)}
 .menuList button.danger{color:var(--danger-text)}
 
-/* KPI 条：auto-fit 让卡片数随可用宽度自适应，杜绝窄窗口网格溢出互相挤压 */
+/* KPI 条（旧版独立一行用的，宽屏仍保留 auto-fit 定义供回退）：
+   auto-fit 让卡片数随可用宽度自适应，杜绝窄窗口网格溢出互相挤压 */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
 @media(min-width:1281px){.kpis .kpi:last-child{grid-column:span 2}}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 14px}
@@ -132,6 +165,41 @@ textarea{resize:vertical}
 .kpi b{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
 .meter{height:7px;background:var(--meter);border-radius:5px;overflow:hidden;margin-top:8px}
 .meter span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .5s}
+
+/* ── KPI 内联进「任务」这一行（KPI-INLINE）─────────────────────────────
+   原来 KPI 是顶栏下面独立一行网格：5 张卡 + 14px 上下间距 ≈ 105px，宽屏还把最后
+   一张卡拉成两列宽 —— 一屏里它比对话区还显眼。
+   现在它是 .actions 这一行里的最后一组：靠右（margin-left:auto）、只占按钮右侧的
+   剩余宽度，标签 10px / 数值 15px / 进度条 4px，整条高度跟按钮行一致；放不下时
+   整条换到按钮下方（.actions 本来就是 flex-wrap），信息不丢、也不挤扁按钮。 */
+.kpis.kpis-inline{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 0 auto;align-items:center;min-width:0}
+/* 单行 chip 形态：标签与数值同排、高度跟按钮一样（34px），**不撑高任务条**。
+   之前两行（标签一行 + 数值一行）会把 .actions 从 34px 顶到 58px，顶栏白长 24px。 */
+.kpis-inline .kpi{display:flex;align-items:center;gap:5px;height:34px;padding:0 10px;
+  border-radius:9px;min-width:0}
+/* 只给"标签"这条规则，别让 .kpi span 的 margin/字体套到进度条里的 span 上 */
+.kpis-inline .kpi>span{display:inline;font-size:10.5px;letter-spacing:.4px;margin:0;
+  white-space:nowrap;line-height:1}
+.kpis-inline .kpi b{font-size:15px;line-height:1;white-space:nowrap}
+/* TOKEN 那张：值 + 预算同排，进度条压成行内小条（条高 3px 不增加行高） */
+.kpis-inline .kpi:last-child{gap:4px}
+.kpis-inline .kpi .meter{margin:0 0 0 2px;height:3px;width:46px;flex:none;align-self:center}
+.kpis-inline .kpi .meter span{margin:0;font-size:0;letter-spacing:0}
+@media(max-width:1280px){
+  /* 收窄：仍然带标签，只压字号/间距，保证还跟按钮同一行（差 2px 就会整条换行） */
+  .kpis-inline .kpi{height:32px;padding:0 5px;gap:3px}
+  .kpis-inline .kpi>span{font-size:9.5px;letter-spacing:0}
+  .kpis-inline .kpi b{font-size:12.5px}
+  .kpis-inline .kpi .meter{width:26px}
+}
+@media(max-width:1050px){
+  /* 更窄时只留数值（标签变 tooltip）——宁可少一行文字，也不让顶栏长高 */
+  .kpis-inline{gap:4px}
+  .kpis-inline .kpi>span{display:none}
+  .kpis-inline .kpi{height:30px;padding:0 6px;border-radius:8px;gap:2px}
+  .kpis-inline .kpi b{font-size:12.5px}
+  .kpis-inline .kpi .meter{height:3px;width:24px}
+}
 
 /* 内容区：实时面板已上移为独立选项卡卡片，这里只剩时间线独占整宽 */
 .content{display:grid;grid-template-columns:1fr;gap:12px;align-items:stretch;flex:1 1 auto;min-height:0;overflow:hidden}
@@ -156,9 +224,17 @@ textarea{resize:vertical}
 #chat.livepane{max-height:48vh}
 .chatwrap{display:flex;flex-direction:column;padding:0}
 .chatbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 15px;border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap}
+/* 模式切换行挪到面板标题行右侧（跟页签同一行）：去掉自己的边框/内边距，靠右排 */
+/* 模式切换组贴到标题行最右；它前面那个「面板 ⋯」不再抢自动外边距 */
+.chead > .hint:has(+ .chatbar){margin-left:0}
+.chead > .chatbar{margin-left:auto;padding:0;border:0;background:transparent;
+  flex:none;flex-wrap:nowrap;justify-content:flex-end;gap:6px}
 .chatbar .meta{color:var(--faint);font-size:12.5px}
 .pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);animation:pulse 1.3s infinite}
 .dot-off{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--dot-off)}
+/* 体检补：原来只有 .dot-off / .dot-bad，没有 .dot-on，而 app.js 把"运行中"的会话/子代理
+   小点设成 class="dot-on" ⇒ 运行中的圆点没有任何宽高/底色，根本看不见。 */
+.dot-on{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green)}
 
 /* 时间线（与右侧实时面板共用剩余高度，随窗口伸缩） */
 .steps{flex:1;min-height:0;overflow:auto}
@@ -401,7 +477,9 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 @media (prefers-reduced-motion:reduce){.msg.reveal{animation:none}}
 .composer{display:flex;gap:9px;padding:12px 15px;border-top:1px solid var(--line);align-items:flex-end}
 .composer textarea{flex:1;min-height:44px;max-height:160px}
-.composer .btn{flex:none;height:44px;padding:0 22px}
+/* 发送按钮：药丸形（两端全圆），高度不刻意加高（保持 44px），贴底与输入框对齐。
+   别为了"跟输入框一样高"把它拉到 56px —— 药丸本来就不该是方块。 */
+.composer .btn{flex:none;height:44px;padding:0 20px;border-radius:999px}
 .btn.seg{padding:3px 12px;font-size:12px;height:28px;border-radius:20px}
 .btn.seg.on{background:var(--accent);border-color:var(--accent);color:var(--accent-fg,#fff);font-weight:600}
 
@@ -616,7 +694,7 @@ section.card:has(#stepCount){margin-top:14px}
 #manualBody summary::marker{color:var(--muted)}
 /* 手册里的四级标题与代码块（比如自升级任务模板）：pre 必须能横向滚动，
    否则长行会把弹窗撑破。配色复用对话里代码块的令牌，视觉一致。 */
-#manualBody h4{margin:14px 0 6px;font-size:13px;font-weight:600;color:var(--fg)}
+#manualBody h4{margin:14px 0 6px;font-size:13px;font-weight:600;color:var(--fg,var(--text))}
 #manualBody pre{margin:8px 0;padding:10px 12px;border:1px solid var(--jv-border);border-radius:9px;
   background:var(--jv-bg);color:var(--jv-text);font-size:12px;line-height:1.65;white-space:pre-wrap;
   overflow-wrap:anywhere;overflow-x:auto;
@@ -1011,10 +1089,11 @@ body #bootBar #bootRetry{flex:none;margin-left:auto;padding:1px 9px;font-size:11
    所以这里也用 14px（实测页面标准面板间距就是 14）。 */
 #goalBar{margin:14px 0}
 
-/* STREAM-STATUS: 合并后「实时流」顶部的状态条（原来是一整个「当前执行状态」标签页）。
-   一行显示状态/在做什么/步数/Token/错误，点一下展开完整详情。 */
+/* STREAM-STATUS: 合并后「实时流」的状态条（原来是一整个「当前执行状态」标签页）。
+   一行显示状态/在做什么/步数/Token/错误，点一下展开完整详情。
+   **位置在输入框正上方**（等于 DSH 的「深度求索中…」那一行）：所以分隔线画在上面。 */
 .streamstatus{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px;
-  padding:9px 12px;border-bottom:1px solid var(--line);background:var(--panel);
+  padding:9px 12px;border-top:1px solid var(--line);background:var(--panel);
   font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
 .streamstatus:hover{background:var(--panel2)}
 .streamstatus .ss-phase{color:var(--text);font-weight:600}
@@ -1026,7 +1105,8 @@ body #bootBar #bootRetry{flex:none;margin-left:auto;padding:1px 9px;font-size:11
 .streamstatus .ss-meta{color:var(--faint);font-variant-numeric:tabular-nums}
 .streamstatus .ss-err{color:var(--amber, #d97706)}
 .streamstatus .ss-sep{color:var(--line2)}
-#activity.streamdetail{max-height:34vh;overflow:auto;border-bottom:1px solid var(--line)}
+#activity.streamdetail{max-height:30vh;overflow:auto;border-top:1px solid var(--line);
+  border-bottom:0}
 
 /* STREAMSTEP: 实时流里穿插的步骤行（消息气泡之间的一条条"做了什么"）。
    紧凑一行：图标 · 工具名 · 理由 · 时间；点开 <details> 看参数与结果。 */
@@ -1092,6 +1172,9 @@ section.card.collapsed .cardchev svg{transform:rotate(-90deg)}
    做状态指示（不止靠颜色，色弱也能看出来）。
    running/waiting 用主色、completed 绿、failed/cancelled 红、paused 琥珀。 */
 .kpi.kpi-state{position:relative;transition:background-color .2s ease,border-color .2s ease}
+/* 对比度体检：状态卡自带 accent 着色底，标签再用 --muted 在 mint 下只有 4.31（<4.5）。
+   只把这一张的标签换成正文色，其它卡仍是 --muted。 */
+.kpi.kpi-state>span{color:var(--text)}
 .kpi.kpi-state::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
   border-radius:12px 0 0 12px;background:var(--line2);transition:background-color .2s ease}
 .kpi.kpi-state[data-state="running"]{background:color-mix(in srgb, var(--accent) 10%, var(--panel));
@@ -1115,8 +1198,59 @@ section.card.collapsed .cardchev svg{transform:rotate(-90deg)}
    以前 composer 藏在 #chat 内部，短视口下整张对话卡掉到折叠线以下，只能靠
    position:fixed + padding 硬顶（会压住内容、还要按视口调数值）。
    现在 composer 是 .main 的最后一个子项：内容区自己滚，输入框永远在底部。 */
-.main{display:flex;flex-direction:column;min-height:0;overflow:hidden}
-.main > .composer{flex:none;order:99}
+.main{display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+/* 输入条的"常态位置"（用户："不能完全浮动，只是长高时盖住上面的内容"）：
+   布局里按**常态高度**给它留出底部空间（卡片止于它上方，看起来就是个普通贴底输入框），
+   输入条自己贴着这块空间的下沿绝对定位；只有内容变多、它往上长出来的那部分
+   才会压在对话/时间线内容上 —— 对话区不会被挤小，也不会被常态挡住。
+   --fu-rest 由 JS 校准（常态高度），+54 = 42px 贴底距 + 12px 视觉间距。 */
+#sessionView{padding-bottom:calc(var(--fu-rest,67px) + 28px)}
+/* 输入框被藏起来时（步骤时间线页 / 空状态）不要留它的空位（app.js syncComposer 挂的类） */
+.main.no-composer #sessionView{padding-bottom:0}
+#sessionView > section.card{flex:1 1 auto;min-height:0}
+#sessionView > .content{flex:1 1 auto;min-height:0}
+/* ── 输入框照 DSH 的「框」+「浮动层」（用户："抄完整点，像浮动层那样"）──────
+   DSH 的 composer 不是布局里的一行，而是**浮在内容之上**的一层：
+   消息区滚到它下面、框自己贴底不动，带圆角/描边/投影，聚焦时整框发光。
+   做法：
+     ① `.main` 设 position:relative，输入条改为 absolute 贴底（左右仍与卡片同宽）；
+     ② `#sessionView` 加 padding-bottom，给浮层让出可滚动空间（最后一条消息能滚上来）；
+     ③ 半透明底 + backdrop-filter 模糊 + 投影，于是下面滚动的内容会从框底透出一点；
+     ④ 框上方再压一层从页面底色渐隐的"帘子"，内容滚到框边自然淡出。 */
+.main > .composer{
+  position:absolute;left:22px;right:22px;bottom:42px;z-index:30;
+  margin:0;
+  padding:7px 7px 7px 14px;
+  border:1px solid var(--line2);
+  border-radius:16px;
+  background:color-mix(in srgb, var(--panel) 94%, transparent);
+  -webkit-backdrop-filter:blur(10px);
+  backdrop-filter:blur(10px);
+  box-shadow:0 14px 34px -8px rgba(16,24,40,.20),0 3px 10px -2px rgba(16,24,40,.08);
+  align-items:flex-end;
+  gap:8px;
+  transition:border-color .15s ease,box-shadow .15s ease;
+}
+.main > .composer:focus-within{
+  border-color:var(--accent);
+  box-shadow:0 14px 34px -8px rgba(16,24,40,.20),0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.main > .composer textarea{
+  min-height:50px;max-height:220px;
+  padding:8px 0 5px;
+  border:0;border-radius:0;background:transparent;box-shadow:none;resize:none;
+  overflow-y:hidden;              /* 高度由 JS 按内容设；到顶后 JS 再切成 auto（出现内部滚动条） */
+}
+.main > .composer textarea:focus{border-color:transparent;box-shadow:none}
+/* 发送按钮：药丸，高度 36px（比输入框矮一截才协调；44px 时贴着输入框下沿显得笨重）。
+   底对齐，跟 DSH 一样在框内右下角。 */
+.main > .composer .btn{flex:none;width:32px;height:32px;padding:0;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center}
+/* 发送按钮改成圆形箭头图标（现在流行的样子）：32px 圆、箭头 18px；
+   发送中用 aria-busy 转圈，不再靠换文案（图标按钮换 textContent 会把图标冲掉）。 */
+.main > .composer .btn svg{width:18px;height:18px;display:block}
+.main > .composer .btn[aria-busy="true"] svg{animation:sendsending .9s linear infinite}
+@keyframes sendsending{to{transform:rotate(360deg)}}
 #sessionView{flex:1 1 auto;min-height:0;overflow:auto}
 /* 页面本身永不滚动（宽窄一致）：滚动只发生在 #sessionView / #chatlog / #steps */
 html,body{overflow:hidden}
@@ -1190,7 +1324,9 @@ html,body{overflow:hidden}
 .chatbar{padding:6px 10px;border-top:1px solid var(--line)}
 .chatbar .btn.seg{height:26px;padding:0 10px;font-size:12px}
 .card .menuList{min-width:190px}/* 对话条的 ⋯ 菜单在页面底部附近：往下弹会超出视口（实测第三项被截），改为向上弹 */
-.chatbar .menu .menuList{top:auto;bottom:calc(100% + 6px)}
+/* 对话条的 ⋯ 菜单：这里在面板**顶部**了，往下弹即可；往上弹会被顶栏/页签行盖住
+   （原来这条是给「菜单在页面底部」写的，方向反了——用户截图：菜单被上面那行压住）。 */
+.chatbar .menu .menuList{top:calc(100% + 6px);bottom:auto}
 /* ── 窄屏会话列表开关：内联在内容区左上角 ────────────────────────────
    原来收起态用一个浮在左侧中部的把手，会压住消息区边缘。改成内容区左上角的
    小按钮：会话打开时在标题行左侧留出的空位里，空状态时就在左上角，
