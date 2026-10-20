@@ -15,7 +15,11 @@
   --mask-bg:rgba(3,7,12,.66);--dlg-shadow:rgba(0,0,0,.8);
 }
 *{box-sizing:border-box}
-html,body{margin:0;height:100%}
+/* 页面本身**永不滚动**：滚动只发生在内部面板（chatlog / steps / livepane）。
+   以前没有这条时，`body.bootbar-on .app{margin-top:28px}` 会与 html/body 的
+   height:100% 发生**上外边距折叠**,把整个文档撑高 28px → 页面可以滚 → 一滚
+   就把顶部那一行切掉（用户截图：最上沿露出半个 "AA" 和图标）。 */
+html,body{margin:0;height:100%;overflow:hidden}
 body{font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
 button,input,textarea,select{font:inherit;color:inherit}
 ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--scrollbar);border-radius:6px}::-webkit-scrollbar-track{background:transparent}
@@ -890,7 +894,10 @@ section.card:has(#stepCount){margin-top:14px}
 .sess-exp:hover{color:var(--text)}
 
 /* 顶部细横条：占位在布局里（不是浮层），不遮挡侧栏与主区 */
-body.bootbar-on .app{height:calc(100vh - 26px);margin-top:26px}
+/* 顶部细横条让位：用 body 的 padding-top（padding 不折叠），.app 高度相应减掉。
+   不要写成 .app{margin-top:...}——那会和 html/body 的高度折叠，把文档撑高。 */
+body.bootbar-on{padding-top:28px}
+body.bootbar-on .app{height:calc(100vh - 28px)}
 body.bootbar-on .main{padding-top:calc(18px + var(--banner-h,0px))}
 #bootBar #bootText{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #bootBar .btn{flex:none}
@@ -899,8 +906,8 @@ body.bootbar-on .main{padding-top:calc(18px + var(--banner-h,0px))}
 body #bootBar{left:0;right:0;transform:none;max-width:none;width:auto;
   margin:0;border-radius:0}
 
-/* 顶部两条浮层叠放：细条在上（26px），连接横幅顺延；不让它们压在同一点 */
-body.bootbar-on .connbanner{top:26px}
+/* 顶部两条浮层叠放：细条在上（28px），连接横幅顺延；不让它们压在同一点 */
+body.bootbar-on .connbanner{top:28px}
 /* 折叠态限流小标落在 .main 预留的底部让位带里（高度由 --retry-h 同步，见 app.js
    updateRetryCountdown 里的 syncFixedLanes 调用）。法则：小标必须整块落在
    「内容底边」之下，所以 bottom 不能再叠加 --retry-h——之前那样反而把小标抬进内容区
@@ -916,7 +923,7 @@ body #bootBar #bootIcon{flex:none;font-size:13px;color:var(--amber);line-height:
 body #bootBar #bootText{flex:1 1 auto;min-width:0;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 body #bootBar #bootRetry{flex:none;margin-left:auto;padding:1px 9px;font-size:11.5px}
-body.bootbar-on .app{height:calc(100vh - 28px);margin-top:28px}
+/* （原 28px 那条与上面重复且互相冲突，已合并到 body.bootbar-on）*/
 
 /* CHAT-FLEX: 对话标签弹性填充（内部滚动），不再固定 max-height:48vh。
    布局审计 1280x800 抓到：底部同时有提示条/限流小标时 .main 的 padding-bottom
