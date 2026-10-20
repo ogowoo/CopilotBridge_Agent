@@ -1119,10 +1119,54 @@ class AgentRunner:
                 summary["important_findings"] = summary["important_findings"][len(summary["important_findings"]) // 2:]
         return summary
 
+    def _work_ledger(self, state: dict, recent: list[dict]) -> dict:
+        """把"已经看过什么、改过什么"压成清单，换会话时一起带进新会话。
+
+        为什么需要：pyshot 任务换了 4 次 Copilot 会话，每次模型都要重新定位，
+        `list_directory` 调用 105 次而只有 13 次真的执行——新会话只拿到 8 条
+        `recent_steps`，目录/文件清单早被压缩截断，模型只能重新列一遍。
+        """
+        read, listed, grepped = [], [], []
+        for st in recent or []:
+            if st.get("status") != "ok":
+                continue
+            args = st.get("arguments") or {}
+            path = str(args.get("path") or "").strip()
+            tool = str(st.get("tool") or "")
+            if not path:
+                continue
+            bucket = listed if tool == "list_directory" else (
+                grepped if tool in ("grep", "find_files") else (
+                    read if tool in ("read_text", "read_excel", "read_csv", "read_pdf",
+                                     "read_docx", "copilot_file") else None))
+            if bucket is None or path in bucket:
+                continue
+            bucket.append(path)
+
+        try:
+            modified = [str(x) for x in (state.get("modified_files") or [])][-12:]
+        except Exception:
+            modified = []
+        todos = state.get("todos") or []
+        done = sum(1 for t in todos if str((t or {}).get("status")) == "completed")
+        left = [str((t or {}).get("content") or "")[:60] for t in todos
+                if str((t or {}).get("status")) != "completed"][:5]
+        ledger = {
+            "已读过的文件": read[-12:],
+            "已列过的目录": listed[-8:],
+            "已搜索过的范围": grepped[-6:],
+            "已改过的文件": modified,
+            "待办进度": (f"{done}/{len(todos)} 已完成" if todos else "（无待办清单）"),
+            "还没做完的事": left,
+            "上次的错误": str(state.get("last_error") or "")[:200] or "（无）",
+        }
+        return {k: v for k, v in ledger.items() if v not in ([], "", None)}
+
     def _continuation_prompt(self, task: str, summary: dict, recent: list[dict], state: dict) -> str:
         payload = {
             "original_goal": task,
             "long_term_summary": summary,
+            "already_looked_at": self._work_ledger(state, recent),
             "recent_steps": [self.compact_value(x, 2500) for x in recent[-self.keep_recent:]],
             "current_workspace": str(self.tools.root),
             "total_steps": state.get("total_steps", 0),
@@ -1130,7 +1174,9 @@ class AgentRunner:
         }
         return (self._system_prompt() + "\n\n这是长期任务的继续执行，不要重新开始。\n"
                 + json.dumps(payload, ensure_ascii=False)
-                + "\n从待完成事项继续，不要重复已完成的读取。返回下一个 JSON 动作（互不依赖的小动作可批量）。")
+                + "\n`already_looked_at` 是已经看过的目录/文件与待办进度：**这些不要重新列/重新读**，"
+                  "需要复核就 read_text 带 line_start/line_count 只看那一段。"
+                  "从待完成事项继续，返回下一个 JSON 动作（互不依赖的小动作可批量）。")
 
     def _record_conv_stat(self, state: dict, conv_steps: int, tokens: int, chars: int,
                           ended_by: str, model: str) -> None:
@@ -1478,7 +1524,11 @@ class AgentRunner:
                 # 服务限流/不可用/长时间无进度：不记步、不记解析失败、不换会话，
                 # 指数退避后在原 Copilot 会话重试；退避期间可暂停、可取消。
                 chat_active = True  # 回合大概率已发出，重试留在原会话
-                service_failures += 1
+                # 已在"已知限流窗口"内的重复失败属于同一次故障：不累加计数、不重复记事件，
+                # 否则一次窗口就能把 max_service_unavailable（30）吃满，任务被误判为"服务持续不可用"。
+                _prev_resume = float((self.state_getter() or {}).get("retry_resume_at") or 0)
+                _window_passed = bool(_prev_resume) and _prev_resume <= time.time()
+                service_failures = 1 if _window_passed else service_failures + 1
                 parse_failures = 0
                 # 异常消息可能为空（实测 httpx 的 ReadTimeout/ConnectError 常是
                 # 空字符串），那样步骤里就只剩"（第 N 次）："什么都看不到——退化成
@@ -1488,7 +1538,9 @@ class AgentRunner:
                 # 前端把连续的若干条合成一行「服务限流/超时（重试 N 次）」。
                 step = {"step": total + 1, "status": "service_unavailable", "transient": True,
                         "error": f"服务暂时不可用（第 {service_failures} 次）：{reason}"}
-                all_steps.append(step); self.step_saver(step)
+                # 降噪：只记第 1/5/10/… 次，时间线里由前端合并成一行
+                if service_failures == 1 or service_failures % 5 == 0:
+                    all_steps.append(step); self.step_saver(step)
                 # 退避期间状态置 waiting（前端显示"等待服务"）；用户已暂停时不抢状态。
                 _updates = {"recent_steps": history[-self.keep_recent:], "last_error": step["error"]}
                 if (self.state_getter() or {}).get("state") == "running":
@@ -1528,6 +1580,8 @@ class AgentRunner:
                                          last_error="Copilot 服务持续不可用，已停止自动重试；服务恢复后请点击继续",
                                          retry_resume_at=None, retry_attempt=0, rate_limited_since=None)
                     return AgentResult("Copilot 服务持续不可用，任务已安全暂停，可稍后继续。", all_steps)
+                # 保持指数退避：长窗口内长睡会让暂停/取消变迟钝，而且 Copilot 可能提前恢复；
+                # 真正的问题是「一次长限流把 30 次失败预算吃满」——上面用 _window_passed 在窗口过后归零解决。
                 deadline = time.monotonic() + delay
                 while time.monotonic() < deadline:
                     state = self.state_getter()

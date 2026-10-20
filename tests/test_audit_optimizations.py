@@ -103,5 +103,67 @@ class SourceGuards(unittest.TestCase):
             self.assertIn(needle, seg, f"提示里缺少：{needle}")
 
 
+class WorkLedgerTests(unittest.TestCase):
+    """换会话时必须带「已看过 / 已改过」清单（pyshot 换了 4 次会话，92 次重复列目录）。"""
+
+    def test_ledger_is_built_and_injected(self):
+        import tempfile
+        from cbp.tools import ToolRegistry
+
+        ws = Path(tempfile.mkdtemp(prefix="cbp_ledger_"))
+        tools = ToolRegistry(ws, {})
+        runner = A.AgentRunner(
+            tools=tools, chat=lambda *a, **k: "{}", config={},
+            state_getter=lambda: {}, state_saver=lambda **k: None,
+            step_saver=lambda s: None, file_event_saver=lambda e: None,
+        )
+        recent = [
+            {"status": "ok", "tool": "list_directory", "arguments": {"path": "pyshot/"}},
+            {"status": "ok", "tool": "read_text", "arguments": {"path": "pyshot/main.py"}},
+            {"status": "ok", "tool": "grep", "arguments": {"path": "pyshot/tests"}},
+            {"status": "ok", "tool": "read_text", "arguments": {"path": "pyshot/main.py"}},
+        ]
+        state = {"modified_files": ["pyshot/tests/test_a.py"],
+                 "todos": [{"content": "A", "status": "completed"},
+                           {"content": "B", "status": "pending"}],
+                 "last_error": "上一处匹配失败", "total_steps": 12, "conversation_index": 2}
+        ledger = runner._work_ledger(state, recent)
+        self.assertIn("已读过的文件", ledger)
+        self.assertIn("pyshot/main.py", ledger["已读过的文件"])
+        self.assertEqual(len([p for p in ledger["已读过的文件"] if p == "pyshot/main.py"]), 1,
+                         "同一文件只记一次")
+        self.assertIn("pyshot/", ledger["已列过的目录"])
+        self.assertIn("已改过的文件", ledger)
+        self.assertIn("1", str(ledger["待办进度"]))
+        prompt = runner._continuation_prompt("原任务", {"goal": "x"}, recent, state)
+        self.assertIn("already_looked_at", prompt)
+        self.assertIn("不要重新列", prompt)
+
+
+class RateLimitWindowTests(unittest.TestCase):
+    """限流处理的两条约束。
+
+    曾经尝试过"一次睡到窗口结束"，实测**不可行**：单测护栏把重试时间参数钳在
+    ≥60 秒，那个分支会让测试挂住；生产上长睡还会让暂停/取消变迟钝，而 Copilot
+    往往提前恢复。最终保留下面两条真正有价值的改动。
+    """
+
+    def test_failure_budget_resets_after_window(self):
+        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        self.assertIn("_window_passed", src,
+                      "窗口过后失败计数要归零，否则一次长限流就把 30 次预算吃满、任务被硬停")
+        self.assertIn("service_failures = 1 if _window_passed", src)
+
+    def test_event_noise_reduced(self):
+        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        self.assertIn("service_failures % 5 == 0", src, "限流事件要降噪（105 条 → 十几条）")
+        self.assertIn('"transient": True', src)
+
+    def test_no_giant_sleep_branch(self):
+        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        self.assertNotIn("睡到窗口结束", src,
+                         "不要整段睡到窗口结束（拖慢测试、暂停/取消变迟钝）")
+
+
 if __name__ == "__main__":
     unittest.main()
