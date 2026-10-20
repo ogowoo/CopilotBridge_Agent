@@ -165,5 +165,59 @@ class RateLimitWindowTests(unittest.TestCase):
                          "不要整段睡到窗口结束（拖慢测试、暂停/取消变迟钝）")
 
 
+class UnknownToolHintTests(unittest.TestCase):
+    """模型换会话后常编出工具名（run_tests/check_syntax/read_file…）。
+
+    审计依据：`cbp/agent.py` 的注释里记过"模型瞎编 run_tests / check_syntax，
+    怎么都过不了验证门，几小时的成果被判 failed"。
+    """
+
+    def test_alias_and_near_miss_suggestions(self):
+        import tempfile
+        from cbp.tools import ToolRegistry
+
+        reg = ToolRegistry(Path(tempfile.mkdtemp(prefix="cbp_hint_")), {})
+        cases = {
+            "run_tests": "run_unittest",
+            "check_syntax": "validate_python",
+            "read_file": "read_text",
+            "apply_diff": "apply_patch",
+            "search": "grep",
+        }
+        for bad, good in cases.items():
+            hint = reg._unknown_tool_hint(bad)
+            self.assertIn(bad, hint)
+            if good in reg._tools:
+                self.assertIn(good, hint, f"{bad} 应提示改用 {good}")
+            self.assertIn("当前可用工具", hint)
+
+    def test_unknown_garbage_still_lists_tools(self):
+        import tempfile
+        from cbp.tools import ToolRegistry
+
+        reg = ToolRegistry(Path(tempfile.mkdtemp(prefix="cbp_hint2_")), {})
+        hint = reg._unknown_tool_hint("zzz_not_a_tool")
+        self.assertIn("没有名为", hint)
+        self.assertIn("当前可用工具", hint)
+
+    def test_execute_raises_hint_not_plain_error(self):
+        import asyncio
+        import tempfile
+        from cbp.tools import ToolRegistry, ToolError
+
+        reg = ToolRegistry(Path(tempfile.mkdtemp(prefix="cbp_hint3_")), {})
+        with self.assertRaises(ToolError) as ctx:
+            asyncio.run(reg.execute("run_tests", {}))
+        msg = str(ctx.exception)
+        self.assertIn("当前可用工具", msg, "未知工具的报错必须可操作")
+
+
+class ToolErrorMessageTests(unittest.TestCase):
+    def test_tool_errors_get_next_step(self):
+        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        self.assertIn("下一步：核对", src,
+                      "工具报错要补一句下一步（审计：116 条报错里 102 条没有引导）")
+
+
 if __name__ == "__main__":
     unittest.main()

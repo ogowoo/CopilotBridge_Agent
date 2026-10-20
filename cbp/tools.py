@@ -1,5 +1,6 @@
 
 
+import difflib
 import asyncio
 import base64
 import hashlib
@@ -1004,6 +1005,39 @@ class ToolRegistry:
                 "hint": "方案已记录。**本轮请直接返回 final** 把方案呈现给用户，"
                         "不要开始执行；用户确认后下一轮再按方案动手。"}
 
+    # 常见的"编出来的工具名" → 真工具名。模型的命名习惯很稳定（见下），
+    # 命中别名或编辑距离足够近时，报错里直接给出正确的那个。
+    TOOL_ALIASES: dict[str, str] = {
+        "run_tests": "run_unittest", "run_test": "run_unittest",
+        "pytest": "run_unittest", "unittest": "run_unittest",
+        "check_syntax": "validate_python", "syntax_check": "validate_python",
+        "py_compile": "validate_python", "compile": "validate_python",
+        "execute_command": "pwsh", "run_command": "pwsh", "shell": "pwsh",
+        "bash": "pwsh", "cmd": "pwsh", "terminal": "pwsh",
+        "execute_python": "run_python", "run_script": "run_python", "python": "run_python",
+        "read_file": "read_text", "cat": "read_text", "open_file": "read_text",
+        "write_file": "write_text", "save_file": "write_text",
+        "edit_file": "replace_text", "str_replace": "replace_text",
+        "apply_diff": "apply_patch", "patch": "apply_patch",
+        "ls": "list_directory", "dir": "list_directory", "list_files": "list_directory",
+        "find": "find_files", "glob": "find_files", "search": "grep",
+        "todo": "todo_write", "tasks": "todo_write",
+    }
+
+    def _unknown_tool_hint(self, name: str) -> str:
+        """未知工具的报错：给出最接近的真工具 + 可用工具清单（可操作，而不是只说错了）。"""
+        available = sorted(self._tools)
+        guess = self.TOOL_ALIASES.get(str(name).strip().lower())
+        if not guess:
+            near = difflib.get_close_matches(str(name), available, n=1, cutoff=0.6)
+            if near:
+                guess = near[0]
+        head = f"没有名为 {name} 的工具。"
+        if guess and guess in self._tools:
+            head += f"如果你想做的是这件事，用 **{guess}**（参数见它的描述）。"
+        listing = "、".join(available[:24]) + ("…" if len(available) > 24 else "")
+        return head + f" 当前可用工具：{listing}。不确定用哪个就先 read_text/list_directory 看现状。"
+
     async def execute(self, name: str, arguments: dict[str, Any] | None) -> Any:
         if not self.allow_web_copilot_tools and name in self.web_copilot_tools:
             raise ToolError(
@@ -1012,7 +1046,10 @@ class ToolRegistry:
                 "replace_text 修改现有内容。")
         fn = self._tools.get(name)
         if not fn:
-            raise ToolError(f"未知工具: {name}")
+            # 模型换过几次会话后常"忘记工具名"，凭空写出 run_tests / check_syntax /
+            # execute_command 之类（代码注释里记过这个坑，实盘会连撞几步过不了验证门）。
+            # 这里不是简单报错，而是把最接近的真工具和可用清单一起给它。
+            raise ToolError(self._unknown_tool_hint(name))
         # 计划模式 / 只读档位：变更类动作在**执行前**就拒绝（结构化错误，模型可据此
         # 改走只读路径，而不是写完才发现不该写）
         if name in MUTATING_TOOLS:

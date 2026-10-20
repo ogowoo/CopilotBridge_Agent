@@ -1967,7 +1967,14 @@ class AgentRunner:
                             self._action_done = True
                         event = result.get("file_event") if isinstance(result, dict) else None
                     except Exception as exc:
-                        step.update({"status": "error", "error": str(exc)})
+                        # 报错要说"下一步怎么办"：审计发现 116 条工具报错里 102 条
+                        # 只描述了"不合法/不允许"，模型只能靠猜重试（常见于换会话后）。
+                        _err = str(exc)
+                        if not any(k in _err for k in ("下一步", "请", "改用", "试试", "建议")):
+                            _err += (f"\n下一步：核对 {tool} 的参数（见工具描述）与路径是否存在；"
+                                     "需要看现状就先用 read_text/list_directory，"
+                                     "换个思路也可以（同类工具可互换）。")
+                        step.update({"status": "error", "error": _err})
                         if tool in _action_tools:
                             self._action_tried = True
                 if step.get("status") == "ok" and not duplicate:
