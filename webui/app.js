@@ -3673,7 +3673,7 @@ attachPasteHandler('followup','follow');
  applyI18n(document);   // 静态界面按当前语言渲染（data-i18n + 静态 DOM 直译）
  applyLangButton();
  mountTimelineIntoTab();mountTeamCard();applyCardCollapsed();applyTopbarCollapsed();
- loadModels();browserState();mergePluginI18n(true);
+ loadModels();loadSandbox();browserState();mergePluginI18n(true);
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();
 /* 流式期间加快刷新：常规 1s 太慢，看起来是一秒一跳；"正在发送/流式返回/等待回答"
@@ -3704,6 +3704,57 @@ let settingsSchema=null, settingsValues=null, settingsTab='ui';
 /* 枚举值的显示名：直接显示 "session"/"each"/"lazy" 太像代码（用户看到的是生词）。 */
 const ENUM_LABEL={each:'每次操作都询问',session:'本会话内不再逐次询问',
   lazy:'首次使用时启动',eager:'服务启动时预热'};
+
+/* ── 权限档位（仿 DSH）─────────────────────────────
+   后端早有 SANDBOX_MODES 与 /v1/agent/sandbox（含 persist），这里只是把它做成
+   输入框上方一眼可见的 chip：点开三档、选中即生效并落库。 */
+const SANDBOX_UI={
+ 'read-only':{ico:'👁', label:'仅可查看'},
+ 'workspace-write':{ico:'🛠', label:'工作区内修改'},
+ 'danger-full-access':{ico:'⚠', label:'完全权限'},
+};
+let sandboxMode='workspace-write';
+function renderSandbox(){
+ const mode=SANDBOX_UI[sandboxMode]?sandboxMode:'workspace-write';
+ const meta=SANDBOX_UI[mode];
+ // 两处实例（会话内 + 新建任务）都要同步，所以按 class 遍历而不是按 id
+ document.querySelectorAll('.sandboxchip').forEach(chip=>{
+  const ico=chip.querySelector('.sb-ico');
+  const label=chip.querySelector('[data-sandbox-label],#sandboxLabel');
+  if(ico)ico.textContent=meta.ico;
+  if(label)label.textContent=tr(meta.label);
+  chip.dataset.mode=mode;
+  chip.classList.toggle('warn',mode==='danger-full-access');
+  const host=chip.closest('.menu');
+  const menu=host?host.querySelector('.menuList'):null;
+  chip.setAttribute('aria-expanded',menu&&menu.classList.contains('open')?'true':'false');
+ });
+ document.querySelectorAll('.sandboxmenu .sbopt').forEach(b=>{
+  const on=b.dataset.arg===mode;
+  b.classList.toggle('on',on);
+  const c=b.querySelector('.sb-check');
+  if(c)c.textContent=on?'✓':'';
+ });
+}
+async function loadSandbox(){
+ try{
+  const r=await api('/v1/agent/sandbox');
+  sandboxMode=String(r.mode||'workspace-write');
+ }catch(e){}
+ renderSandbox();
+}
+async function pickSandbox(mode){
+ if(!SANDBOX_UI[mode])return;
+ try{
+  const r=await api('/v1/agent/sandbox',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({mode,persist:true})});
+  sandboxMode=String(r.mode||mode);
+  renderSandbox();
+  document.querySelectorAll('.sandboxmenu.open').forEach(m=>m.classList.remove('open'));
+  toast(tr('权限已切换为 {m}',{m:tr(SANDBOX_UI[sandboxMode].label)}),'ok');
+ }catch(e){ toast(tr('切换失败: ')+((e&&(e.text||e.detail))||e),'err') }
+}
 
 async function openSettings(){
  const mask=document.getElementById('settingsMask');
@@ -3881,6 +3932,7 @@ const ACTIONS={
  toggleMore:(el,e)=>toggleMore(el, e),
  openSettings:()=>openSettings(),
  swapModelResume:()=>swapModelResume(),
+ pickSandbox:(el)=>pickSandbox(el&&el.dataset?el.dataset.arg:''),
  settingsTab:(el)=>{setSettingsTab(el&&el.dataset?el.dataset.arg:'');},
  openWsBrowser:()=>openWsBrowser(''),
  closeSettings:(el)=>{closeSettings();if(el&&el.dataset&&el.dataset.arg==='memory'){try{openMemory()}catch(e){}}},

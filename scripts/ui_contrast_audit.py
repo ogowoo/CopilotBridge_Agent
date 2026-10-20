@@ -65,14 +65,36 @@ JS = r"""
     return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
   };
   const bgOf = el => {
+    // 逐层向上收集背景色，遇到不透明的就停；半透明层按 alpha 叠到下层上。
+    // （待办条的状态底色就是 color-mix(..., transparent)，不叠的话会当成纯黑底，
+    //  实测把正常可读的文字报成 1.49。）
+    const layers = [];
     let n = el;
-    while (n && n !== document.documentElement) {
+    while (n) {
       const c = getComputedStyle(n).backgroundColor;
-      if (c && !/rgba\(0, 0, 0, 0\)|transparent/.test(c)) return c;
+      if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') {
+        layers.push(c);
+        const m = c.match(/rgba?\(([^)]+)\)/);
+        const alpha = m && m[1].split(',').length > 3 ? parseFloat(m[1].split(',')[3]) : 1;
+        const m2 = c.match(/\/\s*([\d.]+)\s*\)/);      // color(srgb r g b / a)
+        const a2 = m2 ? parseFloat(m2[1]) : 1;
+        if (alpha >= 0.999 && a2 >= 0.999) break;
+      }
       n = n.parentElement;
     }
-    return getComputedStyle(document.body).backgroundColor || 'rgb(255,255,255)';
-  };
+    if (!layers.length) return 'rgb(255,255,255)';
+    let base = [255, 255, 255];
+    for (const c of layers.reverse()) {
+      const px = rgbOf(c);
+      const m = c.match(/rgba?\(([^)]+)\)/);
+      const alpha = m && m[1].split(',').length > 3 ? parseFloat(m[1].split(',')[3]) : 1;
+      const m2 = c.match(/\/\s*([\d.]+)\s*\)/);
+      const a2 = m2 ? parseFloat(m2[1]) : 1;
+      const a = Math.min(alpha, a2);
+      base = base.map((v, i) => Math.round(px[i] * a + v * (1 - a)));
+    }
+    return `rgb(${base[0]},${base[1]},${base[2]})`;
+  };;
   const ratio = (a, b) => { const x = lum(a), y = lum(b);
     const hi = Math.max(x, y), lo = Math.min(x, y); return Math.round((hi + 0.05) / (lo + 0.05) * 100) / 100; };
   const out = [];
@@ -135,6 +157,8 @@ def main() -> int:
                     continue
                 if item["ratio"] < item["need"]:
                     bad.append(f"{name}: {item['sel']} 对比度 {item['ratio']} < {item['need']} "
+                       f"[color={item.get('color')} bg={item.get('bg')} "
+                       f"{item.get('fontPx')}px bold={item.get('bold')}] "
                                f"（{item['label']}）")
         browser.close()
 

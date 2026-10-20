@@ -1583,7 +1583,7 @@ html,body{overflow:hidden}
 /* TODO-HOVER: 待办条目逐行加 hover 高亮 + 按状态分色。
    之前"已完成"统一用 --text 同色、无 hover，9 条看上去一模一样（用户反馈不好看）。 */
 .todoitem{padding:3px 7px;border-radius:7px;transition:background-color .12s ease,color .12s ease}
-.todoitem:hover{background:color-mix(in srgb, var(--accent) 9%, transparent)}
+.todoitem:hover{background:color-mix(in srgb, var(--accent) 9%, var(--panel))}
 /* 已完成：文字略淡（仍满足对比度），对勾用绿；hover 时提亮文字 */
 .todoitem.todo-completed .ttxt{color:var(--muted);opacity:1}
 .todoitem.todo-completed:hover .ttxt{color:var(--text)}
@@ -1592,19 +1592,45 @@ html,body{overflow:hidden}
 .todoitem.todo-pending .ttxt{color:var(--text)}
 .todoitem.todo-pending .tic{color:var(--faint)}
 /* 进行中：整行底色 + 左侧色条 + 加粗 */
-.todoitem.todo-in_progress{background:color-mix(in srgb, var(--accent) 12%, transparent);
+.todoitem.todo-in_progress{background:color-mix(in srgb, var(--accent) 12%, var(--panel));
   box-shadow:inset 2px 0 0 var(--accent)}
-.todoitem.todo-in_progress:hover{background:color-mix(in srgb, var(--accent) 18%, transparent)}
+.todoitem.todo-in_progress:hover{background:color-mix(in srgb, var(--accent) 18%, var(--panel))}
 .todoitem.todo-in_progress .tic{color:var(--accent)}
 .todoitem.todo-in_progress .ttxt{color:var(--text);font-weight:600}
 /* 未同步（会话已结束但没勾完）：琥珀，提示"该更新了" */
-.todoitem.todo-stale{background:color-mix(in srgb, var(--amber, #d97706) 10%, transparent)}
+.todoitem.todo-stale{background:color-mix(in srgb, var(--amber, #d97706) 10%, var(--panel))}
 .todoitem.todo-stale .tic{color:var(--amber, #d97706)}
 .todoitem.todo-stale .ttxt{color:var(--text)}
-.todoitem.todo-stale:hover{background:color-mix(in srgb, var(--amber, #d97706) 16%, transparent)}
+.todoitem.todo-stale:hover{background:color-mix(in srgb, var(--amber, #d97706) 16%, var(--panel))}
 
 /* RC-SWAP: 挂起卡片里的「换提供商模型继续」一行（下拉 + 按钮）。 */
 .rc-swap{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap}
 .rc-swap select{flex:1 1 140px;min-width:0;height:28px;font-size:12px;padding:0 6px;
   border:1px solid var(--line2);border-radius:7px;background:var(--input-bg);color:var(--text)}
 .rc-swap .btn{height:28px;padding:0 10px;font-size:12px}
+
+/* SANDBOX-PICK: 输入框上方的权限档位 chip（仿 DSH）。
+   chip 常驻可见；菜单里三档各带图标 + 一行说明 + 勾选态。 */
+.sandboxpick{position:relative;display:flex;align-items:center}
+.sandboxchip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;
+  font-size:12px;border-radius:999px;border:1px solid var(--line2);background:var(--panel2);
+  color:var(--muted);cursor:pointer;white-space:nowrap}
+.sandboxchip:hover{color:var(--text);border-color:color-mix(in srgb, var(--accent) 40%, var(--line2))}
+.sandboxchip .sb-ico{font-size:13px;line-height:1}
+.sandboxchip.warn{color:var(--red);
+  border-color:color-mix(in srgb, var(--red) 45%, var(--line2));
+  background:color-mix(in srgb, var(--red) 8%, var(--panel))}
+/* 右对齐到 chip 右边，避免靠右时溢出视口；宽度固定 320，说明不折成三行 */
+.sandboxmenu{width:320px;min-width:320px;padding:6px;left:auto;right:0}
+.sandboxmenu .sbopt{display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;
+  padding:8px 9px;border:0;background:transparent;border-radius:8px;cursor:pointer;
+  color:var(--text);font-family:inherit}
+.sandboxmenu .sbopt:hover{background:var(--menu-hover)}
+.sandboxmenu .sbopt.on{background:color-mix(in srgb, var(--accent) 10%, transparent)}
+.sandboxmenu .sbopt .sb-ico{flex:none;width:16px;text-align:center;font-size:13px;line-height:1.4}
+.sandboxmenu .sbopt .sb-txt{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.sandboxmenu .sbopt .sb-txt b{font-size:12.5px;font-weight:600}
+.sandboxmenu .sbopt .sb-txt small{font-size:11.5px;color:var(--faint);line-height:1.5}
+.sandboxmenu .sbopt .sb-check{flex:none;width:14px;text-align:center;color:var(--accent);font-weight:700}
+/* composer 是纵向排列：chip 放顶部一行 */
+/* chip 放在 chatbar 行里，不再绝对定位（那条会压到侧栏上） */

@@ -519,6 +519,9 @@ async def set_sandbox(payload: dict | None = None):
 # 只允许改「有明确语义、不会把服务搞挂」的键；api_token 这类敏感项只读且打码。
 CONFIG_SCHEMA: dict[str, dict] = {
     # 外观/界面（前端本地保存，这里只登记，便于设置页统一展示）
+    "sandbox_mode": {"kind": "enum", "values": ["read-only", "workspace-write",
+                                                "danger-full-access"],
+                     "group": "exec", "label": "权限档位（工具能改什么）"},
     "browser_startup": {"kind": "enum", "values": ["lazy", "eager"], "group": "browser",
                         "label": "浏览器启动方式"},
     "headless": {"kind": "bool", "group": "browser", "label": "无头模式（不显示浏览器窗口）"},
@@ -618,7 +621,10 @@ async def set_config(payload: dict | None = None):
     applied = {k: _coerce(k, incoming[k]) for k in incoming}
     for key, val in applied.items():
         _cfg_set(key, val)
-        if key == "headless":
+        if key == "sandbox_mode":
+            b.AGENT_TOOLS.sandbox_mode = val
+            b.AGENT_CFG["sandbox_mode"] = val
+        elif key == "headless":
             b.AGENT_CFG["headless"] = val
         elif key.startswith("agent."):
             b.AGENT_CFG[key.split(".", 1)[1]] = val

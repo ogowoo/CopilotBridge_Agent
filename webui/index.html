@@ -46,6 +46,31 @@
                 <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.6 2h9.4A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
               </svg></button>
           </div>
+          <!-- 权限档位（仿 DSH）：点 chip 开菜单，三档一目了然 -->
+          <div class="menu sandboxpick">
+            <button type="button" class="btn seg sandboxchip" data-sandbox-chip="new"
+                    data-act="toggleMore" title="权限档位：工具能改什么（点开选择）"
+                    aria-haspopup="true" aria-expanded="false">
+              <span class="sb-ico" data-sandbox-ico="new">🛡</span><span data-sandbox-label="new">工作区内修改</span>
+            </button>
+            <div class="menuList sandboxmenu" data-sandbox-menu="new">
+              <button type="button" class="sbopt" data-act="pickSandbox" data-arg="read-only"
+                      title="只读：所有写操作与命令执行会被拒绝"><span class="sb-ico">👁</span>
+                <span class="sb-txt"><b data-i18n="仅可查看">仅可查看</b>
+                  <small data-i18n="只读：能读文件和搜索，不能改任何东西">只读：能读文件和搜索，不能改任何东西</small></span>
+                <span class="sb-check"></span></button>
+              <button type="button" class="sbopt" data-act="pickSandbox" data-arg="workspace-write"
+                      title="工作区内修改：只能改工作区文件；命令在受限沙箱里跑"><span class="sb-ico">🛠</span>
+                <span class="sb-txt"><b data-i18n="工作区内修改">工作区内修改</b>
+                  <small data-i18n="只能改工作区里的文件；命令在沙箱里执行">只能改工作区里的文件；命令在沙箱里执行</small></span>
+                <span class="sb-check"></span></button>
+              <button type="button" class="sbopt" data-act="pickSandbox" data-arg="danger-full-access"
+                      title="完全权限：可读写工作区之外，命令不受沙箱限制"><span class="sb-ico">⚠</span>
+                <span class="sb-txt"><b data-i18n="完全权限">完全权限</b>
+                  <small data-i18n="可读写工作区之外，命令不受沙箱限制（谨慎）">可读写工作区之外，命令不受沙箱限制（谨慎）</small></span>
+                <span class="sb-check"></span></button>
+            </div>
+          </div>
           <div class="nc-right">
             <div class="nc-mode">
               <button type="button" id="ntAgent" class="btn seg on" data-act="setTaskMode" data-arg="agent">Agent 执行</button>
@@ -138,6 +163,31 @@
           <div class="chatbar" id="chatBar" title=""><span class="meta" id="chatBarMeta" style="display:none"></span><span style="display:flex;gap:6px;align-items:center">
             <button type="button" id="modeAgent" class="btn seg on" data-act="setFollowupMode" data-arg="agent">Agent 继续执行</button>
             <button type="button" id="modeChat" class="btn seg" data-act="setFollowupMode" data-arg="chat">普通对话</button>
+            <!-- 权限档位（仿 DSH）：点 chip 开菜单，三档一目了然 -->
+            <div class="menu sandboxpick">
+              <button type="button" class="btn seg sandboxchip" id="sandboxChip"
+                      data-act="toggleMore" data-arg="sandboxMenu" title="权限档位：工具能改什么（点开选择）"
+                      aria-haspopup="true" aria-expanded="false">
+                <span class="sb-ico" id="sandboxIco">🛡</span><span id="sandboxLabel">工作区内修改</span>
+              </button>
+              <div class="menuList sandboxmenu" id="sandboxMenu">
+                <button type="button" class="sbopt" data-act="pickSandbox" data-arg="read-only"
+                        title="只读：所有写操作与命令执行会被拒绝"><span class="sb-ico">👁</span>
+                  <span class="sb-txt"><b data-i18n="仅可查看">仅可查看</b>
+                    <small data-i18n="只读：能读文件和搜索，不能改任何东西">只读：能读文件和搜索，不能改任何东西</small></span>
+                  <span class="sb-check"></span></button>
+                <button type="button" class="sbopt" data-act="pickSandbox" data-arg="workspace-write"
+                        title="工作区内修改：只能改工作区文件；命令在受限沙箱里跑"><span class="sb-ico">🛠</span>
+                  <span class="sb-txt"><b data-i18n="工作区内修改">工作区内修改</b>
+                    <small data-i18n="只能改工作区里的文件；命令在沙箱里执行">只能改工作区里的文件；命令在沙箱里执行</small></span>
+                  <span class="sb-check"></span></button>
+                <button type="button" class="sbopt" data-act="pickSandbox" data-arg="danger-full-access"
+                        title="完全权限：可读写工作区之外，命令不受沙箱限制"><span class="sb-ico">⚠</span>
+                  <span class="sb-txt"><b data-i18n="完全权限">完全权限</b>
+                    <small data-i18n="可读写工作区之外，命令不受沙箱限制（谨慎）">可读写工作区之外，命令不受沙箱限制（谨慎）</small></span>
+                  <span class="sb-check"></span></button>
+              </div>
+            </div>
             <div class="menu"><button type="button" class="btn seg padcompact" id="chatActBtn" data-act="toggleMore" data-arg="chatActMenu" title="对话区更多操作（导出 / 搜索 / 强行插入 / 初始提示词 / 最近发送 / 放大）">⋯</button><div class="menuList" id="chatActMenu">
               <button type="button" title="把当前对话（含附件引用与时间）导出为 Markdown 文件" data-act="exportChatMarkdown">⬇ 导出 MD</button>
               <button type="button" id="chatFindToggle" title="在对话里搜索（高亮命中，Enter 跳转下一条）" data-act="toggleChatFind">🔍 搜索</button>

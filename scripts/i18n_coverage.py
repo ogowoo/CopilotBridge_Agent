@@ -167,6 +167,19 @@ def states(page):
         page.wait_for_timeout(700)
     except Exception:
         pass
+    # 权限档位菜单（chip + 三档说明）是 JS 不生成的静态 DOM，但默认收起——
+    # 不展开就扫不到，所以单独作为一个状态。
+    try:
+        page.evaluate("""() => {
+          try { closeMaskAll() } catch (e) {}
+          const chip=document.getElementById('sandboxChip');
+          if(chip&&!document.getElementById('sandboxMenu').classList.contains('open'))chip.click();
+        }""")
+        page.wait_for_timeout(350)
+    except Exception:
+        pass
+    yield "权限菜单"
+
     yield "设置弹窗"
     try:
         page.evaluate("() => { try { closeSettings() } catch (e) {} }")
