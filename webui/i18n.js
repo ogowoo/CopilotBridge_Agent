@@ -346,6 +346,8 @@ Object.assign(I18N_EN, {
     "Panel extras (initial prompt / last prompt / expand)",
   "对话区更多操作（导出 / 搜索 / 强行插入）":
     "Chat actions (export / search / force-inject)",
+  // 窄屏会话列表开关
+  "会话列表（展开/收起）": "Sessions (expand / collapse)",
   "重启服务": "Restart service",
   // 待办（todo_write 维护的清单，区别于 /plan 计划模式）
   "待办": "Todo",

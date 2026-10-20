@@ -1185,3 +1185,15 @@ html,body{overflow:hidden}
 .chatbar .btn.seg{height:26px;padding:0 10px;font-size:12px}
 .card .menuList{min-width:190px}/* 对话条的 ⋯ 菜单在页面底部附近：往下弹会超出视口（实测第三项被截），改为向上弹 */
 .chatbar .menu .menuList{top:auto;bottom:calc(100% + 6px)}
+/* ── 窄屏会话列表开关：内联在内容区左上角 ────────────────────────────
+   原来收起态用一个浮在左侧中部的把手，会压住消息区边缘。改成内容区左上角的
+   小按钮：会话打开时在标题行左侧留出的空位里，空状态时就在左上角，
+   既不压内容、也不影响宽屏（宽屏仍用侧栏右缘那条拉手）。 */
+.railmini{display:none}
+@media(max-width:860px){
+  .main{position:relative}
+  .railmini{display:inline-flex;position:absolute;left:8px;top:8px;z-index:70;
+    width:30px;height:30px;padding:0;align-items:center;justify-content:center;font-size:15px}
+  .trow{padding-left:40px}   /* 给 ☰ 让位，别压住标题 */
+  #railBtn{display:none}     /* 弃用浮在左侧的把手 */
+}
