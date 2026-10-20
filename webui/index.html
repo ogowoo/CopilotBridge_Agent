@@ -128,7 +128,11 @@
             <button type="button" class="tab on" id="tabChat" data-act="liveTab" data-arg="chat">实时流</button>
             <button type="button" class="tab" id="tabTimeline" data-act="liveTab" data-arg="timeline">步骤时间线</button>
           </div>
-          <span class="hint"><button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px" title="查看该会话首回合发给模型的完整提示词（含系统提示词、工具清单、项目约定）" data-act="showPromptView">📄 初始提示词</button><button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px" title="查看最近一次实际发送给 Copilot 的完整内容" data-act="showLastPrompt" data-i18n="📨 最近发送">📨 最近发送</button><button type="button" class="btn ghost" style="padding:2px 10px;font-size:12px" title="放大查看当前面板" data-act="expandLive">⤢ 放大</button></span>
+          <span class="hint"><div class="menu"><button type="button" class="btn ghost padcompact" id="chatMoreBtn" data-act="toggleMore" data-arg="chatMoreMenu" title="面板附加操作（初始提示词 / 最近发送 / 放大）">⋯</button><div class="menuList" id="chatMoreMenu">
+            <button type="button" title="查看该会话首回合发给模型的完整提示词（含系统提示词、工具清单、项目约定）" data-act="showPromptView">📄 初始提示词</button>
+            <button type="button" title="查看最近一次实际发送给 Copilot 的完整内容" data-act="showLastPrompt" data-i18n="📨 最近发送">📨 最近发送</button>
+            <button type="button" title="放大查看当前面板" data-act="expandLive">⤢ 放大</button>
+          </div></div></span>
         </div>
         <div id="timeline" class="livepane timelinepane" style="display:none"></div>
         <pre id="answer" class="term livepane" style="display:none" hidden>等待回答…</pre>
@@ -138,7 +142,15 @@
           <div class="streamstatus" id="streamStatus" data-act="toggleStreamDetail" title="点一下展开/收起完整状态">—</div>
           <pre id="activity" class="term livepane streamdetail" hidden>—</pre>
 
-          <div class="chatbar"><span class="meta" id="chatBarMeta"><span data-i18n="继续当前 Session 对话">继续当前 Session 对话</span> · <b>Ctrl+J</b> <span data-i18n="强行插入指令（运行中即时生效）">强行插入指令（运行中即时生效）</span></span><span style="display:flex;gap:6px"><button type="button" class="btn seg" title="把当前对话（含附件引用与时间）导出为 Markdown 文件" data-act="exportChatMarkdown">⬇ 导出 MD</button><button type="button" class="btn seg" id="chatFindToggle" title="在对话里搜索（高亮命中，Enter 跳转下一条）" data-act="toggleChatFind">🔍 搜索</button><button type="button" id="injectBtn" class="btn seg" title="运行中插入指令：Agent 下一回合读取并优先执行，不必等这轮跑完（快捷键 Ctrl+J）" data-act="injectMessage">⚡ 强行插入</button><button type="button" id="modeAgent" class="btn seg on" data-act="setFollowupMode" data-arg="agent">Agent 继续执行</button><button type="button" id="modeChat" class="btn seg" data-act="setFollowupMode" data-arg="chat">普通对话</button></span></div>
+          <div class="chatbar" id="chatBar" title=""><span class="meta" id="chatBarMeta" style="display:none"></span><span style="display:flex;gap:6px;align-items:center">
+            <button type="button" id="modeAgent" class="btn seg on" data-act="setFollowupMode" data-arg="agent">Agent 继续执行</button>
+            <button type="button" id="modeChat" class="btn seg" data-act="setFollowupMode" data-arg="chat">普通对话</button>
+            <div class="menu"><button type="button" class="btn seg padcompact" id="chatActBtn" data-act="toggleMore" data-arg="chatActMenu" title="对话区更多操作（导出 / 搜索 / 强行插入）">⋯</button><div class="menuList" id="chatActMenu">
+              <button type="button" title="把当前对话（含附件引用与时间）导出为 Markdown 文件" data-act="exportChatMarkdown">⬇ 导出 MD</button>
+              <button type="button" id="chatFindToggle" title="在对话里搜索（高亮命中，Enter 跳转下一条）" data-act="toggleChatFind">🔍 搜索</button>
+              <button type="button" id="injectBtn" title="运行中插入指令：Agent 下一回合读取并优先执行，不必等这轮跑完（快捷键 Ctrl+J）" data-act="injectMessage">⚡ 强行插入</button>
+            </div></div>
+          </span></div>
           <div id="chatFindBar" class="findbar" style="display:none">
             <input id="chatFind" aria-label="在对话中查找" placeholder="搜索对话内容…（Enter 下一条，Shift+Enter 上一条）" data-act-input="chatFindInput" data-act-key="findStepKey">
             <span id="findCount" class="findcount"></span>

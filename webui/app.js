@@ -1842,6 +1842,10 @@ function refreshChatBarMeta(){
  if(!meta)return;
  meta.innerHTML=esc(tr('与'))+' <b>'+esc(assistantLabel())+'</b> '+esc(tr('继续'))+
    ' · <b>Ctrl+J</b> '+esc(tr('强行插入指令（运行中即时生效）'));
+ // 这行说明改成 tooltip：面板头部每多一行就吃一行对话区高度（短窗口尤其明显）
+ const _bar=document.getElementById('chatBar');
+ if(_bar)_bar.title=tr('与')+' '+assistantLabel()+' '+tr('继续')+' · Ctrl+J '+
+   tr('强行插入指令（运行中即时生效）');
 }
 
 function updateStreamStatus(r){
@@ -2841,9 +2845,8 @@ function updateChannelUI(){
  // 分组框也要跟着隐藏：否则提供商会话下留一个空 div 和一条多余的分隔竖线
  let _wg=document.getElementById('webGrp');if(_wg)_wg.style.display=prov?'none':'';
  let meta=document.getElementById('chatBarMeta');
- // 走 tr()：以前这里是硬编码中文整句，英文界面下也会冒出中文（i18n 审计抓到的就是它）
- if(meta)meta.innerHTML=esc(tr('与'))+' <b>'+esc(assistantLabel())+'</b> '+esc(tr('继续'))+
-   ' · <b>Ctrl+J</b> '+esc(tr('强行插入指令（运行中即时生效）'))}
+ // 文案统一由 refreshChatBarMeta 维护（含 tooltip）
+ try{refreshChatBarMeta()}catch(e){}}
 
 /* ── 排队消息：查看 / 编辑 / 删除 ── */
 async function refreshQueue(){
@@ -3136,7 +3139,17 @@ async function waitSessionReady(sid){
   await new Promise(r=>setTimeout(r,1000));
  }}
 
-function toggleMore(e){e.stopPropagation();document.getElementById('moreMenu').classList.toggle('open')}
+function toggleMore(e,arg){
+ // 通用下拉：优先用 data-arg 指定 id，否则取最近的 .menu 里的 .menuList
+ e.stopPropagation();
+ let menu=null;
+ if(typeof arg==='string'&&arg)menu=document.getElementById(arg);
+ if(!menu){const host=e.currentTarget&&e.currentTarget.closest?e.currentTarget.closest('.menu'):null;
+   menu=host?host.querySelector('.menuList'):null}
+ if(!menu)return;
+ // 同一时间只开一个：否则顶栏「更多」和面板「⋯」会同时展开、互相遮挡
+ document.querySelectorAll('.menuList.open').forEach(m=>{if(m!==menu)m.classList.remove('open')});
+ menu.classList.toggle('open')}
 document.addEventListener('click',e=>{let m=document.getElementById('moreMenu');if(m&&m.classList.contains('open')&&!e.target.closest('#moreBtn'))m.classList.remove('open')});
 
 /* 主题：选择（choice）与解析（resolved）分开——
@@ -3503,7 +3516,7 @@ const ACTIONS={
  continueAgent:()=>continueAgent(),
  activate:()=>activate(),
  openCopilot:()=>openCopilot(),
- toggleMore:(el,e)=>toggleMore(e),
+ toggleMore:(el,e)=>toggleMore(e, el&&el.dataset&&el.dataset.arg),
  rollbackSession:()=>rollbackSession(),
  rollbackSelfUpgrade:()=>rollbackSelfUpgrade(),
  removeSession:(el)=>removeSession(el.dataset.arg==='true'),

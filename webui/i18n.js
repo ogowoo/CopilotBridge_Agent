@@ -341,6 +341,11 @@ Object.assign(I18N_EN, {
   "提示": "Notice",
   "插入指令（运行中即时生效，会立即中断当前回合后按新指令继续）。插入方式决定语义：":
     "Inject an instruction (takes effect immediately while running and interrupts the current turn). The mode decides the semantics:",
+  // 对话面板的 ⋯ 菜单（面板附加操作 / 对话区更多操作）
+  "面板附加操作（初始提示词 / 最近发送 / 放大）":
+    "Panel extras (initial prompt / last prompt / expand)",
+  "对话区更多操作（导出 / 搜索 / 强行插入）":
+    "Chat actions (export / search / force-inject)",
   "重启服务": "Restart service",
   // 待办（todo_write 维护的清单，区别于 /plan 计划模式）
   "待办": "Todo",

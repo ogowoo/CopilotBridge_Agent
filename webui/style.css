@@ -1168,3 +1168,12 @@ html,body{overflow:hidden}
 /* 更多菜单里的分组与分隔线（暂停/压缩/继续/切页面/打开会话/深研 都收进来了） */
 .menuList .menugrp{display:flex;flex-direction:column;gap:4px}
 .menuList .mensep{height:1px;background:var(--line);margin:5px 2px}
+/* ── 对话面板头部压缩（对齐"一屏看全"）────────────────────────────────
+   原来四行：页签行（含 3 个次要按钮）+ 状态行 + "与 Copilot 继续…"说明行 +
+   「导出/搜索/强行插入/Agent/普通对话」按钮行 ≈180px。
+   现在：页签行右侧收成 ⋯ 菜单；说明行改 tooltip；按钮行只留模式切换 + ⋯ 菜单。 */
+.padcompact{padding:2px 8px !important;font-size:12px !important;line-height:1.5}
+.chatbar{padding:6px 10px;border-top:1px solid var(--line)}
+.chatbar .btn.seg{height:26px;padding:0 10px;font-size:12px}
+.card .menuList{min-width:190px}/* 对话条的 ⋯ 菜单在页面底部附近：往下弹会超出视口（实测第三项被截），改为向上弹 */
+.chatbar .menu .menuList{top:auto;bottom:calc(100% + 6px)}
