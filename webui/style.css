@@ -1392,3 +1392,20 @@ html,body{overflow:hidden}
 #chat > #teamCard > #subagentBar{border-top:1px solid var(--line)}
 #chat > #teamCard > #subagentBar .chead{padding:9px 12px}
 #chat > #teamCard > #subagentBar .subagentlist{padding:0 8px 6px}
+
+/* TEAMROW-LIKE-STATUS: 待办条 / 子代理条与底部 `completed · 步 · Token` 状态条**同款**：
+   同一字号（12.5px）、同一内边距（9px 12px）、同一前景色（--muted），
+   标题用 --text + 600 做层级；整条可点（cursor:pointer）。 */
+#chat > #teamCard > .goalbar,
+#chat > #teamCard > #subagentBar > .chead{
+  padding:9px 12px;min-height:36px;box-sizing:border-box;
+  font-size:12.5px;font-weight:400;color:var(--muted);
+  background:var(--panel);border:0;border-radius:0;cursor:pointer;user-select:none}
+#chat > #teamCard > .goalbar:hover,
+#chat > #teamCard > #subagentBar > .chead:hover{background:var(--panel2)}
+#chat > #teamCard > .goalbar .gb-todo{
+  font-size:12.5px;font-weight:600;color:var(--text);padding:0;display:inline-flex;
+  align-items:center;gap:5px}
+#chat > #teamCard > #subagentBar > .chead b{font-size:12.5px;font-weight:600;color:var(--text)}
+#chat > #teamCard > #subagentBar > .chead .hint{font-size:12px;color:var(--faint)}
+#chat > #teamCard > .goalbar .gb-meta{color:var(--faint);font-size:12px}

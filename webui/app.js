@@ -204,11 +204,20 @@ function onCardHeadClick(ev){
  const head=ev.target.closest && ev.target.closest('.chead');
  if(!head)return;
  if(ev.target.closest('button.tab,button.btn,select,input,a,.cardchev'))return;
+ // 最近的折叠目标：子代理块（现在在 #teamCard 里，不再是 section.card）
+ if(head.closest('#subagentBar')){toggleCard('subagents');return}
  const card=head.closest('section.card');
  if(!card)return;
- if(card.id==='subagentBar')toggleCard('subagents');
- else if(card.contains(document.getElementById('chat')))toggleCard('live');
+ if(card.contains(document.getElementById('chat')))toggleCard('live');
 }
+document.addEventListener('click',(ev)=>{
+ const t=ev.target;
+ if(!t||!t.closest)return;
+ const trow=t.closest('header.topbar>.trow');
+ if(!trow)return;
+ if(t.closest('button,select,input,textarea,a,#sidChip,[data-act]'))return;
+ toggleTopbar();
+});
 
 /* ── 任务条（顶栏）折叠：收起后只留标题行（状态行 / 按钮行 / KPI 一起收）──
    展开态 3 行 ≈123px，收起后 ≈57px —— 想多看对话时能把这块收掉。
@@ -243,6 +252,16 @@ document.addEventListener('click',(ev)=>{
  toggleTopbar();
 });
 document.addEventListener('click',onCardHeadClick);
+
+/* 待办条：点横条任意位置都能展开/收起（与状态条一致的交互）。
+   内部 `.todolist` 里的条目、以及「待办 x/y」按钮自己会处理点击，别重复触发。 */
+document.addEventListener('click',ev=>{
+ const bar=ev.target.closest && ev.target.closest('#goalBar');
+ if(!bar)return;
+ if(ev.target.closest('.todolist'))return;
+ if(ev.target.closest('[data-act="toggleTodos"]'))return;   // 按钮自己会切
+ try{toggleTodos()}catch(e){}
+});
 
 function renderSubagents(list){
  if(!current){list=[]}
@@ -931,7 +950,8 @@ function drawSessions(){
    return parts.length?parts[parts.length-1]:tr('默认工作区')};
  const renderCard=(s,opts)=>{
   opts=opts||{};
-  const kids=kidsOf.get(s.id)||[];
+  // 子代理不再列进侧栏（用户要求），因此父行也不该再有 ▸ 折叠图标。
+  const kids=[];
   let e=document.createElement('div');
   e.className='sess'+(s.id===current?' sel':'')+(opts.child?' child':'');
   e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
@@ -985,10 +1005,6 @@ function drawSessions(){
   box.appendChild(h);
   if(!wsIsCollapsed(k)) groups.get(k).forEach((s)=>{
    renderCard(s);
-   // 侧栏不再展开子代理行（用户：session 列不要显示 subagents 了）——
-   // 子代理仍可在右侧「子代理」面板里看。
-   const kids=[];
-   if(kids.length && expandedSess.has(s.id)) kids.forEach(c=>renderCard(c,{child:true}));
   })});
  try{translateAttrs(box)}catch(e){}}
 
