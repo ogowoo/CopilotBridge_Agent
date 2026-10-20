@@ -1109,3 +1109,50 @@ section.card.collapsed .cardchev svg{transform:rotate(-90deg)}
 .kpi.kpi-state[data-state="paused"]{background:color-mix(in srgb, var(--amber, #d97706) 10%, var(--panel));
   border-color:color-mix(in srgb, var(--amber, #d97706) 35%, var(--line))}
 .kpi.kpi-state[data-state="paused"]::before{background:var(--amber, #d97706)}
+/* ── 输入框常驻可见（对齐 DSH：滚内容时输入框不动）────────────────────
+   结构是 .card > #chat(livepane chatwrap) > #chatlog + .composer,
+   composer 在 #chat 内部本来就是 flex:none（钉在面板底部）。问题在**短视口**：
+   整张对话卡落在折叠线以下，得先滚 #sessionView 才能打字。
+   做法：让承载对话的卡片在 #sessionView（它才是滚动容器）里**粘底**——
+   往下滚内容时它贴在可视区底边；卡片自然位置本来就可见时行为不变。 */
+#sessionView > .card:has(> #chat){position:sticky;bottom:0;z-index:6;
+  box-shadow:0 -8px 20px -12px var(--dlg-shadow,rgba(0,0,0,.45))}
+/* 卡片粘底后内部要撑满：对话区自己滚，输入框始终在卡片底部 */
+#sessionView > .card:has(> #chat) > #chat{flex:1 1 auto;min-height:0}
+/* ── 矮窗口：状态卡与子代理面板让位，保证输入框始终可见 ──────────────────
+   800×545 这类矮窗口里，横幅 28 + 顶栏 + KPI + 子代理 + 页签已占掉大半高度，
+   对话卡（含 89px 输入框）被挤到折叠线以下——只靠 sticky 不够（卡片比视口还高）。
+   这里在矮窗口隐藏两块**只读信息**（状态卡、子代理列表），把高度还给对话区；
+   它们仍可在正常高度窗口看到，且不影响任何操作。 */
+@media (max-height: 660px){
+  /* 只读信息让位给对话区；**不要**把 #chat 的 max-height 去掉——那会让对话区
+     不再内部滚动，消息直接顶到固定输入框下面（实测重叠 900px）。 */
+  .kpis{display:none}
+  .subagents{display:none}
+  /* 顶部信息压缩：矮窗口里标题行只留必要内容 */
+  .topbar{padding-top:8px;padding-bottom:8px}
+}
+/* ── 窄/矮窗口：输入框固定在视口底部（常驻可见） ──────────────────────
+   实测 800×545：≤860px 时侧栏被堆到主区上方（吃掉 265px），`.main` 只剩 280px，
+   对话卡（含 89px 输入框）必然落到折叠线以下——只靠 flex/sticky 补不回来（卡片比
+   可视区还高）。这里在窄或矮窗口把输入框**固定在视口底部**，并给对话区留出等量
+   的下内边距，保证内容不被盖住、输入框永远够得到。 */
+@media (max-width: 860px), (max-height: 660px){
+  #chat .composer{position:fixed;left:10px;right:10px;bottom:10px;z-index:45;
+    background:var(--panel);border:1px solid var(--line2);border-radius:12px;
+    padding:10px 12px;box-shadow:0 10px 30px -8px var(--dlg-shadow,rgba(0,0,0,.45))}
+  #chat .composer textarea{max-height:96px}
+  /* 不被固定输入框挡住：对话区与 #sessionView 底部各留一段空间 */
+  #chatlog{padding-bottom:170px}
+}
+/* ── 窄屏(≤860px)回退"自然文档流 + 页面滚动"（这是原本的设计） ───────────
+   宽屏（>860px）整屏布局：页面禁滚，滚动只发生在内部面板；
+   窄屏按原设计允许整页滚动——所以这里把 body 的 overflow 放开、app 高度自适应，
+   否则窄屏内容会被 `overflow:hidden` 永久藏住（我第一版就踩了这个）。
+   输入框仍然固定在视口底部（见上方规则），打字随时可用。 */
+@media(max-width:860px){
+  html,body{overflow:auto;height:auto}
+  .app{height:auto;min-height:100%}
+  /* 固定输入框会压住页面底部内容：给整体留出等量空间 */
+  #sessionView{padding-bottom:150px}
+}
