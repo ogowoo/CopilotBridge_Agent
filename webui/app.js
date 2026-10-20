@@ -3526,6 +3526,10 @@ const FAST_PHASES=['api_sending','api_streaming','waiting','sending'];
    处理器集中在此，可审计；动态内容天然可用；CSP 可以只留 'self'。 */
 const ACTIONS={
  toggleRail:()=>toggleRail(),
+ // 窄屏抽屉的遮罩：点一下收起（只有窄屏才有意义，宽屏没有遮罩）
+ closeRail:()=>{const r=document.documentElement;
+  if(matchMedia('(max-width:860px)').matches){r.dataset.rail='closed';
+   try{localStorage.setItem('cbp-rail','closed')}catch(e){}}},
  openTask:()=>openTask(),
  openManual:()=>openManual(),
  toggleBrowser:()=>toggleBrowser(),

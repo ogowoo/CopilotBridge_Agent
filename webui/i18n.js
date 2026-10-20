@@ -348,6 +348,8 @@ Object.assign(I18N_EN, {
     "Chat actions (export / search / force-inject)",
   // 窄屏会话列表开关
   "会话列表（展开/收起）": "Sessions (expand / collapse)",
+  // 窄屏抽屉的遮罩（点一下关闭）
+  "关闭会话列表": "Close session list",
   "重启服务": "Restart service",
   // 待办（todo_write 维护的清单，区别于 /plan 计划模式）
   "待办": "Todo",
