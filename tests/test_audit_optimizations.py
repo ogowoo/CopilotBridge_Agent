@@ -152,7 +152,7 @@ class RateLimitWindowTests(unittest.TestCase):
         src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
         self.assertIn("_window_passed", src,
                       "窗口过后失败计数要归零，否则一次长限流就把 30 次预算吃满、任务被硬停")
-        self.assertIn("service_failures = 1 if _window_passed", src)
+        self.assertIn("retry_note", src, "只有网页固定窗口才归零计数")
 
     def test_event_noise_reduced(self):
         src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")

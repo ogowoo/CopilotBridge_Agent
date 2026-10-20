@@ -9,7 +9,8 @@ from typing import Any
 
 
 class SessionStore:
-    STATES = {"ready", "running", "paused", "waiting", "completed", "failed", "cancelled", "expired", "archived"}
+    STATES = {"ready", "running", "paused", "waiting", "suspended", "completed",
+          "failed", "cancelled", "expired", "archived"}
 
     def __init__(self, path: Path):
         self.path = path.resolve()
@@ -182,7 +183,8 @@ CREATE TABLE IF NOT EXISTS conv_stats (
             for _col, _decl in (("parent_id", "TEXT"), ("description", "TEXT"),
                                 ("goal", "TEXT"), ("todos", "TEXT"),
                                 ("plan", "TEXT"),
-                                ("plan_mode", "INTEGER NOT NULL DEFAULT 0")):
+                                ("plan_mode", "INTEGER NOT NULL DEFAULT 0"),
+                                ("suspend_reason", "TEXT")):
                 try:
                     con.execute(f"ALTER TABLE sessions ADD COLUMN {_col} {_decl}")
                 except Exception:
@@ -242,7 +244,7 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                    "rollover_requested","conv_tokens","conv_chars","gate_state",
                    "retry_resume_at","retry_attempt","rate_limited_since","initial_prompt",
             "pending_steps","approval_pending","tag","goal","todos","plan","plan_mode",
-            "parent_id","description"}
+            "parent_id","description","suspend_reason"}
         values = {k:v for k,v in values.items() if k in allowed}
         if "state" in values and values["state"] not in self.STATES: raise ValueError("invalid state")
         for key in ("conversation_urls","summary","recent_steps","modified_files","pending",

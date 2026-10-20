@@ -196,6 +196,12 @@
   <div class="rc-title">⏳ 服务限流/不可用，预计恢复</div>
   <div class="rc-count">--:--</div>
   <div class="rc-sub">第 1 次 · 自动重试中，可点「暂停」稍后继续</div>
+  <!-- 挂起态专用：Copilot 网页限流挂起时，可以直接换用已配置的提供商模型立即继续 -->
+  <div class="rc-swap" id="retrySwap" style="display:none">
+    <select id="retryModel" aria-label="换用其它提供商模型继续" data-i18n-aria-label="换用其它提供商模型继续"></select>
+    <button type="button" class="btn accent" id="retrySwapGo" data-act="swapModelResume"
+            data-i18n="换模型继续">换模型继续</button>
+  </div>
 </div>
 <div id="retryChip" class="retry-chip" style="display:none" title="限流中：点击展开倒计时">⏳ --:--</div>
 <!-- 使用手册 -->

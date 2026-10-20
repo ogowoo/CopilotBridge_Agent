@@ -1238,6 +1238,10 @@ class AgentRunner:
         # 截断；用实例标记记住"本次运行有没有真的产出/尝试过产出"。
         self._action_done = False
         self._action_tried = False
+        # 回合预算：连续多少个回合"没有新改动、也没有新信息"（读过的路径不算新信息）
+        self._dry_turns = 0
+        self._turn_dry = True
+        self._seen_paths: set[str] = set()
         _action_words = ("创建", "新建", "写", "修改", "改", "删除", "运行", "执行", "生成",
                          "保存", "记录", "记到", "整理", "转换",
                          "create", "write", "modify", "delete", "run", "save")
@@ -1338,6 +1342,12 @@ class AgentRunner:
             carrying_pending = False
             carrying_step = False
 
+            # 上一回合结算：整轮都没有进展就累加，有进展就清零
+            if getattr(self, "_turn_dry", False):
+                self._dry_turns = getattr(self, "_dry_turns", 0) + 1
+            else:
+                self._dry_turns = 0
+            self._turn_dry = True
             if need_rollover:
                 # 记录上一个 Copilot 会话的实测数据（主动切换或触顶被动切换）
                 self._record_conv_stat(state, conv_steps, conv_t, conv_c, rollover_reason, model)
@@ -1441,6 +1451,13 @@ class AgentRunner:
                            + "\n".join(_urgent_now))
                 carrying_step = True
 
+            # 回合预算提示：连续若干回合没有新改动/新信息，就催它做一次收尾判断，
+            # 别在"再确认一下"里空转（实测一个 388 步任务里有大段这种长尾）。
+            _nudge_at = int(self.config.get("turn_budget_nudge", 6) or 0)
+            if _nudge_at and self._dry_turns >= _nudge_at:
+                prompt += (f"\n\n【收尾判断】你已经连续 {self._dry_turns} 个回合没有产生新的改动或新信息。"
+                           "现在二选一：① 直接返回 final 汇报现状（完成了什么 / 验证结果 / 还缺什么）；"
+                           "② 明确说出下一步要做的**具体动作**并立刻执行它——不要再来一轮同样的核对。")
             prompt += f"\n\n当前总步骤 {total + 1}/{self.max_total_steps}。返回下一个 JSON 动作（互不依赖的小动作可批量）。"
             # 发送前最后确认暂停/取消，避免暂停生效后仍向 Copilot 发起新回合。
             state = self.state_getter()
@@ -1526,8 +1543,13 @@ class AgentRunner:
                 chat_active = True  # 回合大概率已发出，重试留在原会话
                 # 已在"已知限流窗口"内的重复失败属于同一次故障：不累加计数、不重复记事件，
                 # 否则一次窗口就能把 max_service_unavailable（30）吃满，任务被误判为"服务持续不可用"。
-                _prev_resume = float((self.state_getter() or {}).get("retry_resume_at") or 0)
-                _window_passed = bool(_prev_resume) and _prev_resume <= time.time()
+                _prev = self.state_getter() or {}
+                _prev_resume = float(_prev.get("retry_resume_at") or 0)
+                # 只有"网页版固定窗口"（retry_note='window'）在窗口过去后才把计数归零；
+                # 提供商模型的 next_retry 语义里，每次重试都是一次新的失败，
+                # 若也归零就会永远到不了 max_service_unavailable（实测死循环）。
+                _window_passed = (str(_prev.get("retry_note") or "") == "window"
+                                  and bool(_prev_resume) and _prev_resume <= time.time())
                 service_failures = 1 if _window_passed else service_failures + 1
                 parse_failures = 0
                 # 异常消息可能为空（实测 httpx 的 ReadTimeout/ConnectError 常是
@@ -1570,6 +1592,32 @@ class AgentRunner:
                                      "retry_attempt": service_failures,
                                      "retry_note": "window"})
                 self.state_saver(**_updates)
+                # ── 挂起（suspend）────────────────────────────────
+                # 只有 Copilot 网页模型才挂起：限流是网页通道的问题，提供商模型有自己的
+                # 429 语义（window_seconds=0，走上面的 next_retry）。
+                # 挂起 = 会话停在"suspended"，不再反复撞墙、不再刷事件；窗口到点由后台
+                # 周期任务自动继续。若用户配了别的提供商模型，界面会在挂起卡片里给
+                # 「换模型继续」，不必等到窗口结束。
+                _is_copilot_model = "/" not in str(model or "")
+                _is_rate_limit = isinstance(exc, CopilotRateLimited)
+                _suspend_on = bool(self.config.get("rate_limit_suspend", True))
+                if _suspend_on and _is_copilot_model and _is_rate_limit and _window is None:
+                    _end = float((self.state_getter() or {}).get("retry_resume_at")
+                                 or (time.time() + self.service_retry_window_seconds))
+                    self.state_saver(
+                        state="suspended", suspend_reason="rate_limit",
+                        retry_resume_at=_end, retry_attempt=service_failures,
+                        last_error=(
+                            f"Copilot 网页限流，已挂起：预计 {time.strftime('%H:%M', time.localtime(_end))} "
+                            "后可自动继续；如果你配了其它提供商模型，也可以现在换模型继续（挂起卡片里选）。"))
+                    b_log = getattr(__import__("cbp.bridge", fromlist=["x"]), "log", None)
+                    if callable(b_log):
+                        try:
+                            b_log(f"会话因 Copilot 限流挂起，预计 {time.strftime('%H:%M', time.localtime(_end))} 恢复")
+                        except Exception:
+                            pass
+                    return AgentResult("Copilot 网页限流，任务已挂起；窗口结束会自动继续，也可换用其它提供商模型立即继续。",
+                                       all_steps)
                 if service_failures >= self.max_service_unavailable:
                     # 用户已请求暂停时不覆盖 paused，只记录原因。
                     if (self.state_getter() or {}).get("state") == "paused":
@@ -1977,6 +2025,15 @@ class AgentRunner:
                         step.update({"status": "error", "error": _err})
                         if tool in _action_tools:
                             self._action_tried = True
+                if step.get("status") == "ok":
+                    # "有进展"= 真的动了文件，或读到了之前没读过的路径
+                    _p = str(arguments.get("path") or arguments.get("destination") or "")
+                    _mutating = str(tool) in _action_tools
+                    if _mutating or (event is not None):
+                        self._turn_dry = False
+                    elif _p and _p not in self._seen_paths:
+                        self._seen_paths.add(_p)
+                        self._turn_dry = False
                 if step.get("status") == "ok" and not duplicate:
                     changed_path = str(arguments.get("path") or arguments.get("destination") or "")
                     # 注意必须含 b64 写入族：提示词要求代码/JSON/HTML 一律用

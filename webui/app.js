@@ -814,6 +814,7 @@ async function loadModels(){
  try{let d=await api('/v1/models'),sel=document.getElementById('model');
   if(!d.data||!d.data.length)return;
   // 只显示可用的：未配 API Key 的提供商模型、菜单扫描没见到的 Copilot 模型不显示
+  window.__MODELS=d.data || [];   // 挂起卡片按"provider/model"筛提供商模型用
   let avail=d.data.filter(m=>m.available!==false);
   if(!avail.length)avail=d.data;  // 兜底：全不可用时不过滤，防止下拉为空
   modelCache=avail.map(m=>m.id);
@@ -2260,7 +2261,42 @@ function updateRetryCountdown(r){
                                      :'⏳ Copilot 限流/不可用，预计恢复';
  box.querySelector('.rc-count').textContent=text;
  let sub=box.querySelector('.rc-sub');
- sub.textContent=`第 ${lastRuntime.retry_attempt||1} 次 · 自动重试中，可点「暂停」稍后继续`;
+ const suspended=String(lastRuntime&&(lastRuntime.session_state||lastRuntime.state)||'')==='suspended';
+ sub.textContent=suspended
+  ? tr('Copilot 网页限流，已挂起：到点自动继续，也可以换下面的提供商模型立即继续')
+  : tr('第 {n} 次 · 自动重试中，可点「暂停」稍后继续',{n:lastRuntime.retry_attempt||1});
+ fillRetrySwap(suspended);
+}
+/* 挂起态：把"已配置的提供商模型"填进下拉（只列 provider/model，不含 Copilot 网页模型） */
+function fillRetrySwap(suspended){
+ const box=document.getElementById('retrySwap');
+ const sel=document.getElementById('retryModel');
+ if(!box||!sel)return;
+ if(!suspended){box.style.display='none';return}
+ let list=[];
+ try{list=(window.__MODELS||[]).filter(m=>String(m.id||'').indexOf('/')>=0&&m.available!==false)}catch(e){}
+ if(!list.length){
+  box.style.display='none';
+  const sub=document.querySelector('#retryCountdown .rc-sub');
+  if(sub)sub.textContent=tr('Copilot 网页限流，已挂起：到点自动继续（没有配置其它提供商模型）');
+  return;
+ }
+ if(!sel.options.length){
+  sel.innerHTML=list.map(m=>`<option value="${esc(m.id)}">${esc(m.id)}</option>`).join('');
+ }
+ box.style.display='flex';
+}
+async function swapModelResume(){
+ const sel=document.getElementById('retryModel');
+ const model=sel&&sel.value;
+ if(!model||!current)return;
+ try{
+  await api(`/v1/agent/sessions/${current}/model`,{method:'POST',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({model})});
+  await api(`/v1/agent/sessions/${current}/actions/resume`,{method:'POST',
+   headers:{'Content-Type':'application/json'},body:'{}'});
+  toast(tr('已切换到 {m} 并继续',{m:model}),'ok');
+ }catch(e){ toast(tr('切换失败: ')+((e&&(e.text||e.detail))||e),'err') }
 }
 /* 收起（×）与展开（点小标） */
 document.getElementById('retryMin').onclick=e=>{
@@ -3844,6 +3880,7 @@ const ACTIONS={
  openCopilot:()=>openCopilot(),
  toggleMore:(el,e)=>toggleMore(el, e),
  openSettings:()=>openSettings(),
+ swapModelResume:()=>swapModelResume(),
  settingsTab:(el)=>{setSettingsTab(el&&el.dataset?el.dataset.arg:'');},
  openWsBrowser:()=>openWsBrowser(''),
  closeSettings:(el)=>{closeSettings();if(el&&el.dataset&&el.dataset.arg==='memory'){try{openMemory()}catch(e){}}},

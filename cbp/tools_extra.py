@@ -64,6 +64,36 @@ _DEFAULT_QUESTION_TIMEOUT = 600       # ask_user_question 默认等待秒数
 
 # ────────────────────────── 工具实现 ──────────────────────────
 
+def similar_task_hint(task: str, siblings: list[dict], threshold: float = 0.55) -> str:
+    """新子任务与已有子代理高度相似时，提示"用 subagent_send 追问"。
+
+    审计依据：pyshot 任务的 3 个只读分析子代理（57/48/49 步）结论高度重叠，
+    本可以一个跑完、另外两个在原上下文里追问——省两次冷启动与汇总。
+    """
+    def grams(text: str) -> set[str]:
+        s = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", str(text or "")).lower()
+        return {s[i:i + 2] for i in range(len(s) - 1)} if len(s) > 3 else set()
+
+    mine = grams(task)
+    if not mine:
+        return ""
+    best, best_score = None, 0.0
+    for sib in siblings or []:
+        other = grams(sib.get("description") or sib.get("title") or "")
+        if not other:
+            continue
+        # 用"包含度"而非 Jaccard：新要求常是原描述的子集（补充一句）
+        score = len(mine & other) / max(1, min(len(mine), len(other)))
+        if score > best_score:
+            best, best_score = sib, score
+    if best and best_score >= threshold:
+        desc = str(best.get("description") or best.get("title") or "")[:60]
+        return (f"已有子代理 {best.get('id')}「{desc}」做过高度相似的任务"
+                f"（相似度 {best_score:.0%}，状态 {best.get('state')}）："
+                "用 subagent_send 在原上下文里继续/追问通常更快；确需独立视角再开新会话。")
+    return ""
+
+
 class _Extra:
     """扩展工具的实现集合；每个公开方法对应一个工具。"""
 
@@ -556,6 +586,21 @@ class _Extra:
                 raise ExtraToolError(f"第 {idx} 项 task 为空")
             plan.append((idx, task, label))
         results, t0 = [], time.time()
+        # 复用提示：父会话下已有高度相似的子代理时，提醒模型可用 subagent_send 追问
+        _sib_hint = ""
+        try:
+            from . import bridge as _b2
+            _parent = str(_b2.current_session() or "")
+            _sibs = [s for s in _b2.AGENT_SESSIONS.list(include_archived=True)
+                     if str(s.get("parent_id") or "") == _parent
+                     and str(s.get("state")) != "cancelled"]
+            for _i, _task, _l in plan:
+                _h = similar_task_hint(_task, _sibs)
+                if _h:
+                    _sib_hint = _h
+                    break
+        except Exception:
+            _sib_hint = ""
         try:
             from . import bridge as _b
             _mdl = model or str((_b.AGENT_SESSIONS.get(_b.current_session()) or {}).get("model") or "")
@@ -597,9 +642,12 @@ class _Extra:
                     if stop_on_error:
                         break
         ok = [r for r in results if r["ok"]]
-        return {"requested": len(items), "succeeded": len(ok), "failed": len(results) - len(ok),
+        _out = {"requested": len(items), "succeeded": len(ok), "failed": len(results) - len(ok),
                 "seconds": round(time.time() - t0, 1), "parallel": bool(_parallel),
                 "concurrency": _cap, "results": results}
+        if _sib_hint:
+            _out["hint"] = _sib_hint
+        return _out
 
     async def subagent_send(self, session_id: str = "", message: str = "",
                             model: str = "", max_steps: int = 0,

@@ -158,6 +158,7 @@ async def lifespan(app):
     else:
         b.log("API 已启动（browser_startup=lazy：首次使用 Copilot 时才启动浏览器）")
     cleanup_task = asyncio.create_task(b.periodic_session_cleanup())
+    suspend_task = asyncio.create_task(periodic_suspend_resume())
     # 插件系统：启动时加载已启用的插件（data/plugins.json 记启停）
     try:
         b.PLUGINS.load_all()
@@ -169,7 +170,8 @@ async def lifespan(app):
     try:
         yield
     finally:
-        pending = [t for t in (boot, cleanup_task, BOOT.get("task")) if t is not None]
+        pending = [t for t in (boot, cleanup_task, suspend_task,
+                              BOOT.get("task")) if t is not None]
         for task in pending:
             task.cancel()
         for task in pending:
@@ -183,6 +185,42 @@ async def lifespan(app):
 
 
 b.ENSURE_BROWSER = ensure_browser   # 桥接层按需拉起浏览器的入口
+
+async def periodic_suspend_resume():
+    """限流挂起的会话：窗口到点后自动继续（受 agent.auto_resume 控制）。
+
+    挂起的目的就是"别在窗口里空转"——由这个 30 秒一次的巡检统一收口，
+    而不是让 runner 在退避循环里逐次撞墙。
+    """
+    while True:
+        try:
+            await asyncio.sleep(30)
+            if not bool(b.AGENT_CFG.get("auto_resume", True)):
+                continue
+            now = time.time()
+            rows = [r for r in b.AGENT_SESSIONS.list(include_archived=True)
+                    if str(r.get("state")) == "suspended"]
+            for row in rows:
+                end = float(row.get("retry_resume_at") or 0)
+                if not end or end > now:
+                    continue
+                sid = row.get("id")
+                try:
+                    await b.resume_session_task(sid)
+                    b.AGENT_SESSIONS.patch(sid, retry_resume_at=None, retry_attempt=0,
+                                           suspend_reason=None,
+                                           last_error="限流窗口已过，已自动继续")
+                    b.log(f"限流窗口结束，自动继续会话 {sid}")
+                except Exception as exc:
+                    b.log(f"挂起会话自动继续失败（{sid}）：{exc}")
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:                     # noqa: BLE001 周期任务不能死
+            try:
+                b.log(f"挂起巡检异常: {exc}")
+            except Exception:
+                pass
+
 
 app = FastAPI(title="Copilot Local Bridge Agent", version="10.2.1", lifespan=lifespan)
 
@@ -491,6 +529,8 @@ CONFIG_SCHEMA: dict[str, dict] = {
     "default_model": {"kind": "str", "group": "exec", "label": "默认模型"},
     "agent.auto_team_enabled": {"kind": "bool", "group": "exec",
                                 "label": "自动派发子代理（待办≥2 且互不重叠时）"},
+    "agent.rate_limit_suspend": {"kind": "bool", "group": "exec",
+                                 "label": "Copilot 限流时挂起（到点自动继续，可换提供商模型）"},
     "agent.todo_nudge_every": {"kind": "int", "min": 0, "max": 200, "group": "exec",
                                "label": "每 N 步提醒模型更新待办（0=关闭）"},
     "agent.subagent_parallel": {"kind": "int", "min": 1, "max": 8, "group": "exec",
@@ -1125,7 +1165,7 @@ async def control(sid: str, action: str):
         raise HTTPException(400, "未知操作")
     prev_state = (b.AGENT_SESSIONS.get(sid) or {}).get("state")
     if action == "resume":
-        if prev_state in {"paused", "waiting", "ready", "failed"}:
+        if prev_state in {"paused", "waiting", "suspended", "ready", "failed"}:
             # 恢复即续跑：直接从检查点拉起 runner，不再需要手动"继续执行"
             was_running = b.lock.locked() and b.ACTIVE_SESSION_ID == sid
             started = await b.resume_session_task(sid)

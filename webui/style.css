@@ -1602,3 +1602,9 @@ html,body{overflow:hidden}
 .todoitem.todo-stale .tic{color:var(--amber, #d97706)}
 .todoitem.todo-stale .ttxt{color:var(--text)}
 .todoitem.todo-stale:hover{background:color-mix(in srgb, var(--amber, #d97706) 16%, transparent)}
+
+/* RC-SWAP: 挂起卡片里的「换提供商模型继续」一行（下拉 + 按钮）。 */
+.rc-swap{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.rc-swap select{flex:1 1 140px;min-width:0;height:28px;font-size:12px;padding:0 6px;
+  border:1px solid var(--line2);border-radius:7px;background:var(--input-bg);color:var(--text)}
+.rc-swap .btn{height:28px;padding:0 10px;font-size:12px}
