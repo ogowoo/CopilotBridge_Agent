@@ -1579,3 +1579,26 @@ html,body{overflow:hidden}
     border-bottom:1px solid var(--line);padding:8px}
   .setnavbtn{width:auto;padding:6px 10px}
 }
+
+/* TODO-HOVER: 待办条目逐行加 hover 高亮 + 按状态分色。
+   之前"已完成"统一用 --text 同色、无 hover，9 条看上去一模一样（用户反馈不好看）。 */
+.todoitem{padding:3px 7px;border-radius:7px;transition:background-color .12s ease,color .12s ease}
+.todoitem:hover{background:color-mix(in srgb, var(--accent) 9%, transparent)}
+/* 已完成：文字略淡（仍满足对比度），对勾用绿；hover 时提亮文字 */
+.todoitem.todo-completed .ttxt{color:var(--muted);opacity:1}
+.todoitem.todo-completed:hover .ttxt{color:var(--text)}
+.todoitem.todo-completed .tic{color:color-mix(in srgb, var(--green) 72%, var(--text))}
+/* 待办：正常文字 + 空心点 */
+.todoitem.todo-pending .ttxt{color:var(--text)}
+.todoitem.todo-pending .tic{color:var(--faint)}
+/* 进行中：整行底色 + 左侧色条 + 加粗 */
+.todoitem.todo-in_progress{background:color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:inset 2px 0 0 var(--accent)}
+.todoitem.todo-in_progress:hover{background:color-mix(in srgb, var(--accent) 18%, transparent)}
+.todoitem.todo-in_progress .tic{color:var(--accent)}
+.todoitem.todo-in_progress .ttxt{color:var(--text);font-weight:600}
+/* 未同步（会话已结束但没勾完）：琥珀，提示"该更新了" */
+.todoitem.todo-stale{background:color-mix(in srgb, var(--amber, #d97706) 10%, transparent)}
+.todoitem.todo-stale .tic{color:var(--amber, #d97706)}
+.todoitem.todo-stale .ttxt{color:var(--text)}
+.todoitem.todo-stale:hover{background:color-mix(in srgb, var(--amber, #d97706) 16%, transparent)}

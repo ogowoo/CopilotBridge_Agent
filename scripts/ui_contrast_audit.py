@@ -38,6 +38,7 @@ TARGETS = [
     # 下面两条是"展开后才存在"的元素 —— 以前只在暗色下看过，浅色主题里
     # 变量名写错（--term-fg vs --term-text）导致白底白字，肉眼才发现。
     (".kpi.kpi-state b", 3.0, "KPI 状态大字（大字号阈值 3.0）"),
+    (".todoitem .ttxt", 4.5, "待办条文字"),
     (".streamstep details pre", 4.5, "步骤详情 JSON（展开态）"),
     (".md-codewrap pre", 4.5, "代码块（Markdown）"),
 ]
@@ -124,6 +125,8 @@ def main() -> int:
             if sid:
                 page.evaluate(f"load({json.dumps(sid)})")
             page.evaluate("()=>{try{toast('对比度探针','ok');}catch(e){}}")
+            # 待办条默认是收起的；不展开的话 `.todoitem .ttxt` 这类目标永远量不到（"—"）
+            page.evaluate("()=>{try{if(!todosOpen)toggleTodos()}catch(e){}}")
             page.wait_for_timeout(500)
             res = page.evaluate(JS, TARGETS)
             report[name] = res
