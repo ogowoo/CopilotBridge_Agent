@@ -1071,8 +1071,26 @@ function stepFilterInput(el){
  stepFilter[which==='status'?'status':'tool']=el.value||'';
  stepFilterKey=JSON.stringify(stepFilter);
  renderSteps(lastSteps,true)}
+/* 连续的"服务限流/超时"（transient）合成一行：
+   pyshot 任务里这类记录有 105 条（占全部事件 21%），逐条铺开会让时间线看着像全在失败，
+   而它们既不是模型的错、也不消耗步数预算。 */
+function collapseTransient(steps){
+ const out=[];
+ (steps||[]).forEach(s=>{
+  if(s&&s.transient){
+   const last=out[out.length-1];
+   if(last&&last._mergedTransient){last.times=(last.times||1)+1;
+     last.reason=tr('服务限流/超时，自动重试 {n} 次（不计步）',{n:last.times});return}
+   out.push({status:'info',tool:'',transient:true,_mergedTransient:true,times:1,
+             _time:s._time,reason:tr('服务限流/超时，自动重试 {n} 次（不计步）',{n:1})});
+   return;
+  }
+  out.push(s);
+ });
+ return out;
+}
 function renderSteps(steps,force){
- lastSteps=steps||[];
+ lastSteps=collapseTransient(steps||[]);
  const box=document.getElementById('steps');
  const filtered=!!(stepFilter.tool||stepFilter.status);
  const shown=lastSteps.filter(stepMatch);

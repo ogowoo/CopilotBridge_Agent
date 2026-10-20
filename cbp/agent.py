@@ -1484,7 +1484,9 @@ class AgentRunner:
                 # 空字符串），那样步骤里就只剩"（第 N 次）："什么都看不到——退化成
                 # 类名，保证用户至少知道是哪类错误。
                 reason = str(exc).strip()[:300] or f"{type(exc).__name__}（无详细消息）"
-                step = {"step": total + 1, "status": "service_unavailable",
+                # transient=True：这类记录不是模型的失败，也不消耗步数预算；
+                # 前端把连续的若干条合成一行「服务限流/超时（重试 N 次）」。
+                step = {"step": total + 1, "status": "service_unavailable", "transient": True,
                         "error": f"服务暂时不可用（第 {service_failures} 次）：{reason}"}
                 all_steps.append(step); self.step_saver(step)
                 # 退避期间状态置 waiting（前端显示"等待服务"）；用户已暂停时不抢状态。
@@ -1565,6 +1567,15 @@ class AgentRunner:
                 _msg = str(exc)
                 if not _msg.startswith(_src):
                     _msg = f"{_src}{_msg}"
+                # 解析失败的提示要**可操作**：实测 37 次里多数是"回了一段解释/计划
+                # 或多个 JSON 混排"。这里补上最小示例与相关工具名，让下一回合能直接纠正。
+                _msg = (_msg.rstrip() + "\n\n【如何纠正】下一次回复**只**输出一个 JSON 对象，"
+                        "不要任何解释、不要代码围栏、不要多个对象并列。例："
+                        '{"type":"tool","tool":"read_text","arguments":{"path":"REL/PATH","line_start":1,'
+                        '"line_count":80},"reason":"看实现"}。'
+                        "常用工具名：list_directory / read_text / grep / find_files / replace_text / "
+                        "write_text_b64 / validate_python / run_unittest / todo_write / pwsh。"
+                        '整个任务做完才用 {"type":"final","markdown":"结论"}。')
                 step = {"step": total + 1, "status": "invalid_action", "error": _msg,
                         "raw_tail": (raw or "")[-2000:]}
                 history.append(step); all_steps.append(step); self.step_saver(step)
@@ -1707,11 +1718,32 @@ class AgentRunner:
                 # 实测：提供商模型会在"写码→验证→再验证"间无限循环，601 步仍未 final。
                 # 判据：最近 12 步内出现过同一 (tool, arguments) 签名 ≥2 次。
                 _sig = tool + "|" + json.dumps(arguments, sort_keys=True, ensure_ascii=False)
-                _recent = [_s for _s in history[-12:] if _s.get("status") == "ok"]
+                # 只读工具的"重复"不是无进展：换会话后模型需要重新定位（pyshot 实测
+                # list_directory 被拦 92 次、每次白花一个 81 秒的回合）。这里直接回放
+                # 缓存结果，让模型拿到数据继续干活，同时**不进**无进展判定。
+                _ro_name = str(tool) in tuple(
+                    getattr(__import__("cbp.tools", fromlist=["x"]), "READ_ONLY_TOOLS", ()))
+                # 与后面执行分支同一个 hash 算法（此处还不能用 _dispatch_hash，它后面才算）
+                _sig_hash = hashlib.sha1(json.dumps(arguments, ensure_ascii=False,
+                                                   sort_keys=True).encode("utf-8")).hexdigest()[:16]
+                if _ro_name:
+                    _ro_hit = (getattr(self, "_ro_results", None) or {}).get((str(tool), _sig_hash))
+                    if _ro_hit is not None:
+                        _cst = {"step": total + 1, "status": "ok", "tool": str(tool),
+                                "arguments": arguments, "cached": True,
+                                "reason": "同一只读动作重复调用：直接回放上次结果（未再执行）",
+                                "result": _ro_hit}
+                        history.append(_cst); all_steps.append(_cst); self.step_saver(_cst)
+                        total += 1
+                        self.state_saver(total_steps=total,
+                                         recent_steps=history[-self.keep_recent:])
+                        continue
+                _recent = [_s for _s in history[-12:]
+                           if _s.get("status") == "ok" and not _s.get("cached")]
                 _seen = sum(1 for _s in _recent
                             if (_s.get("tool") or "") + "|" + json.dumps(
                                 _s.get("arguments") or {}, sort_keys=True, ensure_ascii=False) == _sig)
-                if _seen >= 3:
+                if _seen >= 3 and not _ro_name:
                     step = {"step": total + 1, "status": "no_progress",
                             "error": f"检测到无进展循环：动作 {tool} 已重复 {_seen + 1} 次仍无进展，任务停止",
                             "tool": tool, "arguments": arguments}
@@ -1722,7 +1754,7 @@ class AgentRunner:
                     return AgentResult(
                         f"任务因无进展循环被停止：{tool} 重复 {_seen + 1} 次。"
                         f"建议改用更强的模型或把任务拆小。", all_steps)
-                if _seen == 2:
+                if _seen == 2 and not _ro_name:
                     # 第一次只警告（给模型换策略的机会），并把提示塞进上下文
                     warn = {"step": total + 1, "status": "no_progress_warning",
                             "error": f"动作 {tool} 已重复 {_seen} 次且无进展：请立刻改变策略，"
@@ -1762,6 +1794,24 @@ class AgentRunner:
                             self._repeat_counts = {}
                         self._repeat_counts[_rep_key] = _rep_n
                         _REPEAT_LIMIT = int(self.config.get("repeat_guard_limit", 3) or 3)
+                        # 只读工具重复**不该被拦**：它幂等、模型通常是在会话切换后重新
+                        # 定位（pyshot 实测：list_directory 被拦 92 次，每次都白花一个
+                        # Copilot 回合，平均 81 秒/回合）。缓存还在就直接回放上次结果。
+                        _ro_cache = getattr(self, "_ro_results", None) or {}
+                        _ro_tools = tuple(getattr(__import__("cbp.tools", fromlist=["x"]),
+                                                  "READ_ONLY_TOOLS", ()))
+                        if _rep_n > _REPEAT_LIMIT and str(tool) in _ro_tools:
+                            _cached = _ro_cache.get(_rep_key)
+                            if _cached is not None:
+                                _cst = {"step": total + 1, "status": "ok", "tool": str(tool),
+                                        "reason": "同一只读动作重复调用：直接回放第 %d 次的缓存结果"
+                                                  "（未再执行，内容一模一样）" % (_rep_n - 1),
+                                        "result": _cached, "cached": True}
+                                history.append(_cst); all_steps.append(_cst); self.step_saver(_cst)
+                                total += 1
+                                self.state_saver(total_steps=total,
+                                                 recent_steps=history[-self.keep_recent:])
+                                continue
                         if _rep_n > _REPEAT_LIMIT and str(tool) not in ("validate_python", "run_unittest"):
                             _hint = ("同一动作（工具与参数完全相同）已做过 %d 次仍无进展，就不要再重复它。"
                                      % (_rep_n - 1))
@@ -1838,6 +1888,15 @@ class AgentRunner:
                                 result["spill"] = _spill
                             step["spill"] = _spill
                         step.update({"status": "ok", "result": result})
+                        # 只读结果留一份缓存，供"重复调用"时回放（见上面的 repeat 分流）
+                        try:
+                            if str(tool) in tuple(getattr(__import__("cbp.tools", fromlist=["x"]),
+                                                         "READ_ONLY_TOOLS", ())):
+                                if not hasattr(self, "_ro_results"):
+                                    self._ro_results = {}
+                                self._ro_results[_rep_key] = result
+                        except Exception:
+                            pass
                         # 计划模式：提交方案就结束本轮（模型不一定听话地返回 final，
                         # 实测它提交完会继续动手执行——那等于计划模式没起作用）。
                         if tool == "exit_plan_mode" and isinstance(result, dict) and result.get("ok"):

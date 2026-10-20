@@ -675,6 +675,7 @@ Object.assign(I18N_EN, {
   "数据": "Data",
   "设置": "Settings",
   "外观": "Appearance",
+  "服务限流/超时，自动重试 {n} 次（不计步）": "Rate limited / timed out; auto-retried {n} times (not counted)",
   "设置分组": "Settings sections",
  "每次操作都询问": "Ask every time",
  "本会话内不再逐次询问": "Ask once per session",
