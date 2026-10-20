@@ -9,8 +9,12 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(r"C:\Tools\Test4All\CopilotBridge_Agent")
-sys.path.insert(0, str(ROOT))
+# 从本文件位置推导安装目录：**绝不能写死绝对路径**——写死的那版在别人机器上
+# 直接 FileNotFoundError，导致「静态文案都有英文键」这个不变量在任何非作者机器上
+# 必然失败（实测：同步后全套测试 1 例失败，错误里还带着作者机器的路径）。
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def check() -> list[str]:
