@@ -1222,3 +1222,11 @@ html,body{overflow:hidden}
 .sess .sstat svg .spin{transform-origin:8px 8px;animation:spin 1.6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.sess .sstat svg .spin{animation:none}}
+/* ── 步骤时间线页：铺满父卡片剩余高度并自己滚动 ─────────────────────────
+   实测（1714×961）：卡片 638px 高，但 #timeline 只有 461px —— 因为
+   `.livepane{max-height:38vh}` 之类的上限把它卡在 48vh，而且 overflow:hidden，
+   于是"最大化后时间线还是只显示一小块、还不能滚"。
+   时间线是这一页的主体内容，应该 flex:1 铺满、内容超出时自己滚。 */
+#timeline.timelinepane{flex:1 1 0%;min-height:0;max-height:none;overflow:auto}
+/* 同样按"铺满"处理的还有被合并进来的回答/提示词页（它们是 pre，保持可滚） */
+#answer.livepane,#prompt.livepane{flex:1 1 0%;min-height:0;max-height:none;overflow:auto}
