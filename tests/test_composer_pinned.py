@@ -42,9 +42,20 @@ class DshStructureTests(unittest.TestCase):
         i_chat_end = HTML.index("<!--", i_comp) if False else i_end
         self.assertTrue(i_comp > i_chat, "结构上 composer 已在 #chat 之后")
 
-    def test_css_pins_composer_as_flex_item(self):
-        self.assertRegex(CSS, r"\.main\s*>\s*\.composer\{[^}]*flex:none",
-                         "composer 必须是 .main 的 flex 子项（flex:none）")
+    def test_css_pins_composer_inside_main(self):
+        """composer 必须在 .main 内常驻可见。
+
+        历史：先在 `f80841e` 里改成 flex 子项（`flex:none`），随后 `1f2d0cc`
+        又照 DSH 重做成**浮动框**（`position:absolute; bottom:…`）——测试没跟上。
+        现在的约束是：① 是 `.main` 的直接子项；② 用 absolute 定位（不是 fixed，
+        fixed 会脱离布局、压住滚动内容）。
+        """
+        m = re.search(r"\.main\s*>\s*\.composer\{([^}]*)\}", CSS)
+        self.assertIsNotNone(m, "composer 必须是 .main 的直接子项")
+        body = m.group(1).replace(" ", "")
+        self.assertIn("position:absolute", body,
+                      "浮动输入框应相对 .main 绝对定位")
+        self.assertNotIn("position:fixed", body, "不要用 fixed（会压住滚动内容）")
         self.assertNotRegex(CSS, r"#chat \.composer\{[^}]*position:fixed",
                             "不要再把输入框做成 fixed 浮层（会压住内容）")
 

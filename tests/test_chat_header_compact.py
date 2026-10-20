@@ -31,11 +31,16 @@ CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
 
 class ChatHeaderCompactionTests(unittest.TestCase):
     def test_secondary_head_buttons_moved_to_menu(self):
-        self.assertIn('id="chatMoreMenu"', HTML)
-        menu = HTML[HTML.index('id="chatMoreMenu"'):]
+        """面板附加操作（初始提示词 / 最近发送 / 放大）应进 ⋯ 菜单。
+
+        注：最终实现把它们并进了 **chatbar 的 `chatActMenu`**（与导出/搜索/插入同一个 ⋯），
+        并没有单独的 `chatMoreMenu`——测试这里按真实 id 断言。
+        """
+        self.assertIn('id="chatActMenu"', HTML)
+        menu = HTML[HTML.index('id="chatActMenu"'):]
         menu = menu[:menu.index("</div></div>")]
         for act in ("showPromptView", "showLastPrompt", "expandLive"):
-            self.assertIn(act, menu, f"{act} 应放进面板 ⋯ 菜单")
+            self.assertIn(act, menu, f"{act} 应放进 ⋯ 菜单")
 
     def test_chat_actions_moved_to_menu(self):
         self.assertIn('id="chatActMenu"', HTML)
