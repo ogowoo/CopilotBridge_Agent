@@ -350,6 +350,23 @@ Object.assign(I18N_EN, {
   "会话列表（展开/收起）": "Sessions (expand / collapse)",
   // 窄屏抽屉的遮罩（点一下关闭）
   "关闭会话列表": "Close session list",
+  // 授权横幅（一次性 / 本会话）与终止服务确认框
+  "属于不可回滚操作；授权仅对本会话有效（会话结束即失效）":
+    "is not reversible; the approval lasts for this session only (cleared when the session ends)",
+  "属于不可回滚操作；授权仅对这一次执行有效（用后即焚）":
+    "is not reversible; the approval covers this single run only (burned after use)",
+  "已授权并继续执行（本会话内不再逐次询问）":
+    "Approved, resuming (no further prompts within this session)",
+  "即将终止本服务（进程退出）：": "About to stop this service (the process will exit):",
+  "正在运行的任务会中断（状态已落库，重启后可恢复）":
+    "Running tasks will be interrupted (state is saved and can be resumed after restart)",
+  "自动化浏览器会被关闭，本页面随即断开":
+    "The automation browser will close and this page will disconnect",
+  "需要时重新运行 start.py 启动服务": "Run start.py again when you need the service back",
+  // 中断类提醒（需要授权 / 等待回答 / 需要人工处理）
+  "需要授权：": "Needs approval: ",
+  "等待你的回答": "Waiting for your answer",
+  "任务已暂停，等待你处理": "Task paused, waiting for you",
   "重启服务": "Restart service",
   // 待办（todo_write 维护的清单，区别于 /plan 计划模式）
   "待办": "Todo",

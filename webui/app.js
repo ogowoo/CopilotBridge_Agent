@@ -74,6 +74,40 @@ function hideConnBanner(){const el=document.getElementById('connBanner');if(el)e
    后端在需要授权时把会话置为 waiting 并写入 approval_pending{tool,args_hash}。
    没有这个入口，用户只能手工 curl —— 审批功能等于不可用。 */
 let approvalSeen=null;
+/* ── 中断提醒的"抢注意力"──
+   需要授权/等待回答这类中断没人理，整个任务就停在那里；用户实测"晚了好久才回答"。
+   这里做三件事（都不阻塞、不需要额外权限）：
+   ① 横幅本身发光/呼吸（CSS .needs-attn）；
+   ② 浏览器标签标题闪烁「⚠ 需要授权」,用户切回来/处理完就恢复；
+   ③ 页面在后台时用 WebAudio 轻响一声（首次交互后才允许，失败静默）。 */
+let _titleTimer=null, _titleBase=null;
+function pingInterrupt(text){
+ try{
+  if(_titleTimer)clearInterval(_titleTimer);
+  _titleBase=_titleBase||document.title;
+  const hit='⚠ '+String(text||'').slice(0,24);
+  let flip=false;
+  _titleTimer=setInterval(()=>{document.title=flip?hit:_titleBase;flip=!flip},900);
+  // 处理完（横幅消失）由 clearInterruptPing 恢复
+ }catch(e){}
+ try{ if(document.hidden) beepOnce() }catch(e){}
+}
+function clearInterruptPing(){
+ try{ if(_titleTimer){clearInterval(_titleTimer);_titleTimer=null;document.title=_titleBase||document.title} }catch(e){}
+ try{ document.querySelectorAll('.needs-attn').forEach(x=>x.classList.remove('needs-attn')) }catch(e){}
+}
+let _audioCtx=null;
+function beepOnce(){
+ try{
+  _audioCtx=_audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+  const t=_audioCtx.currentTime, o=_audioCtx.createOscillator(), g=_audioCtx.createGain();
+  o.type='sine';o.frequency.setValueAtTime(880,t);
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.08,t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.35);
+  o.connect(g);g.connect(_audioCtx.destination);o.start(t);o.stop(t+0.36);
+ }catch(e){}
+}
+
 let approvalDismissed=null;   // 用户点过「暂不授权」的 key：同一个待授权不再自动弹出
 function showApprovalBar(p,scope){
  let el=document.getElementById('approvalBar');
@@ -92,10 +126,10 @@ function showApprovalBar(p,scope){
   const span=document.createElement('span');
   const _sess=scope==='session';
   span.textContent=tr('需要授权：')+p.tool+( _sess
-    ? ' 属于不可回滚操作；授权仅对本会话有效（会话结束即失效）'
-    : ' 属于不可回滚操作；授权仅对这一次执行有效（用后即焚）');
+    ? ' '+tr('属于不可回滚操作；授权仅对本会话有效（会话结束即失效）')
+    : ' '+tr('属于不可回滚操作；授权仅对这一次执行有效（用后即焚）'));
   const btn=document.createElement('button');
-  btn.className='btn accent';btn.type='button';btn.textContent='授权执行';
+  btn.className='btn accent';btn.type='button';btn.textContent=tr('授权执行');
   btn.onclick=async()=>{
    btn.disabled=true;btn.textContent=tr('授权中…');
    try{
@@ -103,14 +137,19 @@ function showApprovalBar(p,scope){
               {method:'POST',headers:{'Content-Type':'application/json'},
                body:JSON.stringify({tool:p.tool,args_hash:p.args_hash||'',scope:_sess?'session':'once'})});
     await api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/resume`,{method:'POST'});
-    toast(tr('已授权并继续执行（该授权仅对这一次操作有效）'),'ok');
-    el.style.display='none';approvalSeen=null;await runtime();
+    toast(_sess?tr('已授权并继续执行（本会话内不再逐次询问）')
+               :tr('已授权并继续执行（该授权仅对这一次操作有效）'),'ok');
+    el.style.display='none';approvalSeen=null;clearInterruptPing();await runtime();
    }catch(e){btn.disabled=false;btn.textContent=tr('授权执行');toast(tr('授权失败: ')+(e.text||e),'err')}};
   const no=document.createElement('button');
   no.className='btn ghost';no.type='button';no.textContent=tr('暂不授权');
-  no.onclick=()=>{el.style.display='none';approvalDismissed=key};   // 记住这次拒绝
+  no.onclick=()=>{el.style.display='none';approvalDismissed=key;
+    clearInterruptPing()};   // 记住这次拒绝；用户已确认看到，停止闪烁
   el.appendChild(span);el.appendChild(btn);el.appendChild(no)}
- el.style.display='flex'}
+ el.style.display='flex';
+ // 抢注意力：中断类提醒（需要授权）错过就会卡住整个任务，必须显眼
+ try{el.setAttribute('role','alert');el.classList.add('needs-attn');
+  el.scrollIntoView({block:'nearest'});pingInterrupt(tr('需要授权：')+p.tool)}catch(e){}}
 
 /* ── Agent 中途提问（ask_user_question 的 UI 入口）────────────────────
    工具阻塞等待 /answer；用户在这里填答案时任务暂停，提交后继续。 */
@@ -146,20 +185,22 @@ function showQuestionBar(q){
                body:JSON.stringify({answer:inp.value})});
     questionAnswered.add(questionKey(q));
     toast(tr('已提交回答，任务继续'),'ok');
-    el.style.display='none';questionSeen=null;await runtime();
+    el.style.display='none';questionSeen=null;clearInterruptPing();await runtime();
    }catch(e){
     // 404/409 = 已经没有挂起提问（重复提交、或已在别处答过）：不是错误，
     // 直接把提问条收掉并记账，避免它永远挂在界面上。
     const _msg=String((e&&(e.text||e.message))||e||'');
     if((e&&(e.status===404||e.status===409))||/没有等待回答|no pending/i.test(_msg)){
      questionAnswered.add(questionKey(q));
-     el.style.display='none';questionSeen=null;
+     el.style.display='none';questionSeen=null;clearInterruptPing();
      toast(tr('该提问已回答或已过期，已收起'),'ok');await runtime();return}
     ok.disabled=false;ok.textContent=tr('提交回答');toast(tr('提交失败: ')+_msg,'err')}};
   ok.onclick=submit;
   inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();submit()}};
   el.appendChild(span);el.appendChild(inp);el.appendChild(ok)}
- el.style.display='flex'}
+ el.style.display='flex';
+ try{el.setAttribute('role','alert');el.classList.add('needs-attn');
+  el.scrollIntoView({block:'nearest'});pingInterrupt(tr('等待你的回答'))}catch(e){}}
 
 /* ── 子代理面板（看到有哪些子代理、在跑什么、进度到哪）──────────────
    数据来自 GET /v1/agent/subagents；点一行可切到该子会话查看详情。 */
@@ -3590,11 +3631,11 @@ function showBoot(state,ready,err){
 let serviceStopped=false;
 async function shutdownService(){
  if(!await dlgConfirm(
-   '即将终止本服务（进程退出）：\n\n'
-   +'· 正在运行的任务会中断（状态已落库，重启后可恢复）\n'
-   +'· 自动化浏览器会被关闭，本页面随即断开\n'
-   +'· 需要时重新运行 start.py 启动服务\n\n'
-   +'确定终止？',tr('终止服务'),true))return;
+  tr('即将终止本服务（进程退出）：')+'\n\n'
+  +'· '+tr('正在运行的任务会中断（状态已落库，重启后可恢复）')+'\n'
+  +'· '+tr('自动化浏览器会被关闭，本页面随即断开')+'\n'
+  +'· '+tr('需要时重新运行 start.py 启动服务')+'\n\n'
+  +tr('确定终止？'),tr('终止服务'),true))return;
  try{
   const d=await api('/v1/shutdown',{method:'POST'});
   showStopped(d?noteText(d,''):'');

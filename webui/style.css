@@ -1638,3 +1638,20 @@ html,body{overflow:hidden}
 .subagentrow.subagentback{border-bottom:1px dashed var(--line2);margin-bottom:4px;
   padding-bottom:6px;color:var(--accent);cursor:pointer}
 .subagentrow.subagentback:hover{background:var(--hover,rgba(0,0,0,.04))}
+/* ── 中断类提醒要显眼（需要授权 / 等待回答）────────────────────────────
+   这类提醒没人理，任务就停在那里；用户实测"晚了好久才回答"。
+   做法：左侧粗色条 + 呼吸发光 + 粘在内容区顶部（滚动时不跑掉）。 */
+.approvalbar,.questionbar{position:sticky;top:0;z-index:35;
+  box-shadow:0 6px 18px -10px rgba(0,0,0,.5)}
+.approvalbar.needs-attn,.questionbar.needs-attn{
+  border-left:5px solid var(--amber);
+  animation:attn 1.6s ease-in-out infinite}
+.questionbar.needs-attn{border-left-color:var(--accent)}
+@keyframes attn{
+  0%,100%{box-shadow:0 6px 18px -10px rgba(0,0,0,.5),0 0 0 0 rgba(210,153,34,0)}
+  50%{box-shadow:0 6px 18px -10px rgba(0,0,0,.5),0 0 0 6px rgba(210,153,34,.28)}}
+@media (prefers-reduced-motion: reduce){
+  .approvalbar.needs-attn,.questionbar.needs-attn{animation:none;
+    outline:2px solid var(--amber);outline-offset:2px}}
+/* 「需要授权」这类字样加粗，扫一眼就能看到 */
+.approvalbar .qtext,.questionbar .qtext{font-weight:600}
