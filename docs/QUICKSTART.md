@@ -2,6 +2,18 @@
 
 > 目标：**5 分钟内**从零跑到第一个任务。更细的说明看 [README](../README.md)。
 
+## 一页图（可直接保存/转发）
+
+| 简体中文 | 繁體中文 | English |
+|---|---|---|
+| ![简体](quickstart-zh.png) | ![繁體](quickstart-zh-TW.png) | ![English](quickstart-en.png) |
+
+- 简体：[quickstart-zh.png](quickstart-zh.png)
+- 繁體：[quickstart-zh-TW.png](quickstart-zh-TW.png)
+- English：[quickstart-en.png](quickstart-en.png)
+
+> 图由 `python scripts/make_quickstart_card.py` 生成（改文案后重跑即可）。
+
 ## 1. 准备
 
 - Windows 10/11（其他系统把 `config.json` 的 `browser_channel` 改成 `chrome`）

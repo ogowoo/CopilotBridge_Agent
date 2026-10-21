@@ -13,7 +13,8 @@
                      └─ /ui                       内置 Web 管理台
 ```
 
-> **只想赶紧跑起来**：看 [一页版快速手册](docs/QUICKSTART.md)（安装 → 登录 → 启动 → 第一个任务）。
+> **只想赶紧跑起来**：看 [一页版快速手册](docs/QUICKSTART.md)（安装 → 登录 → 启动 → 第一个任务），
+> 也可以直接存一张图：[简体](docs/quickstart-zh.png) ｜ [繁體](docs/quickstart-zh-TW.png) ｜ [English](docs/quickstart-en.png)（`python scripts/make_quickstart_card.py` 可重新生成）。
 > 细一步的：看下面 **快速开始**（4 条命令）→ **操作手册**（WebUI 怎么用、AGENT.md/skills 怎么写、怎么回滚、怎么自升级、故障排查）。
 
 ## 功能特性
