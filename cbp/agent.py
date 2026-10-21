@@ -13,8 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from .prompt import (AGENT_PROTOCOL, AGENT_TEAM, DELIVERABLE_RULE, PromptRegistry,
-                     FILE_OPS_RULE)
+from . import prompt_lang
+from .prompt import (PromptRegistry, agent_protocol, agent_team, deliverable_rule,
+                     file_ops_rule, language_directive)
 from .spans import set_recorder, span
 from .tools import ToolRegistry
 
@@ -185,7 +186,8 @@ class AgentRunner:
         # copilot_attach / copilot_file 只在浏览器（Copilot 网页）会话可用。
         # provider 会话里不能提这两个工具名，否则模型会照着提示词去调用
         # （实测：提供商会话里 copilot_file 连续失败 10 次纯烧回合）。
-        if self.tools.web_copilot_allowed():
+        _web_allowed = bool(self.tools.web_copilot_allowed())
+        if _web_allowed:
             _routing = ("只需分析（总结/找问题/提取信息）的大文件（约 20000 字符以上）优先用 "
                         "copilot_attach 丢给 Copilot 分析，一个回合搞定，不要逐段翻页；\n"
                         "产出**新文件**（脚本/页面/工具/demo/文档）优先用 copilot_file(path, instruction) "
@@ -201,7 +203,8 @@ class AgentRunner:
         # 分段装配（P2-9）：协议 / 工具清单 / 自升级 / 工作区上下文。
         # 分隔符为空串且顺序与原拼接一致，因此输出**逐字不变**（有 golden 比对守着）。
         reg = PromptRegistry()
-        reg.add("protocol", AGENT_PROTOCOL, order=-1000)
+        reg.add("language", language_directive, order=-2000)   # 回答语言由它决定，放最前
+        reg.add("protocol", agent_protocol, order=-1000)
         # 文件操作只用 Python 系工具，禁止拿 shell 改文件：
         # PowerShell 的 Get-Content -Raw / Set-Content -Encoding utf8 会破坏 UTF-8
         # 源码（实测把中文写成 "é¦–è½®æ…" 这类乱码，只能整篇重写）。文件工具本身
@@ -212,19 +215,26 @@ class AgentRunner:
         if _pwsh_ready:
             reg.add("tools", json.dumps(self.tools.descriptions(only=self._active_tool_names()),
                                         ensure_ascii=False), order=100)
-            reg.add("file_ops", FILE_OPS_RULE, order=120)
+            reg.add("file_ops", file_ops_rule, order=120)
         else:
             reg.add("tools", json.dumps(self.tools.descriptions(only=self._active_tool_names()),
                                         ensure_ascii=False), order=100)
         reg.add("tools", json.dumps(self.tools.descriptions(only=self._active_tool_names()),
                                     ensure_ascii=False), order=100)
         # 交付物表述（"已在本地工作区"而不是"可下载"）：与 pwsh 是否可用无关，统一注入
-        reg.add("deliverable", DELIVERABLE_RULE, order=125)
+        reg.add("deliverable", deliverable_rule, order=125)
         # 任务分工（子代理）：只在工具面里含 subagent 时才注入，避免不可用时误导模型
         if "subagent" in self._active_tool_names():
-            reg.add("team", AGENT_TEAM, order=150)
+            reg.add("team", agent_team, order=150)
         reg.add("self_upgrade", self._self_upgrade_rules(), order=200)
         reg.add("workspace", self._workspace_context(), order=300)
+        # 分流那句也随提示词语言变（英文/繁体时不至于整段提示词只有这一句是中文）
+        try:
+            from . import prompt as _pm
+            _routing = prompt_lang.routing_text(
+                _web_allowed, _routing, prompt_lang.effective_lang(_pm._cfg_lang()))
+        except Exception:
+            pass
         return reg.render(variables={"CBP_FILE_ROUTING": _routing})
 
     def _first_turn_copilot_hint(self) -> bool:

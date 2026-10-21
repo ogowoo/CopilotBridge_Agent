@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from playwright.async_api import async_playwright
 from . import i18n as backend_i18n
+from . import prompt_lang
 
 from . import bridge as b
 from . import copilot_delete as cd
@@ -236,6 +237,18 @@ def _lang_of(request) -> str:
 # ── 错误文案本地化：全局异常处理器按 X-CBP-Lang 翻译 detail ─────────────
 # 只改**展示**：日志、协议、模型看到的仍是中文原文（评测与协议绑定）。
 _LANG_HEADER = "X-CBP-Lang"
+
+
+# ── 提示词语言：每个请求按 X-CBP-Lang 设一次 contextvar ──────────────────
+# 由它决定发给模型的提示词用简体/繁體/English（见 cbp/prompt_lang.py）。
+# 放在中间件里设，端点与它创建的后台任务（asyncio 任务继承 context）都能读到。
+@app.middleware("http")
+async def _prompt_lang_middleware(request: HttpRequest, call_next):
+    try:
+        prompt_lang.set_request_lang(request.headers.get(_LANG_HEADER) or "zh")
+    except Exception:
+        pass
+    return await call_next(request)
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -519,7 +532,10 @@ async def set_sandbox(payload: dict | None = None):
 # 只允许改「有明确语义、不会把服务搞挂」的键；api_token 这类敏感项只读且打码。
 CONFIG_SCHEMA: dict[str, dict] = {
     # 外观/界面（前端本地保存，这里只登记，便于设置页统一展示）
-    "sandbox_mode": {"kind": "enum", "values": ["read-only", "workspace-write",
+    # 提示词语言：决定发给模型的规则用什么语言写（auto = 跟随界面语言）
+  "agent.prompt_language": {"kind": "enum", "values": ["auto", "zh", "tw", "en"],
+                            "label": "提示词语言", "group": "exec"},
+  "sandbox_mode": {"kind": "enum", "values": ["read-only", "workspace-write",
                                                 "danger-full-access"],
                      "group": "exec", "label": "权限档位（工具能改什么）"},
     "browser_startup": {"kind": "enum", "values": ["lazy", "eager"], "group": "browser",
@@ -1353,7 +1369,9 @@ async def search_messages(q: str = "", limit: int = 30):
 
 
 @app.post("/v1/agent/sessions/{sid}/messages")
-async def continue_session_message(sid: str, req: SessionMessageRequest):
+async def continue_session_message(sid: str, req: SessionMessageRequest,
+                                  request: HttpRequest = None):
+    prompt_lang.set_request_lang(request.headers.get(_LANG_HEADER) if request is not None else None)
     state = b.AGENT_SESSIONS.get(sid)
     if not state:
         raise HTTPException(404, "Session 不存在")
@@ -1828,7 +1846,8 @@ def _map_agent_error(exc: Exception) -> Exception:
 
 
 @app.post("/v1/agent/completions")
-async def agent_completions(req: AgentRequest):
+async def agent_completions(req: AgentRequest, request: HttpRequest = None):
+    prompt_lang.set_request_lang(request.headers.get(_LANG_HEADER) if request is not None else None)
     if not req.agent_mode:
         # 普通对话模式：创建 Session 绑定 Copilot 会话，但不跑工具循环
         return await b.plain_completions(req)

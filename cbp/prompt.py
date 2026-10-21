@@ -12,6 +12,9 @@ section 时**逐字不变**（有测试守着）。
 from __future__ import annotations
 
 import re
+from typing import Any
+
+from . import prompt_lang
 from typing import Iterable
 
 _VAR_RE = re.compile(r"\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}")
@@ -26,13 +29,21 @@ SCOPE_RANK = {"global": 0, "project": 1, "session": 2}
 
 
 class PromptRegistry:
-    def __init__(self) -> None:
-        self._sections: dict[tuple[str, str], tuple[int, str]] = {}
+    """提示词分区表。
 
-    def add(self, name: str, text: str, order: int = 0, scope: str = "global") -> "PromptRegistry":
+    `text` 可以是字符串，也可以是**零参可调用对象**：后者在 render() 时求值，
+    用来支持"按请求语言生成提示词"（语言是 contextvar，import 时还不知道）。
+    """
+
+    def __init__(self) -> None:
+        self._sections: dict[tuple[str, str], tuple[int, Any]] = {}
+
+    def add(self, name: str, text, order: int = 0, scope: str = "global") -> "PromptRegistry":
         """登记一段提示词。同名同 scope 再次登记会**近层遮蔽**（后登记的生效）。"""
         if not name:
             raise PromptError("section 必须有名字")
+        if not isinstance(text, str) and not callable(text):
+            raise PromptError(f"section {name} 的 text 必须是字符串或零参可调用对象")
         self._sections[(scope, name)] = (int(order), text or "")
         return self
 
@@ -57,6 +68,8 @@ class PromptRegistry:
         ordered = sorted(((n, v) for n, v in eff.items()), key=lambda kv: (kv[1][0], kv[0]))
         out: list[str] = []
         for name, (_order, text) in ordered:
+            if callable(text):           # 语言相关的分区：渲染时才求值
+                text = str(text() or "")
             def _sub(m: re.Match) -> str:
                 key = m.group(1)
                 if key not in variables:
@@ -108,3 +121,37 @@ DELIVERABLE_RULE = """交付物表述：产出文件（报告/清单/脚本）�
 
 FILE_OPS_RULE = """文件操作纪律：读写、改名、复制、删除文件**只用文件工具**（read_text / write_text_b64 / append_text_b64 / replace_text / replace_lines / make_directory / copy_path / move_path / delete_path / list_directory / find_files / grep）。禁止用 pwsh 做这些事（Get-Content / Set-Content / Out-File / New-Item / Remove-Item / Move-Item / Copy-Item 一律不用）：PowerShell 管道按本机代码页重新编码，改中文或 UTF-8 源码会变成乱码且不可逆。pwsh 只用于进程类任务——git、装依赖、构建、起服务。
 按行定位与改缩进：要看"第几行"用 read_text 的 line_start/line_count（返回带行号）；要改某几行（尤其是缩进）用 replace_lines(start, count, content)，它按行号改、不依赖片段匹配，并保留原文件换行风格。**不要**用 shell 的 (Get-Content x)[n]、逐字符码处理或 WriteAllText 改文件。"""
+
+
+# ── 按请求语言取提示词（语言来自 config.agent.prompt_language 或 X-CBP-Lang）──
+def _cfg_lang() -> str | None:
+    """取配置里的提示词语言（agent.prompt_language）;读不到就返回 None 走请求语言。"""
+    try:
+        from .bridge import AGENT_CFG
+        return AGENT_CFG.get("prompt_language")
+    except Exception:
+        return None
+
+
+def agent_protocol() -> str:
+    return prompt_lang.localize("protocol", AGENT_PROTOCOL,
+                                prompt_lang.effective_lang(_cfg_lang()))
+
+
+def agent_team() -> str:
+    return prompt_lang.localize("team", AGENT_TEAM,
+                                prompt_lang.effective_lang(_cfg_lang()))
+
+
+def deliverable_rule() -> str:
+    return prompt_lang.localize("deliverable", DELIVERABLE_RULE,
+                                prompt_lang.effective_lang(_cfg_lang()))
+
+
+def file_ops_rule() -> str:
+    return prompt_lang.localize("file_ops", FILE_OPS_RULE,
+                                prompt_lang.effective_lang(_cfg_lang()))
+
+
+def language_directive() -> str:
+    return prompt_lang.directive(prompt_lang.effective_lang(_cfg_lang()))

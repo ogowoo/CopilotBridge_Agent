@@ -27,7 +27,9 @@ class DeliverableRuleTests(unittest.TestCase):
 
     def test_registered_in_agent_prompt(self):
         src = (Path(__file__).resolve().parent.parent / "cbp" / "agent.py").read_text(encoding="utf-8")
-        self.assertIn('reg.add("deliverable", DELIVERABLE_RULE', src)
+        # 现在注册的是**函数**（按提示词语言取译本），不再是常量：
+        # 语言放在 contextvar 里，import 时还不知道请求语言，必须渲染时求值。
+        self.assertIn('reg.add("deliverable", deliverable_rule', src)
 
     def test_present_description_warns_against_download_wording(self):
         desc = str(_DESCRIPTIONS.get("present") or "")
