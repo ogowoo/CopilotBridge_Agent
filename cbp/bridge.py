@@ -3,7 +3,7 @@
 HTTP 路由在 api.py；本模块不定义任何 FastAPI 端点。
 """
 
-import asyncio, base64, collections, json, os, re, shutil, time, uuid
+import asyncio, base64, collections, contextlib, json, os, re, shutil, time, uuid
 from os.path import commonprefix
 from datetime import datetime
 from pathlib import Path
@@ -139,8 +139,9 @@ def _last_turn(text: str, markers: list) -> tuple:
             best_pos, best_len = pos, len(marker)
     return best_pos, best_len
 
-pw = ctx = page = None
-lock = asyncio.Lock()
+pw = ctx = None
+_PAGE_RAW = None          # 共享页（窗口 0，启动时创建）
+lock = asyncio.Lock()      # 兼容保留：仅作"有任务在跑"的旧式标记，不再用于串行
 RUNTIME = {}
 ACTIVE_SESSION_ID = None
 
@@ -156,6 +157,74 @@ _SESSION_CTX: contextvars.ContextVar = contextvars.ContextVar("cbp_session", def
 _WEB_TOOLS_CTX: contextvars.ContextVar = contextvars.ContextVar("cbp_web_tools", default=None)
 _SUBAGENT_DEPTH_CTX: contextvars.ContextVar = contextvars.ContextVar("cbp_subagent_depth",
                                                                     default=0)
+
+# ── 自动化窗口（多窗口并行）────────────────────────────────────────────
+# 一个窗口 = 同一个持久化上下文里的一个 page；`page` 是代理，按任务上下文解析。
+_PAGE_CTX: contextvars.ContextVar = contextvars.ContextVar("cbp_page", default=None)
+_WIN_CTX: contextvars.ContextVar = contextvars.ContextVar("cbp_window", default=None)
+_TOOLS_CTX: contextvars.ContextVar = contextvars.ContextVar("cbp_tools", default=None)
+
+
+class _PageProxy:
+    """把 `page.xxx` 解析成"当前任务绑定的窗口页"，没有窗口时退回共享页。
+
+    为什么用代理而不是改 57 处调用点：桥接里 `page.locator(...)` 遍地都是，
+    逐个改成函数调用既容易漏、也让 diff 无法审计；代理只在一个地方生效。
+    """
+
+    def _target(self):
+        ctx_page = _PAGE_CTX.get()
+        if ctx_page is not None:
+            return ctx_page
+        # 测试/宿主可能直接 `bridge.page = fake_page`（把代理换掉）：优先尊重它
+        if not isinstance(page, _PageProxy):
+            return page
+        return _PAGE_RAW
+
+    def __getattr__(self, name):
+        target = self._target()
+        if target is None:
+            raise RuntimeError("浏览器页面尚未就绪")
+        return getattr(target, name)
+
+    def __bool__(self):
+        return self._target() is not None
+
+    def __repr__(self):
+        target = self._target()
+        return f"<PageProxy {'ready' if target is not None else 'empty'}>"
+
+
+class CopilotBusy(RuntimeError):
+    """所有自动化窗口都在忙（并发上限已满）。"""
+
+
+page = _PageProxy()
+
+
+def current_page():
+    """当前任务的页面（没有任务上下文时是共享页/被替换的全局 page）。"""
+    ctx_page = _PAGE_CTX.get()
+    if ctx_page is not None:
+        return ctx_page
+    if not isinstance(page, _PageProxy):
+        return page          # 测试注入了假页面
+    return _PAGE_RAW
+
+
+def set_shared_page(p) -> None:
+    global _PAGE_RAW
+    _PAGE_RAW = p
+
+
+def current_window():
+    return _WIN_CTX.get()
+
+
+def task_tools():
+    """当前任务的工具注册表（没绑定时是全局 AGENT_TOOLS）。"""
+    return _TOOLS_CTX.get() or AGENT_TOOLS
+
 
 
 def current_session() -> str | None:
@@ -174,7 +243,8 @@ def web_copilot_allowed() -> bool:
     v = _WEB_TOOLS_CTX.get()
     if v is not None:
         return bool(v)
-    return bool(getattr(AGENT_TOOLS, "allow_web_copilot_tools", True))
+    # 任务级注册表优先：并行任务各自 disable/enable，互不影响
+    return bool(getattr(task_tools(), "allow_web_copilot_tools", True))
 
 
 def subagent_chain_depth() -> int:
@@ -186,12 +256,30 @@ def subagent_chain_depth() -> int:
 
 
 def subagent_parallel() -> int:
-    """扇出并发上限（仅对 API 提供商模型生效；浏览器通道恒为 1）。"""
+    """扇出并发上限。
+
+    - API 提供商模型：`agent.subagent_parallel`（默认 4）；
+    - 网页 Copilot 通道：= **自动化窗口数**（`agent.copilot_windows`，默认 1）。
+      每个窗口是一个独立标签页，所以"并行几个子代理就开几个窗口"；
+      窗口数配成 1 时行为和以前一样（顺序执行）。
+    """
     try:
         n = int(AGENT_CFG.get("subagent_parallel", 4))
     except Exception:
         n = 4
     return max(1, min(n, 8))
+
+
+def web_subagent_parallel() -> int:
+    """网页 Copilot 通道的扇出上限 = **自动化窗口数**（每个窗口一个标签页）。
+
+    窗口数可在设置里改（1–4）；没开窗口时就是 1（顺序执行，和以前一致）。
+    """
+    try:
+        windows = max(1, int(getattr(WINDOWS, "max_windows", 1) or 1))
+    except Exception:
+        windows = 1
+    return max(1, min(subagent_parallel(), windows))
 
 
 def subagent_max_steps() -> int:
@@ -402,7 +490,7 @@ def all_model_ids() -> list:
 
 
 async def diagnostics(tag):
-    if not DIAG or page is None: return
+    if not DIAG or current_page() is None: return
     try:
         (BASE / "last_page.txt").write_text(await page.locator("body").inner_text(), encoding="utf-8")
         if bool(CFG.get("diagnostic_html", False)):
@@ -502,14 +590,26 @@ async def new_chat():
 SELECTED_MODEL = None
 
 
+def get_selected_model() -> str | None:
+    """当前窗口缓存的模型（没有窗口时用全局值，兼容旧路径与测试）。"""
+    win = _WIN_CTX.get()
+    return win.selected_model if win is not None else SELECTED_MODEL
+
+
+def set_selected_model(value: str | None) -> None:
+    SELECTED_MODEL = value
+    win = _WIN_CTX.get()
+    if win is not None:
+        win.selected_model = value
+
+
 def _forget_selected_model(reset_to: str | None = None):
     """Invalidate the model cache, optionally recording a known reset target.
 
     new_chat() resets the selector to the tenant default, so callers can pass
     DEFAULT_MODEL to keep cache hits for default-model requests.
     """
-    global SELECTED_MODEL
-    SELECTED_MODEL = reset_to
+    set_selected_model(reset_to)
 
 
 async def model_button():
@@ -794,7 +894,7 @@ async def ensure_copilot_page() -> str:
     Outlook(OWA) 自动化、会话删除、普通对话都会让浏览器停在别的页面；
     不先回到对话页就直接扫模型菜单，会找不到按钮而静默失败。
     """
-    if page is None:
+    if current_page() is None:
         raise RuntimeError("自动化浏览器尚未启动")
     current = ""
     try:
@@ -924,7 +1024,6 @@ async def discover_models() -> dict:
 
 
 async def select_model(model_id):
-    global SELECTED_MODEL
     normalized = normalize_model(model_id)
     target_names = MODELS[normalized]["ui_names"]
     button = await model_button()
@@ -957,7 +1056,7 @@ async def select_model(model_id):
                 segments.add(_norm(part))
     targets = {_norm(name) for name in target_names}
     if segments & targets:
-        SELECTED_MODEL = normalized
+        set_selected_model(normalized)
         log(f"模型已是 {normalized} ({current_label or current_text})")
         return normalized
     other_known = {_norm(name) for mid, item in MODELS.items() if mid != normalized
@@ -1015,10 +1114,10 @@ async def select_model(model_id):
         await diagnostics("model_option_missing")
         # 菜单结构变化或标签未收录不应打死整个回合：按当前已选模型继续，
         # 但必须让用户看见——否则重启后"模型悄悄变回 Auto"完全无从察觉。
-        fallback = SELECTED_MODEL or normalized
+        fallback = get_selected_model() or normalized
         log(f"警告：模型菜单中找不到 {target_names[0]}，已按当前选中模型继续")
-        if ACTIVE_SESSION_ID:
-            runtime_update(ACTIVE_SESSION_ID, model_warning=(
+        if current_session():
+            runtime_update(current_session(), model_warning=(
                 f"模型 {target_names[0]} 未在 Copilot 菜单中找到，本回合沿用 "
                 f"{MODELS.get(fallback, {}).get('ui_names', [fallback])[0]}"))
         return fallback
@@ -1649,13 +1748,14 @@ async def _start_browser(headless: bool) -> bool:
     Caller must hold `lock`. Returns the mode actually in effect (headless
     launch failure falls back to a visible window).
     """
-    global ctx, page, HEADLESS_CURRENT
+    global ctx, HEADLESS_CURRENT
     if ctx is not None:
         try:
             await ctx.close()
         except Exception:
             pass
-        ctx = page = None
+        ctx = None
+        set_shared_page(None)
     launch_kwargs = _launch_kwargs(headless)
     try:
         ctx = await pw.chromium.launch_persistent_context(**launch_kwargs)
@@ -1668,7 +1768,7 @@ async def _start_browser(headless: bool) -> bool:
         ctx = await pw.chromium.launch_persistent_context(**launch_kwargs)
     HEADLESS_CURRENT = launch_kwargs["headless"]
     log("浏览器模式：" + ("无头（不显示窗口）" if HEADLESS_CURRENT else "有窗口"))
-    page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+    set_shared_page(ctx.pages[0] if ctx.pages else await ctx.new_page())
     await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     _forget_selected_model()  # 页面重载，模型选择状态未知
     return HEADLESS_CURRENT
@@ -1712,8 +1812,8 @@ async def _vision_via_copilot(path: str, question: str) -> dict:
         raise ToolError(f"文件不存在: {path}")
     await attach_file_to_copilot(target)
     model = DEFAULT_MODEL
-    if ACTIVE_SESSION_ID:
-        st = AGENT_SESSIONS.get(ACTIVE_SESSION_ID)
+    if current_session():
+        st = AGENT_SESSIONS.get(current_session())
         if st and st.get("model"):
             model = st["model"]
     answer = await agent_chat_once(question, model, False)
@@ -2004,8 +2104,8 @@ async def _copilot_attach(path: str, question: str = "请分析这个文件的�
     # 跟随当前会话的模型而不是默认模型：否则每次上传都把会话切成 Auto，
     # 下一回合又切回去，形成模型乒乓（每条消息都开一次菜单）。
     model = DEFAULT_MODEL
-    if ACTIVE_SESSION_ID:
-        st = AGENT_SESSIONS.get(ACTIVE_SESSION_ID)
+    if current_session():
+        st = AGENT_SESSIONS.get(current_session())
         if st and st.get("model"):
             model = st["model"]
     await attach_file_to_copilot(target)
@@ -2220,8 +2320,8 @@ async def _copilot_file(path: str, instruction: str) -> dict:
     target = AGENT_TOOLS._path(path)          # 复用工作区路径沙箱
     filename = target.name
     model = DEFAULT_MODEL
-    if ACTIVE_SESSION_ID:
-        st = AGENT_SESSIONS.get(ACTIVE_SESSION_ID)
+    if current_session():
+        st = AGENT_SESSIONS.get(current_session())
         if st and st.get("model"):
             model = st["model"]
     # 生成可下载文件需要**非 Auto** 模型：实测 Auto 只在聊天里回答、不提供下载入口。
@@ -2346,6 +2446,81 @@ def page_url_safe() -> str:
         return ""
 
 
+async def _new_copilot_page(index: int):
+    """在**同一个持久化上下文**里开一个新标签页（登录态共享），并导航到 Copilot。
+
+    多窗口并行的关键：不需要第二个浏览器进程，也不需要重新登录；
+    每个标签页有自己的一套 Copilot 会话/模型选择。
+    """
+    global ctx
+    # 先确保上下文存在（窗口 0 的页由 _start_browser 创建）
+    if ctx is None:
+        await ensure_browser_ready()
+    if ctx is None:
+        raise RuntimeError("浏览器上下文不可用，无法开新窗口")
+    new_page = await ctx.new_page()
+    try:
+        await new_page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+    except Exception as exc:
+        log(f"新窗口 #{index} 打开 Copilot 失败: {exc}")
+    log(f"已开第 {index} 个自动化窗口（多窗口并行）")
+    return new_page
+
+
+def _max_windows_cfg() -> int:
+    try:
+        return max(1, min(int(AGENT_CFG.get("copilot_windows", 1) or 1), 8))
+    except Exception:
+        return 1
+
+
+from .window_pool import WindowBusy, WindowPool  # noqa: E402  （放在此处避免循环导入顺序问题）
+
+WINDOWS = WindowPool(_new_copilot_page, max_windows=_max_windows_cfg())
+
+
+# 提供商模型的"逻辑槽"：不需要浏览器页，但同样要独立工具上下文，可以真并行
+SLOTS = WindowPool(lambda index: _no_page(), max_windows=max(1, 4))
+
+
+async def _no_page():
+    return None
+
+
+@contextlib.asynccontextmanager
+async def _window(sid: str, wait_timeout: float = 30.0, need_page: bool = True):
+    """取一个自动化窗口并把**任务上下文**绑好：页面 + 工具注册表 + 窗口。
+
+    - 网页 Copilot 通道（need_page=True）：从 `WINDOWS` 取一个真实标签页；
+    - API 提供商通道（need_page=False）：从 `SLOTS` 取一个无页面的槽
+      （提供商本来就不需要浏览器，但同样要工具上下文隔离）。
+
+    任务结束时无论成功/异常/取消都会归还；工具注册表是**克隆**，
+    所以两个并行任务的 root / sandbox / plan / memory 互不干扰。
+    """
+    pool = WINDOWS if need_page else SLOTS
+    try:
+        win = await pool.acquire(sid, wait_timeout=wait_timeout)
+    except WindowBusy as exc:
+        raise CopilotBusy(str(exc)) from exc
+    tok_page = _PAGE_CTX.set(win.page) if win.page is not None else None
+    tok_win = _WIN_CTX.set(win)
+    tok_sess = _SESSION_CTX.set(sid or None)
+    tools = AGENT_TOOLS.clone()
+    tok_tools = _TOOLS_CTX.set(tools)
+    try:
+        yield win, tools
+    finally:
+        try:
+            _TOOLS_CTX.reset(tok_tools)
+            _SESSION_CTX.reset(tok_sess)
+            _WIN_CTX.reset(tok_win)
+            if tok_page is not None:
+                _PAGE_CTX.reset(tok_page)
+        finally:
+            pool.release(win)
+
+
 async def ensure_browser_ready() -> bool:
     """确保浏览器可用（未注册钩子时视为已就绪，保持测试与无浏览器场景可用）。"""
     fn = ENSURE_BROWSER
@@ -2403,7 +2578,7 @@ async def resume_session_task(sid: str) -> bool:
         return False
     wake = {"state": "ready", "cancel_requested": False, "rollover_requested": False}
     # 情况一：会话的 runner 还活着（锁被它持有、正停在暂停循环里）→ 只唤醒，不新建
-    if lock.locked() and ACTIVE_SESSION_ID == sid:
+    if WINDOWS.is_running(sid):
         AGENT_SESSIONS.patch(sid, **wake)
         log(f"会话 {sid} 的 runner 仍在运行，已解除暂停状态（不新建 runner）")
         return False
@@ -3420,7 +3595,9 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
     if not task: raise HTTPException(400,"至少需要一条消息")
     sid=req.session_id or ("task-"+uuid.uuid4().hex[:12])
     runtime_update(sid, phase="queued", detail="任务已进入执行队列", answer_preview="", prompt_preview="")
-    async with lock:
+    # 提供商模型（"前缀/模型"）不需要浏览器页；网页通道才占一个自动化窗口
+    _need_page = providers_mod.split_provider_model(req.model) is None
+    async with _window(sid, need_page=_need_page) as (win, T):
         # ACTIVE_SESSION_ID 必须在锁内声明：等锁的请求若提前覆盖，
         # 正在运行会话的删除保护/busy 判定/resume 守卫会整体失效。
         prev_active = ACTIVE_SESSION_ID
@@ -3433,14 +3610,14 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             log(f"会话 {sid} 的排队恢复任务已被新消息取代")
         existing=AGENT_SESSIONS.get(sid)
         workspace=(req.workspace.strip() if req.workspace else None) or (existing or {}).get("workspace") or DEFAULT_WORKSPACE
-        AGENT_TOOLS.set_root(workspace,False)
+        T.set_root(workspace,False)
         # 沙箱档位 / 计划模式按**本次请求**生效（配置是默认值）：
         # 计划模式 = 强制只读，模型只探索并产出方案，调用 exit_plan_mode 后解除。
         _mode = str(getattr(req, "sandbox_mode", None) or AGENT_CFG.get("sandbox_mode")
                     or "workspace-write").lower()
-        AGENT_TOOLS.sandbox_mode = _mode if _mode in SANDBOX_MODES else "workspace-write"
-        AGENT_TOOLS.plan_mode = bool(getattr(req, "plan_mode", False))
-        if AGENT_TOOLS.plan_mode:
+        T.sandbox_mode = _mode if _mode in SANDBOX_MODES else "workspace-write"
+        T.plan_mode = bool(getattr(req, "plan_mode", False))
+        if T.plan_mode:
             log(f"会话 {sid} 进入计划模式（只读）")
             plan_hint = (
                 "\n\n[计划模式] 本轮**强制只读**：任何写文件/执行命令/改外部系统的工具都会被拒绝。"
@@ -3452,10 +3629,10 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             if existing:
                 AGENT_SESSIONS.patch(sid, plan_mode=1)
         # 记忆作用域随工作区切换：工作区记忆不跨项目泄露；来源会话用于溯源
-        AGENT_TOOLS.memory_scope = memory_scope_for(AGENT_TOOLS.root)
-        AGENT_TOOLS.current_session_id = sid
+        T.memory_scope = memory_scope_for(T.root)
+        T.current_session_id = sid
         if not existing:
-            existing=AGENT_SESSIONS.create(sid,task,str(AGENT_TOOLS.root),req.model)
+            existing=AGENT_SESSIONS.create(sid,task,str(T.root),req.model)
             effective_task = task
         else:
             effective_task = existing.get("original_task") or task
@@ -3465,7 +3642,7 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 pending.append(task)
                 # 追加指令不再强制新建会话：Agent 会在当前会话直接下达，保留完整上下文。
                 AGENT_SESSIONS.patch(sid, pending=pending, state="ready")
-        AGENT_SESSIONS.patch(sid,workspace=str(AGENT_TOOLS.root),model=req.model)
+        AGENT_SESSIONS.patch(sid,workspace=str(T.root),model=req.model)
         def pause_check():
             st = AGENT_SESSIONS.get(sid) or {}
             return st.get("state") == "paused"
@@ -3473,7 +3650,7 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
         _is_provider = bool(_pm and _pm[0] in PROVIDERS)
         # provider 会话禁用"需要 Copilot 网页会话"的工具（copilot_attach/copilot_file：
         # 没有网页对话可驱动，实测连续失败 10 次白烧回合）。浏览器会话保持启用。
-        AGENT_TOOLS.set_web_copilot_tools(not _is_provider)
+        T.set_web_copilot_tools(not _is_provider)
         if _is_provider and attach_paths:
             # 提供商分支没有可附加图片的输入框：明确记录 + 提示（不再静默丢弃）
             try:
@@ -3699,9 +3876,9 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
         def add_file(x): AGENT_SESSIONS.add_file_event(sid,x)
         def add_conv_stat(x): AGENT_SESSIONS.add_conv_stat(sid,x)
         # 写操作前捕获原像：工作区改动与自升级改动分作用域，均可整任务回滚
-        AGENT_TOOLS.set_snapshot_hook(self_snapshot_hook(sid))
-        AGENT_TOOLS.self_rollback_fn = lambda: SNAPSHOTS.restore(self_scope(sid), BASE)
-        runner=AgentRunner(AGENT_TOOLS,turn,AGENT_CFG,get,save,add_step,add_file,add_conv_stat,
+        T.set_snapshot_hook(self_snapshot_hook(sid))
+        T.self_rollback_fn = lambda: SNAPSHOTS.restore(self_scope(sid), BASE)
+        runner=AgentRunner(T,turn,AGENT_CFG,get,save,add_step,add_file,add_conv_stat,
                         step_begin=lambda no, tool, h: (
                             AGENT_SESSIONS.begin_step(sid, _conv_index(sid), no, tool, h),
                             # 让界面显示"正在执行 X"，而不是停在上一轮的 waiting
@@ -3768,9 +3945,9 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
             SNAPSHOTS.prune()  # 失败/取消路径也要按保留数回收，避免只增不减
             raise
         finally:
-            AGENT_TOOLS.set_snapshot_hook(None)
-            AGENT_TOOLS.self_rollback_fn = None
-            AGENT_TOOLS.set_web_copilot_tools(True)   # 复位，避免影响后续会话
+            T.set_snapshot_hook(None)
+            T.self_rollback_fn = None
+            T.set_web_copilot_tools(True)   # 复位，避免影响后续会话
             # 恢复进入前的值而非置 None：排队任务接管时不会被误清
             ACTIVE_SESSION_ID = prev_active
 
@@ -3826,7 +4003,7 @@ async def plain_chat_turn(sid: str, content: str, model_id: str, attach_paths: l
     state = AGENT_SESSIONS.get(sid)
     if not state:
         raise HTTPException(404, "Session 不存在")
-    async with lock:
+    async with _window(sid) as (win, T):
         prev_active = ACTIVE_SESSION_ID
         ACTIVE_SESSION_ID = sid
         runtime_update(sid, phase="manual_sending", detail="正在发送普通对话", prompt_preview=content, answer_preview="")
@@ -4451,7 +4628,7 @@ async def run_workflow(spec: dict, model: str = "") -> dict:
 
 async def shutdown_browser():
     """关闭浏览器上下文与 Playwright（服务退出时调用）。"""
-    global ctx, page, pw
+    global ctx, pw
     try:
         if ctx is not None:
             await ctx.close()

@@ -550,6 +550,8 @@ CONFIG_SCHEMA: dict[str, dict] = {
                                 "label": "自动派发子代理（待办≥2 且互不重叠时）"},
     "agent.rate_limit_suspend": {"kind": "bool", "group": "exec",
                                  "label": "Copilot 限流时挂起（到点自动继续，可换提供商模型）"},
+    "agent.copilot_windows": {"kind": "int", "min": 1, "max": 4, "group": "exec",
+                              "label": "Copilot 自动化窗口数（并行任务数；1=串行）"},
     "agent.todo_nudge_every": {"kind": "int", "min": 0, "max": 200, "group": "exec",
                                "label": "每 N 步提醒模型更新待办（0=关闭）"},
     "agent.subagent_parallel": {"kind": "int", "min": 1, "max": 8, "group": "exec",
@@ -620,6 +622,12 @@ def _coerce(key: str, raw):
 async def get_config():
     """设置页读取：白名单键的当前值 + 规格（界面据此渲染控件）。"""
     values = {k: _cfg_get(k, b.CFG.get(k) if "." not in k else None) for k in CONFIG_SCHEMA}
+    # 没配过的键显示**当前生效值**，避免输入框空着让人以为没生效（窗口数默认 1）
+    if values.get("agent.copilot_windows") in (None, ""):
+        try:
+            values["agent.copilot_windows"] = b.WINDOWS.max_windows
+        except Exception:
+            values.setdefault("agent.copilot_windows", 1)
     secrets = {"api_token": "已设置" if b.CFG.get("api_token") else "未设置"}
     return {"values": values, "schema": CONFIG_SCHEMA, "readonly": secrets}
 
@@ -668,6 +676,13 @@ async def set_config(payload: dict | None = None):
         except Exception as exc:
             raise HTTPException(500, f"写 config.json 失败: {exc}")
     b.log("设置已更新：" + ", ".join(f"{k}={v}" for k, v in applied.items()))
+    # 窗口数变化要**立即生效**：调大下次 acquire 时懒开窗，调小关空闲窗口
+    if "agent.copilot_windows" in applied:
+        try:
+            await b.WINDOWS.set_max(int(applied["agent.copilot_windows"]))
+            b.log(f"Copilot 自动化窗口数已调整为 {b.WINDOWS.max_windows}")
+        except Exception as exc:
+            b.log(f"调整 Copilot 窗口数失败（忽略）：{exc}")
     return {"applied": applied, "persisted": persisted}
 
 
@@ -1516,7 +1531,9 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
         "conversation_index": (state or {}).get("conversation_index", 0),
         "current_url": (state or {}).get("current_url"),
         "token_budget": b.TOKEN_BUDGET,
-        "busy": b.lock.locked() and b.ACTIVE_SESSION_ID == sid,
+        # 并行窗口：busy 只看"这个会话是否正占着一个窗口"
+        "busy": b.WINDOWS.is_running(sid),
+        "windows": b.WINDOWS.stats(),
         "queue_pending": b.queue_depth(sid),
         # 子代理合计（KPI 要显示"含子代理"的步数/token，否则跑完 4 个子代理界面看不出来）
         "subagent_steps": _sub.get("steps", 0),

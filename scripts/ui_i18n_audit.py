@@ -29,6 +29,7 @@ CHROME_JS = r"""
 () => {
   // 这些容器里是用户数据 / 模型输出 / 按取舍保持中文的长文档，不参与覆盖率判定
   const DATA_SKIP = new Set(['sessions','chatlog','steps','answer','prompt','activity','queueBox',
+  'toolLog',   // 调用记录：内容是工具输出与模型写的理由，属数据（标题与按钮仍在 #toolLog 外层审计）
                              'gsResults','liveBody','toasts','memList','manualBody',
                              'stepTool','stepStatus','title','sidChip','status']);
   // 会话列表里"标题/ID"是用户数据要排除，但同一行的元信息（步骤/会话/Token）是界面文案
