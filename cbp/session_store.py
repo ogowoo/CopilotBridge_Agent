@@ -237,6 +237,42 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         with self.lock, self._connect() as con:
             return [self._decode(x) for x in con.execute(sql, args)]
 
+    def subagent_stats(self, sid: str, max_depth: int = 4) -> dict:
+        """汇总某会话**所有子孙子代理**的步数与 token（KPI 只显示主会话时会漏统计）。
+
+        子代理是独立会话，`total_steps` / `estimated_tokens` 各自记账；主会话的 KPI
+        以前只读自己的字段，于是"跑了 4 个子代理、几百步"在界面上看不到——
+        用户实测："步数/token 等信息不会统计 subagents 的数据"。
+        这里沿 `parent_id` 向下遍历（默认 4 层，防环），返回合计值。
+        """
+        seen: set[str] = set()
+        frontier = [sid]
+        count = 0
+        steps = 0
+        tokens = 0
+        for _ in range(max(1, int(max_depth))):
+            if not frontier:
+                break
+            placeholders = ",".join("?" for _ in frontier)
+            with self.lock, self._connect() as con:
+                rows = con.execute(
+                    f"SELECT * FROM sessions WHERE parent_id IN ({placeholders})",
+                    tuple(frontier)).fetchall()
+            nxt: list[str] = []
+            for raw in rows:
+                row = self._decode(raw)
+                rid = str(row.get("id") or "")
+                if not rid or rid in seen:
+                    continue
+                seen.add(rid)
+                count += 1
+                steps += int(row.get("total_steps") or 0)
+                tokens += int(row.get("estimated_tokens") or 0)
+                nxt.append(rid)
+            frontier = nxt
+        return {"count": count, "steps": steps, "tokens": tokens,
+                "ids": sorted(seen)}
+
     def patch(self, sid: str, **values):
         allowed = {"title","state","workspace","model","current_url","conversation_index","conversation_urls",
                    "total_steps","conversation_steps","estimated_tokens","estimated_chars","summary","recent_steps",

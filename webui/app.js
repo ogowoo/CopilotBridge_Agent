@@ -873,11 +873,29 @@ function setKpis(o){
  // 状态卡片按状态变色（CSS 用 data-state 着色，见 style.css 的 KPI-STATE）
  const _card=document.getElementById('kpiStateCard');
  if(_card&&_card.dataset.state!==_st)_card.dataset.state=_st;
- document.getElementById('kpiSteps').textContent=o.total_steps??0;
+ // 步数与 token 要把**子代理**算进来：子代理是独立会话、各自记账，
+ // 只读主会话字段时"跑了 4 个子代理、几百步"在界面上完全看不出来（用户实测）。
+ const _ss=Number(o.subagent_steps||0), _stk=Number(o.subagent_tokens||0),
+       _sc=Number(o.subagent_count||0);
+ const _ownSteps=Number(o.total_steps??0), _ownTk=Number(o.estimated_tokens??0);
+ const stepsAll=_ownSteps+_ss, tkAll=_ownTk+_stk;
+ const _marksub=(el,total,own,extra,n)=>{
+   if(!el)return;
+   el.textContent=Number(total).toLocaleString();
+   if(extra>0){
+     el.title=tr('本会话 {a} + 子代理 {b}（{n} 个）',{a:Number(own).toLocaleString(),
+       b:Number(extra).toLocaleString(),n});
+     el.dataset.sub='1';
+   }else{el.removeAttribute('title');delete el.dataset.sub}};
+ _marksub(document.getElementById('kpiSteps'),stepsAll,_ownSteps,_ss,_sc);
  document.getElementById('kpiConv').textContent=o.conversation_steps??0;
  document.getElementById('kpiRoll').textContent=o.conversation_index??0;
- let tk=o.estimated_tokens??0;
- document.getElementById('kpiToken').textContent=Number(tk).toLocaleString();
+ const _tkEl=document.getElementById('kpiToken');
+ _marksub(_tkEl,tkAll,_ownTk,_stk,_sc);
+ const tk=tkAll;
+ // 有子代理时在小标里标一下，避免用户以为统计漏了
+ try{const _note=document.getElementById('kpiSubNote');
+  if(_note)_note.textContent=_sc?tr('含 {n} 个子代理',{n:_sc}):''}catch(e){}
  document.getElementById('tokenbar').style.width=(budget?Math.min(100,tk/budget*100):0)+'%'}
 
 /* ── Session 列表（支持筛选） ── */

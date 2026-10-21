@@ -1050,6 +1050,14 @@ async def session(sid: str):
     x = b.AGENT_SESSIONS.get(sid)
     if not x:
         raise HTTPException(404, "Session 不存在")
+    try:
+        _sub = b.AGENT_SESSIONS.subagent_stats(sid)
+    except Exception:
+        _sub = {"count": 0, "steps": 0, "tokens": 0}
+    x = dict(x)
+    x["subagent_count"] = _sub.get("count", 0)
+    x["subagent_steps"] = _sub.get("steps", 0)
+    x["subagent_tokens"] = _sub.get("tokens", 0)
     return {"session": x, "steps": b.AGENT_SESSIONS.steps(sid),
             "files": b.AGENT_SESSIONS.file_events(sid),
             "messages": b.AGENT_SESSIONS.messages(sid),
@@ -1475,6 +1483,10 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
     隐藏，下一秒 1 秒轮询又改回来——任务运行中界面每秒抖动。两条读取路径必须给出同一份事实。
     """
     runtime = dict(b.RUNTIME.get(sid) or {})
+    try:
+        _sub = b.AGENT_SESSIONS.subagent_stats(sid)
+    except Exception:
+        _sub = {"count": 0, "steps": 0, "tokens": 0}
     runtime.update({
         "session_id": sid,
         "session_state": (state or {}).get("state"),
@@ -1486,6 +1498,10 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
         "token_budget": b.TOKEN_BUDGET,
         "busy": b.lock.locked() and b.ACTIVE_SESSION_ID == sid,
         "queue_pending": b.queue_depth(sid),
+        # 子代理合计（KPI 要显示"含子代理"的步数/token，否则跑完 4 个子代理界面看不出来）
+        "subagent_steps": _sub.get("steps", 0),
+        "subagent_tokens": _sub.get("tokens", 0),
+        "subagent_count": _sub.get("count", 0),
         "retry_resume_at": (state or {}).get("retry_resume_at"),
         "retry_attempt": (state or {}).get("retry_attempt", 0),
         "rate_limited_since": (state or {}).get("rate_limited_since"),

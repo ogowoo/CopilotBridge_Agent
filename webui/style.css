@@ -1666,3 +1666,6 @@ html,body{overflow:hidden}
 .retry-fab .rc-swap .btn{font-size:12.5px}
 .retry-fab .rc-actions{display:flex;justify-content:center;margin-top:14px}
 @media (prefers-reduced-motion: reduce){.retrymask{backdrop-filter:none}}
+/* 「总步骤」卡片里的小标：含 N 个子代理（子代理步数/token 已计入主数字） */
+.kpi .kpisub{font-style:normal;font-size:10.5px;color:var(--accent2);margin-left:6px}
+.kpi b[data-sub="1"]{cursor:help;text-decoration:underline dotted rgba(127,127,127,.5)}
