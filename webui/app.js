@@ -56,7 +56,9 @@ function syncFixedLanes(){
   rs.setProperty('--boot-h', h('bootBar')+'px');
   // 限流卡与小标是同一位置的两种形态（展开/收起），取当前可见那个的高度
   // （授权横幅已改为流内元素，不再需要 --approval-h）
-  rs.setProperty('--retry-h', Math.max(h('retryCountdown'), h('retryChip'))+'px');
+  // 限流卡已改为**全屏遮罩**（不占布局），小标 retryChip 仍是浮层但很矮：
+ // 这里只按小标高度预留，遮罩不再撑开 live stream 与输入框之间的间距。
+ rs.setProperty('--retry-h', h('retryChip')+'px');
   rs.setProperty('--toast-h', h('toasts')+'px');
  }catch(e){}}
 window.addEventListener('resize',()=>syncFixedLanes());
@@ -2304,15 +2306,29 @@ function fmtCountdown(total){
  return h>0?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
             :`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`}
 function hideRetryUI(){
- let box=document.getElementById('retryCountdown'),chip=document.getElementById('retryChip');
+ let box=document.getElementById('retryCountdown'),chip=document.getElementById('retryChip'),
+     mask=document.getElementById('retryMask');
  if(box){box.style.display='none';box.removeAttribute('data-resume')}
+ if(mask)mask.style.display='none';
  if(chip){chip.style.display='none';chip.removeAttribute('data-resume')}}
+/* 收起遮罩（"稍后再看" / 点遮罩空白处）：保留右下角小标，后台继续倒计时 */
+function dismissRetryOverlay(){
+ const box=document.getElementById('retryCountdown');
+ if(box)retryDismissedAt=parseFloat(box.dataset.resume)||null;
+ updateRetryCountdown(lastRuntime)}
 function updateRetryCountdown(r){
- let box=document.getElementById('retryCountdown'),chip=document.getElementById('retryChip');
+ let box=document.getElementById('retryCountdown'),chip=document.getElementById('retryChip'),mask=document.getElementById('retryMask');
  if(!box)return;
  lastRuntime=r||lastRuntime;
- let resumeAt=lastRuntime&&lastRuntime.retry_resume_at;
- if(!resumeAt||resumeAt*1000<=Date.now()){retryDismissedAt=null;hideRetryUI();return}
+ // 局部快照（SSE 只带部分字段）不能当成"没有限流"把遮罩收掉——
+ // 以前这里直接读 r.retry_resume_at，SSE 一推就 hideRetryUI()，遮罩闪一下没了。
+ const _hasField=!!(r&&Object.prototype.hasOwnProperty.call(r,'retry_resume_at'));
+ let resumeAt=(r&&r.retry_resume_at)||null;
+ if(!_hasField&&box.dataset.resume)resumeAt=parseFloat(box.dataset.resume)||null;  // 沿用已知
+ if(_hasField&&!r.retry_resume_at){retryDismissedAt=null;hideRetryUI();return}          // 明确清空
+ if(!resumeAt||resumeAt*1000<=Date.now()){
+  if(!_hasField&&box.dataset.resume){resumeAt=parseFloat(box.dataset.resume)}
+  else{retryDismissedAt=null;hideRetryUI();return}}
  // 换了新的限流终点（新一轮）→ 重新展开卡片
  if(retryDismissedAt!==null&&retryDismissedAt!==resumeAt)retryDismissedAt=null;
  let showCard=retryDismissedAt!==resumeAt;
@@ -2320,19 +2336,20 @@ function updateRetryCountdown(r){
  box.dataset.resume=resumeAt;
  if(chip){chip.dataset.resume=resumeAt;chip.textContent='⏳ '+text}
  if(!showCard){
-  box.style.display='none';if(chip)chip.style.display='block';
+  box.style.display='none';if(mask)mask.style.display='none';if(chip)chip.style.display='block';
   // 卡片(高) → 小标(矮) 必须重算 --retry-h：否则底部让位带仍按卡片高度预留，
   // 小标会远离输入框、也可能压住内容（布局审计实测 retryChip 遮挡 #followup 6%）
   try{syncFixedLanes()}catch(e){}
   return}
- box.style.display='block';if(chip)chip.style.display='none';
+  box.style.display='block';if(mask)mask.style.display='flex';if(chip)chip.style.display='none';
  try{syncFixedLanes()}catch(e){}
  // 标题按实际通道措辞：API 提供商（模型 ID 含 /，如 deepseek/deepseek-chat）
  // 的 5xx/超时也走同一个窗口，写成"Copilot 限流"不准确。
  let isProvider=!!(currentModel&&currentModel.indexOf('/')>=0);
  let title=box.querySelector('.rc-title');
- if(title)title.textContent=isProvider?'⏳ API 服务限流/不可用，预计恢复'
-                                     :'⏳ Copilot 限流/不可用，预计恢复';
+ // 这两条以前是硬编码中文：英文模式下只有副标题是英文、标题仍是中文（用户实测）
+ if(title)title.textContent='⏳ '+(isProvider?tr('API 服务限流/不可用，预计恢复')
+                                        :tr('Copilot 限流/不可用，预计恢复'));
  box.querySelector('.rc-count').textContent=text;
  let sub=box.querySelector('.rc-sub');
  const suspended=String(lastRuntime&&(lastRuntime.session_state||lastRuntime.state)||'')==='suspended';
@@ -2344,8 +2361,7 @@ function updateRetryCountdown(r){
 /* 挂起态：把"已配置的提供商模型"填进下拉（只列 provider/model，不含 Copilot 网页模型） */
 function fillRetrySwap(suspended){
  const box=document.getElementById('retrySwap');
- const sel=document.getElementById('retryModel');
- if(!box||!sel)return;
+ if(!box)return;
  if(!suspended){box.style.display='none';return}
  let list=[];
  try{list=(window.__MODELS||[]).filter(m=>String(m.id||'').indexOf('/')>=0&&m.available!==false)}catch(e){}
@@ -2355,14 +2371,12 @@ function fillRetrySwap(suspended){
   if(sub)sub.textContent=tr('Copilot 网页限流，已挂起：到点自动继续（没有配置其它提供商模型）');
   return;
  }
- if(!sel.options.length){
-  sel.innerHTML=list.map(m=>`<option value="${esc(m.id)}">${esc(m.id)}</option>`).join('');
- }
+ // 模型直接列成按钮：遮罩上点一下就走，不用先开下拉再点确认
+ box.innerHTML=list.map(m=>`<button type="button" class="btn ghost" data-act="swapModelResume"
+   data-arg="${esc(m.id)}" title="${esc(tr('用这个模型继续'))}">${esc(m.id)}</button>`).join('');
  box.style.display='flex';
 }
-async function swapModelResume(){
- const sel=document.getElementById('retryModel');
- const model=sel&&sel.value;
+async function swapModelResume(model){
  if(!model||!current)return;
  try{
   await api(`/v1/agent/sessions/${current}/model`,{method:'POST',
@@ -2373,11 +2387,10 @@ async function swapModelResume(){
  }catch(e){ toast(tr('切换失败: ')+((e&&(e.text||e.detail))||e),'err') }
 }
 /* 收起（×）与展开（点小标） */
-document.getElementById('retryMin').onclick=e=>{
- e.stopPropagation();
- let box=document.getElementById('retryCountdown');
- retryDismissedAt=parseFloat(box.dataset.resume)||null;
- updateRetryCountdown(lastRuntime)};
+/* "稍后再看"：通过 data-act 走 dismissRetry（见 ACTIONS） */
+try{document.getElementById('retryMask').addEventListener('click',e=>{
+ // 点遮罩空白处也收起（点卡片内部不触发）
+ if(e.target&&e.target.id==='retryMask')dismissRetryOverlay()})}catch(e){}
 document.getElementById('retryChip').onclick=()=>{retryDismissedAt=null;updateRetryCountdown(lastRuntime)};
 /* 每秒把倒数刷新一次（与 runtime 轮询解耦，数字平滑跳动） */
 setInterval(()=>{
@@ -4005,7 +4018,8 @@ const ACTIONS={
  openCopilot:()=>openCopilot(),
  toggleMore:(el,e)=>toggleMore(el, e),
  openSettings:()=>openSettings(),
- swapModelResume:()=>swapModelResume(),
+ swapModelResume:(el)=>swapModelResume(el&&el.dataset&&el.dataset.arg),
+ dismissRetry:()=>dismissRetryOverlay(),
  pickSandbox:(el)=>pickSandbox(el&&el.dataset?el.dataset.arg:''),
  settingsTab:(el)=>{setSettingsTab(el&&el.dataset?el.dataset.arg:'');},
  openWsBrowser:()=>openWsBrowser(''),

@@ -241,16 +241,22 @@
   </div>
 </div>
 <div id="demoBadge" class="demo" style="display:none">演示模式 · API 未连接</div>
-<div id="retryCountdown" class="retry-fab" style="display:none">
-  <button type="button" id="retryMin" class="rc-x" title="收起（右下角小标可再展开）">×</button>
-  <div class="rc-title">⏳ 服务限流/不可用，预计恢复</div>
-  <div class="rc-count">--:--</div>
-  <div class="rc-sub">第 1 次 · 自动重试中，可点「暂停」稍后继续</div>
-  <!-- 挂起态专用：Copilot 网页限流挂起时，可以直接换用已配置的提供商模型立即继续 -->
-  <div class="rc-swap" id="retrySwap" style="display:none">
-    <select id="retryModel" aria-label="换用其它提供商模型继续" data-i18n-aria-label="换用其它提供商模型继续"></select>
-    <button type="button" class="btn accent" id="retrySwapGo" data-act="swapModelResume"
-            data-i18n="换模型继续">换模型继续</button>
+<!-- 限流/不可用：**全页面遮罩**（不再用右下角浮卡）──────────────────
+   以前是个 fixed 浮卡，还会让 .main 预留一条 --retry-h 底部带 ——
+   结果 live stream 与输入框之间凭空多出一大块空白（用户截图）。
+   现在改成居中遮罩：不占布局、不撑间距，提供商模型直接列成按钮点一下就走。 -->
+<div id="retryMask" class="mask retrymask" style="display:none">
+  <div class="dlg retrydlg" role="dialog" aria-modal="true" aria-labelledby="retryTitle">
+    <div id="retryCountdown" class="retry-fab">
+      <div class="rc-title" id="retryTitle">⏳ 服务限流/不可用，预计恢复</div>
+      <div class="rc-count">--:--</div>
+      <div class="rc-sub">第 1 次 · 自动重试中，可点「暂停」稍后继续</div>
+      <!-- 挂起态：已配置的提供商模型直接列成按钮，点一下即切换并继续 -->
+      <div class="rc-swap" id="retrySwap" style="display:none"></div>
+      <div class="rc-actions">
+        <button type="button" class="btn ghost" id="retryMin" data-act="dismissRetry">稍后再看（后台继续等待）</button>
+      </div>
+    </div>
   </div>
 </div>
 <div id="retryChip" class="retry-chip" style="display:none" title="限流中：点击展开倒计时">⏳ --:--</div>

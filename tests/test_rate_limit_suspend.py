@@ -75,12 +75,17 @@ class SuspendWiringTests(unittest.TestCase):
     def test_frontend_offers_provider_swap(self):
         html = (ROOT / "webui" / "index.html").read_text(encoding="utf-8")
         app = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
-        self.assertIn('id="retrySwap"', html, "挂起卡片要有换模型入口")
-        self.assertIn('id="retryModel"', html)
-        self.assertIn('data-act="swapModelResume"', html)
+        self.assertIn('id="retrySwap"', html, "挂起遮罩要有换模型入口")
+        # 换模型入口已从"下拉 + 确认按钮"改成**按钮列表**（用户要求在全屏遮罩上直接点），
+        # 所以按钮是 JS 渲染的：断言动作与参数，而不是断言 HTML 里的 select。
+        self.assertIn('data-act="swapModelResume"', app)
+        self.assertIn("data-arg=", app)
         self.assertIn("function swapModelResume(", app)
         self.assertIn("/model", app)
         self.assertIn("window.__MODELS", app, "要能筛出 provider/model")
+        # 限流提示已改成全页面遮罩：卡片必须在遮罩里，否则又变成挡内容的浮层
+        self.assertIn('id="retryMask"', html)
+        self.assertIn('class="mask retrymask"', html)
 
 
 if __name__ == "__main__":

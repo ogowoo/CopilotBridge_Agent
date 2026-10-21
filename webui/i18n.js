@@ -367,6 +367,13 @@ Object.assign(I18N_EN, {
   "需要授权：": "Needs approval: ",
   "等待你的回答": "Waiting for your answer",
   "任务已暂停，等待你处理": "Task paused, waiting for you",
+  // 限流/不可用遮罩（标题、静态副标题、按钮）
+  "服务限流/不可用，预计恢复": "Service rate-limited / unavailable — estimated recovery",
+  "Copilot 限流/不可用，预计恢复": "Copilot rate-limited / unavailable — estimated recovery",
+  "API 服务限流/不可用，预计恢复": "API rate-limited / unavailable — estimated recovery",
+  "稍后再看（后台继续等待）": "Later (keep waiting in background)",
+  "用这个模型继续": "Continue with this model",
+  "换用其它提供商模型继续": "Continue with another provider model",
   "重启服务": "Restart service",
   // 待办（todo_write 维护的清单，区别于 /plan 计划模式）
   "待办": "Todo",
