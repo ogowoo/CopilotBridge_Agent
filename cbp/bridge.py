@@ -1057,7 +1057,31 @@ async def attach_file_to_copilot(file_path: Path) -> None:
         await diagnostics("no_file_input")
         raise RuntimeError("找不到 Copilot 文件上传控件")
     await file_input.first.set_input_files(str(file_path))
-    await asyncio.sleep(2)  # 等待上传与解析（附件卡片渲染）
+    # 固定 2s 对**大截图**不够：上传+解析没完成就把消息发出去，Copilot 收到的
+    # 就是"没有附件的纯文本"，看着就像"贴图识别失败"。这里多等一会儿，
+    # 有附件缩略图出现就提前结束；选择器不匹配时按最长等待兜底（行为不变）。
+    await asyncio.sleep(2)
+    _chip_sels = [
+        '[data-testid*="attachment" i]',
+        '[data-testid*="file" i]',
+        '.attachment-pill',
+        'img[src^="blob:"]',
+    ]
+    _deadline = 10.0
+    _waited = 0.0
+    while _waited < _deadline:
+        _found = 0
+        for _sel in _chip_sels:
+            try:
+                _found += await page.locator(_sel).count()
+            except Exception:
+                pass
+        if _found:
+            break
+        await asyncio.sleep(0.5)
+        _waited += 0.5
+    if _waited:
+        log(f"等待附件 {file_path.name} 上传完成 {_waited:.1f}s")
 
 
 MAX_IMAGE_ATTACHMENTS = 4
@@ -3340,6 +3364,49 @@ def pending_steps_via(sid: str, source: str | None = None) -> list[dict]:
     return via_proj
 
 
+def turn_cache_key(prompt: str, attach_paths=None) -> str:
+    """回合缓存键：**必须包含附件指纹**。
+
+    同一句"看看这张图"配不同截图时，只用 prompt 哈希会命中上一次的缓存答案，
+    模型根本没看到新图 —— 用户侧表现就是"贴图后识别失败"。
+    """
+    import hashlib as _hl
+    key = _hl.sha1((prompt or "").encode("utf-8")).hexdigest()[:20]
+    if attach_paths:
+        ah = _hl.sha1()
+        for p in attach_paths:
+            try:
+                ah.update(Path(p).read_bytes())
+            except Exception:
+                ah.update(str(p).encode("utf-8", "replace"))
+        key += ":att-" + ah.hexdigest()[:12]
+    return key
+
+
+def warn_provider_cannot_attach(sid: str, model: str, attach_paths) -> None:
+    """API 提供商分支收到图片：明确记录 + 提示，而不是静默丢弃。
+
+    提供商走 HTTP API，不经过 Copilot 网页输入框，没有地方附加图片。
+    以前这里直接忽略附件，于是模型只看到"看看这张图"这句话，答得像没看图。
+    """
+    names = [Path(getattr(x, "name", str(x))).name for x in (attach_paths or [])]
+    if not names:
+        return
+    log(f"提供商模型 {model} 不能接收图片，已跳过 {len(names)} 张（{', '.join(names)}）")
+    try:
+        cur = AGENT_SESSIONS.get(sid) or {}
+        sn = int(cur.get("total_steps", 0)) + 1
+        AGENT_SESSIONS.add_step(sid, sn, int(cur.get("conversation_index", 0)), {
+            "step": sn, "tool": "attach_image", "status": "error",
+            "reason": f"当前模型 {model} 是 API 提供商，无法接收图片附件",
+            "result": {"skipped": names,
+                       "hint": "想让它看图，请把模型切换成 Copilot（copilot-*）再发一次"}})
+    except Exception:
+        pass
+    runtime_update(sid, phase="running",
+                   detail=f"⚠ 当前模型不支持图片：已跳过 {len(names)} 张附件；想看图请切到 Copilot 模型")
+
+
 async def run_agent(req: AgentRequest, attach_paths: list | None = None):
     global ACTIVE_SESSION_ID
     if not AGENT_CFG.get("enabled", True): raise HTTPException(503, "Agent 功能已禁用")
@@ -3403,6 +3470,13 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
         # provider 会话禁用"需要 Copilot 网页会话"的工具（copilot_attach/copilot_file：
         # 没有网页对话可驱动，实测连续失败 10 次白烧回合）。浏览器会话保持启用。
         AGENT_TOOLS.set_web_copilot_tools(not _is_provider)
+        if _is_provider and attach_paths:
+            # 提供商分支没有可附加图片的输入框：明确记录 + 提示（不再静默丢弃）
+            try:
+                warn_provider_cannot_attach(sid, req.model, attach_paths)
+            except Exception as exc:
+                log(f"记录图片不可投递失败（忽略）: {exc}")
+            attach_paths = None      # 明确：本轮无附件可投递
         if _is_provider:
             # API 提供商：不经过浏览器，无页面导航/会话 URL/标记确认簿记；
             # 换会话只影响本地上下文压缩。
@@ -3502,12 +3576,28 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                         await asyncio.sleep(1)
                         _forget_selected_model()
                 if attach_paths and not attached["done"]:
+                    _ok_att, _bad_att = [], []
                     for p in attach_paths:
                         try:
                             await attach_file_to_copilot(p)
+                            _ok_att.append(p.name)
                         except Exception as exc:
                             log(f"附件 {p.name} 上传失败: {exc}")
+                            _bad_att.append(f"{p.name}: {exc}")
                     attached["done"] = True
+                    # 写进时间线：图片没送进 Copilot 时，用户和后续排查都能看到，
+                    # 而不是只躺在服务端日志里（这正是"贴图识别失败"最难查的地方）。
+                    try:
+                        _sn = int((AGENT_SESSIONS.get(sid) or {}).get("total_steps", 0)) + 1
+                        _cix = int((AGENT_SESSIONS.get(sid) or {}).get("conversation_index", 0))
+                        AGENT_SESSIONS.add_step(sid, _sn, _cix, {
+                            "step": _sn, "tool": "attach_image",
+                            "status": "ok" if (_ok_att and not _bad_att) else
+                                      ("error" if _bad_att and not _ok_att else "warning"),
+                            "reason": f"附加图片 {len(_ok_att)}/{len(attach_paths)} 张到 Copilot 输入框",
+                            "result": {"attached": _ok_att, "failed": _bad_att}})
+                    except Exception:
+                        pass
                 marker = _agent_chat_marker(sid, int(st.get("conversation_index", 0)))
                 # Copilot derives the sidebar title from the beginning of the first
                 # message. This is more stable than automating the Rename editor.
@@ -3521,8 +3611,8 @@ async def run_agent(req: AgentRequest, attach_paths: list | None = None):
                 remember_initial_prompt(sid, send_prompt)   # 与实际发送内容一致
                 # ── 回合结果缓存（P1-1）：同一会话/对话/提示词的回合若已真正发出并落过步数，
                 # 恢复或重试时直接复用答案，不再重发（省一次远端回合 = 省时间与额度）。
-                import hashlib as _hl
-                _ph = _hl.sha1((send_prompt or "").encode("utf-8")).hexdigest()[:20]
+                # 键里包含附件指纹（见 turn_cache_key）：换一张新截图不会被旧缓存顶掉
+                _ph = turn_cache_key(send_prompt, attach_paths)
                 _ci = int((AGENT_SESSIONS.get(sid) or {}).get("conversation_index", 0))
                 _cache_on = bool(AGENT_CFG.get("turn_cache_enabled", True))
                 if _cache_on:
