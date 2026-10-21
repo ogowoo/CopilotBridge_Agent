@@ -87,6 +87,16 @@ MEASURE_JS = r"""
       const ox = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
       const oy = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
       if (ox > 2 && oy > 2) {
+        // 模态遮罩本来就是"盖住整页"的东西（限流遮罩、确认框），
+        // 与它重叠的固定小条（连接横幅、状态小标）不算布局错位。
+        const modal = (f) => {
+          const el = f.el;
+          const isMask = el.classList && el.classList.contains('mask') ||
+                         (el.getAttribute && el.getAttribute('role') === 'dialog');
+          const area = f.r.width * f.r.height;
+          return isMask && area >= 0.6 * vw * vh;
+        };
+        if (modal(fixed[i]) || modal(fixed[j])) continue;
         res.overlaps.push({a: fixed[i].id || fixed[i].cls, b: fixed[j].id || fixed[j].cls,
                            overlap: Math.round(ox) + 'x' + Math.round(oy),
                            za: fixed[i].z, zb: fixed[j].z});
@@ -145,6 +155,10 @@ MEASURE_JS = r"""
         const cx = Math.round(b.left + b.width / 2), cy = Math.round(b.top + b.height / 2);
         const hit = document.elementFromPoint(cx, cy);
         const reallyCovered = hit === f.el || (hit && f.el.contains(hit));
+        // 全屏模态遮罩（限流遮罩 / 确认框）挡住内容是设计如此——它就是要拦住页面。
+        // 对这种浮层只关心"卡片自己是否完整可见"（由 ui_smoke 的弹窗用例覆盖）。
+        if (f.el.classList && f.el.classList.contains('mask') &&
+            f.r.width * f.r.height >= 0.6 * vw * vh) return;
         const item = {cover: f.id || f.cls, target: sel, ratio: Math.round(ratio * 100),
                       overlap: Math.round(ox) + 'x' + Math.round(oy)};
         if (reallyCovered) res.occlusions.push(item); else res.edgeOverlaps.push(item);

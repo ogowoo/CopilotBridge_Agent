@@ -120,11 +120,11 @@
                状态 / 总步骤 / 当前会话步骤 / 会话切换 / TOKEN 估算 都在这里，
                只占按钮行的剩余宽度，宽屏一行放下、窄屏自动换行到按钮下方。 -->
           <section class="kpis kpis-inline">
-            <div class="kpi kpi-state" id="kpiStateCard" data-state="ready" data-kpi="state" title="状态"><span>状态</span><b id="kpiState">—</b></div>
-            <div class="kpi" data-kpi="steps" title="总步骤（含子代理）"><span>总步骤<i class="kpisub" id="kpiSubNote"></i></span><b id="kpiSteps">0</b></div>
-            <div class="kpi" data-kpi="conv" title="当前会话步骤"><span>当前会话步骤</span><b id="kpiConv">0</b></div>
-            <div class="kpi" data-kpi="roll" title="会话切换"><span>会话切换</span><b id="kpiRoll">0</b></div>
-            <div class="kpi" data-kpi="token" title="TOKEN 估算"><span>TOKEN 估算</span><b id="kpiToken">0</b><small id="kpiBudget" style="color:var(--faint);font-size:10.5px"> / —</small><div class="meter"><span id="tokenbar"></span></div></div>
+            <div class="kpi kpi-state" id="kpiStateCard" data-state="ready" data-kpi="state" title="状态"><span data-i18n="状态">状态</span><b id="kpiState">—</b></div>
+            <div class="kpi" data-kpi="steps" title="总步骤（含子代理）" data-i18n-title="总步骤（含子代理）"><span data-i18n="总步骤">总步骤<i class="kpisub" id="kpiSubNote"></i></span><b id="kpiSteps">0</b></div>
+            <div class="kpi" data-kpi="conv" title="当前会话步骤"><span data-i18n="当前会话步骤">当前会话步骤</span><b id="kpiConv">0</b></div>
+            <div class="kpi" data-kpi="roll" title="会话切换"><span data-i18n="会话切换">会话切换</span><b id="kpiRoll">0</b></div>
+            <div class="kpi" data-kpi="token" title="TOKEN 估算"><span data-i18n="TOKEN 估算">TOKEN 估算</span><b id="kpiToken">0</b><small id="kpiBudget" style="color:var(--faint);font-size:10.5px"> / —</small><div class="meter"><span id="tokenbar"></span></div></div>
           </section>
         </div>
         <button type="button" class="cardchev topbarchev" id="topbarChev" data-act="topbarCollapse" aria-expanded="true" title="收起/展开任务条（点标题也行）"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 L6 8 L9.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>

@@ -707,6 +707,7 @@ Object.assign(I18N_EN, {
   "数据": "Data",
   "设置": "Settings",
   "外观": "Appearance",
+ "返回父会话": "Back to parent session",
  "仅可查看": "View only",
  "工作区内修改": "Modify workspace",
  "完全权限": "Full access",
