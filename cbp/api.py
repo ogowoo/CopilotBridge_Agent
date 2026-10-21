@@ -1396,8 +1396,15 @@ async def continue_session_message(sid: str, req: SessionMessageRequest,
     state = b.AGENT_SESSIONS.get(sid)
     if not state:
         raise HTTPException(404, "Session 不存在")
-    if state.get("state") in {"cancelled", "archived"}:
-        raise HTTPException(409, f"Session 状态为 {state.get('state')}，不能继续")
+    if state.get("state") == "archived":
+        raise HTTPException(409, "Session 已归档，不能继续；请新建任务")
+    if state.get("state") == "cancelled":
+        # 用户在被取消的会话里又发了消息 = 明确想接着做：等价于点「恢复」，
+        # 保留历史与工作区，把状态拉回 ready 再走正常入队（以前这里直接 409，
+        # 界面上只得到一句原始报错，用户实测以为是坏了）。
+        b.AGENT_SESSIONS.patch(sid, state="ready", cancel_requested=False)
+        state = b.AGENT_SESSIONS.get(sid) or state
+        b.log(f"会话 {sid} 状态为 cancelled，收到新消息后自动恢复")
     content = req.content.strip()
     attach_paths = b.save_image_attachments(req.attachments)
     if not content and not attach_paths:

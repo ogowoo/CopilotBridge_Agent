@@ -98,6 +98,21 @@ class ProviderError(RuntimeError):
     """API 提供商调用失败（非限流类）。"""
 
 
+def _credential_hint(body: str) -> str:
+    """把反代/上游的"凭据无效"翻译成用户能执行的一句话。
+
+    典型：DeepSeek 网页反代返回 `{"code":40003,"msg":"INVALID_TOKEN"}`（token 过期），
+    或者 401/403。原样抛给用户只有一串 JSON，不知道该干什么。
+    """
+    t = str(body or "")
+    low = t.lower()
+    if not any(k in low for k in ("invalid_token", "40003", "unauthorized",
+                                  "invalid api key", "invalid_api_key")):
+        return ""
+    return ("（反代/上游的凭据已失效：重新登录或重新导入 token；"
+            "若只是临时用一下，可以在反代的管理面板里删掉这条账号走游客态）")
+
+
 class ProviderUnavailable(RuntimeError):
     """限流/5xx/超时等暂时不可用，上层按可重试处理。"""
 
@@ -241,8 +256,8 @@ class ApiProvider:
         except Exception:
             body = "(无法读取响应体)"
         if resp.status_code in (408, 409, 425, 429) or resp.status_code >= 500:
-            raise ProviderUnavailable(f"HTTP {resp.status_code}: {body}")
-        raise ProviderError(f"HTTP {resp.status_code}: {body}")
+            raise ProviderUnavailable(f"HTTP {resp.status_code}: {body}{_credential_hint(body)}")
+        raise ProviderError(f"HTTP {resp.status_code}: {body}{_credential_hint(body)}")
 
     @staticmethod
     def _check_status(resp: httpx.Response) -> None:
@@ -250,8 +265,8 @@ class ApiProvider:
             return
         body = resp.text[:500]
         if resp.status_code in (408, 409, 425, 429) or resp.status_code >= 500:
-            raise ProviderUnavailable(f"HTTP {resp.status_code}: {body}")
-        raise ProviderError(f"HTTP {resp.status_code}: {body}")
+            raise ProviderUnavailable(f"HTTP {resp.status_code}: {body}{_credential_hint(body)}")
+        raise ProviderError(f"HTTP {resp.status_code}: {body}{_credential_hint(body)}")
 
     def _json_hint(self, schema: dict[str, Any] | None) -> dict[str, Any]:
         """按能力生成 response_format；拿不准就退回 json_object（兼容最广）。"""
