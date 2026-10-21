@@ -151,6 +151,7 @@ function showQuestionBar(q){
    数据来自 GET /v1/agent/subagents；点一行可切到该子会话查看详情。 */
 let lastSubagentFetch=0, subagentBusy=false;
 let lastSubagentParent=null;
+let parentOfCurrent=null;   // 当前会话若是子代理，这里是父会话 id
 async function refreshSubagents(force){
  const now=Date.now();
  if(subagentBusy) return;
@@ -162,7 +163,9 @@ async function refreshSubagents(force){
  if(!current){renderSubagents([]);return}
  subagentBusy=true;lastSubagentFetch=now;
  try{
-  const d=await api('/v1/agent/subagents?parent='+encodeURIComponent(current));
+  // 当前会话本身可能是子代理：此时按它的**父会话**查询，面板才不会一片空白
+  const _scope=parentOfCurrent||current;
+  const d=await api('/v1/agent/subagents?parent='+encodeURIComponent(_scope));
   renderSubagents(d.subagents||[]);
  }catch(e){}
  finally{subagentBusy=false}
@@ -269,12 +272,23 @@ function renderSubagents(list){
  const box=document.getElementById('subagentList');
  const cnt=document.getElementById('subagentCount');
  if(!bar||!box) return;
- if(!list.length){bar.style.display='none';box.innerHTML='';if(cnt)cnt.textContent='';try{syncTeamCard()}catch(e){};return}
+ // 正在看子代理时即使它自己没有下级，也要保留面板 + 返回入口（否则用户被困住）
+ if(!list.length && !parentOfCurrent){bar.style.display='none';box.innerHTML='';if(cnt)cnt.textContent='';try{syncTeamCard()}catch(e){};return}
  // 用 'block' 而非 ''：'' 会回退到样式表里的 .subagents{display:none}（实测踩到）
  bar.style.display='block';
  const running=list.filter(s=>s.state==='running').length;
  cnt.textContent=tr(' · {n} 个',{n:list.length})+(running?tr('（{r} 个运行中）',{r:running}):'');
  box.innerHTML='';
+ // 返回父会话（只有当前会话是子代理时才出现）
+ if(parentOfCurrent){
+  const back=document.createElement('div');
+  back.className='subagentrow subagentback';
+  back.dataset.act='openSubagent';back.dataset.arg=parentOfCurrent;
+  back.title=tr('返回父会话');
+  const bd=document.createElement('span');bd.textContent='←';
+  const bt=document.createElement('span');bt.className='sa-desc';
+  bt.textContent=tr('返回父会话')+' · '+parentOfCurrent;
+  back.appendChild(bd);back.appendChild(bt);box.appendChild(back)}
  list.slice(0,8).forEach(s=>{
   const row=document.createElement('div');
   const _sid=s.agent_id||s.id||'';
@@ -290,6 +304,9 @@ function renderSubagents(list){
   meta.textContent=stateText(s.state)+' · '+s.steps+' '+tr('步')+(s.phase?' · '+s.phase:'');
   row.appendChild(dot);row.appendChild(desc);row.appendChild(meta);
   box.appendChild(row)});
+ try{syncTeamCard()}catch(e){}
+   // 非空路径以前从不调用 syncTeamCard：#teamCard 在“空列表”那次被 hidden 之后
+   // 就再也没被显示回来，于是点进子代理后整块面板消失（用户实测）。
 }
 
 /* ── 插件管理（对应 cbp/plugins.py 的贡献点与启停）──────────────────── */
@@ -1850,6 +1867,8 @@ async function load(id){
  if(current!==id)return;
  if(d.token_budget)setKpis({token_budget:d.token_budget,estimated_tokens:s.estimated_tokens??0});
  currentModel=s.model||null;currentUrl=s.current_url;
+ // 记住是不是子代理会话：点进去后要能返回父会话，面板也不能凭空消失
+ parentOfCurrent=s.parent_id||null;
  renderStream(d.messages||[],d.steps||[],{scrollEnd:true,force:true});
  // 跟进消息应跟随 Session 自己的模型，而不是左侧新任务表单的选择
  let _ms=document.getElementById('model');

@@ -1634,3 +1634,7 @@ html,body{overflow:hidden}
 .sandboxmenu .sbopt .sb-check{flex:none;width:14px;text-align:center;color:var(--accent);font-weight:700}
 /* composer 是纵向排列：chip 放顶部一行 */
 /* chip 放在 chatbar 行里，不再绝对定位（那条会压到侧栏上） */
+/* 子代理面板里的"← 返回父会话"行：与普通子代理行区分开（虚线分隔 + 强调色） */
+.subagentrow.subagentback{border-bottom:1px dashed var(--line2);margin-bottom:4px;
+  padding-bottom:6px;color:var(--accent);cursor:pointer}
+.subagentrow.subagentback:hover{background:var(--hover,rgba(0,0,0,.04))}
