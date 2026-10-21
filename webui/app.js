@@ -865,14 +865,29 @@ function stateIcon(s){
  return '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"'
    +' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+k+'</svg>'}
 function stateClass(s){return s==='running'?'run':(s==='paused'||s==='waiting')?'warn':(s==='failed')?'bad':(s==='completed')?'done':''}
+/* 父会话已结束、但后代子代理还在跑：状态不能笼统显示"已完成"（用户实测会被误导成
+   "任务全做完了"）。这里统一给出"已完成 · 子代理 N 仍在跑"的文案与颜色。 */
+function subRunningOf(o){return Number((o&&(o.subagent_running??o.subagentRunning))||0)}
+function stateLabel(o){
+ const st=String((o&&(o.state||o.session_state))||'ready');
+ const n=subRunningOf(o);
+ if(n>0&&(st==='completed'||st==='failed'||st==='cancelled'))
+  return stateText(st)+' · '+tr('子代理 {n} 仍在跑',{n});
+ return stateText(st)}
+function stateClassOf(o){
+ const st=String((o&&(o.state||o.session_state))||'ready');
+ return subRunningOf(o)>0&&(st==='completed'||st==='failed'||st==='cancelled')?'warn':stateClass(st)}
 function setPill(s){let e=document.getElementById('statepill');e.textContent=stateText(s);e.className='pill '+stateClass(s)}
 function setKpis(o){
  if(o.token_budget){budget=o.token_budget;document.getElementById('kpiBudget').textContent=' / '+Number(budget).toLocaleString()}
  const _st=String(o.state||o.session_state||'ready');
- document.getElementById('kpiState').textContent=stateText(_st);
- // 状态卡片按状态变色（CSS 用 data-state 着色，见 style.css 的 KPI-STATE）
  const _card=document.getElementById('kpiStateCard');
- if(_card&&_card.dataset.state!==_st)_card.dataset.state=_st;
+ const _hasSubRun=subRunningOf(o)>0&&(_st==='completed'||_st==='failed'||_st==='cancelled');
+ document.getElementById('kpiState').textContent=stateLabel(o);
+ // 状态卡片按状态变色；后代仍在跑时也要跟着变黄，别让用户看到绿色"已完成"就走
+ if(_card){const _c=_hasSubRun?'waiting':_st; if(_card.dataset.state!==_c)_card.dataset.state=_c}
+ // （_card 已在上面取过）
+ // （已由上面统一设置，避免把子代理运行态覆盖回完成态）
  // 步数与 token 要把**子代理**算进来：子代理是独立会话、各自记账，
  // 只读主会话字段时"跑了 4 个子代理、几百步"在界面上完全看不出来（用户实测）。
  const _ss=Number(o.subagent_steps||0), _stk=Number(o.subagent_tokens||0),
@@ -1050,7 +1065,7 @@ function drawSessions(){
   e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
   const _kind=String(s.id||'').startsWith('cron-')?'⏱':String(s.id||'').startsWith('research-')?'🔎':String(s.id||'').startsWith('sub-')?'子':'';
-  e.innerHTML=`<span class="sstat ${stateClass(s.state)}" title="${esc(stateText(s.state))}" aria-label="${esc(stateText(s.state))}">${stateIcon(s.state)}</span><div class="smeta"><b>${_kind?`<span class="skind">${_kind}</span>`:''}${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
+  e.innerHTML=`<span class="sstat ${stateClassOf(s)}" title="${esc(stateLabel(s))}" aria-label="${esc(stateLabel(s))}">${stateIcon(s.state)}</span><div class="smeta"><b>${_kind?`<span class="skind">${_kind}</span>`:''}${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
   // 子代理不再列进侧栏 → 前导位（▸ 的那个位置）也就没用了：
   // 空着那 12px + gap 会把整行往右推，看起来跟工作区分组头"跳格"（用户实测）。
   let chip=e.querySelector('.sid');

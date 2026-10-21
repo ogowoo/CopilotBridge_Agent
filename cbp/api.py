@@ -1040,9 +1040,21 @@ async def sessions(include_archived: bool = False, include_subagents: bool = Tru
     # 需要扁平列表的调用方显式传 include_subagents=false。
     if not include_subagents:
         rows = [x for x in rows if not str(x.get("parent_id") or "").strip()]
+    # 列表行也要知道自己有没有"仍在跑的子代理"：否则父会话已结束、子代理还在跑时，
+    # 侧栏仍显示绿色"已完成"（用户实测被误导）。一条聚合查询批量补上，避免 N+1。
+    try:
+        agg = b.AGENT_SESSIONS.subagent_summary_by_parent()
+        for x in rows:
+            a = agg.get(str(x.get("id") or ""))
+            if a:
+                x["subagent_count"] = a["count"]
+                x["subagent_running"] = a["running"]
+                x["subagent_steps"] = a["steps"]
+                x["subagent_tokens"] = a["tokens"]
+    except Exception:
+        pass
     return {"sessions": rows, "subagent_count": sum(
-        1 for x in b.AGENT_SESSIONS.list(include_archived)
-        if str(x.get("parent_id") or "").strip())}
+        1 for x in rows if str(x.get("parent_id") or "").strip())}
 
 
 @app.get("/v1/agent/sessions/{sid}")
@@ -1056,6 +1068,7 @@ async def session(sid: str):
         _sub = {"count": 0, "steps": 0, "tokens": 0}
     x = dict(x)
     x["subagent_count"] = _sub.get("count", 0)
+    x["subagent_running"] = _sub.get("running", 0)
     x["subagent_steps"] = _sub.get("steps", 0)
     x["subagent_tokens"] = _sub.get("tokens", 0)
     return {"session": x, "steps": b.AGENT_SESSIONS.steps(sid),
@@ -1502,6 +1515,8 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
         "subagent_steps": _sub.get("steps", 0),
         "subagent_tokens": _sub.get("tokens", 0),
         "subagent_count": _sub.get("count", 0),
+        # 仍有后代在跑的个数：父会话即使已 completed，界面也不能笼统显示"已完成"
+        "subagent_running": _sub.get("running", 0),
         "retry_resume_at": (state or {}).get("retry_resume_at"),
         "retry_attempt": (state or {}).get("retry_attempt", 0),
         "rate_limited_since": (state or {}).get("rate_limited_since"),

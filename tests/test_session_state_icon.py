@@ -42,9 +42,10 @@ class SessionStateIconTests(unittest.TestCase):
 
     def test_row_uses_icon_not_text_pill(self):
         i = APP.index("e.innerHTML=`<span class=\"sstat")
-        row = APP[i:i + 700]
+        row = APP[i:i + 900]
         self.assertIn("stateIcon(s.state)", row, "会话行要用 SVG 图标")
-        self.assertIn("stateText(s.state)", row, "图标要带 title/aria-label 文案")
+        # 文案现在走 stateLabel(s)：父会话已结束但子代理仍在跑时要说清楚
+        self.assertIn("stateLabel(s)", row, "图标要带 title/aria-label 文案")
         self.assertNotIn('class="stag"', row, "不再使用文字块")
 
     def test_old_dot_removed_from_row(self):

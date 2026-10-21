@@ -377,6 +377,7 @@ Object.assign(I18N_EN, {
   "含 {n} 个子代理": "incl. {n} sub-agent(s)",
   "本会话 {a} + 子代理 {b}（{n} 个）": "This session {a} + sub-agents {b} ({n})",
   "总步骤（含子代理）": "Total steps (incl. sub-agents)",
+  "子代理 {n} 仍在跑": "{n} sub-agent(s) still running",
   "重启服务": "Restart service",
   // 待办（todo_write 维护的清单，区别于 /plan 计划模式）
   "待办": "Todo",

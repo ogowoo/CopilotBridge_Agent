@@ -250,6 +250,7 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         count = 0
         steps = 0
         tokens = 0
+        running = 0
         for _ in range(max(1, int(max_depth))):
             if not frontier:
                 break
@@ -268,10 +269,33 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 count += 1
                 steps += int(row.get("total_steps") or 0)
                 tokens += int(row.get("estimated_tokens") or 0)
+                if str(row.get("state") or "") in ("running", "waiting"):
+                    running += 1
                 nxt.append(rid)
             frontier = nxt
         return {"count": count, "steps": steps, "tokens": tokens,
-                "ids": sorted(seen)}
+                "running": running, "ids": sorted(seen)}
+
+    def subagent_summary_by_parent(self) -> dict[str, dict]:
+        """一次性汇总"每个父会话下的直接子会话"（侧栏徽标用，避免 N+1 查询）。
+
+        只算一层：侧栏显示"有子代理在跑"的提示足够了；精确的递归合计
+        （含孙代理）由 `subagent_stats(sid)` 给详情页/KPI 用。
+        """
+        with self.lock, self._connect() as con:
+            rows = con.execute(
+                "SELECT parent_id, COUNT(*) AS c, "
+                "SUM(CASE WHEN state IN ('running','waiting') THEN 1 ELSE 0 END) AS r, "
+                "SUM(COALESCE(total_steps,0)) AS s, "
+                "SUM(COALESCE(estimated_tokens,0)) AS t "
+                "FROM sessions WHERE parent_id IS NOT NULL AND parent_id != '' "
+                "GROUP BY parent_id").fetchall()
+        out: dict[str, dict] = {}
+        for row in rows:
+            pid = str(row["parent_id"])
+            out[pid] = {"count": int(row["c"] or 0), "running": int(row["r"] or 0),
+                        "steps": int(row["s"] or 0), "tokens": int(row["t"] or 0)}
+        return out
 
     def patch(self, sid: str, **values):
         allowed = {"title","state","workspace","model","current_url","conversation_index","conversation_urls",
@@ -717,20 +741,43 @@ CREATE TABLE IF NOT EXISTS conv_stats (
             return existed
 
     def cancel_running_children(self, parent_sid: str, note: str = "父任务已结束") -> int:
-        """父会话结束时，把仍在 running/waiting 的子会话标记为 cancelled。
+        """父会话结束时，把仍在 running/waiting 的**所有后代**会话标记为 cancelled。
 
-        实测：主任务早已 `completed`，子代理却还在"等 Copilot 回答"（步骤还在涨），
-        面板上显示 "1 running"。子会话与父会话同属一个任务，父任务收尾后没人会去
-        收它们的结果，留着既占浏览器又会继续消耗配额。
+        实测两个问题：
+        1. 主任务早已 `completed`，子代理却还在"等 Copilot 回答"（步骤还在涨），
+           面板上显示 "1 running"；
+        2. 只取消**直接子会话**时，孙代理（workflow → subagent 这种两层）不会被取消，
+           于是"父已完成、孙还在跑"——正是用户看到的那一幕。
+
+        所以这里沿 parent_id 逐层向下取消（上限 6 层，防环），返回取消数量。
         """
         if not parent_sid:
             return 0
-        with self.lock, self._connect() as con:
-            cur = con.execute(
-                "UPDATE sessions SET state='cancelled', cancel_requested=1, "
-                "last_error=?, updated=? WHERE parent_id=? AND state IN ('running','waiting')",
-                (note, time.time(), parent_sid))
-            return cur.rowcount
+        total = 0
+        frontier = [parent_sid]
+        seen: set[str] = set()
+        for _ in range(6):
+            if not frontier:
+                break
+            placeholders = ",".join("?" for _ in frontier)
+            with self.lock, self._connect() as con:
+                cur = con.execute(
+                    "UPDATE sessions SET state='cancelled', cancel_requested=1, "
+                    f"last_error=?, updated=? WHERE parent_id IN ({placeholders}) "
+                    "AND state IN ('running','waiting')",
+                    (note, time.time(), *frontier))
+                total += cur.rowcount
+                rows = con.execute(
+                    f"SELECT id FROM sessions WHERE parent_id IN ({placeholders})",
+                    tuple(frontier)).fetchall()
+            nxt: list[str] = []
+            for row in rows:
+                rid = str(row["id"])
+                if rid not in seen:
+                    seen.add(rid)
+                    nxt.append(rid)
+            frontier = nxt
+        return total
 
     def recover_interrupted(self):
         with self.lock, self._connect() as con:
