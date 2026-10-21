@@ -6,6 +6,7 @@
 """
 import asyncio
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -39,6 +40,7 @@ class _FakeProxy(BaseHTTPRequestHandler):
 
 class PluginLoadTests(unittest.TestCase):
     def setUp(self):
+        os.environ["CBP_PLUGIN_NO_TIMERS"] = "1"
         self.tmp = Path(tempfile.mkdtemp(prefix="cbp_dsweb_"))
         srv = HTTPServer(("127.0.0.1", 0), _FakeProxy)
         self.port = srv.server_address[1]

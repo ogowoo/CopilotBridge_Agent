@@ -112,6 +112,54 @@ def probe_sync(base_url: str, api_key: str, timeout: float = 1.5) -> dict[str, A
                 "error": (str(exc).strip() or type(exc).__name__)[:200]}
 
 
+_REFRESH: dict[str, Any] = {"thread": None, "stop": False, "models": []}
+
+
+def _refresh_loop(ctx: Any, interval: float = 20.0) -> None:
+    """后台轮询反代模型；只在**模型集合变化**时重新注册（避免刷爆 registered 列表）。"""
+    import time as _time
+
+    while not _REFRESH["stop"]:
+        try:
+            _time.sleep(interval)
+            if _REFRESH["stop"]:
+                return
+            cfg = _cfg(ctx)
+            res = probe_sync(str(cfg["base_url"]), str(cfg["api_key"]), timeout=2.0)
+            live = list(res["models"])
+            if not live or live == _REFRESH["models"]:
+                continue
+            ctx.register_provider(str(cfg["provider"]), {
+                "base_url": str(cfg["base_url"]),
+                "api_key": str(cfg["api_key"]),
+                "models": live,
+                "api": "openai",
+                "timeout_seconds": int(cfg["timeout_seconds"]),
+                "description": f"DeepSeek 网页版反代（{cfg['base_url']}）",
+            })
+            _REFRESH["models"] = live
+            ctx.log(f"deepseek-web：模型已更新 {live}")
+        except Exception:
+            continue
+
+
+def _start_refresher(ctx: Any, interval: float) -> None:
+    import os
+    import threading
+
+    if os.environ.get("CBP_PLUGIN_NO_TIMERS") == "1":
+        return
+    if interval <= 0:
+        return
+    if _REFRESH["thread"] is not None and _REFRESH["thread"].is_alive():
+        return
+    _REFRESH["stop"] = False
+    t = threading.Thread(target=_refresh_loop, args=(ctx, interval),
+                         name="dsweb-model-refresh", daemon=True)
+    _REFRESH["thread"] = t
+    t.start()
+
+
 def _cfg(ctx: Any) -> dict[str, Any]:
     cfg = dict(DEFAULTS)
     raw = getattr(ctx, "config", None)
@@ -198,8 +246,12 @@ def setup(ctx: Any) -> None:
         "api": {"method": "GET", "path": "api/status"},
         "hint": "反代连不上就先把 docker/python 那个反代跑起来",
     })
-    ctx.log(f"deepseek-web 已注册提供商 {prefix}（{cfg['base_url']}）")
+    _REFRESH["models"] = list(models)
+    ctx.log(f"deepseek-web 已注册提供商 {prefix}（{cfg['base_url']}，{len(models)} 个模型）")
+    # 反代可能后起/登录后才有模型：后台每 20 秒看一眼，变了就重新注册
+    _start_refresher(ctx, float(cfg.get("refresh_seconds", 20)))
 
 
 def teardown(ctx: Any) -> None:
+    _REFRESH["stop"] = True
     ctx.log("deepseek-web 已卸载（提供商随主机一起移除）")

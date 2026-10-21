@@ -155,3 +155,25 @@ cd C:\Tools\Test4All\dsweb-proxy
 Start-Process .\.venv\Scripts\python.exe -ArgumentList proxy.py -WindowStyle Hidden `
   -RedirectStandardOutput proxy.out.log -RedirectStandardError proxy.err.log
 ```
+
+### 续：模型一开始"看不见"的原因与修复
+
+插件在**反代还没有模型**时载入，注册的是空列表；之后没人再注册一次，所以界面上一直看不到
+`dsweb/*`（`/v1/models` 里也没有）。现在插件自带**后台刷新线程**（默认 20 秒，只在模型
+集合变化时重新注册一次；`CBP_PLUGIN_NO_TIMERS=1` 可关），加上 `api/status` 每次探测成功
+也会重新注册——所以顺序不再重要：反代后起、或登录后才有模型，都会自动出现。
+
+界面侧只需**刷新页面**（模型下拉在启动时读一次 `/v1/models`）；下拉旁边的 ↻ 也能重读。
+
+### 端到端实测（本机，反代未登录态）
+
+| 测试 | 结果 |
+|---|---|
+| `GET /v1/models` | 4 个：`dsweb/deepseek-default` / `deepseek-reasoner` / `deepseek-search` / `deepseek-reasoner-search`，UI 新建任务下拉与「切换模型」下拉都能选到 |
+| 非流式对话 `dsweb/deepseek-reasoner` | **1.9 s** 返回「接入成功」 |
+| 流式对话 `dsweb/deepseek-default` | 9 行 SSE，`data: {...chat.completion.chunk}` 正常 |
+| Agent 任务（工具循环） | **7.7 s**，2 步：`write_text` → `read_text` 均 ok，final 正确总结 |
+
+> 注意：当时 `/api/config` 显示 **token 为空、accounts 池 0**——也就是反代在**未登录**下也能聊
+> （游客态），但这条路径限流更紧（我最早对 `chat.deepseek.com` 的 HEAD 就吃到 429）。
+> 想稳定就去 `/admin` 登录账号。
