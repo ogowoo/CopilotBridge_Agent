@@ -126,33 +126,39 @@ async def _status(ctx: Any) -> dict[str, Any]:
     """面板/接口共用：反代连通性 + 模型清单（模型归属插件前缀，便于直接选）。"""
     cfg = _cfg(ctx)
     res = await probe(str(cfg["base_url"]), str(cfg["api_key"]))
-    models = res["models"] or list(cfg["models"])
+    # 反代**实际**给出的模型；配置里的清单只是"建议值"，不能当成已就绪
+    live_models = list(res["models"])
+    candidates = list(cfg["models"])
     # 反代刚起 / 新增了模型：按实际清单重新注册提供商，界面刷新即可选到
-    if res["ok"] and res["models"]:
+    if res["ok"] and live_models:
         try:
             ctx.register_provider(str(cfg["provider"]), {
                 "base_url": str(cfg["base_url"]),
                 "api_key": str(cfg["api_key"]),
-                "models": list(res["models"]),
+                "models": list(live_models),
                 "api": "openai",
                 "timeout_seconds": int(cfg["timeout_seconds"]),
                 "description": f"DeepSeek 网页版反代（{cfg['base_url']}）",
             })
         except Exception:
             pass
-    _LAST.update({"at": time.time(), "ok": res["ok"], "models": models,
+    _LAST.update({"at": time.time(), "ok": res["ok"], "models": live_models,
                   "error": res["error"], "latency_ms": res["latency_ms"]})
     prefix = str(cfg["provider"])
     return {
         "provider": prefix,
         "base_url": cfg["base_url"],
         "reachable": res["ok"],
+        "ready": bool(res["ok"] and live_models),
         "latency_ms": res["latency_ms"],
         "error": res["error"],
-        "models_in_proxy": models,
-        "model_ids": [f"{prefix}/{m}" for m in models],
-        "hint": ("选模型时用 dsweb/<模型名>；反代没起就先把它跑起来"
-                 "（docker run -p 8000:8000 … 或 python proxy.py）"),
+        "models_in_proxy": live_models,
+        "model_ids": [f"{prefix}/{m}" for m in live_models],
+        "suggested_models": candidates,
+        "hint": (f"选模型时用 {prefix}/<模型名>" if (res["ok"] and live_models) else
+                 ("反代在线但没有可用模型：打开它的管理面板登录 DeepSeek 账号后刷新"
+                  if res["ok"] else
+                  f"反代连不上（{cfg['base_url']}）：先把 docker/python 那个反代跑起来")),
     }
 
 
@@ -170,6 +176,11 @@ def setup(ctx: Any) -> None:
         models = []
         ctx.log(f"deepseek-web：反代 {cfg['base_url']} 连不上（{probe['error']}），"
                 "先把反代跑起来；跑起来后在插件面板刷新即可出现模型")
+    else:
+        # 反代在线但一个模型都没有：多半是还没登录 DeepSeek（token 为空）
+        models = []
+        ctx.log(f"deepseek-web：反代 {cfg['base_url']} 在线但没有可用模型——"
+                "打开它的管理面板登录 DeepSeek 账号后，回插件面板刷新即可")
     # 注册提供商：模型 ID = "dsweb/<反代里的模型名>"，与内置 deepseek 官方 API 并存
     ctx.register_provider(prefix, {
         "base_url": str(cfg["base_url"]),

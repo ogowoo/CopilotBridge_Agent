@@ -109,3 +109,49 @@ docker run -d -p 8000:8000 -v ${PWD}/config.json:/app/config.json `
 4. 封号/限流要接进我们已有的 `suspended`（限流挂起）与 `transient` 事件模型。
 
 成本远大于收益：上面第 1~3 步正是那 4 个项目做过的事，而且它们会持续跟进上游变化。
+
+## 六、本机接入记录（已跑通到"只差登录"）
+
+实际在这台机器上做过的事，照着抄即可：
+
+| 项 | 值 |
+|---|---|
+| 反代源码 | `C:\Tools\Test4All\dsweb-proxy`（Fly143/deepseek-free-api，独立 venv） |
+| 反代进程 | `.\.venv\Scripts\python.exe proxy.py`，监听 **http://127.0.0.1:8000** |
+| 管理面板 | **http://127.0.0.1:8000/admin**，Basic 认证默认 **admin / admin** |
+| 凭证文件 | `dsweb-proxy/config.json`（含 DeepSeek token，甚至明文密码——**别提交、别外传**） |
+| CBP 插件 | `plugins/deepseek-web`（已在运行中的服务里 enable 并 loaded） |
+| CBP 侧状态 | `GET /v1/plugins/deepseek-web/api/status` |
+
+当前实测状态（尚未登录 DeepSeek）：
+
+```json
+{"reachable": true, "ready": false, "models_in_proxy": [],
+ "model_ids": [], "hint": "反代在线但没有可用模型：打开它的管理面板登录 DeepSeek 账号后刷新"}
+```
+
+此时从 CBP 调 `dsweb/deepseek-default` 会拿到反代的明确报错（不是静默失败）：
+
+```
+503 没有可用账号，请先访问 /admin 添加并登录账号
+```
+
+### 还需要做的一步（只有这一步需要你的账号）
+
+1. 打开 http://127.0.0.1:8000/admin （Basic 认证 `admin` / `admin`）；
+2. 用**手机号或邮箱 + 密码**登录你的 DeepSeek 账号（登录后 token 自动写进 `config.json`）；
+   - 若提示注册/登录被 WAF 拦（大陆 IP 常见），给反代配一个海外代理再试；
+3. 回到 CBP → 插件管理 → **deepseek-web** → 打开面板刷新（或调一次 `api/status`）；
+   模型会出现：`dsweb/deepseek-reasoner`、`dsweb/deepseek-default`、`dsweb/deepseek-search`…
+4. 之后在"新任务/继续对话"的模型下拉里直接选 `dsweb/…` 即可跑。
+
+### 停止 / 重启反代
+
+```powershell
+# 停（按端口找进程）
+Get-NetTCPConnection -LocalPort 8000 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+# 起（后台，日志在 dsweb-proxy/proxy.out.log）
+cd C:\Tools\Test4All\dsweb-proxy
+Start-Process .\.venv\Scripts\python.exe -ArgumentList proxy.py -WindowStyle Hidden `
+  -RedirectStandardOutput proxy.out.log -RedirectStandardError proxy.err.log
+```
