@@ -2349,6 +2349,23 @@ function dismissRetryOverlay(){
  const box=document.getElementById('retryCountdown');
  if(box)retryDismissedAt=parseFloat(box.dataset.resume)||null;
  updateRetryCountdown(lastRuntime)}
+/* 服务不可用（短暂退避）时的顶栏小标：不弹遮罩、不打断操作，但一直看得见。
+   返回 true 表示"这个状态已经用小标表达了"。 */
+function showServiceBadge(){
+ const chip=document.getElementById('retryChip');
+ if(!chip)return false;
+ const err=String((lastRuntime&&lastRuntime.service_error)||"");
+ const waiting=!!(lastRuntime&&lastRuntime.service_waiting);
+ if(!(waiting||/不可用|rate.?limit|限流|超时|timeout/i.test(err)))return false;
+ chip.textContent='⚠ '+tr('服务不可用');
+ chip.title=err||tr('最近一次服务错误，点击查看');
+ chip.dataset.resume='';
+ chip.style.display='inline-flex';
+ const mask=document.getElementById('retryMask');
+ if(mask)mask.style.display='none';
+ const box=document.getElementById('retryCountdown');
+ if(box)box.style.display='none';
+ return true}
 function updateRetryCountdown(r){
  let box=document.getElementById('retryCountdown'),chip=document.getElementById('retryChip'),mask=document.getElementById('retryMask');
  if(!box)return;
@@ -2358,10 +2375,14 @@ function updateRetryCountdown(r){
  const _hasField=!!(r&&Object.prototype.hasOwnProperty.call(r,'retry_resume_at'));
  let resumeAt=(r&&r.retry_resume_at)||null;
  if(!_hasField&&box.dataset.resume)resumeAt=parseFloat(box.dataset.resume)||null;  // 沿用已知
- if(_hasField&&!r.retry_resume_at){retryDismissedAt=null;hideRetryUI();return}          // 明确清空
+ // ① 没有限流窗口，但服务不可用（短暂退避）：用**顶栏小标**提示，不弹遮罩。
+ //    这种情况后端不会写 retry_resume_at（只有 last_error 保留到恢复），
+ //    所以必须先判它，否则会被下面"明确清空"直接收掉 —— 用户实测"都没看见弹窗"。
+ if(showServiceBadge()){retryDismissedAt=null;return}
+ if(_hasField&&!r.retry_resume_at){retryDismissedAt=null;hideRetryUI();return}   // 明确清空
  if(!resumeAt||resumeAt*1000<=Date.now()){
   if(!_hasField&&box.dataset.resume){resumeAt=parseFloat(box.dataset.resume)}
-  else{retryDismissedAt=null;hideRetryUI();return}}
+  else{hideRetryUI();return}}
  // 换了新的限流终点（新一轮）→ 重新展开卡片
  if(retryDismissedAt!==null&&retryDismissedAt!==resumeAt)retryDismissedAt=null;
  let showCard=retryDismissedAt!==resumeAt;
@@ -2369,7 +2390,7 @@ function updateRetryCountdown(r){
  box.dataset.resume=resumeAt;
  if(chip){chip.dataset.resume=resumeAt;chip.textContent='⏳ '+text}
  if(!showCard){
-  box.style.display='none';if(mask)mask.style.display='none';if(chip)chip.style.display='block';
+  box.style.display='none';if(mask)mask.style.display='none';if(chip)chip.style.display='inline-flex';
   // 卡片(高) → 小标(矮) 必须重算 --retry-h：否则底部让位带仍按卡片高度预留，
   // 小标会远离输入框、也可能压住内容（布局审计实测 retryChip 遮挡 #followup 6%）
   try{syncFixedLanes()}catch(e){}
@@ -2424,7 +2445,7 @@ async function swapModelResume(model){
 try{document.getElementById('retryMask').addEventListener('click',e=>{
  // 点遮罩空白处也收起（点卡片内部不触发）
  if(e.target&&e.target.id==='retryMask')dismissRetryOverlay()})}catch(e){}
-document.getElementById('retryChip').onclick=()=>{retryDismissedAt=null;updateRetryCountdown(lastRuntime)};
+/* 点小标重新打开遮罩：走 data-act=reopenRetry（见 ACTIONS） */
 /* 每秒把倒数刷新一次（与 runtime 轮询解耦，数字平滑跳动） */
 setInterval(()=>{
  let box=document.getElementById('retryCountdown'),chip=document.getElementById('retryChip');
@@ -4053,6 +4074,7 @@ const ACTIONS={
  openSettings:()=>openSettings(),
  swapModelResume:(el)=>swapModelResume(el&&el.dataset&&el.dataset.arg),
  dismissRetry:()=>dismissRetryOverlay(),
+ reopenRetry:()=>{retryDismissedAt=null;updateRetryCountdown(lastRuntime)},
  pickSandbox:(el)=>pickSandbox(el&&el.dataset?el.dataset.arg:''),
  settingsTab:(el)=>{setSettingsTab(el&&el.dataset?el.dataset.arg:'');},
  openWsBrowser:()=>openWsBrowser(''),

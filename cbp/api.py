@@ -1515,6 +1515,10 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
         "subagent_steps": _sub.get("steps", 0),
         "subagent_tokens": _sub.get("tokens", 0),
         "subagent_count": _sub.get("count", 0),
+        # 服务不可用的**持续可见**信号：last_error 在恢复后才清，比 retry_resume_at 持久。
+        # 前端据此在顶栏显示"⚠ 服务不可用/自动重试"小标（不弹遮罩，不打断操作）。
+        "service_error": (state or {}).get("last_error") or "",
+        "service_waiting": (state or {}).get("state") == "waiting",
         # 仍有后代在跑的个数：父会话即使已 completed，界面也不能笼统显示"已完成"
         "subagent_running": _sub.get("running", 0),
         "retry_resume_at": (state or {}).get("retry_resume_at"),

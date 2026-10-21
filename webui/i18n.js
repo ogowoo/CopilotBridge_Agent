@@ -378,6 +378,10 @@ Object.assign(I18N_EN, {
   "本会话 {a} + 子代理 {b}（{n} 个）": "This session {a} + sub-agents {b} ({n})",
   "总步骤（含子代理）": "Total steps (incl. sub-agents)",
   "子代理 {n} 仍在跑": "{n} sub-agent(s) still running",
+  "限流中：点击查看详情": "Rate-limited: click for details",
+  "服务不可用": "Service unavailable",
+  "最近一次服务错误，点击查看": "Last service error — click for details",
+  "自动重试中（第 {n} 次）": "Auto-retrying (attempt {n})",
   "重启服务": "Restart service",
   // 待办（todo_write 维护的清单，区别于 /plan 计划模式）
   "待办": "Todo",

@@ -27,6 +27,7 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
+API = (BASE / "cbp" / "api.py").read_text(encoding="utf-8")
 APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
 I18N = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
 _RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
@@ -43,9 +44,12 @@ KEYS = [
 class RetryMaskStructureTests(unittest.TestCase):
     def test_countdown_lives_inside_mask(self):
         i = HTML.index('id="retryMask"')
-        j = HTML.index('id="retryChip"')
+        j = HTML.index("</div>\n</div>", i)          # 遮罩块结束
         self.assertIn('id="retryCountdown"', HTML[i:j], "倒计时卡必须在遮罩里")
         self.assertIn('class="mask retrymask"', HTML)
+        # 小标已移到顶栏（不再是右下角浮层），点它重开遮罩
+        self.assertIn('id="retryChip" class="retrychip"', HTML)
+        self.assertIn('data-act="reopenRetry"', HTML)
 
     def test_provider_models_are_buttons_not_select(self):
         self.assertNotIn('id="retryModel"', HTML, "模型选择改成按钮列表，不再用下拉")
@@ -114,3 +118,44 @@ class RetryI18nAndLogicTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServiceUnavailableBadgeTests(unittest.TestCase):
+    """"短暂退避"（服务不可用但不进限流窗口）也必须看得见。
+
+    用户实测："都没看见弹窗。。。。" —— 那三条 `服务暂时不可用（第 1 次）` 走的是短退避，
+    后端**不写 retry_resume_at**,于是遮罩永远不出现，界面上什么都不显示。
+    现在用顶栏小标：持续可见、不打断操作，恢复后自动消失。
+    """
+
+    def test_badge_function_exists(self):
+        self.assertIn("function showServiceBadge", APP)
+
+    def test_checked_before_clearing(self):
+        """必须先判"服务不可用"再判"窗口清空"，否则又被提前 return 掉。"""
+        i = APP.index("function updateRetryCountdown")
+        seg = APP[i:i + 1200]
+        a = seg.index("if(showServiceBadge())")
+        b = seg.index("_hasField&&!r.retry_resume_at){retryDismissedAt=null;hideRetryUI")
+        self.assertLess(a, b, "showServiceBadge 必须在『明确清空』之前判断")
+
+    def test_badge_uses_last_error(self):
+        i = APP.index("function showServiceBadge")
+        seg = APP[i:i + 900]
+        self.assertIn("service_error", seg)
+        self.assertIn("service_waiting", seg)
+
+    def test_badge_is_inline_in_topbar(self):
+        self.assertIn('id="retryChip" class="retrychip"', HTML)
+        m = re.search(r"\.retrychip\{([^}]*)\}", CSS)
+        self.assertIsNotNone(m, "缺少 .retrychip 样式")
+        self.assertIn("inline-flex", m.group(1).replace(" ", ""))
+
+    def test_no_floating_chip_left(self):
+        self.assertNotIn(".retry-chip{", CSS, "旧的右下角浮层样式应已删除")
+        self.assertNotIn("body .retry-chip", CSS)
+        self.assertNotIn('class="retry-chip"', HTML)
+
+    def test_runtime_exposes_service_error(self):
+        self.assertIn('"service_error"', API)
+        self.assertIn('"service_waiting"', API)

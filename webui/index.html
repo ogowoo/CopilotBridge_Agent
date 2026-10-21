@@ -85,7 +85,7 @@
     </div>
     <div id="sessionView" style="display:none">
       <header class="topbar">
-        <div class="trow"><h1 id="title" data-act="topbarCollapse" title="点一下收起/展开任务条（也可以点右边的箭头）">—</h1><code id="sidChip" class="sidbig" title="点击复制会话 ID"></code><span id="statepill" class="pill">—</span><select id="sessModel" aria-label="本会话使用的模型" class="sessmodel" title="当前会话使用的模型（下一回合生效，服务重启后仍沿用）"></select><button type="button" id="btnRefreshSess" class="iconbtn" title="刷新模型列表（重新扫描 Copilot 菜单）">↻</button></div>
+        <div class="trow"><h1 id="title" data-act="topbarCollapse" title="点一下收起/展开任务条（也可以点右边的箭头）">—</h1><code id="sidChip" class="sidbig" title="点击复制会话 ID"></code><span id="statepill" class="pill">—</span><button type="button" id="retryChip" class="retrychip" style="display:none" data-act="reopenRetry" title="限流中：点击查看详情">⏳ --:--</button><select id="sessModel" aria-label="本会话使用的模型" class="sessmodel" title="当前会话使用的模型（下一回合生效，服务重启后仍沿用）"></select><button type="button" id="btnRefreshSess" class="iconbtn" title="刷新模型列表（重新扫描 Copilot 菜单）">↻</button></div>
         <div id="status" class="sub">—</div>
         <div class="actions">
           <!-- 主操作只留两个高频项（对齐 DSH 的"一行工具栏"）：恢复 / 取消任务；
@@ -259,7 +259,7 @@
     </div>
   </div>
 </div>
-<div id="retryChip" class="retry-chip" style="display:none" title="限流中：点击展开倒计时">⏳ --:--</div>
+<!-- 限流小标：内联在顶栏状态行里，点一下重新打开遮罩（不再用右下角浮层） -->
 <!-- 使用手册 -->
 <div class="mask" role="dialog" aria-modal="true" aria-label="使用手册" id="manualMask" data-act="mask" data-arg="manual">
   <div class="dlg" style="width:min(760px,94vw)">

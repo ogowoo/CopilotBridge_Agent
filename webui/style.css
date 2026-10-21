@@ -486,8 +486,6 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 .demo{position:fixed;left:16px;bottom:14px;z-index:99;background:#3d2b10;border:1px solid #9e6a03;color:#e8b339;font-size:12px;padding:6px 13px;border-radius:20px}
 /* 限流倒计时：居中卡片（可收起为右下角小标——原先贴右上角会挡住模型选择器） */
 /* 收起后的小标（右下角，不挡顶部控件） */
-.retry-chip{position:fixed;left:calc((100vw + 318px) / 2);right:auto;bottom:16px;transform:translateX(-50%);z-index:78;background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--orange,#e8b339);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;color:var(--accent2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}
-.retry-chip:hover{border-color:var(--accent2)}
 
 /* ── 删除结果弹窗 ── */
 .mask{position:fixed;inset:0;background:var(--mask-bg);display:none;align-items:center;justify-content:center;z-index:60;padding:22px}
@@ -747,14 +745,10 @@ section.card:has(#stepCount){margin-top:14px}
 /* ── 浮层横向对齐内容区（实测：bootBar 用视口居中会偏左 159px 压住顶栏）──
    宽屏内容区中心 = (100vw + 318px)/2；侧栏折叠或窄屏（单列）时回到 50vw。 */
 :root[data-rail="closed"] .retry-fab,
-:root[data-rail="closed"] .retry-chip{left:50%}
-
 @media(max-width:860px){
-  .retry-fab,.retry-chip{left:50%}
   /* 窄屏宽度必须扣的是内容区（单列 = 整宽），不能再用"减掉侧栏 318px"的公式，
      否则宽度被压成 158px、文字竖排、高度冲到 296px（实测 600px 视口）。 */
 }
-.retry-fab,.retry-chip{bottom:16px}
 .toasts{bottom:calc(16px + var(--retry-h,0px) + 12px)}
 .approvalbar{bottom:16px}
 
@@ -985,8 +979,6 @@ body.bootbar-on .connbanner{top:28px}
    updateRetryCountdown 里的 syncFixedLanes 调用）。法则：小标必须整块落在
    「内容底边」之下，所以 bottom 不能再叠加 --retry-h——之前那样反而把小标抬进内容区
    （实测 900x700 遮挡 .tabs 19%）。 */
-body .retry-chip{bottom:16px}
-
 /* 顶部信息条（最终样式）：左图标 + 左对齐文本 + 右操作，只有一条底部分隔线。
    之前的居中浮框/全圈琥珀边框在宽屏上像一条空横幅（用户反馈"太丑"）。 */
 body #bootBar{justify-content:flex-start;padding:0 14px;gap:8px;height:28px;
@@ -1669,3 +1661,10 @@ html,body{overflow:hidden}
 /* 「总步骤」卡片里的小标：含 N 个子代理（子代理步数/token 已计入主数字） */
 .kpi .kpisub{font-style:normal;font-size:10.5px;color:var(--accent2);margin-left:6px}
 .kpi b[data-sub="1"]{cursor:help;text-decoration:underline dotted rgba(127,127,127,.5)}
+/* 限流内联小标（顶栏状态行里，点一下重开遮罩）；不再是右下角浮层，
+   避免它压住输入框、也避免为它预留底部空白带。 */
+.retrychip{display:inline-flex;align-items:center;gap:4px;margin-left:6px;
+  padding:1px 8px;border-radius:999px;font-size:11.5px;line-height:1.6;
+  border:1px solid var(--amber);background:transparent;color:var(--amber);
+  cursor:pointer;font-variant-numeric:tabular-nums}
+.retrychip:hover{background:rgba(210,153,34,.12)}
