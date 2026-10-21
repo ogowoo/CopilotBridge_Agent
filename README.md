@@ -89,7 +89,9 @@ print(resp.choices[0].message.content)
 $env:DEEPSEEK_API_KEY="sk-..."   # 或 MOONSHOT_API_KEY / OPENAI_API_KEY / XAI_API_KEY
 ```
 
-未配置 Key 的模型在 `/v1/models` 里会标注"（未配置 API Key）"。自定义任意 OpenAI 兼容提供商（含自建网关）：
+未配置 Key 的模型在 `/v1/models` 里会标注"（未配置 API Key）"。
+
+> 想把 **DeepSeek 网页版**也当模型用（免费/备用）：见 [三种接法与已落地的插件](docs/PROVIDER-deepseek-web.md)——起一个反代 + 启用 `deepseek-web` 插件即可，模型 ID 形如 `dsweb/deepseek-reasoner`。自定义任意 OpenAI 兼容提供商（含自建网关）：
 
 ```json
 "providers": {
