@@ -24,6 +24,7 @@ from contextvars import ContextVar
 from typing import Any
 
 from .s2t_data import S2T
+from .s2t_extra import EXTRA as _S2T_EXTRA, PHRASES as _S2T_PHRASES
 
 LANGS = ("zh", "tw", "en")
 DEFAULT_LANG = "zh"
@@ -73,10 +74,18 @@ def effective_lang(config_value: Any = None) -> str:
 
 
 def to_tw(text: str) -> str:
-    """简体 → 繁体（按字转换；表来自前端同一份数据）。"""
+    """简体 → 繁体（按字转换）。
+
+    两张表：界面那份（`s2t_data.py`,保证与 UI 写法一致）+ 工程词补充表
+    （`s2t_extra.py`）。界面表优先——它已经定了 UI 的写法，不能被补充表改掉。
+    """
     if not text:
         return text
-    return "".join(S2T.get(ch, ch) for ch in text)
+    # 先做词级替换（最长匹配优先）：多音字只有按词才能转对
+    for word in sorted(_S2T_PHRASES, key=len, reverse=True):
+        if word in text:
+            text = text.replace(word, _S2T_PHRASES[word])
+    return "".join(S2T.get(ch) or _S2T_EXTRA.get(ch) or ch for ch in text)
 
 
 # ── 英文译本（与 cbp/prompt.py 的中文原文逐条对应）─────────────────────

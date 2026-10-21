@@ -792,6 +792,15 @@ class ToolRegistry:
         items = self._descriptions_all()
         if only:
             items = [x for x in items if x.get("name") in only]
+        # 按提示词语言输出描述与参数提示（zh 原样；en 换译本；tw 按字转换）
+        try:
+            from . import prompt_lang, tool_i18n
+            cfg = getattr(self, "config", None) or {}
+            lang = prompt_lang.effective_lang(
+                cfg.get("prompt_language") if isinstance(cfg, dict) else None)
+            items = tool_i18n.localize_items(items, lang)
+        except Exception:
+            pass
         return items
 
     def _descriptions_all(self) -> list[dict[str, Any]]:

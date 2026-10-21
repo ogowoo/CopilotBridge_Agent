@@ -182,10 +182,89 @@ class WholePromptTests(unittest.TestCase):
         rz = len(cjk.findall(zh)) / max(1, len(zh))
         re_ = len(cjk.findall(en)) / max(1, len(en))
         self.assertLess(re_, rz, "英文模式的提示词中文占比必须下降")
-        self.assertLess(re_, 0.20, f"英文模式中文占比仍然偏高: {re_:.0%}")
+        self.assertLess(re_, 0.06, f"英文模式中文占比仍然偏高: {re_:.0%}")
         self.assertIn("[Answer language] Reply in English", en, "回答语言指令必须在最前")
         self.assertTrue(en.strip().startswith("[Answer language]"))
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ToolDescriptionTests(unittest.TestCase):
+    """工具描述/参数提示也要三语：模型是**读这些描述**挑工具的。"""
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        from cbp import bridge as b
+        from cbp.session_store import SessionStore
+        from cbp.snapshots import SnapshotStore
+        cls.tmp = Path(tempfile.mkdtemp())
+        cls.saved = (b.AGENT_SESSIONS, b.SNAPSHOTS)
+        b.AGENT_SESSIONS = SessionStore(cls.tmp / "a.db")
+        b.SNAPSHOTS = SnapshotStore(cls.tmp / "s")
+        b.AGENT_TOOLS.set_root(cls.tmp, False)
+        cls.tools = b.AGENT_TOOLS
+        cls.bridge = b
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.bridge.AGENT_SESSIONS, cls.bridge.SNAPSHOTS = cls.saved
+        prompt_lang.set_request_lang("zh")
+
+    def test_no_chinese_left_in_english_mode(self):
+        cjk = re.compile(r"[\u4e00-\u9fff]")
+        prompt_lang.set_request_lang("en")
+        items = self.tools.descriptions()
+        self.assertGreater(len(items), 20, "工具清单为空？")
+        bad = []
+        for x in items:
+            d = str(x.get("description") or "")
+            a = " ".join(str(v) for v in (x.get("arguments") or {}).values())
+            if cjk.search(d) or cjk.search(a):
+                bad.append(x["name"])
+        self.assertEqual(bad, [], f"英文模式下这些工具的描述还是中文: {bad}")
+
+    def test_every_tool_and_argument_is_covered(self):
+        """新增工具/参数必须同时补英文，否则会在英文界面悄悄露出中文。"""
+        from cbp.tool_i18n import ARG_EN, DESC_EN
+        items = self.tools.descriptions()
+        missing_desc = [x["name"] for x in items if x["name"] not in DESC_EN]
+        missing_args = [f'{x["name"]}.{k}' for x in items
+                        for k in (x.get("arguments") or {}) if f'{x["name"]}.{k}' not in ARG_EN]
+        self.assertEqual(missing_desc, [], "这些工具缺英文描述")
+        self.assertEqual(missing_args, [], "这些参数缺英文提示")
+
+    def test_identifiers_untouched(self):
+        prompt_lang.set_request_lang("en")
+        items = self.tools.descriptions()
+        names = {x["name"] for x in items}
+        self.assertIn("read_text", names)
+        self.assertIn("subagent_many", names)
+        for x in items:            # 参数名不能被翻译
+            for k in (x.get("arguments") or {}):
+                self.assertRegex(k, r"^[a-z_][a-z0-9_]*$")
+
+    def test_chinese_mode_unchanged(self):
+        prompt_lang.set_request_lang("zh")
+        zh = {x["name"]: x["description"] for x in self.tools.descriptions()}
+        prompt_lang.set_request_lang("en")
+        en = {x["name"]: x["description"] for x in self.tools.descriptions()}
+        self.assertNotEqual(zh["read_text"], en["read_text"], "英文模式必须真的换成英文")
+        prompt_lang.set_request_lang("zh")
+        again = {x["name"]: x["description"] for x in self.tools.descriptions()}
+        self.assertEqual(zh, again, "切回中文必须还原原文")
+
+    def test_traditional_conversion(self):
+        prompt_lang.set_request_lang("tw")
+        items = {x["name"]: x["description"] for x in self.tools.descriptions()}
+        joined = "".join(items.values())
+        # 具体词断言（按转换器实际输出，不猜字）：转换→轉換、缩进→縮進
+        self.assertIn("轉換", joined)
+        self.assertIn("縮進", joined)
+        self.assertNotIn("转换", joined, "繁体模式下不该再有简体『转换』")
+        self.assertNotIn("缩进", joined, "繁体模式下不该再有简体『缩进』")
+        # 多音字按词转：复杂→複雜（不是「復雜」）
+        self.assertIn("複雜", joined)
+        self.assertNotIn("復雜", joined)
