@@ -1738,6 +1738,10 @@ async def _ask_user_via_webui(question: str, options: list[str]) -> dict:
         return {"answer": answer}
     finally:
         EXTRA_ANSWERS.pop(sid, None)
+        # 关键：把 runtime 里的 question 清掉。以前这里只 pop 了 Future，
+        # `question` 字段一直留在 RUNTIME 里 → 前端每秒轮询都会把提问条重新画出来,
+        # 用户回答完它还在；再点一次只能收到"没有等待回答的问题"（实测）。
+        runtime_update(sid, question=None)
 
 
 TOOLS_EXTRA = register_extra_tools(

@@ -1529,9 +1529,13 @@ async def agent_answer(sid: str, payload: dict | None = None):
     """回答 Agent 的中途提问（ask_user_question 阻塞等待的就是这里）。"""
     fut = b.EXTRA_ANSWERS.get(sid)
     if fut is None or fut.done():
+        # 已经没有挂起提问：顺手把 runtime 里的 question 清掉，
+        # 否则前端那条提问条会因为陈旧快照一直显示（再点还报错）。
+        b.runtime_update(sid, question=None)
         raise HTTPException(404, "该会话没有等待回答的问题")
     answer = str((payload or {}).get("answer") or "")
     fut.set_result(answer)
+    b.runtime_update(sid, question=None)   # 立刻清，别等轮询
     return {"ok": True, "session_id": sid, "answer": answer}
 
 

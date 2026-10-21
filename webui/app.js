@@ -115,9 +115,14 @@ function showApprovalBar(p,scope){
 /* ── Agent 中途提问（ask_user_question 的 UI 入口）────────────────────
    工具阻塞等待 /answer；用户在这里填答案时任务暂停，提交后继续。 */
 let questionSeen=null;
+// 已答过的提问（key = 会话|问题文本）：即使后端快照里还残留 question 字段，
+// 也不再把这条提问画回来（用户实测：回答完它还在，再点只报"没有等待回答的问题"）。
+const questionAnswered=new Set();
+function questionKey(q){return (current||'')+'|'+((q&&q.text)||'')}
 function showQuestionBar(q){
  let el=document.getElementById('questionBar');
  if(!q||!q.text){if(el)el.style.display='none';questionSeen=null;return}
+ if(questionAnswered.has(questionKey(q))){if(el)el.style.display='none';return}
  if(!el){el=document.createElement('div');el.id='questionBar';el.className='questionbar';
   const host=document.getElementById('sessionView')||document.body;
   host.insertBefore(el,host.firstChild)}
@@ -139,9 +144,18 @@ function showQuestionBar(q){
     await api(`/v1/agent/sessions/${encodeURIComponent(current)}/answer`,
               {method:'POST',headers:{'Content-Type':'application/json'},
                body:JSON.stringify({answer:inp.value})});
+    questionAnswered.add(questionKey(q));
     toast(tr('已提交回答，任务继续'),'ok');
     el.style.display='none';questionSeen=null;await runtime();
-   }catch(e){ok.disabled=false;ok.textContent=tr('提交回答');toast(tr('提交失败: ')+(e.text||e),'err')}};
+   }catch(e){
+    // 404/409 = 已经没有挂起提问（重复提交、或已在别处答过）：不是错误，
+    // 直接把提问条收掉并记账，避免它永远挂在界面上。
+    const _msg=String((e&&(e.text||e.message))||e||'');
+    if((e&&(e.status===404||e.status===409))||/没有等待回答|no pending/i.test(_msg)){
+     questionAnswered.add(questionKey(q));
+     el.style.display='none';questionSeen=null;
+     toast(tr('该提问已回答或已过期，已收起'),'ok');await runtime();return}
+    ok.disabled=false;ok.textContent=tr('提交回答');toast(tr('提交失败: ')+_msg,'err')}};
   ok.onclick=submit;
   inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();submit()}};
   el.appendChild(span);el.appendChild(inp);el.appendChild(ok)}
