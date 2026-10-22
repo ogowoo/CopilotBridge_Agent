@@ -50,10 +50,7 @@
     "auto_team_max_agents": 4,
     "auto_team_max_steps": 30,
     "todo_nudge_every": 12,
-    "sandbox_mode": "workspace-write",
-    "prompt_language": "auto",
-    "rate_limit_suspend": false,
-    "copilot_windows": 1
+    "sandbox_mode": "workspace-write"
   },
   "models": {},
   "providers": {},
@@ -61,6 +58,5 @@
   "auto_resume": false,
   "allow_copilot_file": false,
   "spans_enabled": false,
-  "browser_startup": "lazy",
-  "sandbox_mode": "read-only"
+  "browser_startup": "lazy"
 }

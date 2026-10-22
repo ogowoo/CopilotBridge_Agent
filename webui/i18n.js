@@ -707,14 +707,6 @@ Object.assign(I18N_EN, {
   "数据": "Data",
   "设置": "Settings",
   "外观": "Appearance",
- "Copilot 自动化窗口数（并行任务数；1=串行）": "Copilot automation windows (parallel tasks; 1 = serial)",
- "浮动展开 / 收起全部调用记录": "Expand / collapse all tool calls in a floating panel",
- "点一下浮动展开全部调用记录": "Click to expand all tool calls in a floating panel",
- "展开/收起调用记录": "Expand / collapse tool calls",
- "只看最新": "Latest only",
- "最近 {n}/{total} 步 · 成功 {ok}": "Latest {n}/{total} · {ok} ok",
- "调用记录": "Tool calls",
- "{n} 步 · 成功 {ok}": "{n} steps · {ok} ok",
  "返回父会话": "Back to parent session",
  "仅可查看": "View only",
  "工作区内修改": "Modify workspace",
@@ -1176,20 +1168,6 @@ function rerenderForLang() {
   try { if (typeof drawSessions === "function") { sessSig = ""; drawSessions(); } } catch (e) {}
   try { if (typeof renderMessages === "function" && lastMessages.length) renderMessages(lastMessages); } catch (e) {}
   try { if (typeof renderSteps === "function" && lastSteps.length) renderSteps(lastSteps, true); } catch (e) {}
-  // 实时流 + 调用记录：步骤行里的文案（"查看结果""服务不可用"…）是建 DOM 时 tr() 出来的，
-  // 不重画就会停在旧语言。
-  try {
-    if (typeof renderStream === "function" && (lastMessages.length || lastSteps.length)) {
-      renderStream(lastMessages, lastSteps, { force: true });
-    }
-  } catch (e) {}
-  // 插件面板：内容由插件接口渲染（声明式 kv/list/table），同样需要按新语言重画一次
-  try {
-    if (typeof openPanels === "function"
-        && document.getElementById("pluginsMask")?.classList.contains("open")) {
-      openPanels();
-    }
-  } catch (e) {}
   try { if (typeof refreshQueue === "function") refreshQueue(); } catch (e) {}
   try { if (lastRuntime && typeof applyRuntime === "function") applyRuntime(lastRuntime); } catch (e) {}
   // #bootText 在跳过名单里（内容是动态拼的），所以切语言必须主动重画一次，

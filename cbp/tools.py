@@ -338,19 +338,6 @@ class ToolRegistry:
                 "self_rollback": self.self_rollback,
             })
 
-    def clone(self) -> "ToolRegistry":
-        """复制一份注册表给**并行任务**用（root / 沙箱 / 计划模式 / 记忆作用域互不干扰）。
-
-        浅拷贝 __dict__ 即可：钩子（state_getter / subagent_fn / snapshot_hook…）
-        都是无状态的函数，共享安全；可变容器在任务启动时会重新赋值。
-        """
-        import copy as _copy
-
-        new = object.__new__(ToolRegistry)
-        for k, v in self.__dict__.items():
-            new.__dict__[k] = _copy.copy(v) if isinstance(v, (dict, list, set)) else v
-        return new
-
     def register(self, name: str, fn: Callable[..., Awaitable[Any]],
                  description: str, arguments: dict[str, Any],
                  approval: bool = False) -> None:

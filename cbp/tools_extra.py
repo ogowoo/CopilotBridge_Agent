@@ -605,8 +605,7 @@ class _Extra:
             from . import bridge as _b
             _mdl = model or str((_b.AGENT_SESSIONS.get(_b.current_session()) or {}).get("model") or "")
             _parallel = _b.model_is_provider(_mdl)
-            # 提供商：真并行；网页通道：并行数 = 已开的自动化窗口数（默认 1 = 顺序）
-            _cap = _b.subagent_parallel() if _parallel else _b.web_subagent_parallel()
+            _cap = _b.subagent_parallel() if _parallel else 1
         except Exception:
             _parallel, _cap = False, 1
         if _parallel and len(plan) > 1:

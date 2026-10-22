@@ -45,51 +45,41 @@ class ResumePausedRunnerTests(unittest.TestCase):
         b.PROVIDERS.clear(); b.PROVIDERS.update(provs)
         b._RESUMING.clear(); b._PENDING_RESUME.clear()
 
-    def _hold_window(self, sid):
-        """把会话标记成"正占用一个自动化窗口"（模拟还在跑的 runner）。"""
-        from cbp.window_pool import Window
-
-        win = Window(1, object())
-        win.sid = sid
-        b.WINDOWS._windows.append(win)
-        return win
-
-    def _release_window(self, win):
-        try:
-            b.WINDOWS._windows.remove(win)
-        except ValueError:
-            pass
-
     def test_resume_while_lock_held_still_clears_paused(self):
-        """核心回归：runner 活着（占着窗口）时点恢复，必须把状态改回 ready。"""
+        """核心回归：runner 活着（锁被本会话持有）时点恢复，必须把状态改回 ready。"""
         b.AGENT_SESSIONS.patch("s1", state="paused")
-        win = self._hold_window("s1")
 
         async def main():
+            # 模拟"停等在锁里的 runner"：持有锁并把 ACTIVE_SESSION_ID 设为该会话
+            await b.lock.acquire()
+            prev = b.ACTIVE_SESSION_ID
+            b.ACTIVE_SESSION_ID = "s1"
             try:
-                return await b.resume_session_task("s1")
+                started = await b.resume_session_task("s1")
             finally:
-                pass
+                b.ACTIVE_SESSION_ID = prev
+                b.lock.release()
+            return started
 
-        try:
-            started = asyncio.run(main())
-        finally:
-            self._release_window(win)
+        started = asyncio.run(main())
         self.assertFalse(started, "runner 还活着时不该再新建一个")
         self.assertEqual(b.AGENT_SESSIONS.get("s1")["state"], "ready",
                          "必须把状态改回 ready，否则停等的 runner 永远醒不过来")
 
     def test_resume_clears_cancel_flag(self):
         b.AGENT_SESSIONS.patch("s1", state="paused", cancel_requested=True)
-        win = self._hold_window("s1")
 
         async def main():
-            await b.resume_session_task("s1")
+            await b.lock.acquire()
+            prev = b.ACTIVE_SESSION_ID
+            b.ACTIVE_SESSION_ID = "s1"
+            try:
+                await b.resume_session_task("s1")
+            finally:
+                b.ACTIVE_SESSION_ID = prev
+                b.lock.release()
 
-        try:
-            asyncio.run(main())
-        finally:
-            self._release_window(win)
+        asyncio.run(main())
         st = b.AGENT_SESSIONS.get("s1")
         self.assertEqual(st["state"], "ready")
         self.assertFalse(st["cancel_requested"])

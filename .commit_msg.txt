@@ -1,0 +1,18 @@
+﻿revert(多窗口): 把「窗口池 / 多窗口并行」从 main 撤回，转移到 preview/multi-window 分支
+
+用户："把多窗口/多subagent那个直接放到新的分支去，版本改为preview版。目前还有不少问题没搞成。"
+
+多窗口并行（窗口池 + 设置里的「自动化窗口数」+ 新窗口就绪等待 + 答案隔离）仍在收尾阶段，
+先不留在稳定线上。做法：
+
+- 新建分支 `preview/multi-window`,完整保留这两个提交的成果；
+- main 上反向撤销它们（不重写历史，走 `git revert`,随时可再合回）:
+  - `bbf58ab fix(多窗口): 窗口不再被关掉；新窗口先等就绪；答案不再混进自己的问题`
+  - `4371a76 feat(多窗口): Copilot 通道真并行——窗口池 + 设置里的「自动化窗口数」`
+
+撤回内容：`cbp/window_pool.py`、`docs/MULTI-WINDOW.md`、设置项 `copilot_windows`、
+相关 UI 控件与 4 个测试文件（test_window_pool / test_window_no_close /
+test_copilot_windows_setting / test_tool_log_one_line / test_answer_noise）。
+
+验证：撤销后编译通过、无残留引用（`window_pool`/`copilot_windows` 均为 0 命中）、
+全套 **898 例通过**（原 924 减去随功能移除的 26 例）。
