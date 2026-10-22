@@ -11,6 +11,7 @@ import re
 import threading
 import time
 import uuid
+from pathlib import Path
 from contextlib import asynccontextmanager, AsyncExitStack
 
 from fastapi import FastAPI, HTTPException, Request as HttpRequest
@@ -1154,6 +1155,41 @@ async def session_snapshots(sid: str):
     summary = b.SNAPSHOTS.summary(sid)
     summary["versions"] = b.SNAPSHOTS.versions(sid)
     return summary
+
+
+def _session_workspace_root(sid: str) -> Path:
+    state = b.AGENT_SESSIONS.get(sid) or {}
+    return Path(str(state.get("workspace") or b.AGENT_TOOLS.root))
+
+
+@app.get("/v1/agent/sessions/{sid}/changes")
+async def session_changes(sid: str):
+    """任务完成后的「改了哪些文件」：每个文件的行级增删 + present 登记的交付物。
+
+    数据来自**快照原像**（写操作前的状态）对比当前文件，不依赖 git；任务还在跑时
+    也可以调用（前端只在完成/空闲时展示）。二进制文件只列路径，不给行数。
+    """
+    state = b.AGENT_SESSIONS.get(sid)
+    if not state:
+        raise HTTPException(404, "Session 不存在")
+    try:
+        data = b.SNAPSHOTS.changes(sid, default_root=_session_workspace_root(sid))
+    except Exception as exc:
+        raise HTTPException(500, f"统计改动失败: {exc}") from exc
+    data["deliverables"] = b.declared_deliverables(sid)
+    data["session_state"] = state.get("state")
+    return data
+
+
+@app.get("/v1/agent/sessions/{sid}/changes/diff")
+async def session_change_diff(sid: str, path: str):
+    """单个文件的 unified diff（只允许该会话快照里记录过的路径，杜绝任意读文件）。"""
+    if not b.AGENT_SESSIONS.get(sid):
+        raise HTTPException(404, "Session 不存在")
+    out = b.SNAPSHOTS.diff(sid, path, default_root=_session_workspace_root(sid))
+    if out is None:
+        raise HTTPException(404, "该路径不在本任务的改动记录里")
+    return out
 
 
 class RollbackRequest(BaseModel):

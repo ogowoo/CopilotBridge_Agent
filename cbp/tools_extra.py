@@ -148,6 +148,10 @@ class _Extra:
     def deliverables(self) -> list[dict[str, Any]]:
         return self._deliverables.get(self._sid(), [])
 
+    def deliverables_for(self, sid: str) -> list[dict[str, Any]]:
+        """按会话 id 取交付物（API 用：请求上下文里 current_session 不一定等于目标会话）。"""
+        return list(self._deliverables.get(str(sid or ""), []))
+
     @property
     def pending_question(self) -> dict[str, Any] | None:
         return self._pending_questions.get(self._sid())

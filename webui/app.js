@@ -1481,7 +1481,7 @@ function renderMessages(messages,opts){
  opts=opts||{};
  let box=document.getElementById('chatlog');box.innerHTML='';
  lastMessages=messages||[];
- if(!messages.length){box.innerHTML='<div class="meta">'+esc(tr('当前没有人工续聊记录。下面发送的消息会发给该 Session 正在使用的模型。'))+'</div>';return}
+ if(!messages.length){box.innerHTML='<div class="meta">'+esc(tr('当前没有人工续聊记录。下面发送的消息会发给该 Session 正在使用的模型。'))+'</div>';renderChangesCard();return}
  messages.forEach(m=>{box.appendChild(msgEl(m.role,m.content,m.created,{attachments:m.attachments||[],id:m.id}))});
  // 新到达的消息做一次渐显（纯动画，不改内容；尊重 prefers-reduced-motion）
  if(opts.animateLast&&box.lastElementChild)box.lastElementChild.classList.add('reveal');
@@ -1490,7 +1490,84 @@ function renderMessages(messages,opts){
  try{translateAttrs(box)}catch(e){}   // 动态 title/placeholder 在 DOM 层翻译（不改源码）
  if(findQuery)applyFind();
  renderLiveBubble();           // 重渲染后恢复"正在生成"临时气泡（若仍在流式）
+ renderChangesCard();          // 完成卡片也要跟着消息重建（否则被 innerHTML 清掉）
  box.scrollTop=box.scrollHeight}
+/* ── 任务完成卡片：这次改了哪些文件 / 交付物（对齐 DSH 的 Edited N files +X −Y）──
+   数据来自后端快照原像 diff（不依赖 git）；任务跑完（completed/failed/cancelled）
+   由 runtime 状态触发一次拉取。运行中不显示，避免数字一直跳。 */
+let lastChanges=null, changesSid='', changesState='', changesExpanded=false;
+const CHANGE_DONE=['completed','failed','cancelled','expired'];
+const CHG_LABEL={added:['A','新增'],modified:['M','修改'],deleted:['D','删除'],dir:['DIR','目录']};
+function maybeLoadChanges(state){
+ if(!current)return;
+ const st=String(state||'');
+ // 又跑起来了（续聊/恢复）：清掉"已拉取"标记，下次结束时重新统计
+ if(!CHANGE_DONE.includes(st)){if(changesSid===current)changesState='';return}
+ if(changesSid===current&&changesState===st)return;
+ loadChanges(current,st)}
+async function loadChanges(sid,state){
+ if(!sid)return;
+ try{
+  const d=await api('/v1/agent/sessions/'+encodeURIComponent(sid)+'/changes');
+  if(current!==sid)return;
+  lastChanges=d;changesSid=sid;changesState=String(state||'');
+  renderChangesCard();
+ }catch(e){}}
+function clearChanges(){lastChanges=null;changesSid='';changesState='';
+ const c=document.getElementById('changesCard');if(c)c.remove()}
+function renderChangesCard(){
+ const box=document.getElementById('chatlog');if(!box)return;
+ let card=document.getElementById('changesCard');
+ const d=lastChanges;
+ const files=(d&&d.files)||[];
+ const deliv=(d&&d.deliverables)||[];
+ if(!d||changesSid!==current||(!files.length&&!deliv.length)){if(card)card.remove();return}
+ if(!card){card=document.createElement('div');card.id='changesCard';card.className='chgcard'}
+ box.appendChild(card);
+ const shown=changesExpanded?files:files.slice(0,6);
+ const rows=shown.map(f=>{
+  const lab=CHG_LABEL[f.status]||['?',f.status||''];
+  const num=f.binary?'<i class="chg-bin">'+esc(tr('二进制'))+'</i>'
+    :('<i class="chg-add">+'+esc(f.additions||0)+'</i> <i class="chg-del">−'+esc(f.deletions||0)+'</i>');
+  const clickable=(f.status!=='dir'&&!f.binary);
+  return '<div class="chg-row'+(clickable?' click':'')+'"'+(clickable?' data-diff="'+esc(f.path)+'"':'')
+    +' title="'+esc(clickable?tr('查看差异'):tr('二进制文件，无文本差异'))+'">'
+    +'<span class="chg-ico '+esc(f.status)+'">'+esc(lab[0])+'</span>'
+    +'<span class="chg-path">'+esc(f.path)+'</span>'
+    +'<span class="chg-num">'+num+'</span></div>'}).join('');
+ const more=files.length>6?'<button type="button" class="btn ghost chg-more">'
+   +esc(changesExpanded?tr('收起'):tr('全部 {n} 个文件',{n:files.length}))+'</button>':'';
+ const dv=deliv.length?'<div class="chg-deliv"><b>'+esc(tr('交付物'))+'</b>'
+   +deliv.map(x=>'<span class="chg-dchip" title="'+esc(x.description||x.path)+'">'+esc(x.path)
+     +(x.exists===false?' ⚠':'')+'</span>').join('')+'</div>':'';
+ card.innerHTML='<div class="chg-head"><b>'+esc(files.length?tr('本次改动 {n} 个文件',{n:files.length}):tr('本次交付'))
+   +'</b><span class="chg-stat"><i class="chg-add">+'+esc(d.additions||0)+'</i>'
+   +'<i class="chg-del">−'+esc(d.deletions||0)+'</i></span></div>'
+   +'<div class="chg-list">'+rows+'</div>'+more+dv;
+ card.querySelectorAll('[data-diff]').forEach(el=>{el.onclick=()=>openChangeDiff(el.dataset.diff)});
+ const mb=card.querySelector('.chg-more');
+ if(mb)mb.onclick=()=>{changesExpanded=!changesExpanded;renderChangesCard()};
+}
+async function openChangeDiff(path){
+ const sid=current;if(!sid)return;
+ document.getElementById('liveTitle').textContent=path+' · '+tr('查看差异');
+ const body=document.getElementById('liveBody');
+ body.textContent=tr('读取差异…');
+ openMask('liveMask');
+ try{
+  const d=await api('/v1/agent/sessions/'+encodeURIComponent(sid)+'/changes/diff?path='+encodeURIComponent(path));
+  if(current!==sid)return;
+  if(d.binary){body.innerHTML='<span class="chg-empty">'+esc(tr('二进制文件，无文本差异'))+'</span>';return}
+  const lines=String(d.diff||'').split('\n');
+  if(!String(d.diff||'').trim()){body.innerHTML='<span class="chg-empty">'+esc(tr('没有差异'))+'</span>';return}
+  body.innerHTML=lines.map(l=>{
+   let c='';
+   if(l.startsWith('+++')||l.startsWith('---'))c=' d-head';
+   else if(l.startsWith('@@'))c=' d-hunk';
+   else if(l.startsWith('+'))c=' d-add';
+   else if(l.startsWith('-'))c=' d-del';
+   return '<span class="dline'+c+'">'+esc(l)+'</span>'}).join('');
+ }catch(e){body.textContent=String((e&&(e.text||e.message))||e)}}
 /* 语言显示名（对齐 Copilot 的写法：PowerShell 而不是 powershell） */
 const HL_LABEL={python:'Python',js:'JavaScript',typescript:'TypeScript',json:'JSON',
  bash:'Bash',powershell:'PowerShell',sql:'SQL',yaml:'YAML',html:'HTML',css:'CSS',
@@ -2044,6 +2121,7 @@ function setFollowupMode(m){followupMode=m;
 function resetView(){
  document.getElementById('title').textContent='—';
  document.getElementById('status').textContent='—';
+ clearChanges();               // 新任务：上一任务的完成卡片不能跟过来
  let _sc=document.getElementById('sidChip'); if(_sc)_sc.textContent='';
  setPill('');
  setKpis({total_steps:0,conversation_steps:0,conversation_index:0,estimated_tokens:0});
@@ -2072,6 +2150,9 @@ async function load(id){
  if(_sc){_sc.textContent=s.id;_sc.onclick=()=>{try{navigator.clipboard.writeText(s.id);toast(tr('已复制会话 ID: ')+s.id,'ok')}catch(e){toast(s.id)}}}
  document.getElementById('status').textContent=stateText(s.state)+' · '+s.workspace;
  setPill(s.state);setKpis(s);
+ // 任务完成卡片：换会话先清掉旧的，再按该会话状态决定是否拉改动
+ clearChanges();
+ if(['completed','failed','cancelled','expired'].includes(String(s.state||''))) loadChanges(id,s.state);
  document.getElementById('steps').innerHTML='';renderedSteps=0;lastDetail='';
  // 普通对话没有 Agent 步骤：把时间线显示为对话消息（比"没有符合筛选条件的步骤"有用）
  if(!d.steps.length && (d.messages||[]).length){
@@ -2338,6 +2419,8 @@ async function applyRuntime(r){
   updateLiveBubble(_inFlight?(r.answer_preview||''):'',_inFlight);
   document.getElementById('prompt').textContent=r.prompt_preview||'';
   setPill(r.session_state);setKpis(r);
+  // 任务刚跑完：拉一次"改了哪些文件"卡片（运行中不拉，数字会一直跳）
+  try{maybeLoadChanges(r.session_state)}catch(e){}
   // 只在真的等待授权时显示（后端已按 waiting 过滤，这里再兜一层）
   try{showApprovalBar(r.session_state==='waiting'?r.approval_pending:null,r.approval_scope)}catch(e){}
   try{showQuestionBar(r.question||null)}catch(e){}

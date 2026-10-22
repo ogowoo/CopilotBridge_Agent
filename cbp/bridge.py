@@ -1918,6 +1918,18 @@ TOOLS_EXTRA = register_extra_tools(
     subagent_fork_fn=lambda *a, **k: fork_subagent(*a, **k),
     subagent_list_fn=lambda *a, **k: list_subagents(*a, **k))
 
+
+def declared_deliverables(sid: str) -> list[dict]:
+    """本次任务通过 `present` 登记过的交付物。
+
+    注意是**内存态**（重启后为空）：所以任务完成卡片以"文件改动"为主，
+    交付物只是额外标注，不会因为这里为空就什么都不显示。
+    """
+    try:
+        return TOOLS_EXTRA.deliverables_for(sid)
+    except Exception:
+        return []
+
 # 会话状态钩子：扩展工具用它读写当前会话的 goal/todos（Agent 循环据此续轮）
 AGENT_TOOLS.state_getter = lambda: (AGENT_SESSIONS.get(current_session()) or {})
 AGENT_TOOLS.state_saver = lambda **kw: AGENT_SESSIONS.patch(current_session(), **kw)

@@ -1711,3 +1711,43 @@ html,body{overflow:hidden}
 @media(max-width:900px){
   .toasts{left:60px}
 }
+
+/* ── 任务完成卡片：本次改动 / 交付物（对齐 DSH 的 Edited N files）── */
+.chgcard{margin:10px 0 4px;border:1px solid var(--line2);border-radius:12px;
+  background:var(--panel);overflow:hidden;flex:none}
+.chg-head{display:flex;align-items:center;gap:10px;padding:9px 12px;
+  background:var(--panel2);border-bottom:1px solid var(--line);font-size:12.5px}
+.chg-head b{font-weight:600;color:var(--text)}
+.chg-stat{margin-left:auto;display:flex;gap:9px;font-family:ui-monospace,Consolas,monospace}
+.chg-add{color:var(--green);font-style:normal}
+.chg-del{color:var(--red);font-style:normal}
+.chg-list{display:flex;flex-direction:column}
+.chg-row{display:flex;align-items:center;gap:9px;padding:6px 12px;font-size:12.5px;
+  border-top:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
+.chg-row:first-child{border-top:0}
+.chg-row.click{cursor:pointer}
+.chg-row:hover{background:color-mix(in srgb,var(--accent) 7%,var(--panel))}
+.chg-ico{flex:none;min-width:26px;text-align:center;font-size:10px;font-weight:700;
+  border-radius:5px;padding:1px 4px;border:1px solid var(--line2);color:var(--muted);
+  font-family:ui-monospace,Consolas,monospace}
+.chg-ico.added{color:var(--green);border-color:color-mix(in srgb,var(--green) 45%,var(--line2))}
+.chg-ico.modified{color:var(--blue);border-color:color-mix(in srgb,var(--blue) 45%,var(--line2))}
+.chg-ico.deleted{color:var(--red);border-color:color-mix(in srgb,var(--red) 45%,var(--line2))}
+.chg-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:ui-monospace,Consolas,monospace;color:var(--text)}
+.chg-num{flex:none;display:flex;gap:8px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.chg-bin{color:var(--faint);font-style:normal;font-size:11.5px}
+.chg-more{margin:7px 12px 10px;align-self:flex-start}
+.chg-deliv{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 12px;
+  border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.chg-deliv b{font-weight:600;color:var(--text);margin-right:2px}
+.chg-dchip{border:1px solid var(--line2);border-radius:999px;padding:1px 9px;
+  background:var(--panel2);font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chg-empty{color:var(--muted)}
+/* diff 浮层（复用 liveMask 的 <pre>）*/
+.dline{display:block;white-space:pre-wrap;word-break:break-word;padding:0 2px}
+.dline.d-add{color:var(--green);background:color-mix(in srgb,var(--green) 10%,transparent)}
+.dline.d-del{color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}
+.dline.d-hunk{color:var(--accent2)}
+.dline.d-head{color:var(--faint)}

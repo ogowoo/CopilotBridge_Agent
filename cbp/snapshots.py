@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import os
@@ -230,6 +231,150 @@ class SnapshotStore:
                 "files": [{"path": e["path"], "kind": e.get("kind"), "bytes": e.get("bytes", 0)}
                           for e in files.values()],
                 "skipped": data.get("skipped", [])}
+
+    # ── 改动统计 / 差异（任务完成后的「改了哪些文件」卡片）────────────
+    MAX_DIFF_BYTES = 4 * 1024 * 1024     # 单文件超过这个大小不做行级 diff
+    MAX_DIFF_LINES = 40000               # 单文件行数上限（SequenceMatcher 的耗时保护）
+
+    @staticmethod
+    def _read_lines(path: Path) -> list[str] | None:
+        """读文本行；二进制 / 超大文件返回 None（表示"无法按行比较"）。"""
+        try:
+            if not path.is_file():
+                return None
+            if path.stat().st_size > SnapshotStore.MAX_DIFF_BYTES:
+                return None
+            data = path.read_bytes()
+        except OSError:
+            return None
+        if b"\x00" in data[:4096]:          # 二进制（xlsx/docx/图片）没有"行"的概念
+            return None
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        return text.splitlines()[: SnapshotStore.MAX_DIFF_LINES]
+
+    @staticmethod
+    def _numstat(old: list[str], new: list[str]) -> tuple[int, int]:
+        """行级增删数（对齐 git numstat 的口径）。"""
+        add = dele = 0
+        sm = difflib.SequenceMatcher(None, old, new, autojunk=False)
+        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+            if tag in ("replace", "insert"):
+                add += j2 - j1
+            if tag in ("replace", "delete"):
+                dele += i2 - i1
+        return add, dele
+
+    def _entry_target(self, entry: dict[str, Any],
+                      default_root: Path | None) -> Path | None:
+        root = entry.get("root")
+        base = Path(root) if root else (Path(default_root) if default_root else None)
+        if base is None:
+            return None
+        return Path(base) / str(entry.get("path") or "")
+
+    def changes(self, sid: str, default_root: Path | None = None) -> dict[str, Any]:
+        """任务开始前 → 现在，每个文件的行级增删统计。
+
+        DSH 在任务完成后会显示「Edited N files +X −Y」；这里用**快照里的原像**
+        做 diff（原像是写操作前捕获的，正好是"任务开始前"），不依赖 git。
+        二进制文件（xlsx/docx/图片）只列路径、不给行数；未改动的文件直接略过。
+        """
+        data = self.load(sid)
+        files: list[dict[str, Any]] = []
+        total_add = total_del = 0
+        for rel, entry in (data.get("files") or {}).items():
+            target = self._entry_target(entry, default_root)
+            if target is None:
+                continue
+            kind = str(entry.get("kind") or "")
+            status = ""
+            old_lines: list[str] | None = None
+            new_lines: list[str] | None = None
+            if kind == "absent":
+                if target.exists():
+                    status = "added"
+                    new_lines = self._read_lines(target)
+                else:
+                    continue                    # 捕获时不存在、现在也不存在：没发生改动
+            elif kind == "file":
+                stored = self._dir(sid) / str(entry.get("stored") or "")
+                if target.is_file():
+                    old_lines = self._read_lines(stored)
+                    new_lines = self._read_lines(target)
+                    # 内容完全一致（写了又改回去 / 只是 touch）：不列出来
+                    if old_lines is not None and new_lines is not None and old_lines == new_lines:
+                        continue
+                    status = "modified"
+                else:
+                    status = "deleted"
+                    old_lines = self._read_lines(stored)
+            elif kind == "dir":
+                status = "dir"
+            else:
+                continue
+            add = dele = 0
+            binary = False
+            if status in ("modified", "added", "deleted"):
+                if status != "deleted" and new_lines is None:
+                    binary = True
+                elif status == "modified" and old_lines is None:
+                    binary = True
+                else:
+                    add, dele = self._numstat(old_lines or [], new_lines or [])
+            files.append({"path": rel, "status": status,
+                          "additions": add, "deletions": dele, "binary": binary,
+                          "kind": kind, "bytes": int(entry.get("bytes") or 0),
+                          "tool": str(entry.get("tool") or "")})
+            if status in ("modified", "added", "deleted"):
+                total_add += add
+                total_del += dele
+        files.sort(key=lambda x: (-(x["additions"] + x["deletions"]), x["path"]))
+        changed = sum(1 for f in files if f["status"] in ("modified", "added", "deleted"))
+        return {"session_id": sid, "count": changed, "additions": total_add,
+                "deletions": total_del, "files": files,
+                "skipped": data.get("skipped", [])}
+
+    def diff(self, sid: str, rel: str,
+             default_root: Path | None = None) -> dict[str, Any] | None:
+        """单个文件的原像 → 现在的 unified diff；路径必须出现在该会话快照里。
+
+        只允许读**快照记录过的路径**：接口不能变成"任意文件读取"（否则知道 sid 的
+        调用方就能读工作区外的文件）。
+        """
+        want = str(rel or "").replace("\\", "/").lstrip("/")
+        data = self.load(sid)
+        entry = (data.get("files") or {}).get(want)
+        if not entry:
+            return None
+        target = self._entry_target(entry, default_root)
+        if target is None:
+            return None
+        stored = self._dir(sid) / str(entry.get("stored") or "")
+        kind = str(entry.get("kind") or "")
+        old_lines: list[str] | None = []
+        new_lines: list[str] | None = []
+        if kind == "file":
+            old_lines = self._read_lines(stored)
+        if target.is_file():
+            new_lines = self._read_lines(target)
+        binary = (kind == "file" and old_lines is None) or (target.is_file() and new_lines is None)
+        old_lines = old_lines or []
+        new_lines = new_lines or []
+        add, dele = self._numstat(old_lines, new_lines)
+        text = ""
+        if not binary:
+            text = "\n".join(difflib.unified_diff(
+                [ln + "\n" for ln in old_lines],
+                [ln + "\n" for ln in new_lines],
+                fromfile=("a/" + want) if kind == "file" else "/dev/null",
+                tofile=("b/" + want) if target.exists() else "/dev/null",
+                n=3)).rstrip()
+        status = "deleted" if not target.exists() else ("added" if kind == "absent" else "modified")
+        return {"path": want, "status": status, "additions": add, "deletions": dele,
+                "binary": binary, "diff": text[:400000]}
 
     # ── 回滚 ──────────────────────────────────────────────────────
     def versions(self, sid: str) -> list[dict[str, Any]]:
