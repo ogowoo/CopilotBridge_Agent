@@ -276,26 +276,67 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         return {"count": count, "steps": steps, "tokens": tokens,
                 "running": running, "ids": sorted(seen)}
 
-    def subagent_summary_by_parent(self) -> dict[str, dict]:
-        """一次性汇总"每个父会话下的直接子会话"（侧栏徽标用，避免 N+1 查询）。
+    def subagent_totals_all(self, max_depth: int = 4) -> dict[str, dict]:
+        """一次算出**每个会话**的子孙合计（含孙代理），供侧栏列表与 KPI 用同一口径。
 
-        只算一层：侧栏显示"有子代理在跑"的提示足够了；精确的递归合计
-        （含孙代理）由 `subagent_stats(sid)` 给详情页/KPI 用。
+        为什么需要：列表过去用 `subagent_summary_by_parent()`，只算**直接子会话**；
+        详情页/KPI 用的是 `subagent_stats()`（递归到孙）。于是同一个任务在侧栏显示
+        "步骤 47 / Token 18320"，点进去却是"总步骤 210 / TOKEN 2,100"——用户实测
+        "sessions 列表的 steps/session/token 跟会话页数据不相符"。
+
+        实现：一次读全表 → 用 `parent_id` 建子表 → 后序汇总（memo + visiting 防环），
+        在 Python 里算，避免列表端点对每个会话都查一遍（N+1）。
         """
+        max_depth = max(1, int(max_depth or 1))
         with self.lock, self._connect() as con:
             rows = con.execute(
-                "SELECT parent_id, COUNT(*) AS c, "
-                "SUM(CASE WHEN state IN ('running','waiting') THEN 1 ELSE 0 END) AS r, "
-                "SUM(COALESCE(total_steps,0)) AS s, "
-                "SUM(COALESCE(estimated_tokens,0)) AS t "
-                "FROM sessions WHERE parent_id IS NOT NULL AND parent_id != '' "
-                "GROUP BY parent_id").fetchall()
-        out: dict[str, dict] = {}
-        for row in rows:
-            pid = str(row["parent_id"])
-            out[pid] = {"count": int(row["c"] or 0), "running": int(row["r"] or 0),
-                        "steps": int(row["s"] or 0), "tokens": int(row["t"] or 0)}
-        return out
+                "SELECT id, parent_id, total_steps, estimated_tokens, state FROM sessions"
+            ).fetchall()
+        info: dict[str, dict] = {}
+        children: dict[str, list[str]] = {}
+        for r in rows:
+            rid = str(r["id"] or "")
+            if not rid:
+                continue
+            info[rid] = {
+                "steps": int(r["total_steps"] or 0),
+                "tokens": int(r["estimated_tokens"] or 0),
+                "running": 1 if str(r["state"] or "") in ("running", "waiting") else 0,
+            }
+            pid = str(r["parent_id"] or "")
+            if pid:
+                children.setdefault(pid, []).append(rid)
+        memo: dict[str, dict] = {}
+
+        def total(sid: str, depth: int, visiting: set) -> dict[str, int]:
+            hit = memo.get(sid)
+            if hit is not None:
+                return hit
+            if depth <= 0 or sid in visiting:       # 深度用尽 / 防环
+                return {"count": 0, "steps": 0, "tokens": 0, "running": 0}
+            visiting.add(sid)
+            agg = {"count": 0, "steps": 0, "tokens": 0, "running": 0}
+            for child in children.get(sid, []):
+                own = info.get(child) or {"steps": 0, "tokens": 0, "running": 0}
+                sub = total(child, depth - 1, visiting)
+                agg["count"] += 1 + sub["count"]
+                agg["steps"] += own["steps"] + sub["steps"]
+                agg["tokens"] += own["tokens"] + sub["tokens"]
+                agg["running"] += own["running"] + sub["running"]
+            visiting.discard(sid)
+            memo[sid] = agg
+            return agg
+
+        return {sid: total(sid, max_depth, set()) for sid in info}
+
+    def subagent_summary_by_parent(self) -> dict[str, dict]:
+        """每个父会话的**直接子会话**汇总（`subagent_totals_all` 的一层特例）。
+
+        保留这个入口是给"只关心直接子代理"的调用方与既有测试；列表端点已改用
+        递归版本（含孙），两边口径差异正是之前列表与详情页数字对不上的原因。
+        """
+        totals = self.subagent_totals_all(max_depth=1)
+        return {pid: v for pid, v in totals.items() if v.get("count")}
 
     def patch(self, sid: str, **values):
         allowed = {"title","state","workspace","model","current_url","conversation_index","conversation_urls",

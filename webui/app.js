@@ -919,7 +919,9 @@ function setKpis(o){
    }else{el.removeAttribute('title');delete el.dataset.sub}};
  _marksub(document.getElementById('kpiSteps'),stepsAll,_ownSteps,_ss,_sc);
  document.getElementById('kpiConv').textContent=o.conversation_steps??0;
- document.getElementById('kpiRoll').textContent=o.conversation_index??0;
+ // 与侧栏行、活动面板的「会话序号」一致：显示"第几个 Copilot 对话"（1 起），
+ // 而不是原始下标（0 起）——三处同一个数，避免用户看到两套"会话"数据。
+ document.getElementById('kpiRoll').textContent=(o.conversation_index??0)+1;
  const _tkEl=document.getElementById('kpiToken');
  _marksub(_tkEl,tkAll,_ownTk,_stk,_sc);
  const tk=tkAll;
@@ -1059,7 +1061,7 @@ function drawSessions(){
  all.forEach(s=>{const p=String(s.parent_id||'');if(p&&byId.has(p)){if(!kidsOf.has(p))kidsOf.set(p,[]);kidsOf.get(p).push(s)}});
  const isKid=s=>{const p=String(s.parent_id||'');return !!p&&byId.has(p)};
  let list=all.filter(s=>!isKid(s));
- let sig=q+'|'+all.map(s=>s.id+s.state+s.total_steps+s.estimated_tokens+(s.conversation_index??'')+(s.title||'')+(s.attachment_count??'')+(s.tag||'')+(s.workspace||'')+(s.parent_id||'')).join('|')+'|'+current+'|'+[...expandedSess].join(',');
+ let sig=q+'|'+all.map(s=>s.id+s.state+s.total_steps+s.estimated_tokens+(s.subagent_steps||0)+(s.subagent_tokens||0)+(s.subagent_count||0)+(s.subagent_running||0)+(s.conversation_index??'')+(s.title||'')+(s.attachment_count??'')+(s.tag||'')+(s.workspace||'')+(s.parent_id||'')).join('|')+'|'+current+'|'+[...expandedSess].join(',');
  if(sig===sessSig)return;
  sessSig=sig;
  box.innerHTML='';
@@ -1080,7 +1082,18 @@ function drawSessions(){
   e.setAttribute('role','button');e.setAttribute('aria-pressed',s.id===current?'true':'false');
   // 会话标识必须显示：标题可能相似（甚至被 Copilot 改名），删错代价很大
   const _kind=String(s.id||'').startsWith('cron-')?'⏱':String(s.id||'').startsWith('research-')?'🔎':String(s.id||'').startsWith('sub-')?'子':'';
-  e.innerHTML=`<span class="sstat ${stateClassOf(s)}" title="${esc(stateLabel(s))}" aria-label="${esc(stateLabel(s))}">${stateIcon(s.state)}</span><div class="smeta"><b>${_kind?`<span class="skind">${_kind}</span>`:''}${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${esc(s.total_steps??0)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${esc(s.estimated_tokens??0)}</small></div>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
+  // 步数/Token 与详情页 KPI 必须同一口径：主会话 + 子代理（含孙）。
+  // 以前这里只显示 s.total_steps / s.estimated_tokens，父任务跑了子代理后
+  // 侧栏与页面会差出几百步/几千 token（用户实测"列表跟会话页数据不相符"）。
+  const _subSteps=Number(s.subagent_steps||0), _subTk=Number(s.subagent_tokens||0),
+        _subN=Number(s.subagent_count||0);
+  const _ownSteps=Number(s.total_steps??0), _ownTk=Number(s.estimated_tokens??0);
+  const _sumTip=_subN?tr('本会话 {a} + 子代理 {b}（{n} 个）',{a:_ownSteps.toLocaleString(),
+    b:_subSteps.toLocaleString(),n:_subN}):'';
+  const _num=(v,extra)=>extra>0
+    ?`<span class="ssub" title="${esc(_sumTip)}">${esc(v)}</span>`
+    :esc(v);
+  e.innerHTML=`<span class="sstat ${stateClassOf(s)}" title="${esc(stateLabel(s))}" aria-label="${esc(stateLabel(s))}">${stateIcon(s.state)}</span><div class="smeta"><b>${_kind?`<span class="skind">${_kind}</span>`:''}${esc(s.title)}</b><small><code class="sid" title="点击复制会话 ID">${esc(s.id)}</code><br>${tr('步骤')} ${_num(_ownSteps+_subSteps,_subSteps)} · ${tr('会话')} ${esc((s.conversation_index??0)+1)} · Token ${_num(_ownTk+_subTk,_subTk)}</small></div>${(s.attachment_count||0)>0?`<span class="attchip" title="含 ${s.attachment_count} 条带图片附件的消息">📎${s.attachment_count}</span>`:''}<button type="button" class="sess-tag" title="设置标签（用于分组）" data-act="editTag" data-arg="${esc(s.id)}">🏷</button>`;
   // 子代理不再列进侧栏 → 前导位（▸ 的那个位置）也就没用了：
   // 空着那 12px + gap 会把整行往右推，看起来跟工作区分组头"跳格"（用户实测）。
   let chip=e.querySelector('.sid');

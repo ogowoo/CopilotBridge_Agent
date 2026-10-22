@@ -55,6 +55,7 @@ const I18N_EN = {
   "总步骤": "Total steps",
   "当前会话步骤": "Steps this session",
   "会话切换": "Session switches",
+  "第几个 Copilot 对话（与侧栏一致）": "Which Copilot conversation (same as sidebar)",
   "TOKEN 估算": "Token estimate",
   "当前执行状态": "Activity",
   "当前回答": "Current answer",

@@ -1108,13 +1108,13 @@ async def sessions(include_archived: bool = False, include_subagents: bool = Tru
     # 需要扁平列表的调用方显式传 include_subagents=false。
     if not include_subagents:
         rows = [x for x in rows if not str(x.get("parent_id") or "").strip()]
-    # 列表行也要知道自己有没有"仍在跑的子代理"：否则父会话已结束、子代理还在跑时，
-    # 侧栏仍显示绿色"已完成"（用户实测被误导）。一条聚合查询批量补上，避免 N+1。
+    # 列表行也要带上"含子代理"的合计：侧栏与详情页/KPI 必须同一口径，否则同一个
+    # 任务在两处显示两个步数/Token（用户实测）。用递归版本（含孙代理）。
     try:
-        agg = b.AGENT_SESSIONS.subagent_summary_by_parent()
+        agg = b.AGENT_SESSIONS.subagent_totals_all()
         for x in rows:
             a = agg.get(str(x.get("id") or ""))
-            if a:
+            if a and (a.get("count") or a.get("running")):
                 x["subagent_count"] = a["count"]
                 x["subagent_running"] = a["running"]
                 x["subagent_steps"] = a["steps"]

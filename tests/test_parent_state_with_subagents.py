@@ -13,8 +13,8 @@
 ## 修法
 - `cancel_running_children()` 改成**递归**取消所有后代（上限 6 层、`seen` 防环）;
 - `subagent_stats()` 增加 `running` 计数；API 暴露 `subagent_running`
-  （详情 + runtime 快照；列表端点用一条 `subagent_summary_by_parent()` 批量补,
-  避免 N+1）;
+  （详情 + runtime 快照；列表端点用一条 `subagent_totals_all()` 批量补全（含孙），
+  避免 N+1 且与详情页同一口径）;
 - 前端 `stateLabel()` / `stateClassOf()`:父会话 state 已结束但 `subagent_running>0`
   时显示「已完成 · 子代理 N 仍在跑」并把颜色降为琥珀（KPI 卡 + 侧栏行都生效）,
   等后代真正结束再回到绿色「已完成」。
@@ -103,8 +103,9 @@ class ApiAndFrontendTests(unittest.TestCase):
     def test_api_exposes_subagent_running(self):
         self.assertIn('"subagent_running"', API)
         i = API.index('@app.get("/v1/agent/sessions")')
-        self.assertIn("subagent_summary_by_parent", API[i:i + 1600],
-                      "列表端点要批量补子代理状态，否则侧栏徽标永远是绿色")
+        seg = API[i:i + 1800]
+        self.assertTrue("subagent_totals_all" in seg or "subagent_summary_by_parent" in seg,
+                        "列表端点要批量补子代理状态，否则侧栏徽标永远是绿色")
 
     def test_frontend_state_label_mentions_running_subagents(self):
         self.assertIn("function stateLabel", APP)

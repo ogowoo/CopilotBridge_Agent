@@ -1341,6 +1341,8 @@ html,body{overflow:hidden}
 .sess .sstat.done{color:var(--blue)}
 .sess.sel .sstat{color:var(--accent)}
 .sess .sstat svg .spin{transform-origin:8px 8px;animation:spin 1.6s linear infinite}
+/* 侧栏步骤/Token 已含子代理：虚线下划线提示"可悬停看拆分"（与 KPI 卡片一致）*/
+.sess small .ssub{text-decoration:underline dotted rgba(127,127,127,.5);cursor:help}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.sess .sstat svg .spin{animation:none}}
 /* ── 步骤时间线页：铺满父卡片剩余高度并自己滚动 ─────────────────────────
