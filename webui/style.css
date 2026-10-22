@@ -1751,3 +1751,8 @@ html,body{overflow:hidden}
 .dline.d-del{color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}
 .dline.d-hunk{color:var(--accent2)}
 .dline.d-head{color:var(--faint)}
+
+/* 长会话：离屏消息/步骤跳过布局与绘制（不改 DOM 结构，滚动到哪渲染到哪） */
+.chatlog .msg{content-visibility:auto;contain-intrinsic-size:auto 96px}
+#steps .step{content-visibility:auto;contain-intrinsic-size:auto 72px}
+

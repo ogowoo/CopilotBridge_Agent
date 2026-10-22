@@ -1188,6 +1188,7 @@ function stepResultRender(s){
    默认（无筛选）仍走增量渲染，展开状态不丢；一旦筛选就整表重建——
    筛选态本身是"检查用"的临时视图，重建的代价可以接受。 */
 let lastSteps=[],stepFilter={tool:'',status:''},stepFilterKey='';
+let stepsPending=false, lastStepsRaw=[];   // 时间线在后台页签时先不建 DOM（长会话省 ~0.9s）
 const BAD_STATUS=['error','invalid_action','failed','gate_blocked','noop_guard',
                   'send_failed','service_unavailable','denied'];
 function stepMatch(s){
@@ -1297,6 +1298,26 @@ function renderSteps(steps,force){
     : (filtered ? tr('没有符合筛选条件的步骤') : tr('该会话还没有 Agent 步骤'));
   box.innerHTML='<div class="sess-empty">'+esc(emptyMsg)+'</div>'}
  applyCodePrefs(box);try{translateAttrs(box)}catch(e){}}
+
+/* 时间线在「步骤时间线」页签里；默认停在「实时流」时它整块是隐藏的。
+   长会话（1500 步）为它建 DOM 要 ~0.9s，纯属浪费 —— 先只记住数据，切过去再建。 */
+function renderStepsMaybe(steps){
+ lastStepsRaw=steps||[];
+ if(liveTabName!=='timeline'){
+  stepsPending=true;
+  lastSteps=collapseTransient(lastStepsRaw);
+  const cnt=document.getElementById('stepCount');
+  if(cnt)cnt.textContent=lastSteps.length?lastSteps.length+tr(' 条'):'';
+  return;
+ }
+ stepsPending=false;
+ renderSteps(lastStepsRaw);
+}
+function flushStepsIfPending(){
+ if(!stepsPending)return;
+ stepsPending=false;
+ renderSteps(lastStepsRaw);
+}
 /* 工具结果：渲染 / JSON 双视图切换 */
 function stepView(btn){
  const bar=btn.closest('.stepviewbar');if(!bar)return;
@@ -1398,13 +1419,43 @@ function renderStream(messages,steps,opts){
  try{translateAttrs(box)}catch(e){}
  if(findQuery)applyFind();
  try{renderLiveBubble()}catch(e){}
- if(atBottom||opts.scrollEnd)box.scrollTop=box.scrollHeight;
+ if(atBottom||opts.scrollEnd)pinChatBottom(box);
+}
+/* 贴底：长会话用了 content-visibility，离屏消息的高度是**估算值**——
+   一次性把 scrollTop 设成 scrollHeight 会停在估算位置，真实高度展开后又跑偏
+   （实测打开长会话停在最顶部）。所以在 1.5s 内反复贴底，让高度收敛；
+   用户一旦滚动（wheel/触摸）就立刻停手，不跟用户抢滚动。 */
+let chatPinTimer=null, chatPinUntil=0;
+function pinChatBottom(box){
+ if(!box)return;
+ chatPinUntil=Date.now()+1500;
+ if(chatPinTimer)return;
+ const tick=()=>{
+  chatPinTimer=null;
+  if(Date.now()>chatPinUntil)return;
+  try{box.scrollTop=box.scrollHeight}catch(e){}
+  try{chatPinTimer=setTimeout(tick,60)}catch(e){}
+ };
+ tick();
+}
+document.addEventListener('wheel',ev=>{
+ const t=ev.target;
+ if(t&&t.closest&&t.closest('#chatlog'))chatPinUntil=0;
+},{passive:true,capture:true});
+document.addEventListener('touchstart',ev=>{
+ const t=ev.target;
+ if(t&&t.closest&&t.closest('#chatlog'))chatPinUntil=0;
+},{passive:true,capture:true});
+function scrollChatToEnd(){
+ const box=document.getElementById('chatlog');
+ if(box)pinChatBottom(box);
 }
 
 /* 调用记录：默认只显示**最新一条**（与状态条同款一行），点它浮动展开全部。
    不占布局（浮层定位于该行上方），和状态条的"点开看详情"是同一个交互。 */
 let toolLogSig='';
 let toolLogOpen=false;
+let toolLogSteps=[];        // 调用记录数据：浮层打开时才建 DOM（长会话省 ~1s）
 /* ── 视图缓存：从子代理返回父会话时不要整棵重建 ─────────────────────
    用户："从 subagent 返回到 live stream 的时候会很卡。"
    实测（父会话 120 条消息 + 400 步）：返回一次 load() 要 1.5s，其中
@@ -1415,6 +1466,7 @@ let toolLogOpen=false;
 const viewCache=new Map();
 const VIEW_CACHE_MAX=3;
 let renderedSid=null, lastSessionObj=null;
+let skipDetailOnce=null;   // load() 刚渲染完详情：第一次 runtime 不要再拉一遍并重渲染
 
 function stashView(sid){
  if(!sid)return;
@@ -1439,7 +1491,9 @@ function stashView(sid){
   renderedSteps,lastStepCount,streamSig,toolLogSig,
   stepFilter:{tool:stepFilter.tool,status:stepFilter.status},stepFilterKey,
   lastSteps,lastMessages,session:lastSessionObj,scroll:scrollTop,
+  atBottom:(chat.scrollHeight-chat.scrollTop-chat.clientHeight)<40,
   stepCountText:(document.getElementById('stepCount')||{}).textContent||'',
+  stepsPending,lastStepsRaw,
   toolLogHidden:!!(wrap&&wrap.hidden)});
  while(viewCache.size>VIEW_CACHE_MAX)viewCache.delete(viewCache.keys().next().value);
 }
@@ -1458,10 +1512,13 @@ function restoreView(cut){
  stepFilter={tool:(cut.stepFilter&&cut.stepFilter.tool)||'',status:(cut.stepFilter&&cut.stepFilter.status)||''};
  stepFilterKey=cut.stepFilterKey||JSON.stringify(stepFilter);
  lastSteps=cut.lastSteps||[];lastMessages=cut.lastMessages||[];
+ stepsPending=!!cut.stepsPending;lastStepsRaw=cut.lastStepsRaw||[];
  const _cnt=document.getElementById('stepCount');
  if(_cnt)_cnt.textContent=cut.stepCountText||'';
  try{fillStepTools()}catch(e){}
  chat.scrollTop=cut.scroll||0;
+ // 切走时停在底部：回来也贴底（content-visibility 下高度是估算值，不能只恢复像素）
+ if(cut.atBottom)try{pinChatBottom(chat)}catch(e){}
  return true;
 }
 /* 会话外壳（标题/状态/KPI/模型/父会话）：恢复缓存时也要走一遍，不能只还原消息区 */
@@ -1521,12 +1578,19 @@ function renderToolLog(steps,opts){
   if(clock)clock.textContent=last._time
     ? new Date(Number(last._time)*1000).toLocaleTimeString():'';
  }
- // 浮层内容：全量（内部滚动，始终停在最新一步）
+ // 浮层内容：**打开时才建**（1500 步全量建 DOM 要 ~0.9s，而它默认是收起的）
+ toolLogSteps=all;
  body.innerHTML='';
- for(const s of all)body.appendChild(stepRowEl(s));
+ if(toolLogOpen)fillToolLogBody();
+ if(toolLogOpen)positionToolLogPop();
+}
+function fillToolLogBody(){
+ const body=document.getElementById('toolLogBody');
+ if(!body)return;
+ body.innerHTML='';
+ for(const s of toolLogSteps)body.appendChild(stepRowEl(s));
  try{translateAttrs(body)}catch(e){}
  body.scrollTop=body.scrollHeight;
- if(toolLogOpen)positionToolLogPop();
 }
 function positionToolLogPop(){
  const pop=document.getElementById('toolLogPop');
@@ -1548,9 +1612,13 @@ function toggleToolLogPop(force){
  if(row)row.classList.toggle('open',toolLogOpen);
  if(more)more.textContent=toolLogOpen?tr('收起'):tr('展开全部');
  if(toolLogOpen){
+  fillToolLogBody();               // 首次展开才建全量行（数据在上面的 renderToolLog 里已备好）
   positionToolLogPop();
   const body=document.getElementById('toolLogBody');
   if(body)body.scrollTop=body.scrollHeight;
+ }else{
+  const body=document.getElementById('toolLogBody');
+  if(body)body.innerHTML='';       // 收起时释放长列表 DOM
  }
 }
 
@@ -1569,7 +1637,7 @@ function renderMessages(messages,opts){
  if(findQuery)applyFind();
  renderLiveBubble();           // 重渲染后恢复"正在生成"临时气泡（若仍在流式）
  renderChangesCard();          // 完成卡片也要跟着消息重建（否则被 innerHTML 清掉）
- box.scrollTop=box.scrollHeight}
+ pinChatBottom(box)}
 /* ── 任务完成卡片：这次改了哪些文件 / 交付物（对齐 DSH 的 Edited N files +X −Y）──
    数据来自后端快照原像 diff（不依赖 git）；任务跑完（completed/failed/cancelled）
    由 runtime 状态触发一次拉取。运行中不显示，避免数字一直跳。 */
@@ -2267,14 +2335,16 @@ async function load(id){
   const asSteps=d.messages.map((m,i)=>({step:i+1,conversation_index:m.conversation_index??0,
    tool:m.role==='user'?'你':'助手',status:'ok',reason:(m.content||'').slice(0,80),
    created:m.created}));
-  renderSteps(asSteps);lastStepCount=asSteps.length;
+  renderStepsMaybe(asSteps);lastStepCount=asSteps.length;
  }else{
-  renderSteps(d.steps);lastStepCount=d.steps.length;
+  renderStepsMaybe(d.steps);lastStepCount=d.steps.length;
  }
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
  // 记住"当前 DOM 属于哪个会话"：切走时 stashView 要靠它把节点存到正确的 sid 名下
  renderedSid=id;lastSessionObj=s;
+ // 这份详情刚渲染完，第一次 runtime 不必再拉一遍（长会话 2.8MB + 重渲染）
+ skipDetailOnce=id;
  // 守卫已前移到 await 之后（见函数开头）
  // 记住助手消息数（SSE 新消息通知据此决定是否播渐显动画）
  lastAssistantCount=(d.messages||[]).filter(m=>m.role==='assistant').length;
@@ -2557,14 +2627,19 @@ async function applyRuntime(r){
   try{showQuestionBar(r.question||null)}catch(e){}
   try{refreshSubagents(r.session_state==='running')}catch(e){}
   updateRetryCountdown(r);
-  if(r.total_steps!==lastTotal||(r.detail||'')!==lastDetail){
+  // 刚 load() 过：那次已经把详情渲染完了，第一次 runtime 不要再拉一遍 2.8MB 并重渲染
+  if(skipDetailOnce===myId){
+   skipDetailOnce=null;
+   lastDetail=r.detail||'';
+   lastTotal=r.total_steps??lastTotal;
+  }else if(r.total_steps!==lastTotal||(r.detail||'')!==lastDetail){
    lastDetail=r.detail||'';
    lastTotal=r.total_steps??lastTotal;
    // 详情请求失败不能变成 unhandled rejection（此前会让时间线永久停在旧数据且无提示）
    try{
     let d=await api('/v1/agent/sessions/'+encodeURIComponent(myId));
     if(current!==myId)return;
-    renderSteps(d.steps);lastStepCount=d.steps.length;
+    renderStepsMaybe(d.steps);lastStepCount=d.steps.length;
     try{renderStream(d.messages||[],d.steps||[],{})}catch(e){}
    }catch(e){console.warn('时间线刷新失败:',(e&&e.text)||e)}}}
 
@@ -3380,6 +3455,8 @@ function liveTab(n){
   const btn=document.getElementById(LIVE_TAB[k]);if(btn)btn.className='tab'+(k===n?' on':'')}
  // 输入框的显隐统一走 syncComposer（空状态/页签两种条件）
  try{syncComposer()}catch(e){}
+ // 切到时间线页签：把之前为了省时间没建的时间线补上（只建这一次）
+ if(n==='timeline'){try{flushStepsIfPending()}catch(e){}}
  if(n==='chat'){try{scrollChatToEnd()}catch(e){}}}  // className 覆盖即清除新内容圆点
 function expandLive(){
  document.getElementById('liveTitle').textContent=LIVE_NAMES[liveTabName];
