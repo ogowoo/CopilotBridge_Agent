@@ -343,12 +343,23 @@ class ToolRegistry:
 
         浅拷贝 __dict__ 即可：钩子（state_getter / subagent_fn / snapshot_hook…）
         都是无状态的函数，共享安全；可变容器在任务启动时会重新赋值。
+
+        **但工具函数必须重新绑定到新实例**：`_tools` 里存的是 `self.read_text` 这类
+        bound method，浅拷贝后仍指向**原注册表**——于是 `clone.set_root(会话工作区)`
+        只改了克隆的 root，工具执行时用的还是原 root（真实事故：选了工作区，Agent
+        却在默认 `workspace/` 里读写，Copilot 回答"当前工作目录是 …\workspace"）。
         """
         import copy as _copy
 
         new = object.__new__(ToolRegistry)
         for k, v in self.__dict__.items():
             new.__dict__[k] = _copy.copy(v) if isinstance(v, (dict, list, set)) else v
+        for name, fn in list(new.__dict__.get("_tools", {}).items()):
+            if getattr(fn, "__self__", None) is self:
+                try:
+                    new._tools[name] = getattr(new, getattr(fn, "__name__", name))
+                except Exception:
+                    pass
         return new
 
     def register(self, name: str, fn: Callable[..., Awaitable[Any]],

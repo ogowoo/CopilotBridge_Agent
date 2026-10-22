@@ -132,6 +132,22 @@ class _Extra:
         self._deliverables: dict[str, list[dict[str, Any]]] = {}
         self._pending_questions: dict[str, dict[str, Any]] = {}
 
+    def _active_reg(self):
+        """当前任务实际使用的工具注册表（并行时是每个任务的克隆）。
+
+        扩展工具是**单个全局实例**注册进注册表，方法绑定在这个实例上；如果直接用
+        `self.reg`（注册时的原始注册表），克隆出来的任务 root/沙箱都不生效——
+        真实事故：选了工作区，`pwsh`/`write_text` 仍在默认 `workspace/` 里跑。
+        """
+        try:
+            from . import bridge as _b
+            reg = _b._TOOLS_CTX.get()
+            if reg is not None:
+                return reg
+        except Exception:
+            pass
+        return self.reg
+
     def _sid(self) -> str:
         """当前会话 id（取不到时用 'default'，测试与单会话场景仍然可用）。"""
         try:
@@ -159,11 +175,11 @@ class _Extra:
     # ── 通用 ──
     def _path(self, path: str) -> Path:
         """复用核心注册表的路径沙箱。"""
-        return self.reg.sandbox_path(path)
+        return self._active_reg().sandbox_path(path)
 
     def _rel(self, target: Path) -> str:
         try:
-            return str(target.resolve().relative_to(self.reg.root))
+            return str(target.resolve().relative_to(self._active_reg().root))
         except (ValueError, OSError):
             return str(target)
 
@@ -343,7 +359,7 @@ class _Extra:
         command = str(command or "").strip()
         if not command:
             raise ExtraToolError("command 不能为空")
-        cwd = self._path(workdir) if workdir else self.reg.root
+        cwd = self._path(workdir) if workdir else self._active_reg().root
         if not cwd.is_dir():
             raise ExtraToolError(f"工作目录不存在: {workdir}")
         timeout = float(timeout_seconds or self.shell_timeout)
@@ -725,14 +741,14 @@ class _Extra:
 
     # ── goal：跨轮目标 ──
     def _session_state(self) -> dict[str, Any]:
-        getter = getattr(self.reg, "state_getter", None)
+        getter = getattr(self._active_reg(), "state_getter", None)
         try:
             return (getter() if getter else {}) or {}
         except Exception:
             return {}
 
     def _save_state(self, **kw: Any) -> None:
-        saver = getattr(self.reg, "state_saver", None)
+        saver = getattr(self._active_reg(), "state_saver", None)
         if not saver:
             return
         try:

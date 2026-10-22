@@ -2009,7 +2009,7 @@ def memory_scopes(scope: str = "all") -> list[str]:
     key = str(scope or "all").strip().lower()
     if key.startswith("glob"):
         return ["global"]
-    ws = memory_scope_for(AGENT_TOOLS.root)
+    ws = memory_scope_for(Path(task_tools().root))
     if key.startswith("proj") or key.startswith("work"):
         return [ws]
     return ["global", ws]
@@ -2081,9 +2081,12 @@ def self_snapshot_hook(sid: str):
     """快照钩子：按目标路径自动分派到工作区作用域或自升级作用域。"""
     def hook(tool: str, rel: str, target: Path) -> None:
         t = Path(target)
+        # 用**当前任务**的工作区根：并行时会话工作区不同，全局 root 会把别的会话
+        # 的文件写进错误的作用域（回滚时也找不到）。
+        task_root = Path(task_tools().root)
         try:
-            t.relative_to(AGENT_TOOLS.root)
-            SNAPSHOTS.capture(sid, rel, t, tool, root=AGENT_TOOLS.root)      # 工作区内
+            t.relative_to(task_root)
+            SNAPSHOTS.capture(sid, rel, t, tool, root=task_root)      # 工作区内
         except ValueError:
             SNAPSHOTS.capture(self_scope(sid), rel, t, tool, root=BASE)      # 服务代码
     return hook
@@ -4546,7 +4549,8 @@ async def run_subagent(task: str, description: str = "", model: str = "",
     # 用它当父会话会把子代理挂到别人的会话下（实测：测试扇出的子代理挂到了
     # 用户正在跑的真实任务里，界面上莫名出现 19 个 Subagents）。
     parent_sid = current_session()
-    parent_root = str(AGENT_TOOLS.root)
+    # 必须用**任务级**注册表的 root：并行时全局 AGENT_TOOLS.root 可能是别的会话的
+    parent_root = str(task_tools().root)
     child_sid = "sub-" + uuid.uuid4().hex[:10]
     parent_state = AGENT_SESSIONS.get(parent_sid) or {}
     child_model = normalize_model_soft((model or parent_state.get("model") or DEFAULT_MODEL).strip())
@@ -4596,6 +4600,7 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
     _tok_sid = _SESSION_CTX.set(child_sid)
     _tok_web = _WEB_TOOLS_CTX.set(not is_provider)
     _tok_depth = _SUBAGENT_DEPTH_CTX.set(subagent_chain_depth() + 1)
+    _tok_tools = None
     try:
         AGENT_SESSIONS.patch(child_sid, state="running")
         # 子会话也要有对话记录：否则面板点进去只有步骤时间线、看不到"问了什么答了什么"
@@ -4605,8 +4610,17 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
         except Exception:
             pass
         ACTIVE_SESSION_ID = child_sid
-        AGENT_TOOLS.current_session_id = child_sid
-        AGENT_TOOLS.set_web_copilot_tools(not is_provider)
+        # 子代理也要有自己的注册表：工作区/沙箱/网页工具开关按它来。直接用全局
+        # AGENT_TOOLS 会让子代理读写"默认工作区"，父任务选的 workspace 形同虚设。
+        child_reg = task_tools().clone()
+        try:
+            child_reg.set_root(parent_root or str(task_tools().root), False)
+        except Exception as exc:
+            log(f"子代理 {child_sid} 切换工作区失败（沿用父工作区）: {exc}")
+        child_reg.current_session_id = child_sid
+        child_reg.set_web_copilot_tools(not is_provider)
+        # 让扩展工具也看到子代理自己的注册表（否则 pwsh/search 仍用父/全局 root）
+        _tok_tools = _TOOLS_CTX.set(child_reg)
 
         if is_provider:
             async def turn(prompt, model_id, force_new=False):
@@ -4655,7 +4669,7 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
 
         cfg_child = dict(AGENT_CFG)
         cfg_child["max_total_steps"] = max(3, min(int(max_steps or subagent_max_steps()), 200))
-        runner = AgentRunner(AGENT_TOOLS, turn, cfg_child, get, save, add_step, add_file,
+        runner = AgentRunner(child_reg, turn, cfg_child, get, save, add_step, add_file,
                              add_conv_stat,
                              step_begin=lambda no, tool, h: (
                                  AGENT_SESSIONS.begin_step(
@@ -4689,6 +4703,8 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
                 pass
         # 先复位任务级上下文（并行的正确性靠它），再复位全局展示值
         try:
+            if _tok_tools is not None:
+                _TOOLS_CTX.reset(_tok_tools)
             _SESSION_CTX.reset(_tok_sid)
             _WEB_TOOLS_CTX.reset(_tok_web)
             _SUBAGENT_DEPTH_CTX.reset(_tok_depth)
@@ -4696,7 +4712,8 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
             pass
         ACTIVE_SESSION_ID = parent_sid
         AGENT_TOOLS.current_session_id = parent_sid or ""
-        AGENT_TOOLS.set_root(parent_root, False)
+        # 不再改全局 root：子代理用的是自己的 child_reg；改全局会把并行中的
+        # 其它会话/接口看到的"当前工作区"改成父任务的工作区。
         AGENT_TOOLS.set_web_copilot_tools(True)
 
 
@@ -4726,7 +4743,7 @@ async def continue_subagent(session_id: str, message: str, model: str = "",
     return await _drive_child(sid, msg, model_id, max_steps,
                               description=str(child.get("description") or ""),
                               parent_sid=str(child.get("parent_id") or ""),
-                              parent_root=str(AGENT_TOOLS.root),
+                              parent_root=str(task_tools().root),
                               is_provider=is_provider)
 
 
