@@ -98,6 +98,21 @@ class WindowPool:
             closed += 1
         return {"max": self._max, "closed": closed, "windows": len(self._windows)}
 
+    # ── 复用已就绪的页面 ──────────────────────────────────
+    def attach_existing(self, page: Any) -> Optional[Window]:
+        """把**已经就绪**的页面登记成 1 号窗口（启动时调用）。
+
+        这样 `windows=1` 时任务直接用它，不新开标签页（新标签要自己走一遍 SSO，
+        企业租户里常常起不来 → "窗口没登录/发送失败"）。
+        """
+        if page is None or self._windows:
+            return None
+        win = Window(self._next_index, page)
+        self._next_index += 1
+        self._windows.append(win)
+        self._free.put_nowait(win)
+        return win
+
     # ── 取用 / 归还 ───────────────────────────────────────
     async def acquire(self, sid: str = "", wait_timeout: float = 30.0) -> Window:
         """取一个窗口。队列满（>>上限 3 倍）时抛 WindowBusy。"""
@@ -123,6 +138,12 @@ class WindowPool:
         return win
 
     def release(self, win: Window) -> None:
+        """归还窗口：**绝不关页面**。
+
+        教训：以前这里有一条"超出上限就 close()"的清理，而 `win.sid` 在判断前
+        已被清空，条件恒真——第二个窗口一归还，用户正看着的那个标签页就被关掉，
+        表现为"开启任务后自动化窗口闪退"。缩容只由 set_max() 在**空闲**时做。
+        """
         win.sid = None
         win.last_used = time.time()
         if win.lock.locked():
@@ -130,18 +151,8 @@ class WindowPool:
                 win.lock.release()
             except RuntimeError:
                 pass
-        # 超出上限的窗口顺手关掉（调小配置时）
-        if len(self._windows) > self._max and not win.sid:
-            try:
-                self._windows.remove(win)
-            except ValueError:
-                pass
-            try:
-                asyncio.get_event_loop().create_task(win.page.close())
-            except Exception:
-                pass
-            return
-        self._free.put_nowait(win)
+        if win in self._windows:
+            self._free.put_nowait(win)
 
     # ── 状态 ──────────────────────────────────────────────
     def running(self) -> dict[str, int]:

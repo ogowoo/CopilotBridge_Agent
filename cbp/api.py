@@ -101,12 +101,20 @@ async def boot_browser() -> None:
         BOOT["browser_state"] = "failed"
         BOOT["browser_error"] = str(exc)
         b.log(f"浏览器启动失败（不影响 API 与提供商模型）: {exc}")
+        # 有任务正在用窗口时**不要**停掉 Playwright：那会把用户正看着的窗口一起关掉
         try:
-            if b.pw is not None:
-                await b.pw.stop()
+            _busy = bool(b.WINDOWS.running())
         except Exception:
-            pass
-        b.pw = None
+            _busy = False
+        if not _busy:
+            try:
+                if b.pw is not None:
+                    await b.pw.stop()
+            except Exception:
+                pass
+            b.pw = None
+        else:
+            b.log("有任务正在使用浏览器，保留当前窗口（不再停止 Playwright）")
 
 
 async def ensure_browser(wait_seconds: float = 240) -> bool:
@@ -116,13 +124,13 @@ async def ensure_browser(wait_seconds: float = 240) -> bool:
     直接返回。返回 copilot_ready（False 表示需要登录或启动失败）。
     """
     try:
-        if BOOT["copilot_ready"] and b.page is not None and not b.page.is_closed():
+        if BOOT["copilot_ready"] and b.current_page() is not None and not b.current_page().is_closed():
             return True
     except Exception:
         pass
     async with BOOT["lock"]:
         try:
-            if BOOT["copilot_ready"] and b.page is not None and not b.page.is_closed():
+            if BOOT["copilot_ready"] and b.current_page() is not None and not b.current_page().is_closed():
                 return True
         except Exception:
             pass
@@ -866,7 +874,7 @@ async def set_browser_mode(payload: dict):
     if not isinstance(target_raw, bool):
         raise HTTPException(422, "headless 必须是布尔值")
     target = target_raw
-    if target == b.HEADLESS_CURRENT and b.page is not None:
+    if target == b.HEADLESS_CURRENT and b.current_page() is not None:
         return {"headless": b.HEADLESS_CURRENT, "changed": False, "fallback": False}
     if b.lock.locked():
         raise HTTPException(409, "有请求/任务正在使用浏览器，请稍后再切换")

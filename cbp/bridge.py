@@ -1061,7 +1061,7 @@ async def select_model(model_id):
         return normalized
     other_known = {_norm(name) for mid, item in MODELS.items() if mid != normalized
                    for name in item["ui_names"]}
-    if SELECTED_MODEL == normalized and not (segments & other_known):
+    if get_selected_model() == normalized and not (segments & other_known):
         # 按钮文本为空或无法识别（未命中任何已知模型），且没有证据表明
         # 当前选中的是其他模型：信任上次成功选择，跳过开菜单的耗时操作。
         return normalized
@@ -1126,7 +1126,7 @@ async def select_model(model_id):
     except Exception:
         await option.click(timeout=5000, force=True)
     await asyncio.sleep(.8)
-    SELECTED_MODEL = normalized
+    set_selected_model(normalized)
     log(f"模型已切换为 {normalized}")
     return normalized
 
@@ -1749,7 +1749,25 @@ async def _start_browser(headless: bool) -> bool:
     launch failure falls back to a visible window).
     """
     global ctx, HEADLESS_CURRENT
+    # 已有上下文且在用的窗口：**不要关重建**（多窗口下会把用户正看的标签页全关掉，
+    # 表现就是"开任务时窗口闪退"）。只有显式切换 headless 模式才需要重建。
     if ctx is not None:
+        try:
+            busy = bool(WINDOWS.running()) or bool(getattr(WINDOWS, "stats", lambda: {})()
+                                                    .get("busy"))
+        except Exception:
+            busy = False
+        if (not busy) and bool(headless) == bool(HEADLESS_CURRENT):
+            try:
+                if ctx.pages:
+                    set_shared_page(ctx.pages[0])
+                    WINDOWS.attach_existing(_PAGE_RAW)   # 复用已有页面当 1 号窗口
+            except Exception:
+                pass
+            return HEADLESS_CURRENT
+        if busy:
+            log("有任务正在使用浏览器，跳过重建（沿用当前窗口）")
+            return HEADLESS_CURRENT
         try:
             await ctx.close()
         except Exception:
@@ -1769,6 +1787,11 @@ async def _start_browser(headless: bool) -> bool:
     HEADLESS_CURRENT = launch_kwargs["headless"]
     log("浏览器模式：" + ("无头（不显示窗口）" if HEADLESS_CURRENT else "有窗口"))
     set_shared_page(ctx.pages[0] if ctx.pages else await ctx.new_page())
+    # 共享页登记成 1 号窗口：windows=1 时任务复用它，不新开标签页
+    try:
+        WINDOWS.attach_existing(_PAGE_RAW)
+    except Exception:
+        pass
     await page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     _forget_selected_model()  # 页面重载，模型选择状态未知
     return HEADLESS_CURRENT
@@ -2463,7 +2486,27 @@ async def _new_copilot_page(index: int):
         await new_page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     except Exception as exc:
         log(f"新窗口 #{index} 打开 Copilot 失败: {exc}")
-    log(f"已开第 {index} 个自动化窗口（多窗口并行）")
+    # 新标签页要**等它真的可用**再交给任务：SSO/ADFS 回跳可能要几十秒，
+    # 早交出去会导致"消息发出去没反应 → 180 秒超时"。
+    tok = _PAGE_CTX.set(new_page)
+    try:
+        ready = await wait_copilot_ready(timeout=90)
+        if ready:
+            # 首页可能残留上次的对话状态：开一个新对话再做任务
+            try:
+                await new_chat()
+            except Exception as exc:
+                log(f"新窗口 #{index} 新建对话失败（继续用当前页）: {exc}")
+        else:
+            log(f"新窗口 #{index} 未就绪（可能仍在登录/跳转）：关闭该窗口，任务改用其它窗口")
+            try:
+                await new_page.close()
+            except Exception:
+                pass
+            raise RuntimeError(f"新窗口 #{index} 未就绪（需要登录 Copilot）")
+    finally:
+        _PAGE_CTX.reset(tok)
+    log(f"已开第 {index} 个自动化窗口（多窗口并行，就绪={ready}）")
     return new_page
 
 
@@ -2499,6 +2542,12 @@ async def _window(sid: str, wait_timeout: float = 30.0, need_page: bool = True):
     所以两个并行任务的 root / sandbox / plan / memory 互不干扰。
     """
     pool = WINDOWS if need_page else SLOTS
+    if need_page:
+        # 先确保浏览器上下文存在（懒启动）；否则池子创建页面会失败
+        try:
+            await ensure_browser_ready()
+        except Exception as exc:
+            log(f"启动浏览器失败（窗口池）: {exc}")
     try:
         win = await pool.acquire(sid, wait_timeout=wait_timeout)
     except WindowBusy as exc:
@@ -2885,7 +2934,43 @@ async def conversation_full_check() -> str:
     return conversation_full_reason(body)
 
 
-async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_check=None) -> str:
+_ANSWER_NOISE = (
+    "Press Tab to access the More options button.",
+    "按 Tab 访问“更多选项”按钮。",
+    "Press Tab to access the More options",
+)
+
+
+def _clean_answer(text: str) -> str:
+    """去掉答案里的 CBP 标记与 Copilot 的无障碍提示（它们会混进正文）。
+
+    这些噪声以前会一路混到模型手里（实测：模型收到的"回答"其实是自己的问题
+    加一句 Press Tab…），导致 JSON 解析失败、任务空转。
+    """
+    t = str(text or "")
+    t = re.sub(r"\[CBP-(?:AGENT|TURN)[^\]]*\]\s*", "", t)
+    for junk in _ANSWER_NOISE:
+        t = t.replace(junk, "")
+    # 收尾可能有零宽/多余空白
+    return t.strip()
+
+
+def _echo_only(value: str, sent: str) -> bool:
+    """清洗后的内容是否只是"我刚发出去的那句"（含标记残留），不含真正回答。"""
+    v = _clean_answer(value)
+    q = _clean_answer(sent)
+    if not v:
+        return True
+    if not q:
+        return False
+    short = q.splitlines()[0].strip()[:40]
+    if not short:
+        return False
+    return short in v and len(v) <= len(short) + 80
+
+
+async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_check=None,
+                            sent: str = "") -> str:
     """Wait using inactivity timeout, not a fixed per-turn wall-clock timeout.
 
     TIMEOUT now means: fail only when no answer progress is observed for this
@@ -2913,7 +2998,7 @@ async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_chec
             raise AgentPaused("用户请求暂停，回合等待已中断")
         now = time.monotonic()
         still_generating = await generating()
-        value = (await current_answer()).strip()
+        value = _clean_answer(await current_answer())
 
         # 插入指令的半中断点：还没产出任何内容 -> 放弃等待不丢东西
         if (interrupt_check and interrupt_check() and not still_generating
@@ -2934,7 +3019,9 @@ async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_chec
             generation_seen = True
             idle_deadline = now + TIMEOUT
 
-        is_candidate = bool(value) and (value != previous or generation_seen)
+        # 只有"我的问题回声 + UI 提示"不算答案：继续等真正的回答出现
+        _echo = bool(sent) and _echo_only(value, sent)
+        is_candidate = bool(value) and (value != previous or generation_seen) and not _echo
         if is_candidate:
             candidate_seen = True
             if value != current:
@@ -3058,7 +3145,7 @@ async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pa
         raise TimeoutError(f"未确认 Agent 回合 {turn_id} 进入 Copilot 会话，已停止以避免读取旧回答")
 
     runtime_update(phase="waiting", detail=f"Agent 回合 {turn_id} 已确认，等待 Copilot 回答")
-    _answer = await wait_agent_answer(previous, pause_check=pause_check,
+    _answer = await wait_agent_answer(previous, pause_check=pause_check, sent=prompt,
                                       interrupt_check=interrupt_check)
     return strip_suggestion_tail(_answer)
 
@@ -4032,7 +4119,7 @@ async def plain_chat_turn(sid: str, content: str, model_id: str, attach_paths: l
             # sent_successfully 用标记确认送达，避免误判重发。
             send_content = send_content.rstrip() + f"\n\n[CBP-TURN:{uuid.uuid4().hex[:12]}]"
             await send(send_content, make_new, model_id)
-            answer = (await wait_agent_answer(previous)).strip()
+            answer = (await wait_agent_answer(previous, sent=content)).strip()
             # 显示/存储用 markdown（保留代码块/列表/标题/粗体）；纯文本只用于回合判定。
             # 失败时回退纯文本，保证对话总能落库。
             # 先等 DOM 稳定：否则代码块还没渲染出来，取到的 markdown 缺代码块
