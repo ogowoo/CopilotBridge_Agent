@@ -231,7 +231,7 @@ async def periodic_suspend_resume():
                 pass
 
 
-app = FastAPI(title="Copilot Local Bridge Agent", version="10.2.1", lifespan=lifespan)
+app = FastAPI(title="Copilot Local Bridge Agent", version="10.3.0-preview.1", lifespan=lifespan)
 
 def _lang_of(request) -> str:
     """从 X-CBP-Lang 头取界面语言（缺省中文）。"""
@@ -475,7 +475,7 @@ async def stream_provider(p, model: str, messages: list):
 
 @app.get("/")
 async def root():
-    return {"name": "Copilot Local Bridge Agent", "version": "10.2.1", "docs": "/docs",
+    return {"name": "Copilot Local Bridge Agent", "version": "10.3.0-preview.1", "docs": "/docs",
             "models": "/v1/models", "agent": "/v1/agent/completions"}
 
 

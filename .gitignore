@@ -29,3 +29,7 @@ venv/
 Thumbs.db
 .idea/
 .vscode/
+# 提交信息临时文件（git commit -F 用），不该进仓库
+.commit_msg.txt
+# 调试截图（验证 UI 时生成的临时 PNG）
+_*.png
