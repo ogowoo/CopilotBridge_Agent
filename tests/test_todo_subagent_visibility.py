@@ -41,10 +41,11 @@ class ClearOnNewSessionTests(unittest.TestCase):
 
     def test_session_switch_clears_panels_before_await(self):
         i = APP.index("async function load(id)")
-        seg = APP[i:i + 400]
+        seg = APP[i:i + 3000]
         self.assertIn("clearGoalSubagents()", seg)
-        # 清理必须发生在 await 之前：否则新会话首帧仍显示旧面板
-        self.assertLess(seg.index("clearGoalSubagents()"), seg.index("await api("))
+        # 清理必须发生在网络请求之前：否则新会话首帧仍显示旧面板
+        self.assertLess(seg.index("clearGoalSubagents()"), seg.index("await api("),
+                        "未命中视图缓存时，清面板要在请求详情之前")
 
     def test_parent_scope_refreshed_after_load(self):
         i = APP.index("async function load(id)")

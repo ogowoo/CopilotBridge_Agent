@@ -1405,6 +1405,84 @@ function renderStream(messages,steps,opts){
    不占布局（浮层定位于该行上方），和状态条的"点开看详情"是同一个交互。 */
 let toolLogSig='';
 let toolLogOpen=false;
+/* ── 视图缓存：从子代理返回父会话时不要整棵重建 ─────────────────────
+   用户："从 subagent 返回到 live stream 的时候会很卡。"
+   实测（父会话 120 条消息 + 400 步）：返回一次 load() 要 1.5s，其中
+   renderStream（Markdown 解析 + 语法高亮）1.0s、renderSteps 0.44s，全同步阻塞。
+   这些 DOM 刚刚就在界面上：切走时把节点摘进 DocumentFragment 留着，切回来直接
+   append（展开状态 / 代码块 / 滚动位置都保留），只需几十毫秒；随后 runtime 再
+   按需增量刷新。只留最近 3 个会话，避免内存膨胀。 */
+const viewCache=new Map();
+const VIEW_CACHE_MAX=3;
+let renderedSid=null, lastSessionObj=null;
+
+function stashView(sid){
+ if(!sid)return;
+ const chat=document.getElementById('chatlog'),steps=document.getElementById('steps');
+ if(!chat||!steps)return;
+ // 滚动位置必须在**搬走节点之前**读：清空容器后 scrollHeight 变 0，scrollTop 会被夹到 0
+ const scrollTop=chat.scrollTop;
+ const chatFrag=document.createDocumentFragment();
+ while(chat.firstChild)chatFrag.appendChild(chat.firstChild);
+ // 完成卡片按当前会话重新拉，不跟着旧片段走（否则会显示别的会话的改动）
+ const oldCard=chatFrag.querySelector&&chatFrag.querySelector('#changesCard');
+ if(oldCard)oldCard.remove();
+ const stepFrag=document.createDocumentFragment();
+ while(steps.firstChild)stepFrag.appendChild(steps.firstChild);
+ const one=document.getElementById('toolLogOne'),body=document.getElementById('toolLogBody');
+ const oneFrag=document.createDocumentFragment(),bodyFrag=document.createDocumentFragment();
+ if(one)while(one.firstChild)oneFrag.appendChild(one.firstChild);
+ if(body)while(body.firstChild)bodyFrag.appendChild(body.firstChild);
+ const wrap=document.getElementById('toolLog');
+ viewCache.delete(sid);                 // 同一会话重复保存：先释放旧片段
+ viewCache.set(sid,{chat:chatFrag,steps:stepFrag,one:oneFrag,body:bodyFrag,
+  renderedSteps,lastStepCount,streamSig,toolLogSig,
+  stepFilter:{tool:stepFilter.tool,status:stepFilter.status},stepFilterKey,
+  lastSteps,lastMessages,session:lastSessionObj,scroll:scrollTop,
+  stepCountText:(document.getElementById('stepCount')||{}).textContent||'',
+  toolLogHidden:!!(wrap&&wrap.hidden)});
+ while(viewCache.size>VIEW_CACHE_MAX)viewCache.delete(viewCache.keys().next().value);
+}
+function restoreView(cut){
+ const chat=document.getElementById('chatlog'),steps=document.getElementById('steps');
+ if(!chat||!steps)return false;
+ chat.innerHTML='';steps.innerHTML='';
+ chat.appendChild(cut.chat);steps.appendChild(cut.steps);
+ const one=document.getElementById('toolLogOne'),body=document.getElementById('toolLogBody');
+ if(one){one.innerHTML='';one.appendChild(cut.one)}
+ if(body){body.innerHTML='';body.appendChild(cut.body)}
+ const wrap=document.getElementById('toolLog');
+ if(wrap)wrap.hidden=!!cut.toolLogHidden;
+ renderedSteps=cut.renderedSteps;lastStepCount=cut.lastStepCount;
+ streamSig=cut.streamSig;toolLogSig=cut.toolLogSig;
+ stepFilter={tool:(cut.stepFilter&&cut.stepFilter.tool)||'',status:(cut.stepFilter&&cut.stepFilter.status)||''};
+ stepFilterKey=cut.stepFilterKey||JSON.stringify(stepFilter);
+ lastSteps=cut.lastSteps||[];lastMessages=cut.lastMessages||[];
+ const _cnt=document.getElementById('stepCount');
+ if(_cnt)_cnt.textContent=cut.stepCountText||'';
+ try{fillStepTools()}catch(e){}
+ chat.scrollTop=cut.scroll||0;
+ return true;
+}
+/* 会话外壳（标题/状态/KPI/模型/父会话）：恢复缓存时也要走一遍，不能只还原消息区 */
+function applySessionChrome(s){
+ s=s||{};
+ document.getElementById('title').textContent=s.title||current||'—';
+ const _sc=document.getElementById('sidChip');
+ if(_sc){_sc.textContent=s.id||current||'';
+  _sc.onclick=()=>{try{navigator.clipboard.writeText(current);toast(tr('已复制会话 ID: ')+current,'ok')}catch(e){toast(current)}}}
+ document.getElementById('status').textContent=stateText(s.state)+' · '+(s.workspace||'');
+ setPill(s.state);setKpis(s);
+ currentModel=s.model||null;currentUrl=s.current_url||null;
+ parentOfCurrent=s.parent_id||null;
+ const _ms=document.getElementById('model');
+ if(_ms&&currentModel&&[..._ms.options].some(o=>o.value===currentModel))_ms.value=currentModel;
+ try{refreshSessModelOptions()}catch(e){}
+ try{updateChannelUI()}catch(e){}
+ document.getElementById('emptyState').style.display='none';
+ document.getElementById('sessionView').style.display='';
+}
+
 function renderToolLog(steps,opts){
  opts=opts||{};
  const wrap=document.getElementById('toolLog');
@@ -2119,6 +2197,8 @@ function setFollowupMode(m){followupMode=m;
 
 /* ── 视图重置：发起新任务时清空右侧残留的旧 Session 内容 ── */
 function resetView(){
+ if(renderedSid)stashView(renderedSid);   // 新任务前把旧会话视图留在缓存里（切回去不用重建）
+ renderedSid=null;lastSessionObj=null;
  document.getElementById('title').textContent='—';
  document.getElementById('status').textContent='—';
  clearChanges();               // 新任务：上一任务的完成卡片不能跟过来
@@ -2132,8 +2212,31 @@ function resetView(){
  renderMessages([])}
 
 async function load(id){
- current=id;
+ // 命中视图缓存（刚从它切走）：直接挂回原来的 DOM，几十毫秒出画面；
+ // 随后 runtime() 再做增量刷新。父会话很大时这是"返回不卡"的关键。
+ const cut=viewCache.get(id);
+ if(cut){
+  if(current!==id)stashView(renderedSid||current);
+  viewCache.delete(id);
+  current=id;
+  const cs=cut.session||{};
+  restoreView(cut);
+  renderedSid=id;lastSessionObj=cs;
+  applySessionChrome(cs);
+  lastTotal=-1;lastDetail='';        // 让 runtime 对账一次（增量，不会整表重建）
+  clearChanges();
+  if(CHANGE_DONE.includes(String(cs.state||'')))loadChanges(id,cs.state);
+  try{refreshSubagents(true)}catch(e){}
+  lastAssistantCount=(cut.lastMessages||[]).filter(m=>m.role==='assistant').length;
+  startEvents(id);
+  runtime();refreshSessions();refreshQueue();
+  // 后台对账一次消息（只在新消息到达时才重建，未变化时仅一次 HTTP + 签名比较）
+  refreshChat();
+  return;
+ }
+ if(current!==id)stashView(renderedSid||current);
  clearGoalSubagents();   // 切会话：上一会话的待办/子代理面板不能闪现在新会话上
+ current=id;
  let d=await api('/v1/agent/sessions/'+encodeURIComponent(id)),s=d.session;
  // 守卫紧跟 await：原实现写在全部 DOM 写入之后，迟到响应会把旧会话的标题/KPI/时间线
  // 写到用户已切过去的新会话界面上（经典 stale-response）。
@@ -2170,6 +2273,8 @@ async function load(id){
  }
  document.getElementById('emptyState').style.display='none';
  document.getElementById('sessionView').style.display='';
+ // 记住"当前 DOM 属于哪个会话"：切走时 stashView 要靠它把节点存到正确的 sid 名下
+ renderedSid=id;lastSessionObj=s;
  // 守卫已前移到 await 之后（见函数开头）
  // 记住助手消息数（SSE 新消息通知据此决定是否播渐显动画）
  lastAssistantCount=(d.messages||[]).filter(m=>m.role==='assistant').length;
