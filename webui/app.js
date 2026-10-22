@@ -35,7 +35,7 @@ function demoApi(u,o={}){
 function apiToken(){try{return localStorage.getItem('cbp-token')||''}catch(e){return ''}}
 /* 这个分支是 **预览版**：功能还没收尾（多窗口并行等）。
    页签标题带 -preview,方便一眼区分手上的页面是稳定版还是预览版。 */
-const PREVIEW_BUILD='preview.1';
+const PREVIEW_BUILD='preview.2';
 try{document.addEventListener('DOMContentLoaded',()=>{
  document.title=document.title.replace(/\s*-\s*preview.*$/i,'')+' - '+PREVIEW_BUILD})}catch(e){}
 let lastMessages=[];        // 最近一次渲染的消息（对话搜索基于它重渲染；曾漏声明导致搜索抛异常）

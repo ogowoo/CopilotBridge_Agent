@@ -376,7 +376,9 @@ def publish_event(sid: str | None, kind: str, data=None) -> None:
 
 
 def runtime_update(session_id=None, **values):
-    sid = session_id or ACTIVE_SESSION_ID
+    # 任务级会话优先：并行时全局 ACTIVE_SESSION_ID 会被别的任务覆盖，
+    # 用它兜底会把 A 的进度写到 B 的界面上（界面表现为两个任务状态互相跳）
+    sid = session_id or current_session() or ACTIVE_SESSION_ID
     if not sid:
         return
     item = RUNTIME.setdefault(sid, {"phase": "idle", "updated": time.time(), "answer_preview": "", "prompt_preview": "", "detail": ""})
@@ -1497,11 +1499,30 @@ async def answer_markdown(plain: str = "") -> str:
         return ""
 
 
+def _status_before_marker(text: str) -> str:
+    """回答区上方那行"状态气泡"文本（Copilot 会把思考状态同时渲染在答案上方）。
+
+    这是判断"占位文本不是答案"的**结构信号**：状态短语会轮换（Checking that now… /
+    Lining things up… / Digging in… …），穷举不可靠，但"回答区上方最后一行"与
+    "Copilot said: 后面那行"相同，就说明答案还没开始。
+    """
+    pos, _marker_len = _last_turn(str(text or ""), MARKERS["assistant_turn"])
+    if pos < 0:
+        return ""
+    lines = [ln.strip() for ln in str(text)[:pos].splitlines() if ln.strip()]
+    return lines[-1] if lines else ""
+
+
 async def current_answer():
     # Agent 模式必须保持纯文本：回复是 JSON 动作，markdown 转换可能破坏它。
     # 聊天显示的 markdown 版本由 plain_chat_turn 单独取（见 answer_markdown）。
-    text = extract_latest_answer(await body_text())
-    return await _prefer_unfolded(text)
+    raw = await body_text()
+    text = extract_latest_answer(raw)
+    # 思考占位必须在这里就剔掉：流式收集按"公共前缀增长"输出，占位文本一旦被当成
+    # 答案发出去，真答案替换整段时前缀为空、后续内容永远发不出去。
+    if text and len(text) <= 80 and text == _status_before_marker(raw):
+        return ""
+    return _strip_thinking(await _prefer_unfolded(text))
 
 
 async def _prefer_unfolded(text: str) -> str:
@@ -1764,6 +1785,22 @@ async def _start_browser(headless: bool) -> bool:
                     WINDOWS.attach_existing(_PAGE_RAW)   # 复用已有页面当 1 号窗口
             except Exception:
                 pass
+            # 复用分支也要确保页面**真的在 Copilot 上**：上一轮启动失败会留下
+            # about:blank / 登录页；只返回不复位的话，点「重试浏览器」永远停在
+            # needs_login（实测：ERR_TIMED_OUT 之后重试一直是 needs_login）。
+            try:
+                cur = _PAGE_RAW.url if _PAGE_RAW is not None else ""
+            except Exception:
+                cur = ""
+            if _PAGE_RAW is None or not COPILOT_URL_MARK.search(cur or ""):
+                try:
+                    if _PAGE_RAW is None and ctx.pages:
+                        set_shared_page(ctx.pages[0])
+                    if _PAGE_RAW is not None:
+                        await _PAGE_RAW.goto(URL, wait_until="domcontentloaded", timeout=120000)
+                        _forget_selected_model()
+                except Exception as exc:
+                    log(f"复用窗口导航到 Copilot 失败（继续，由就绪检测判定）: {exc}")
             return HEADLESS_CURRENT
         if busy:
             log("有任务正在使用浏览器，跳过重建（沿用当前窗口）")
@@ -1845,7 +1882,8 @@ async def _vision_via_copilot(path: str, question: str) -> dict:
 
 async def _ask_user_via_webui(question: str, options: list[str]) -> dict:
     """ask_user_question 的提问后端：注册 Future 等 /answer 端点回填。"""
-    sid = ACTIVE_SESSION_ID or ""
+    # 用任务级会话 id：并行任务各自提问时不能共用同一个 Future（会串到别人的答案上）
+    sid = current_session() or ""
     loop = asyncio.get_running_loop()
     fut: asyncio.Future[str] = loop.create_future()
     EXTRA_ANSWERS[sid] = fut
@@ -1871,7 +1909,7 @@ TOOLS_EXTRA = register_extra_tools(
     AGENT_TOOLS, AGENT_CFG,
     vision_fn=_vision_via_copilot,
     ask_fn=_ask_user_via_webui,
-    session_getter=lambda: ACTIVE_SESSION_ID,
+    session_getter=current_session,
     # 引擎定义在文件后部：用 lambda 延迟解析，避免前向引用
     subagent_fn=lambda *a, **k: run_subagent(*a, **k),
     ralph_fn=lambda *a, **k: run_ralph(*a, **k),
@@ -2522,8 +2560,10 @@ from .window_pool import WindowBusy, WindowPool  # noqa: E402  （放在此处�
 WINDOWS = WindowPool(_new_copilot_page, max_windows=_max_windows_cfg())
 
 
-# 提供商模型的"逻辑槽"：不需要浏览器页，但同样要独立工具上下文，可以真并行
-SLOTS = WindowPool(lambda index: _no_page(), max_windows=max(1, 4))
+# 提供商模型的"逻辑槽"：不需要浏览器页，但同样要独立工具上下文，可以真并行。
+# 上限跟 `agent.subagent_parallel` 对齐（否则扇出 8 个只有 4 个能跑，其余白白等 30s 超时）；
+# 至少 4，保证普通提供商对话不会被子代理挤没。
+SLOTS = WindowPool(lambda index: _no_page(), max_windows=max(4, subagent_parallel()))
 
 
 async def _no_page():
@@ -2568,6 +2608,33 @@ async def _window(sid: str, wait_timeout: float = 30.0, need_page: bool = True):
                 _PAGE_CTX.reset(tok_page)
         finally:
             pool.release(win)
+
+
+def session_running(sid: str) -> bool:
+    """该会话是否正有 runner 在跑（网页窗口 与 提供商逻辑槽 都算）。
+
+    以前判定用全局 `ACTIVE_SESSION_ID == sid` 或只看 `WINDOWS`：
+    - 前者只是"最近活跃"，并行时会误判（A 在跑、B 刚发过，A 就被当成没在跑）；
+    - 后者漏掉提供商会话（它们占的是 `SLOTS`，不占浏览器窗口）。
+    漏判的后果很具体：提供商任务的会话里插入指令会被当成"空闲"排进队列、
+    恢复会被重复拉起第二个 runner、删除会放行后让在跑的 runner 落库失败。
+    """
+    if not sid:
+        return False
+    return WINDOWS.is_running(sid) or SLOTS.is_running(sid)
+
+
+def any_window_busy() -> bool:
+    """是否有任务正占用**浏览器窗口**（提供商的逻辑槽不算：它们不需要页面）。"""
+    return bool(WINDOWS.running())
+
+
+def any_task_busy() -> bool:
+    """是否有任何任务在跑（网页窗口 + 提供商逻辑槽）。
+
+    用于"改全局状态"的管理操作：切工作区、回滚服务代码等，有任何任务在跑都应拒绝。
+    """
+    return bool(WINDOWS.running()) or bool(SLOTS.running())
 
 
 async def ensure_browser_ready() -> bool:
@@ -2626,8 +2693,9 @@ async def resume_session_task(sid: str) -> bool:
     if not state:
         return False
     wake = {"state": "ready", "cancel_requested": False, "rollover_requested": False}
-    # 情况一：会话的 runner 还活着（锁被它持有、正停在暂停循环里）→ 只唤醒，不新建
-    if WINDOWS.is_running(sid):
+    # 情况一：会话的 runner 还活着（正停在暂停循环里）→ 只唤醒，不新建
+    # 注意：网页会话占窗口，提供商会话占逻辑槽，两边都要查（漏查会拉起第二个 runner）
+    if session_running(sid):
         AGENT_SESSIONS.patch(sid, **wake)
         log(f"会话 {sid} 的 runner 仍在运行，已解除暂停状态（不新建 runner）")
         return False
@@ -2940,6 +3008,30 @@ _ANSWER_NOISE = (
     "Press Tab to access the More options",
 )
 
+# Copilot 在真正回答前会先在回答区渲染一条"思考中"占位文本，随后**整段替换**成答案。
+# 实测（2026-10，英文租户）：Checking that now… / Lining things up… / Gathering details…
+# / Just a sec… / Give me a moment…。它们不是答案，但会被 extract_latest_answer 当成
+# 回答正文 → 流式通道先把占位文本发出去，真答案出现时前缀对不上、再也发不出去，
+# 调用方拿到的就是 "Checking that now…"。所以在这里整行剔除。
+_THINKING_PHRASES = (
+    "checking that now", "lining things up", "gathering details", "just a sec",
+    "give me a moment", "working on it", "one moment", "hold on",
+    "正在查找", "正在整理", "正在准备", "正在思考", "稍等一下", "请稍等",
+)
+
+
+def _strip_thinking(text: str) -> str:
+    """剔除"思考中"占位行（只匹配**整行且很短**的提示，避免误删正文）。"""
+    lines = []
+    for line in str(text or "").splitlines():
+        s = line.strip().lower().rstrip(".…。 ")
+        if s and any(s == p or (s.startswith(p) and len(s) <= len(p) + 12)
+                     for p in _THINKING_PHRASES):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
 
 def _clean_answer(text: str) -> str:
     """去掉答案里的 CBP 标记与 Copilot 的无障碍提示（它们会混进正文）。
@@ -2948,9 +3040,13 @@ def _clean_answer(text: str) -> str:
     加一句 Press Tab…），导致 JSON 解析失败、任务空转。
     """
     t = str(text or "")
-    t = re.sub(r"\[CBP-(?:AGENT|TURN)[^\]]*\]\s*", "", t)
+    # 标记是 `[CBP-AGENT][sid][C000]`（连续多个方括号），要把整串都去掉，
+    # 只去第一个会留下 `[sid][C000]` 混进正文。
+    t = re.sub(r"\[CBP-(?:AGENT|TURN)\](?:\[[^\]\n]*\])*", "", t)
+    t = re.sub(r"\[CBP-TURN:[^\]]*\]\s*", "", t)
     for junk in _ANSWER_NOISE:
         t = t.replace(junk, "")
+    t = _strip_thinking(t)
     # 收尾可能有零宽/多余空白
     return t.strip()
 
@@ -4463,10 +4559,25 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
                         parent_root: str = "", is_provider: bool = False) -> dict:
     """在**已存在**的子会话上跑一轮 Agent（run_subagent 与 continue_subagent 共用）。
 
-    注意不能走 run_agent：父回合正持着全局锁，再进 run_agent 会抢同一把锁而死锁
-    （实测：subagent_send 卡了 600 秒直到客户端超时）。
+    注意不能走 run_agent：父回合**正持着自己的窗口**，再进 run_agent 会去抢同一把
+    窗口锁而死锁（实测：subagent_send 卡了 600 秒直到客户端超时）。
     """
     global ACTIVE_SESSION_ID
+    # 没有父任务的页面上下文（用户入口 /v1/agent/fanout、CLI）：子代理必须**自己**
+    # 占一个窗口。否则 `page` 会退回共享页且不持锁，和正在跑的任务抢同一个标签页
+    # （两边的输入框/回答互相覆盖）。有父上下文时不另开窗口：父任务正持着它等我们，
+    # 再要一个窗口会把自己等死（窗口数=1 时必然 30s 超时）。
+    _own_window = None
+    if not is_provider and _PAGE_CTX.get() is None:
+        try:
+            _own_window = _window(child_sid)
+            await _own_window.__aenter__()
+        except Exception as exc:
+            _own_window = None
+            log(f"子代理 {child_sid} 未拿到自动化窗口: {exc}")
+            AGENT_SESSIONS.patch(child_sid, state="failed", last_error=str(exc))
+            return {"agent_id": child_sid, "description": (description or task)[:120],
+                    "content": "", "steps": 0, "model": model_id, "error": str(exc)}
     _SUBAGENT_ACTIVE[child_sid] = time.time()
     # 任务级上下文：并发跑多个子代理时，会话 id / 网页工具开关 / 递归深度必须
     # 各自独立（全局单值会互相覆盖）。token 在 finally 里按任务复位。
@@ -4559,6 +4670,11 @@ async def _drive_child(child_sid: str, task: str, model_id: str, max_steps: int,
                     "content": "", "steps": 0, "model": model_id, "error": str(exc)}
     finally:
         _SUBAGENT_ACTIVE.pop(child_sid, None)
+        if _own_window is not None:
+            try:
+                await _own_window.__aexit__(None, None, None)
+            except Exception:
+                pass
         # 先复位任务级上下文（并行的正确性靠它），再复位全局展示值
         try:
             _SESSION_CTX.reset(_tok_sid)

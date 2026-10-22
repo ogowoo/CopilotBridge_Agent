@@ -555,14 +555,34 @@ class _Extra:
             raise ExtraToolError("task 不能为空")
         return await self.subagent_fn(task, description, model, max_steps)
 
+    async def _subagent_in_own_window(self, task: str, label: str, model: str,
+                                      max_steps: int) -> dict[str, Any]:
+        """在"没有父页面上下文"的子任务里跑子代理，让它**自己占一个自动化窗口**。
+
+        为什么不直接 await：`asyncio.create_task` 会复制当前 context，其中一个子代理
+        若继承到父任务的 `_PAGE_CTX`，就会直接驱动父任务那个标签页（不持窗口锁），
+        两个子代理同时输入 → 回答串台。这里复制一份 context 并把 `_PAGE_CTX` 清空，
+        `_drive_child` 看到没有页面上下文就会走"独占窗口"分支。
+        """
+        import contextvars
+        from . import bridge as _b
+
+        ctx = contextvars.copy_context()
+        ctx.run(_b._PAGE_CTX.set, None)
+        # 在 ctx 内建 task：Task 会复制"当前"上下文，从而继承清空后的 _PAGE_CTX
+        task_obj = ctx.run(asyncio.create_task,
+                           self.subagent_fn(task, label, model, max_steps))
+        return await task_obj
+
     async def subagent_many(self, tasks: list | None = None, model: str = "",
                             max_steps: int = 0, stop_on_error: bool = False) -> dict[str, Any]:
         """一次派多个**互不依赖**的子任务（扇出），全部跑完再返回汇总。
 
         为什么需要：模型要派 3 个子代理就得连写 3 次 `subagent`，弱模型往往直接
         自己串行扫完了（实测 Kimi 就这么干）。扇出把它压成**一次调用**。
-        **API 提供商模型真并行**（上限 `agent.subagent_parallel`，默认 4）；网页
-        Copilot 通道仍然顺序（只有一个 page，并发会互相踩页）。
+        **API 提供商模型**按 `agent.subagent_parallel`（默认 4）真并行；
+        **网页 Copilot 通道**按自动化窗口数并行（上限 = 窗口数 - 1，父任务占一个），
+        每个子代理独占一个标签页；窗口数 = 1 时仍是顺序执行（与以前一致）。
         """
         max_steps = self._steps(max_steps)
         if self.subagent_fn is None:
@@ -605,17 +625,25 @@ class _Extra:
             from . import bridge as _b
             _mdl = model or str((_b.AGENT_SESSIONS.get(_b.current_session()) or {}).get("model") or "")
             _parallel = _b.model_is_provider(_mdl)
-            # 提供商：真并行；网页通道：并行数 = 已开的自动化窗口数（默认 1 = 顺序）
+            # 提供商：真并行；网页通道：并行数 = 自动化窗口数 - 1（父任务自己占着一个）
             _cap = _b.subagent_parallel() if _parallel else _b.web_subagent_parallel()
         except Exception:
             _parallel, _cap = False, 1
-        if _parallel and len(plan) > 1:
+        if not _parallel:
+            # 父任务正在自己的窗口里等子代理：子代理必须用**另外**的窗口，
+            # 否则会排队等父窗口 → 30s 超时。所以并发上限要减掉父任务占的那个。
+            _cap = max(1, int(_cap) - 1)
+        if len(plan) > 1 and _cap > 1:
             sem = asyncio.Semaphore(_cap)
 
             async def run_one(idx: int, task: str, label: str) -> dict:
                 async with sem:
                     try:
-                        out = await self.subagent_fn(task, label, model, max_steps)
+                        if _parallel:
+                            out = await self.subagent_fn(task, label, model, max_steps)
+                        else:
+                            # 网页通道：清掉继承来的页面上下文，让子代理自己占一个窗口
+                            out = await self._subagent_in_own_window(task, label, model, max_steps)
                         # 子代理失败时 _drive_child 是**带 error 返回**而不是抛异常，
                         # 只看异常会把失败算成功（实测：子代理 500 却 ok=true）
                         err = out.get("error")
@@ -814,7 +842,7 @@ _DESCRIPTIONS: dict[str, tuple[str, dict[str, Any]]] = {
     "subagent": ("把一段自足的任务交给子代理（独立会话、独立上下文），用于隔离上下文或并行推进调研/分析/局部改造；返回它的最终结果与步数，不返回中间步骤",
                  {"task": "完整的自包含任务：它看不到本次对话，目标/路径/验收标准/返回格式都要写全", "description": "3-5 词标签，仅用于展示",
                   "model": "子代理模型（默认跟随父会话）", "max_steps": "子任务步数上限，默认取 agent.subagent_max_steps（通常 80），上限 200"}),
-    "subagent_many": ("一次派多个互不依赖的子任务（API 提供商模型并行跑、上限 agent.subagent_parallel；网页 Copilot 通道顺序；全部跑完再返回汇总）；"
+    "subagent_many": ("一次派多个互不依赖的子任务（API 提供商模型并行跑、上限 agent.subagent_parallel；网页 Copilot 通道按自动化窗口数并行，每个子代理占一个标签页；全部跑完再返回汇总）；"
                       "把任务拆成 2~6 个独立子目标时用它，一次调用顶多次 subagent",
                       {"tasks": "数组，每项 {task:'自足的任务描述', description:'3-5 词标签'}",
                        "model": "子代理模型（默认跟随父会话）", "max_steps": "每个子任务步数上限，默认取 agent.subagent_max_steps（通常 80），上限 200",

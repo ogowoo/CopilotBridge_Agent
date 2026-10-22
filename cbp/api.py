@@ -11,7 +11,7 @@ import re
 import threading
 import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, AsyncExitStack
 
 from fastapi import FastAPI, HTTPException, Request as HttpRequest
 from fastapi.responses import (StreamingResponse, FileResponse, RedirectResponse,
@@ -107,6 +107,15 @@ async def boot_browser() -> None:
         except Exception:
             _busy = False
         if not _busy:
+            # 上下文也要一起丢掉：只停 Playwright 而留着 ctx，下一次「重试浏览器」
+            # 会复用已经死掉的 context（表现为重试永远 failed / needs_login）。
+            try:
+                if b.ctx is not None:
+                    await b.ctx.close()
+            except Exception:
+                pass
+            b.ctx = None
+            b.set_shared_page(None)
             try:
                 if b.pw is not None:
                     await b.pw.stop()
@@ -231,7 +240,7 @@ async def periodic_suspend_resume():
                 pass
 
 
-app = FastAPI(title="Copilot Local Bridge Agent", version="10.3.0-preview.1", lifespan=lifespan)
+app = FastAPI(title="Copilot Local Bridge Agent", version="10.3.0-preview.2", lifespan=lifespan)
 
 def _lang_of(request) -> str:
     """从 X-CBP-Lang 头取界面语言（缺省中文）。"""
@@ -383,49 +392,66 @@ def sse(data):
     return "data: " + json.dumps(data, ensure_ascii=False) + "\n\n"
 
 
+def _chat_sid() -> str:
+    """普通对话（/v1/chat/completions）的窗口簿记 id。
+
+    它没有会话库记录，但同样要**独占一个自动化窗口**：以前这里只拿全局 `lock`、
+    直接驱动共享页，多窗口下会和正在窗口 #1 上跑的 Agent 任务抢同一个标签页
+    （两边的输入框/回答互相覆盖，表现为"回答串到别的问题上"）。
+    """
+    return "chat-" + uuid.uuid4().hex[:12]
+
+
 async def stream_response(req, prompt):
     rid = "chatcmpl-" + uuid.uuid4().hex
     created = int(time.time())
-    async with b.lock:
-        try:
-            selected_model = await b.send(prompt, req.new_conversation, req.model)
-            yield sse({
-                "id": rid,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": selected_model,
-                "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
-            })
-            async for part in b.updates():
+    try:
+        async with b._window(_chat_sid(), need_page=True):
+            try:
+                selected_model = await b.send(prompt, req.new_conversation, req.model)
                 yield sse({
                     "id": rid,
                     "object": "chat.completion.chunk",
                     "created": created,
                     "model": selected_model,
-                    "choices": [{"index": 0, "delta": {"content": part}, "finish_reason": None}],
+                    "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
                 })
-            yield sse({
-                "id": rid,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": selected_model,
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-            })
-            yield sse("[DONE]")
-        except asyncio.CancelledError:
-            b.log("客户端已断开")
-            raise
-        except Exception as e:
-            await b.diagnostics("error")
-            b.log(f"失败: {e}")
-            yield sse({"error": {"message": str(e), "type": "bridge_error"}})
-            yield sse("[DONE]")
+                async for part in b.updates():
+                    yield sse({
+                        "id": rid,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": selected_model,
+                        "choices": [{"index": 0, "delta": {"content": part}, "finish_reason": None}],
+                    })
+                yield sse({
+                    "id": rid,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": selected_model,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                })
+                yield sse("[DONE]")
+            except asyncio.CancelledError:
+                b.log("客户端已断开")
+                raise
+            except Exception as e:
+                await b.diagnostics("error")
+                b.log(f"失败: {e}")
+                yield sse({"error": {"message": str(e), "type": "bridge_error"}})
+                yield sse("[DONE]")
+    except b.CopilotBusy as exc:
+        # 窗口全忙：明确告诉调用方是"等不到窗口"，而不是"Copilot 报错"
+        b.log(f"普通对话未拿到自动化窗口: {exc}")
+        yield sse({"error": {"message": f"{exc}（可在设置里调大「Copilot 自动化窗口数」）",
+                             "type": "window_busy"}})
+        yield sse("[DONE]")
 
 
 async def nonstream(req, prompt):
     parts = []
     rid = "chatcmpl-" + uuid.uuid4().hex
-    async with b.lock:
+    async with b._window(_chat_sid(), need_page=True):
         selected_model = await b.send(prompt, req.new_conversation, req.model)
         async for part in b.updates():
             parts.append(part)
@@ -475,7 +501,7 @@ async def stream_provider(p, model: str, messages: list):
 
 @app.get("/")
 async def root():
-    return {"name": "Copilot Local Bridge Agent", "version": "10.3.0-preview.1", "docs": "/docs",
+    return {"name": "Copilot Local Bridge Agent", "version": "10.3.0-preview.2", "docs": "/docs",
             "models": "/v1/models", "agent": "/v1/agent/completions"}
 
 
@@ -493,7 +519,9 @@ async def health():
         "copilot_ready": bool(BOOT.get("copilot_ready")),
         "browser_state": BOOT.get("browser_state"),
         "browser_error": BOOT.get("browser_error"),
-        "busy": b.lock.locked(),
+        "busy": b.any_window_busy(),
+        # 窗口池现状（max/windows/busy/waiting/running）：预览分支的多窗口排障入口
+        "windows": b.WINDOWS.stats(),
         "page_url": page_url,
         "default_model": b.DEFAULT_MODEL,
         "headless": b.HEADLESS_CURRENT,
@@ -504,7 +532,12 @@ async def health():
 async def agent_debug_download(payload: dict | None = None):
     """诊断：立即把当前页面的第一个下载候选存到 data/debug-download/。"""
     stem = str((payload or {}).get("stem") or "")
-    return await b.debug_download_now(stem)
+    # 点下载要驱动页面：独占一个窗口，免得把正在跑的任务页面点走
+    try:
+        async with b._window("", wait_timeout=10):
+            return await b.debug_download_now(stem)
+    except b.CopilotBusy as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @app.get("/v1/agent/sandbox")
@@ -691,6 +724,12 @@ async def set_config(payload: dict | None = None):
             b.log(f"Copilot 自动化窗口数已调整为 {b.WINDOWS.max_windows}")
         except Exception as exc:
             b.log(f"调整 Copilot 窗口数失败（忽略）：{exc}")
+    # 子代理并发数变化：提供商逻辑槽要跟着调（否则 8 个扇出只有 4 个能跑，其余等超时）
+    if "agent.subagent_parallel" in applied:
+        try:
+            await b.SLOTS.set_max(max(4, int(applied["agent.subagent_parallel"])))
+        except Exception as exc:
+            b.log(f"调整提供商并发槽失败（忽略）：{exc}")
     return {"applied": applied, "persisted": persisted}
 
 
@@ -876,10 +915,9 @@ async def set_browser_mode(payload: dict):
     target = target_raw
     if target == b.HEADLESS_CURRENT and b.current_page() is not None:
         return {"headless": b.HEADLESS_CURRENT, "changed": False, "fallback": False}
-    if b.lock.locked():
+    if b.any_window_busy():
         raise HTTPException(409, "有请求/任务正在使用浏览器，请稍后再切换")
-    async with b.lock:
-        actual = await b._start_browser(target)
+    actual = await b._start_browser(target)
     result = {"headless": actual, "changed": True, "fallback": actual != target}
     if payload.get("persist"):
         try:
@@ -970,12 +1008,16 @@ async def refresh_models():
     返回结构化结果：scanned=false 时 reason 说明为什么没扫成（浏览器不在
     对话页/未登录/前端改版），界面据此给出明确提示而不是静默。
     """
-    async with b.lock:
-        try:
-            result = await b.discover_models()
-        except Exception as exc:
-            await b.diagnostics("models_refresh_failed")
-            raise HTTPException(500, f"模型菜单读取失败: {exc}")
+    # 扫模型菜单要独占地驱动一个窗口：以前只拿全局锁，多窗口下会和任务抢共享页
+    try:
+        async with b._window("", wait_timeout=15):
+            try:
+                result = await b.discover_models()
+            except Exception as exc:
+                await b.diagnostics("models_refresh_failed")
+                raise HTTPException(500, f"模型菜单读取失败: {exc}") from exc
+    except b.CopilotBusy as exc:
+        raise HTTPException(409, f"{exc}（稍后再试，或调大「Copilot 自动化窗口数」）") from exc
     available = [mid for mid, item in b.MODELS.items() if b.copilot_model_available(item)]
     return {"added": result["added"], "scanned": result["scanned"],
             "reason": result["reason"], "labels": result["labels"],
@@ -1027,6 +1069,9 @@ async def chat(req: Request):
         )
     try:
         return await nonstream(req, prompts[-1])
+    except b.CopilotBusy as exc:
+        # 所有窗口都被占着：这是可重试的忙，不是服务端错误
+        raise HTTPException(409, f"{exc}（可在设置里调大「Copilot 自动化窗口数」）") from exc
     except HTTPException:
         raise
     except Exception as e:
@@ -1122,8 +1167,9 @@ async def session_rollback(sid: str, req: RollbackRequest | None = None):
     不带 version：整任务回滚到开始前；带 version：撤销该版本之后的写操作。
     """
     version = req.version if req else None
-    async with b.lock:
-        result = await b.rollback_session_changes(sid, version=version)
+    if b.session_running(sid):
+        raise HTTPException(409, "Session 正在运行，不能回滚（先暂停或终止再回滚）")
+    result = await b.rollback_session_changes(sid, version=version)
     return result
 
 
@@ -1215,8 +1261,9 @@ async def self_snapshots(sid: str | None = None):
 @app.post("/v1/agent/self/rollback")
 async def self_rollback(sid: str | None = None, last: bool = False):
     """回滚服务自身代码的自升级改动（last=true 时取最近一次）。"""
-    async with b.lock:
-        result = await b.rollback_self_upgrade(sid, use_last=last)
+    if b.any_task_busy():
+        raise HTTPException(409, "有任务正在运行，不能回滚服务代码（先暂停/终止任务）")
+    result = await b.rollback_self_upgrade(sid, use_last=last)
     return result
 
 
@@ -1233,7 +1280,8 @@ async def control(sid: str, action: str):
     if action == "resume":
         if prev_state in {"paused", "waiting", "suspended", "ready", "failed"}:
             # 恢复即续跑：直接从检查点拉起 runner，不再需要手动"继续执行"
-            was_running = b.lock.locked() and b.ACTIVE_SESSION_ID == sid
+            # was_running 决定提示语：runner 还活着（占着窗口/逻辑槽）时只唤醒不新建
+            was_running = b.session_running(sid)
             started = await b.resume_session_task(sid)
         else:
             # 终态会话（completed/cancelled/archived）不改成 ready 也不拉起
@@ -1278,7 +1326,7 @@ async def session_deletion_plan(sid: str):
         "model": model,
         "conversation_urls": urls,
         "remote_count": len(urls),
-        "running": b.ACTIVE_SESSION_ID == sid,
+        "running": b.session_running(sid),
         # 本地记录永远可删；远端只在真用过 Copilot 时才有意义
         "suggest_delete_remote": used_copilot and bool(urls),
     }
@@ -1298,18 +1346,31 @@ async def delete_session(sid: str, delete_remote: bool = False, force_local: boo
         urls = list(dict.fromkeys(state.get("conversation_urls") or []))
         if state.get("current_url") and state["current_url"] not in urls:
             urls.append(state["current_url"])
-        async with b.lock:
-            # 运行权判定必须在锁内复检：锁外判完再取锁之间，runner 可能刚好
-            # 拿到锁开始执行（TOCTOU），此时删掉 sessions 行会让它的落库全崩。
-            if b.ACTIVE_SESSION_ID == sid:
-                raise HTTPException(409, "Session 正在运行，不能删除")
-            for index, url in enumerate(urls):
-                marker = b._agent_chat_marker(sid, index)
-                remote_results.append(await cd.delete_copilot_conversation(url, marker))
-            # 对账式终验：按 [CBP-AGENT][sid] 标记清点侧栏——补删漏网会话，
-            # 并把弹窗识别误判的失败条目改判为已删除（以侧栏实际残留为准）。
-            remote_results = await cd.finalize_session_remote_deletion(sid, remote_results)
-            b._forget_selected_model()  # 删除过程中页面在多个会话间跳转
+        if b.session_running(sid):
+            raise HTTPException(409, "Session 正在运行，不能删除")
+        try:
+            # 删除要导航 + 点侧栏，必须独占一个窗口；以前只拿全局锁，多窗口下会
+            # 和任务抢同一个页面（删到一半被别的回合导航走 → 删错会话）。
+            # 浏览器还没起来时（只有本地记录 / 测试）不为了删除去拉起浏览器：
+            # 没有页面时远端删除本来就会逐条报失败，force_local 仍能清本地。
+            stack = AsyncExitStack()
+            try:
+                if b.current_page() is not None:
+                    await stack.enter_async_context(b._window("", wait_timeout=15))
+                # 取到窗口后再复检一次：等待窗口期间该会话可能刚被拉起 runner
+                if b.session_running(sid):
+                    raise HTTPException(409, "Session 正在运行，不能删除")
+                for index, url in enumerate(urls):
+                    marker = b._agent_chat_marker(sid, index)
+                    remote_results.append(await cd.delete_copilot_conversation(url, marker))
+                # 对账式终验：按 [CBP-AGENT][sid] 标记清点侧栏——补删漏网会话，
+                # 并把弹窗识别误判的失败条目改判为已删除（以侧栏实际残留为准）。
+                remote_results = await cd.finalize_session_remote_deletion(sid, remote_results)
+                b._forget_selected_model()  # 删除过程中页面在多个会话间跳转
+            finally:
+                await stack.aclose()
+        except b.CopilotBusy as exc:
+            raise HTTPException(409, f"{exc}（删除需要独占一个浏览器窗口）") from exc
         failed = [x for x in remote_results if not x["deleted"]]
         # force_local=true（WebUI 的"一并删，本地必须清掉"）不在这里中断：
         # 远端删不掉时仍然要删本地，并把失败的远端明细如实带回（否则用户看到的就是
@@ -1477,7 +1538,7 @@ async def inject_session_message(sid: str, req: InjectRequest):
     if not content:
         raise HTTPException(400, "指令不能为空")
     conv_idx = int(state.get("conversation_index", 0))
-    running = b.lock.locked() and b.ACTIVE_SESSION_ID == sid
+    running = b.session_running(sid)
     b.AGENT_SESSIONS.add_message(sid, "user", content, conv_idx)
     step = {"step": int(state.get("total_steps", 0)) + 1, "status": "user_inject",
             "reason": f"运行中插入指令：{content[:120]}",
@@ -1539,8 +1600,8 @@ def _runtime_snapshot(sid: str, state: dict) -> dict:
         "conversation_index": (state or {}).get("conversation_index", 0),
         "current_url": (state or {}).get("current_url"),
         "token_budget": b.TOKEN_BUDGET,
-        # 并行窗口：busy 只看"这个会话是否正占着一个窗口"
-        "busy": b.WINDOWS.is_running(sid),
+        # 并行窗口：busy 只看"这个会话是否正占着一个窗口/逻辑槽"
+        "busy": b.session_running(sid),
         "windows": b.WINDOWS.stats(),
         "queue_pending": b.queue_depth(sid),
         # 子代理合计（KPI 要显示"含子代理"的步数/token，否则跑完 4 个子代理界面看不出来）
@@ -1701,16 +1762,21 @@ async def activate_session(sid: str):
         raise HTTPException(409, "该 Session 暂无 Copilot 会话 URL")
     if b.page is None:
         raise HTTPException(503, "浏览器未就绪")
-    if b.lock.locked():
+    if b.any_window_busy():
         raise HTTPException(409, "有请求/任务正在使用浏览器，请稍后再切换页面")
-    async with b.lock:
-        # 回合等待中导航全局 page 会把回答错绑到别的会话，必须持锁
-        await b.page.bring_to_front()
-        if b.page.url != url:
-            await b.page.goto(url, wait_until="domcontentloaded", timeout=120000)
-            b._forget_selected_model()
+    try:
+        # 独占一个窗口再导航：多窗口下"共享页"可能正被某个任务的窗口用着
+        async with b._window("", wait_timeout=10):
+            # 回合等待中导航别的窗口会把回答错绑到别的会话，必须独占
+            await b.page.bring_to_front()
+            if b.page.url != url:
+                await b.page.goto(url, wait_until="domcontentloaded", timeout=120000)
+                b._forget_selected_model()
+            shown_url = b.page.url
+    except b.CopilotBusy as exc:
+        raise HTTPException(409, str(exc)) from exc
     b.runtime_update(sid, phase="activated", detail="已切换到该 Session 的 Copilot 页面")
-    return {"activated": True, "url": b.page.url, "headless": b.HEADLESS_CURRENT}
+    return {"activated": True, "url": shown_url, "headless": b.HEADLESS_CURRENT}
 
 
 @app.post("/v1/agent/pick-directory")
@@ -1746,7 +1812,7 @@ async def workspace():
 
 @app.post("/v1/agent/workspace")
 async def set_workspace(payload: dict):
-    if b.lock.locked():
+    if b.any_task_busy():
         raise HTTPException(409, "有任务正在运行，不能切换工作区")
     new_root = b.AGENT_TOOLS.set_root(str(payload.get("path", "")), bool(payload.get("create", False)))
     b.DEFAULT_WORKSPACE = new_root  # 作为之后新任务的默认工作区
@@ -1907,6 +1973,9 @@ def _map_agent_error(exc: Exception) -> Exception:
         return HTTPException(503, f"Copilot 服务暂时不可用: {exc}")
     if isinstance(exc, b.CopilotConversationFull):
         return HTTPException(409, f"Copilot 对话达到长度上限: {exc}")
+    if isinstance(exc, b.CopilotBusy):
+        # 窗口全忙：可重试的忙，不是 500
+        return HTTPException(409, f"{exc}（可在设置里调大「Copilot 自动化窗口数」）")
     if isinstance(exc, TimeoutError):
         return HTTPException(504, f"等待 Copilot 回答超时: {exc}")
     return HTTPException(500, str(exc))
@@ -1917,7 +1986,10 @@ async def agent_completions(req: AgentRequest, request: HttpRequest = None):
     prompt_lang.set_request_lang(request.headers.get(_LANG_HEADER) if request is not None else None)
     if not req.agent_mode:
         # 普通对话模式：创建 Session 绑定 Copilot 会话，但不跑工具循环
-        return await b.plain_completions(req)
+        try:
+            return await b.plain_completions(req)
+        except Exception as exc:
+            raise _map_agent_error(exc)
     if req.stream:
         return StreamingResponse(stream_agent(req), media_type="text/event-stream")
     try:

@@ -176,7 +176,7 @@ DESC_EN.update({
     'subagent': 'Hand one self-contained task to a sub-agent (separate session and context) to isolate context or parallelise research/analysis/local refactors; returns its final result and step count, not intermediate steps',
     'subagent_fork': 'Fork a sub-agent from this session: it inherits the completed conversation, which suits trying a second route or another implementation. State only the new requirements in the task',
     'subagent_list': 'List sub-agent sessions (optionally filtered by parent) with state and step count',
-    'subagent_many': 'Dispatch several independent sub-tasks in one call (API provider models run in parallel up to agent.subagent_parallel; the web Copilot channel runs sequentially; everything returns together)',
+    'subagent_many': 'Dispatch several independent sub-tasks in one call (API provider models run in parallel up to agent.subagent_parallel; the web Copilot channel runs in parallel up to agent.copilot_windows, one tab per sub-agent; everything returns together)',
     'subagent_send': 'Add one more round to an existing sub-agent session: it remembers the earlier context, so state only the new requirements',
     'todo_write': 'Write the task checklist (full replace, up to 50 items); use it to track long tasks',
     'update_goal': 'Update goal state: complete / blocked / pause / resume / edit',

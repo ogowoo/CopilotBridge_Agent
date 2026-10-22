@@ -18,6 +18,13 @@
 
 并发上限来自配置 `agent.copilot_windows`（1–4），由 `set_max()` 动态调整：
 调大 = 下次需要时懒创建；调小 = 超出部分空闲时关闭，正在用的任务跑完为止。
+
+并发与竞态
+----------
+`acquire()` 会在几十个并发任务里同时调用。建窗（`ctx.new_page()` + 等 SSO 就绪）
+很慢，因此**同一时刻只允许一个慢建窗**：后来者拿到建窗锁后先看空闲队列，
+避免"都判断没满 → 各自开一个 → 超出上限"。页面被用户关掉/渲染进程崩了会被
+就地摘除，不会把死页面发给任务。
 """
 
 from __future__ import annotations
@@ -29,6 +36,17 @@ from typing import Any, Awaitable, Callable, Optional
 
 class WindowBusy(RuntimeError):
     """排队超时：所有窗口都在忙，且等待队列已满。"""
+
+
+def _page_closed(page: Any) -> bool:
+    """页面是否已关闭/不可用（假页面没有 is_closed 时视为可用）。"""
+    if page is None:
+        return False
+    try:
+        fn = getattr(page, "is_closed", None)
+        return bool(fn()) if callable(fn) else False
+    except Exception:
+        return False
 
 
 class Window:
@@ -45,6 +63,8 @@ class Window:
         self.selected_model: Optional[str] = None
         self.current_url: Optional[str] = None
         self.turn_marker: Optional[str] = None
+        # 是否正躺在空闲队列里：防"重复归还"把同一个窗口发两次（两个任务抢同一页面）
+        self.in_pool = False
 
     def __repr__(self) -> str:  # 便于日志排查
         return f"<Window #{self.index} sid={self.sid or '-'}>"
@@ -57,13 +77,13 @@ class WindowPool:
         self._factory = factory
         self._max = max(1, int(max_windows or 1))
         self._windows: list[Window] = []
-        self._next_index = 1        # 单调递增（并发创建时 len+1 会撞号）
+        self._next_index = 1        # 单调递增（并发建窗时 len+1 会撞号）
         self._free: asyncio.Queue[Window] = asyncio.Queue()
         self._waiting = 0
-        self._creating: Optional[asyncio.Task] = None
-        self._guard = asyncio.Lock()
+        self._create_lock = asyncio.Lock()   # 串行化慢建窗，避免超过上限
+        self._guard = asyncio.Lock()         # 列表/队列的结构性操作
 
-    # ── 配置 ──────────────────────────────────────────────
+    # ── 配置 ────────────────────────────────────────────────────────
     @property
     def max_windows(self) -> int:
         return self._max
@@ -73,32 +93,35 @@ class WindowPool:
         n = max(1, min(int(n or 1), 8))
         self._max = n
         closed = 0
-        # 只关闭**空闲**的窗口；正在跑的任务不打断
-        for w in list(self._windows):
-            if len(self._windows) <= n:
-                break
-            if w.sid or w.lock.locked():
-                continue
-            try:
-                await w.page.close()
-            except Exception:
-                pass
-            try:
-                self._windows.remove(w)
-            except ValueError:
-                pass
-            # 从空闲队列里摘掉（队列无法按值删除，取出再放回）
-            kept: list[Window] = []
-            while not self._free.empty():
-                item = self._free.get_nowait()
-                if item is not w:
-                    kept.append(item)
-            for item in kept:
-                self._free.put_nowait(item)
-            closed += 1
+        async with self._guard:
+            # 只关闭**空闲**的窗口；正在跑的任务不打断
+            for w in list(self._windows):
+                if len(self._windows) <= n:
+                    break
+                if w.sid or w.lock.locked():
+                    continue
+                try:
+                    if w.page is not None:
+                        await w.page.close()
+                except Exception:
+                    pass
+                try:
+                    self._windows.remove(w)
+                except ValueError:
+                    pass
+                w.in_pool = False
+                # 从空闲队列里摘掉（队列无法按值删除，取出再放回）
+                kept: list[Window] = []
+                while not self._free.empty():
+                    item = self._free.get_nowait()
+                    if item is not w:
+                        kept.append(item)
+                for item in kept:
+                    self._free.put_nowait(item)
+                closed += 1
         return {"max": self._max, "closed": closed, "windows": len(self._windows)}
 
-    # ── 复用已就绪的页面 ──────────────────────────────────
+    # ── 复用已就绪的页面 ───────────────────────────────────────────
     def attach_existing(self, page: Any) -> Optional[Window]:
         """把**已经就绪**的页面登记成 1 号窗口（启动时调用）。
 
@@ -109,29 +132,59 @@ class WindowPool:
             return None
         win = Window(self._next_index, page)
         self._next_index += 1
+        win.in_pool = True
         self._windows.append(win)
         self._free.put_nowait(win)
         return win
 
-    # ── 取用 / 归还 ───────────────────────────────────────
-    async def acquire(self, sid: str = "", wait_timeout: float = 30.0) -> Window:
-        """取一个窗口。队列满（>>上限 3 倍）时抛 WindowBusy。"""
-        if self._free.empty() and len(self._windows) < self._max:
-            win = await self._create()
-            win.sid = sid or None
-            win.last_used = time.time()
-            await win.lock.acquire()
+    # ── 取用 / 归还 ────────────────────────────────────────────────
+    def _take_free(self) -> Optional[Window]:
+        """从空闲队列取一个**活着**的窗口；坏页面就地丢弃。"""
+        while not self._free.empty():
+            try:
+                win = self._free.get_nowait()
+            except asyncio.QueueEmpty:
+                return None
+            win.in_pool = False
+            if _page_closed(win.page):
+                # 用户手动关了标签页/渲染进程崩了：从池里摘掉，继续找下一个
+                try:
+                    self._windows.remove(win)
+                except ValueError:
+                    pass
+                continue
             return win
-        if self._free.empty() and self._waiting >= max(4, self._max * 3):
-            raise WindowBusy(f"所有 Copilot 窗口都在忙（{self._max} 个），等待队列已满")
-        self._waiting += 1
-        try:
-            win = await asyncio.wait_for(self._free.get(), timeout=wait_timeout)
-        except asyncio.TimeoutError:
-            raise WindowBusy(
-                f"等待空闲 Copilot 窗口超时（{wait_timeout:.0f}s，共 {self._max} 个）") from None
-        finally:
-            self._waiting -= 1
+        return None
+
+    async def acquire(self, sid: str = "", wait_timeout: float = 30.0) -> Window:
+        """取一个窗口。队列满（>上限 3 倍，至少 4）时抛 WindowBusy。"""
+        win = self._take_free()
+        if win is None and len(self._windows) < self._max:
+            # 慢建窗：同一时刻只允许一个在创建；等锁期间别人可能已经归还了窗口，
+            # 所以拿到锁后**先看空闲队列**再建新窗。
+            async with self._create_lock:
+                win = self._take_free()
+                if win is None and len(self._windows) < self._max:
+                    win = await self._create()
+        if win is None:
+            if self._waiting >= max(4, self._max * 3):
+                raise WindowBusy(f"所有 Copilot 窗口都在忙（{self._max} 个），等待队列已满")
+            self._waiting += 1
+            try:
+                win = await asyncio.wait_for(self._free.get(), timeout=wait_timeout)
+            except asyncio.TimeoutError:
+                raise WindowBusy(
+                    f"等待空闲 Copilot 窗口超时（{wait_timeout:.0f}s，共 {self._max} 个）") from None
+            finally:
+                self._waiting -= 1
+            win.in_pool = False
+            if _page_closed(win.page):
+                # 排队等到的是个死窗口：摘掉它，让调用方重试或明确报忙
+                try:
+                    self._windows.remove(win)
+                except ValueError:
+                    pass
+                raise WindowBusy("等到的是已关闭的 Copilot 窗口（请重试或重开浏览器）")
         win.sid = sid or None
         win.last_used = time.time()
         await win.lock.acquire()
@@ -141,7 +194,7 @@ class WindowPool:
         """归还窗口：**绝不关页面**。
 
         教训：以前这里有一条"超出上限就 close()"的清理，而 `win.sid` 在判断前
-        已被清空，条件恒真——第二个窗口一归还，用户正看着的那个标签页就被关掉，
+        已被清空 → 条件恒真 → **第二个窗口一归还，用户正看着的标签页就被关掉**，
         表现为"开启任务后自动化窗口闪退"。缩容只由 set_max() 在**空闲**时做。
         """
         win.sid = None
@@ -151,16 +204,27 @@ class WindowPool:
                 win.lock.release()
             except RuntimeError:
                 pass
-        if win in self._windows:
-            self._free.put_nowait(win)
+        if win not in self._windows:
+            return
+        if _page_closed(win.page):
+            try:
+                self._windows.remove(win)
+            except ValueError:
+                pass
+            win.in_pool = False
+            return
+        if win.in_pool:      # 重复归还：不重复入队（否则两个任务会拿到同一页面）
+            return
+        win.in_pool = True
+        self._free.put_nowait(win)
 
-    # ── 状态 ──────────────────────────────────────────────
+    # ── 状态 ────────────────────────────────────────────────────────
     def running(self) -> dict[str, int]:
         """正在跑的会话 → 窗口序号（用于"busy/resume"判定）。"""
         return {w.sid: w.index for w in self._windows if w.sid}
 
     def is_running(self, sid: str) -> bool:
-        return any(w.sid == sid for w in self._windows)
+        return bool(sid) and any(w.sid == sid for w in self._windows)
 
     def stats(self) -> dict[str, Any]:
         busy = [w for w in self._windows if w.sid]
@@ -168,7 +232,7 @@ class WindowPool:
                 "busy": len(busy), "waiting": self._waiting,
                 "running": {w.sid: w.index for w in busy}}
 
-    # ── 内部 ──────────────────────────────────────────────
+    # ── 内部 ────────────────────────────────────────────────────────
     async def _create(self) -> Window:
         index = self._next_index
         self._next_index += 1
@@ -180,8 +244,10 @@ class WindowPool:
     async def prewarm(self, count: int = 1) -> int:
         """预先创建窗口（启动时可选）：返回实际创建数。"""
         made = 0
-        while len(self._windows) < min(count, self._max):
-            win = await self._create()
-            self._free.put_nowait(win)
-            made += 1
+        async with self._create_lock:
+            while len(self._windows) < min(count, self._max):
+                win = await self._create()
+                win.in_pool = True
+                self._free.put_nowait(win)
+                made += 1
         return made

@@ -47,17 +47,20 @@ class InjectEndpointTests(unittest.TestCase):
 
     def test_running_session_goes_to_pending_not_queue(self):
         """运行中插入：写进 pending（下回合生效），不走队列。"""
-        async def main():
-            await b.lock.acquire()
-            prev = b.ACTIVE_SESSION_ID
-            b.ACTIVE_SESSION_ID = "s1"
+        from cbp.window_pool import Window
+
+        # 模拟"该会话正占着一个自动化窗口"（多窗口下 runner 的活跃标记就在窗口池里）
+        win = Window(1, object())
+        win.sid = "s1"
+        b.WINDOWS._windows.append(win)
+        try:
+            r = self.c.post("/v1/agent/sessions/s1/inject",
+                            json={"content": "别动数据库，先只改前端"})
+        finally:
             try:
-                return self.c.post("/v1/agent/sessions/s1/inject",
-                                   json={"content": "别动数据库，先只改前端"})
-            finally:
-                b.ACTIVE_SESSION_ID = prev
-                b.lock.release()
-        r = asyncio.run(main())
+                b.WINDOWS._windows.remove(win)
+            except ValueError:
+                pass
         self.assertEqual(r.status_code, 200)
         d = r.json()
         self.assertTrue(d["running"] and d["injected"] and not d["queued"])

@@ -25,7 +25,8 @@ class WindowsSettingTests(unittest.TestCase):
     def test_runtime_exposes_windows(self):
         src = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
         self.assertIn('"windows": b.WINDOWS.stats()', src)
-        self.assertIn("b.WINDOWS.is_running(sid)", src)
+        # 会话是否在跑要看"窗口池 + 逻辑槽"（提供商任务不占窗口，只看 WINDOWS 会漏判）
+        self.assertIn("b.session_running(sid)", src)
 
     def test_web_parallel_follows_windows(self):
         """网页通道的扇出上限 = 窗口数；提供商通道不受窗口数影响。"""

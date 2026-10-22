@@ -170,6 +170,46 @@ class SubagentManyToolTests(unittest.TestCase):
         self.assertEqual(out["succeeded"], 0)
         self.assertEqual(len(out["results"]), 1, "stop_on_error 应中断后续")
 
+    def test_copilot_parallel_follows_windows(self):
+        """网页通道并行数 = 窗口数 - 1（父任务自己占一个窗口）。"""
+        saved_max = b.WINDOWS._max
+        b.WINDOWS._max = 3        # 父任务占 1，剩 2 个给子代理
+        try:
+            out = self._call("copilot-auto")
+        finally:
+            b.WINDOWS._max = saved_max
+        self.assertFalse(out["parallel"], "网页通道不是「提供商并行」语义")
+        self.assertEqual(out["concurrency"], 2)
+        self.assertGreaterEqual(self.peak, 2, f"网页子代理没并行起来（峰值 {self.peak}）")
+        self.assertLess(out["seconds"], 0.7, f"应并行完成（{out['seconds']}s）")
+
+    def test_copilot_children_do_not_inherit_parent_page(self):
+        """子代理必须清掉继承来的页面上下文，否则会驱动父任务那个标签页。"""
+        seen = []
+
+        def fn(task, description="", model="", max_steps=40):
+            async def run():
+                seen.append(b._PAGE_CTX.get())
+                return {"agent_id": "sub-" + task, "steps": 1, "content": "ok"}
+            return run()
+
+        from cbp.tools_extra import register_extra_tools
+        b.AGENT_CFG["subagent_parallel"] = 4
+        b._SESSION_CTX.set("p1")
+        parent_page = object()
+        tok = b._PAGE_CTX.set(parent_page)     # 模拟"父任务正占着一个窗口页面"
+        saved_max = b.WINDOWS._max
+        b.WINDOWS._max = 3
+        try:
+            impl = register_extra_tools(b.AGENT_TOOLS, {}, subagent_fn=fn)
+            asyncio.run(impl.subagent_many(tasks=["a", "b"], model="copilot-auto"))
+        finally:
+            b.WINDOWS._max = saved_max
+            b._PAGE_CTX.reset(tok)
+        self.assertTrue(seen, "子代理应被调用")
+        for page in seen:
+            self.assertIsNone(page, "子代理继承了父任务的页面上下文（会抢同一标签页）")
+
 
 class DriveChildConcurrentTests(unittest.TestCase):
     """真代码路径：并发跑两个 `_drive_child`（LLM 换成假的），验证上下文隔离。
