@@ -312,6 +312,16 @@ document.addEventListener('click',(ev)=>{
  toggleTopbar();
 });
 document.addEventListener('click',onCardHeadClick);
+/* 调用记录浮层：点别处 / Esc 关闭（点行本身与浮层内部不关） */
+document.addEventListener('click',ev=>{
+ if(!toolLogOpen)return;
+ const t=ev.target;
+ if(t.closest&&(t.closest('#toolLogPop')||t.closest('#toolLogLatest')))return;
+ toggleToolLogPop(false);
+},true);
+document.addEventListener('keydown',ev=>{
+ if(ev.key==='Escape'&&toolLogOpen)toggleToolLogPop(false);
+});
 
 /* 待办条：点横条任意位置都能展开/收起（与状态条一致的交互）。
    内部 `.todolist` 里的条目、以及「待办 x/y」按钮自己会处理点击，别重复触发。 */
@@ -1299,7 +1309,7 @@ function stepRowEl(s){
  const reason=errText||String(s.reason||'').trim();
  el.innerHTML='<span class="ss-ic">'+esc(icon)+'</span>'
    +'<span class="ss-tool">'+esc(tool)+'</span>'
-   +'<span class="ss-reason" title="'+esc(reason)+'">'+esc(reason)+'</span>'
+   +'<span class="ss-reason" data-i18n-skip="1" title="'+esc(reason)+'">'+esc(reason)+'</span>'
    +'<span class="ss-clock">'+esc(time)+'</span>';
  // 详情**照抄步骤时间线的渲染**（用户："可以像步骤时间线那样"）：
  // 渲染视图（kvlist / 表格 / jsonview）+ 渲染↔JSON 切换，比裸 JSON 好读得多。
@@ -1339,33 +1349,31 @@ function renderStream(messages,steps,opts){
  const box=document.getElementById('chatlog');
  if(!box)return;
  lastMessages=messages||[];
+ // 对话流里**只放消息**：工具调用记录搬到独立的「调用记录」区（状态条上方），
+ // 长任务里几十条工具行不再把对话顶出去；顺序按用户要求：
+ // todo → 子代理 → 调用记录 → 状态信息。
  const items=[];
- // 相邻同内容消息只留一条：历史上后端有两条路径各写一次（run_agent 与队列 worker），
- // 库里会真的出现两条一样的回答（id 181/182）。数据修好之前，显示层先挡住。
  (messages||[]).forEach(m=>{
    const prev=items.length?items[items.length-1]:null;
-   if(prev&&prev.kind==='msg'&&prev.v.role===m.role
+   if(prev&&prev.v.role===m.role
       && String(prev.v.content||'').trim()===String(m.content||'').trim())return;
-   items.push({t:Number(m.created)||0,kind:'msg',v:m});
+   items.push({t:Number(m.created)||0,v:m});
  });
- (steps||[]).forEach(s=>items.push({t:Number(s._time)||0,kind:'step',v:s}));
- items.sort((a,b)=>a.t-b.t||((a.v.step||0)-(b.v.step||0)));
- const sig=items.length+'|'+(items.length?items[items.length-1].t+'|'+items[items.length-1].kind:'');
- if(sig===streamSig&&!opts.force)return;      // 没变化不重建（保住展开的 details）
+ items.sort((x,y)=>x.t-y.t);
+ renderToolLog(steps||[],opts);
+ const sig=items.length+'|'+(items.length?items[items.length-1].t:'');
+ if(sig===streamSig&&!opts.force)return;      // 没变化不重建
  streamSig=sig;
  const atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<60;
  box.innerHTML='';
  if(!items.length){
   box.innerHTML='<div class="meta">'+esc(tr('当前没有对话记录。下面发送的消息会发给该 Session 正在使用的模型。'))+'</div>';
+  try{renderLiveBubble()}catch(e){}
   return;
  }
  for(const it of items){
-  if(it.kind==='msg'){
-   box.appendChild(msgEl(it.v.role,it.v.content,it.v.created,
-     {attachments:it.v.attachments||[],id:it.v.id}));
-  }else{
-   box.appendChild(stepRowEl(it.v));
-  }
+  box.appendChild(msgEl(it.v.role,it.v.content,it.v.created,
+    {attachments:it.v.attachments||[],id:it.v.id}));
  }
  applyMsgFold(box);
  try{applyCodePrefs(box)}catch(e){}
@@ -1374,6 +1382,82 @@ function renderStream(messages,steps,opts){
  try{renderLiveBubble()}catch(e){}
  if(atBottom||opts.scrollEnd)box.scrollTop=box.scrollHeight;
 }
+
+/* 调用记录：默认只显示**最新一条**（与状态条同款一行），点它浮动展开全部。
+   不占布局（浮层定位于该行上方），和状态条的"点开看详情"是同一个交互。 */
+let toolLogSig='';
+let toolLogOpen=false;
+function renderToolLog(steps,opts){
+ opts=opts||{};
+ const wrap=document.getElementById('toolLog');
+ const one=document.getElementById('toolLogOne');
+ const body=document.getElementById('toolLogBody');
+ if(!wrap||!one||!body)return;
+ const all=collapseTransient(steps||[]);
+ const last=all.length?all[all.length-1]:null;
+ const sig=all.length+'|'+(last?String(last.step??'')+'|'+String(last._time||''):'');
+ const cnt=document.getElementById('toolLogCount');
+ if(cnt)cnt.textContent=all.length?`${all.length}`:'';
+ const popCnt=document.getElementById('toolLogPopCount');
+ if(popCnt){
+  const okc=all.filter(s=>s.status==='ok').length;
+  popCnt.textContent=all.length?tr('{n} 步 · 成功 {ok}',{n:all.length,ok:okc}):'';
+ }
+ if(!all.length){wrap.hidden=true;toolLogSig=sig;body.innerHTML='';one.textContent='';return}
+ wrap.hidden=false;
+ if(sig===toolLogSig&&!opts.force)return;
+ toolLogSig=sig;
+ // 那一行 = 最新一步（图标 + 工具名 + 理由 + 时间）
+ if(last){
+  const st=String(last.status||'');
+  const errText=String(last.error||'').trim();
+  const failed=!!errText||['error','send_failed','invalid_action','approval_required',
+                           'repeat_guard'].includes(st);
+  const icEl=document.getElementById('toolLogIc');
+  if(icEl){
+   icEl.textContent=st==='ok'&&!failed?'✓':(failed?(st==='approval_required'?'🔐':'✗'):'•');
+   icEl.className='ss-ic '+(failed?'bad':(st==='ok'?'good':''));
+  }
+  const tool=String(last.tool||'').trim()||(failed?tr('系统'):tr('汇总'));
+  one.textContent=tool+' · '+(errText||String(last.reason||'').trim());
+  one.title=one.textContent;
+  const clock=document.getElementById('toolLogClock');
+  if(clock)clock.textContent=last._time
+    ? new Date(Number(last._time)*1000).toLocaleTimeString():'';
+ }
+ // 浮层内容：全量（内部滚动，始终停在最新一步）
+ body.innerHTML='';
+ for(const s of all)body.appendChild(stepRowEl(s));
+ try{translateAttrs(body)}catch(e){}
+ body.scrollTop=body.scrollHeight;
+ if(toolLogOpen)positionToolLogPop();
+}
+function positionToolLogPop(){
+ const pop=document.getElementById('toolLogPop');
+ const row=document.getElementById('toolLogLatest');
+ if(!pop||!row)return;
+ const r=row.getBoundingClientRect();
+ pop.style.bottom=Math.round(window.innerHeight-r.top+8)+'px';
+ pop.style.left=Math.round(r.left)+'px';
+ pop.style.width=Math.round(r.width)+'px';
+ pop.style.maxHeight=Math.round(Math.min(window.innerHeight*0.55,r.top-24))+'px';
+}
+function toggleToolLogPop(force){
+ const pop=document.getElementById('toolLogPop');
+ const row=document.getElementById('toolLogLatest');
+ const more=document.getElementById('toolLogMore');
+ if(!pop)return;
+ toolLogOpen=(typeof force==='boolean')?force:!toolLogOpen;
+ pop.hidden=!toolLogOpen;
+ if(row)row.classList.toggle('open',toolLogOpen);
+ if(more)more.textContent=toolLogOpen?tr('收起'):tr('展开全部');
+ if(toolLogOpen){
+  positionToolLogPop();
+  const body=document.getElementById('toolLogBody');
+  if(body)body.scrollTop=body.scrollHeight;
+ }
+}
+
 
 function renderMessages(messages,opts){
  opts=opts||{};
@@ -2094,9 +2178,11 @@ function inferCurrentTodo(todos){
 function mountTeamCard(){
  const card=document.getElementById('teamCard');
  const chat=document.getElementById('chat');
- const strip=document.getElementById('streamStatus');
+ // 顺序（用户要求）：todo/子代理 → 调用记录 → 状态条。
+ // 所以插到 #toolLog 之前（没有 toolLog 时再退回状态条之前）。
+ const anchor=document.getElementById('toolLog')||document.getElementById('streamStatus');
  if(!card||!chat||card.dataset.mounted)return;
- if(strip&&strip.parentElement===chat)chat.insertBefore(card,strip);
+ if(anchor&&anchor.parentElement===chat)chat.insertBefore(card,anchor);
  else chat.appendChild(card);
  card.dataset.mounted='1';
 }
@@ -4071,6 +4157,8 @@ const ACTIONS={
  activate:()=>activate(),
  openCopilot:()=>openCopilot(),
  toggleMore:(el,e)=>toggleMore(el, e),
+ toggleToolLog:()=>toggleToolLogPop(),
+ toolLogAll:(el,e)=>{if(e&&e.stopPropagation)e.stopPropagation();toggleToolLogPop();},
  openSettings:()=>openSettings(),
  swapModelResume:(el)=>swapModelResume(el&&el.dataset&&el.dataset.arg),
  dismissRetry:()=>dismissRetryOverlay(),

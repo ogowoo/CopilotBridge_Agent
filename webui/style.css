@@ -1669,6 +1669,39 @@ html,body{overflow:hidden}
   cursor:pointer;font-variant-numeric:tabular-nums}
 .retrychip:hover{background:rgba(210,153,34,.12)}
 
+/* TOOLLOG-ONE: 调用记录默认**只有一行**（和状态条 .streamstatus 同款：
+   12.5px / 9px 12px / --muted / 顶部一条分隔线），点它才浮动展开。
+   浮层不在布局里（position:fixed，定位于该行上方），所以不会把对话区挤上去。 */
+#chat > #toolLog{flex:none;border-top:1px solid var(--line);background:var(--panel)}
+#chat > #toolLog[hidden]{display:none}
+.toolloglatest{display:flex;align-items:center;gap:6px;padding:9px 12px;
+  font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none;min-height:36px}
+.toolloglatest:hover{background:var(--panel2)}
+.toolloglatest.open{background:color-mix(in srgb, var(--accent) 8%, var(--panel))}
+.toolloglatest .ss-ic{flex:none;font-size:12px}
+.toolloglatest .ss-ic.good{color:var(--green)}
+.toolloglatest .ss-ic.bad{color:var(--red)}
+.toollogcount{flex:none;color:var(--faint);font-size:11.5px;
+  border:1px solid var(--line2);border-radius:999px;padding:0 6px;line-height:1.6}
+.toollogrow{flex:1 1 auto;min-width:0;color:var(--text);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.toollogclock{flex:none;color:var(--faint);font-size:11.5px;font-variant-numeric:tabular-nums}
+.tolexpandhint{flex:none;color:var(--accent);font-size:11.5px;cursor:pointer;padding-left:4px}
+.tolexpandhint:hover{text-decoration:underline}
+
+/* 浮层：贴在那一行上方，宽度对齐，内部滚动 */
+.toollogpop{position:fixed;z-index:70;display:flex;flex-direction:column;min-height:0;
+  background:var(--panel);border:1px solid var(--line2);border-radius:12px;
+  box-shadow:0 18px 48px -12px var(--menu-shadow);overflow:hidden}
+.toollogpop[hidden]{display:none}
+.toollogpophead{display:flex;align-items:center;gap:8px;padding:9px 12px;flex:none;
+  border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+.toollogpophead b{color:var(--text);font-weight:600}
+.toollogpophead .hint{color:var(--faint);font-size:11.5px}
+.toollogpophead .tolclose{margin-left:auto;color:var(--accent);cursor:pointer;font-size:11.5px}
+.toollogpop .toollogbody{flex:1 1 auto;min-height:0;overflow:auto;padding:6px 10px 8px}
+.toollogpop .streamstep{margin:0 0 2px}
+
 /* GEAR-TOAST-GAP: 设置齿轮固定在左下角（left:14 bottom:14，34px），
    toast 原来也是 left:16 / bottom:28，窄屏一弹就压住齿轮（布局审计实测 32x20）。
    让 toast 让开那一格：整体上移，窄屏再右移。 */
