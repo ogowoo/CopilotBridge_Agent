@@ -707,6 +707,7 @@ Object.assign(I18N_EN, {
   "数据": "Data",
   "设置": "Settings",
   "外观": "Appearance",
+ "普通对话没有 Agent 步骤，见「继续对话」页": "Plain chat has no agent steps — see the Continue chat tab",
  "返回父会话": "Back to parent session",
  "仅可查看": "View only",
  "工作区内修改": "Modify workspace",

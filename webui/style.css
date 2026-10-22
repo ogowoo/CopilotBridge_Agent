@@ -1668,3 +1668,11 @@ html,body{overflow:hidden}
   border:1px solid var(--amber);background:transparent;color:var(--amber);
   cursor:pointer;font-variant-numeric:tabular-nums}
 .retrychip:hover{background:rgba(210,153,34,.12)}
+
+/* GEAR-TOAST-GAP: 设置齿轮固定在左下角（left:14 bottom:14，34px），
+   toast 原来也是 left:16 / bottom:28，窄屏一弹就压住齿轮（布局审计实测 32x20）。
+   让 toast 让开那一格：整体上移，窄屏再右移。 */
+.toasts{left:16px;bottom:calc(56px + var(--retry-h,0px))}
+@media(max-width:900px){
+  .toasts{left:60px}
+}
