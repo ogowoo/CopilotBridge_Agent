@@ -722,6 +722,7 @@ Object.assign(I18N_EN, {
  "Copilot 自动化窗口数（并行任务数；1=串行）": "Copilot automation windows (parallel tasks; 1 = serial)",
  "浮动展开 / 收起全部调用记录": "Expand / collapse all tool calls in a floating panel",
  "点一下浮动展开全部调用记录": "Click to expand all tool calls in a floating panel",
+ "普通对话没有 Agent 步骤，见「继续对话」页": "Plain chat has no agent steps — see the Continue chat tab",
  "展开/收起调用记录": "Expand / collapse tool calls",
  "只看最新": "Latest only",
  "最近 {n}/{total} 步 · 成功 {ok}": "Latest {n}/{total} · {ok} ok",
