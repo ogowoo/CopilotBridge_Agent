@@ -2122,6 +2122,7 @@ function resetView(){
  document.getElementById('title').textContent='—';
  document.getElementById('status').textContent='—';
  clearChanges();               // 新任务：上一任务的完成卡片不能跟过来
+ clearGoalSubagents();         // 待办/子代理也一样：新一轮没有就别留在界面上
  let _sc=document.getElementById('sidChip'); if(_sc)_sc.textContent='';
  setPill('');
  setKpis({total_steps:0,conversation_steps:0,conversation_index:0,estimated_tokens:0});
@@ -2131,7 +2132,9 @@ function resetView(){
  renderMessages([])}
 
 async function load(id){
- current=id;let d=await api('/v1/agent/sessions/'+encodeURIComponent(id)),s=d.session;
+ current=id;
+ clearGoalSubagents();   // 切会话：上一会话的待办/子代理面板不能闪现在新会话上
+ let d=await api('/v1/agent/sessions/'+encodeURIComponent(id)),s=d.session;
  // 守卫紧跟 await：原实现写在全部 DOM 写入之后，迟到响应会把旧会话的标题/KPI/时间线
  // 写到用户已切过去的新会话界面上（经典 stale-response）。
  if(current!==id)return;
@@ -2139,6 +2142,8 @@ async function load(id){
  currentModel=s.model||null;currentUrl=s.current_url;
  // 记住是不是子代理会话：点进去后要能返回父会话，面板也不能凭空消失
  parentOfCurrent=s.parent_id||null;
+ // 刚清空过面板：立刻按正确的父会话刷新一次（否则要等 3 秒节流，"返回父会话"才出现）
+ try{refreshSubagents(true)}catch(e){}
  renderStream(d.messages||[],d.steps||[],{scrollEnd:true,force:true});
  // 跟进消息应跟随 Session 自己的模型，而不是左侧新任务表单的选择
  let _ms=document.getElementById('model');
@@ -2291,9 +2296,28 @@ function syncTeamCard(){
  if(!card)return;
  const gb=document.getElementById('goalBar');
  const sb=document.getElementById('subagentBar');
- const hasGoal=!!(gb&&!gb.hidden);
- const hasSub=!!(sb&&getComputedStyle(sb).display!=='none');
+ // 必须看**实际有内容**：goalBar hidden 但还留着旧 innerHTML、subagentBar 只是
+ // display:''（回落到样式表的 none）都不算"有东西"，否则会留下一个空卡片。
+ const hasGoal=!!(gb&&!gb.hidden&&String(gb.innerHTML||'').trim());
+ const hasSub=!!(sb&&sb.style.display==='block');
  card.hidden=!(hasGoal||hasSub);
+}
+
+/* 清空「待办/目标 + 子代理」两块面板与它们的外层卡片。
+   新任务 / 切会话时立刻调用：否则上一轮的待办与子代理会留到新会话的第一份
+   runtime 快照到达（浏览器冷启动时可能好几秒），看起来就是"新一轮明明没有却还显示"。 */
+function clearGoalSubagents(){
+ const gb=document.getElementById('goalBar');
+ if(gb){gb.hidden=true;gb.innerHTML=''}
+ _goalSig='';
+ const sb=document.getElementById('subagentBar');
+ if(sb)sb.style.display='none';
+ const list=document.getElementById('subagentList');
+ if(list)list.innerHTML='';
+ const cnt=document.getElementById('subagentCount');
+ if(cnt)cnt.textContent='';
+ parentOfCurrent=null;          // 别让还在飞的子代理刷新按上一个会话的父 id 查询
+ try{syncTeamCard()}catch(e){}
 }
 
 function renderGoalBar(r){
@@ -2308,6 +2332,8 @@ function renderGoalBar(r){
  const todos=Array.isArray(r.todos)?r.todos:[];
  if(!goal&&!todos.length){
   if(_goalSig!=='none'){el.hidden=true;el.innerHTML='';_goalSig='none'}
+  // 待办条藏掉后外层 #teamCard 也要跟着判定一次：否则空卡片会留在界面上
+  try{syncTeamCard()}catch(e){}
   return}
  // 内容没变就不动 DOM：以前每秒重建 innerHTML，展开的待办列表会闪
  // 注意：session_state 也决定渲染（结束态要把未完成项标"未同步"），必须进签名，
