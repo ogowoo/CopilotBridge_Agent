@@ -64,7 +64,11 @@ FastAPI 路由层  app.py(shim) → cbp/api.py
 | 文件 | 行数* | 职责 |
 |---|---|---|
 | `app.py` | 21 | 组装 shim：`from cbp.api import app`（uvicorn 加载点） |
-| `cbp/api.py` | ~700 | HTTP 路由、鉴权中间件、SSE、会话控制、自升级/快照端点、静态资源 |
+| `cbp/api.py` | ~520 | FastAPI 应用、鉴权/CSRF/语言中间件、启动与 lifespan、异常本地化、路由装配 |
+| `cbp/routes_core.py` | ~400 | 系统与入口端点：health、models、chat/completions、静态 UI、关停/重启 |
+| `cbp/routes_config.py` | ~420 | 设置端点：配置读写、沙箱档位、插件、浏览器模式、工作区 |
+| `cbp/routes_agents.py` | ~200 | 子代理/深研/扇出/对抗式审计/记忆/自升级端点 |
+| `cbp/routes_sessions.py` | ~770 | 会话端点：列表/详情/消息/继续/插话/队列/事件/审批/删除 |
 | `cbp/bridge.py` | ~1100 | 配置与运行态、Agent 工具装配、快照/记忆/自升级接线、facade 重导出 |
 | `cbp/agentrun.py` | ~870 | 回合编排：`run_agent` 主流程、等回答、回合标记与缓存、待办同步、纯对话回合 |
 | `cbp/downloads.py` | ~300 | 回答区下载：候选链接解析、href 落盘、`copilot_file` |

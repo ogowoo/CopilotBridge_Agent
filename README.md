@@ -869,7 +869,11 @@ app.py            组装入口（shim：from cbp.api import app，uvicorn 加载
 start.py          服务入口
 install.py        依赖安装
 cbp/              核心包
-  api.py            HTTP 路由层：FastAPI 应用与全部端点，只做请求/响应适配
+  api.py            FastAPI 应用与中间件/启动装配（端点已拆成 routes_*）
+  routes_core.py    系统与入口端点（health/models/chat/UI/关停重启）
+  routes_config.py  设置端点（配置/沙箱/插件/浏览器/工作区）
+  routes_agents.py  子代理/深研/审计/记忆/自升级端点
+  routes_sessions.py 会话端点（列表/消息/继续/队列/事件/审批/删除）
   bridge.py         配置、运行状态、工具装配与接线（facade 重导出各子模块）
   agentrun.py       回合编排：run_agent 主流程、等回答、回合标记/缓存、待办同步
   downloads.py      回答区下载解析与 copilot_file
