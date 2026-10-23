@@ -50,12 +50,23 @@ async def visible_locator(locators):
 
 
 async def dismiss():
-    btn = await b.visible([f'button:has-text("{t}")' for t in b.SELECTOR_TEXT["dismiss"]])
+    # :has-text 会匹配“包含该文字的祖先按钮”，点祖先等于点侧栏空白处，
+    # 可能误开 Notebooks 菜单。弹窗按钮一律按精确文本/角色定位。
+    btn = await b.visible(
+        [f'button:text-is("{t}")' for t in b.SELECTOR_TEXT["dismiss"]]
+        + [f'[role="button"]:text-is("{t}")' for t in b.SELECTOR_TEXT["dismiss"]]
+    )
     if btn:
         try:
             await btn.click(timeout=1000)
+            await asyncio.sleep(0.2)
         except Exception:
             pass
+    # 仍有菜单/浮层时按 Escape 收起（不点击任何导航项）
+    try:
+        await b.page.keyboard.press("Escape")
+    except Exception:
+        pass
 
 
 _CHAT_SURFACE_HINTS = (
@@ -107,13 +118,15 @@ async def new_chat():
         except Exception:
             return False
 
+    # 只能用**精确文本**定位：:has-text 会命中“包含 New chat 的祖先按钮”，
+    # 点击祖先中心会落到 Notebooks 上（2026-10 实测：侧栏整个被点开）。
     btn = await b.visible(
-        [f'button[aria-label*="{t}" i]' for t in b.SELECTOR_TEXT["new_chat"]]
-        + [f'a[aria-label*="{t}" i]' for t in b.SELECTOR_TEXT["new_chat"]]
-        + [f'button:has-text("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
-        + [f'a:has-text("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
-        + [f'[role="link"]:has-text("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
-        + [f'[role="button"]:has-text("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
+        [f'button[aria-label="{t}" i]' for t in b.SELECTOR_TEXT["new_chat"]]
+        + [f'a[aria-label="{t}" i]' for t in b.SELECTOR_TEXT["new_chat"]]
+        + [f'button:text-is("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
+        + [f'a:text-is("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
+        + [f'[role="link"]:text-is("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
+        + [f'[role="button"]:text-is("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
     )
     if btn:
         await btn.click()
