@@ -49,9 +49,13 @@ FastAPI 路由层  app.py(shim) → cbp/api.py
         │                          │  ├─ 任务快照（cbp/snapshots.py）
         │                          │  └─ OWA 后端（cbp/owa.py）
         │
-        ├─ Agent 任务 ───────► cbp/agent.py（主循环/动作协议/容错解析/压缩/换会话/验证门）
+        ├─ Agent 任务 ───────► cbp/agent.py（主循环/状态治理/验证门）
+        │                          │
+        │                          ├─ cbp/agent_prompt.py（系统提示词装配 / AGENT.md / skills / 工具面裁剪）
+        │                          ├─ cbp/agent_parse.py（JSON 动作协议 / 容错解析 / 批量恢复）
+        │                          ├─ cbp/agent_text.py（token 估算 / spill / 保头保尾压缩）
         │                          ▼
-        │                      cbp/tools.py（工作区沙箱、Office、技能、自升级工具）
+        │                      cbp/tools.py（工具注册表/分派、路径沙箱/权限门、计划模式）
         │                          ▼
         │                      cbp/session_store.py（SQLite：sessions/steps/messages/file_events/conv_stats）
         │
@@ -82,8 +86,11 @@ FastAPI 路由层  app.py(shim) → cbp/api.py
 | `cbp/queue.py` | ~190 | 会话消息队列（排队、取消、插入） |
 | `cbp/orchestration.py` | ~290 | ralph / workflow / 对抗式审计 |
 | `cbp/subagents.py` | ~300 | 子代理（派发/驱动/续跑/fork/列表） |
-| `cbp/agent.py` | ~1090 | 动作协议与容错解析、批量动作、主循环、压缩/换会话、验证闭环（旗持久化） |
-| `cbp/tools.py` | ~880 | 工具注册表与分派、路径沙箱/权限门、计划模式、工具分组（核心 mixin） |
+| `cbp/agent.py` | ~1270 | Agent 核心：主循环、状态治理、批量动作调度、验证门旗持久化、换会话/压缩 |
+| `cbp/agent_prompt.py` | ~230 | `PromptMixin`：系统提示词分段装配、工具面裁剪、两级 AGENT.md / skills 加载 |
+| `cbp/agent_parse.py` | ~450 | `ParseMixin`：JSON 动作协议、容错解析、批量成组、截断恢复、非法转义修复 |
+| `cbp/agent_text.py` | ~75 | `TextMixin`：token 估算、结果 spill、保头保尾 `retain_text`、`compact_value` |
+| `cbp/tools.py` | ~760 | 工具注册表与分派、路径沙箱/权限门、计划模式、工具分组（核心 mixin） |
 | `cbp/tools_files.py` | ~660 | 文件读写/替换/补丁/缩进/目录操作 |
 | `cbp/tools_exec.py` | ~95 | validate_python / run_unittest / run_code / run_python |
 | `cbp/tools_office.py` | ~200 | Excel / Word / PPT / PDF |
@@ -101,9 +108,24 @@ FastAPI 路由层  app.py(shim) → cbp/api.py
 | `scripts/rollback.py` | 120 | 离线自升级回滚（服务起不来时使用） |
 | `scripts/outlook_selftest.py` | 142 | COM 自检（pywin32→CoInitialize→Dispatch→MAPI→收件箱） |
 | `webui/*` | 138+490+325 | 单页管理台（HTML/CSS/JS 三文件，无构建步骤） |
-| `tests/*` | 12 文件 / 92 用例 | 单元与集成测试 |
+| `tests/*` | 80+ 文件 / 1030 用例 | 单元、集成与不变量测试 |
 
 \* 行数随迭代变化，此处为 2026-11 审查时的规模。
+
+### 3.2 解耦与组合方式
+
+为了把单个超大文件维护下去，核心代码按**职责 + mixin** 两层拆分：
+
+- `cbp/bridge.py` 作为 **facade**，把运行态（`AGENT_SESSIONS`、`AGENT_TOOLS` 等）和子模块的公共 helper 重导出给 WebUI / CLI / 测试使用；子模块通过模块内局部别名（`b = cbp.bridge`）访问可变状态，避免循环依赖。
+- `cbp/agent.py` 保留唯一对外类 `AgentRunner`，但把内部方法拆成三个纯行为 mixin：
+  - `PromptMixin`：只负责“把这轮要说什么拼出来”；
+  - `ParseMixin`：只负责“把模型返回解析成可执行动作”；
+  - `TextMixin`：只负责“文本/结果太长时怎么压缩”。
+  新增行为时先判断属于哪一类，优先放进对应 mixin；跨 mixin 的调用通过继承后的 `self` 完成。
+- `cbp/tools.py` 同样被拆成 `tools_files.py`、`tools_exec.py`、`tools_office.py`、`tools_outlook.py`、`tools_skills.py`、`tools_memory.py`、`tools_self.py` 七个 mixin，`ToolRegistry` 继承全部 mixin 后统一注册。
+- `cbp/api.py` 把端点按域拆成 `routes_core.py`、`routes_config.py`、`routes_agents.py`、`routes_sessions.py`；`api.py` 只做应用组装与中间件。
+
+拆分后单文件职责单一，黄金测试（如 `test_prompt_stability.py`、`test_agent_parse.py`）能更精准地锁定回归范围。
 
 ## 4. 关键运行流程
 
@@ -285,7 +307,7 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 
 ## 10. 测试
 
-`python -m unittest discover -s tests`（当前 **92 个用例**，约 15 秒）：
+`python -m unittest discover -s tests`（当前 **1030 个用例**，约 5 分钟）：
 
 | 文件 | 覆盖 |
 |---|---|
@@ -411,6 +433,6 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 | **COM/线程模型** | Outlook 走 `_ComWorker` 专用泵线程 | 超时无法真取消（调用仍在跑） | **已缓解**：`shield` 保留调用并挂回调记录迟到结果、超时**不重试**、阶段封锁不可幂等动作直到只读核对成功（`[TOOL_TIMEOUT_UNKNOWN]`）；`tests/test_unknown_outcome.py` 4 例守住 |
 | **模型质量波动** | 评测出现过"模型给一次性脚本自造测试文件并写错"从而步数暴涨 | 影响成本而非正确性 | 验证门比例原则 + no-progress 守卫已能止损；保留 `max_steps` 作金丝雀 |
 | **压缩** | 启发式摘要替换历史 | 极端情况下可能丢关键约束 | 待办：配对校验 + 摘要复用热前缀（P2-11） |
-| **提示词单体** | `_system_prompt()` 仍是较长函数 | 改一处容易伤别处（本人已踩坑两次） | 待办：分段注册表（P2-9） |
+| **提示词结构** | `_system_prompt()` 已拆到 `PromptMixin`，按段注册 | 段间顺序与变量仍需谨慎；新增段要同步更新 golden/稳定性测试 | 已完成拆分，后续新增段走 `PromptRegistry.add()` 并加回归用例 |
 | **事件溯源** | 会话状态是列 + JSON，不是事件日志 | 无法从日志精确重建状态 | 待办：P2-10（大改，需专门排期） |
 | **测试"绿"的可信度** | 曾出现"单测绿但生产未接线"（step_begin 从未接） | 高：会误判功能已可用 | 已加不变量检查 + 真机验证流程；后续新增接线一律配真机验证 |

@@ -888,7 +888,10 @@ cbp/              核心包
   subagents.py      子代理派发、驱动、续跑与 fork
   copilot_delete.py Copilot 侧栏会话删除流程（URL 身份 + 标记同属校验 + 对账终验）
   owa.py            Outlook 网页版（OWA）自动化后端
-  agent.py          Agent 主循环、JSON 动作协议、容错解析、压缩/换会话
+  agent.py          Agent 核心循环、状态治理、验证门、换会话/压缩
+  agent_prompt.py   PromptMixin：系统提示词装配 / AGENT.md / skills / 工具面裁剪
+  agent_parse.py    ParseMixin：JSON 动作协议 / 容错解析 / 批量恢复
+  agent_text.py     TextMixin：token 估算 / spill / 保头保尾压缩
   tools.py          工具注册表/分派、路径沙箱与权限门（核心 mixin）
   tools_files.py    文件读写/替换/补丁/缩进/目录操作
   tools_exec.py     validate_python / run_unittest / run_code / run_python
@@ -905,7 +908,7 @@ AGENT.md          项目级 Agent 约定（工作区根目录存在时自动注�
 skills/           目录式技能库（每个技能一个 SKILL.md，按需加载）
 scripts/          工具脚本（login.py 登录向导、calibrate.py 阈值校准、
                   outlook_selftest.py COM 自检、rollback.py 离线回滚）
-tests/            单元测试（python -m unittest discover -s tests）
+tests/            单元/集成/不变量测试（python -m unittest discover -s tests，约 1030 用例）
 ```
 
 ## 免责声明
