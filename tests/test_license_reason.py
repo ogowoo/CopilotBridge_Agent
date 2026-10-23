@@ -16,6 +16,10 @@ class LicenseReasonTests(unittest.TestCase):
             "You don't have a license to use Copilot. Contact your admin."))
         self.assertTrue(license_reason(
             "Copilot isn't available because your license does not include it."))
+        # 微软页面实际用的是弯引号 + valid
+        self.assertTrue(license_reason(
+            "It looks like you don’t have a valid license. To get access, "
+            "please check with your administrator."))
 
     def test_chinese(self):
         self.assertTrue(license_reason("你没有使用 Copilot 的许可证，请联系管理员。"))

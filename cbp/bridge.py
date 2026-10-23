@@ -165,7 +165,9 @@ SELECTOR_TEXT = {
     "send_aria": ["Send", "发送", "送信", "傳送"],
     "dismiss": ["Accept", "接受", "Got it", "知道了", "Not now", "暂不",
                 "同意する", "あとで", "OK", "閉じる",
-                "接受", "知道了", "稍後", "關閉"],
+                "接受", "知道了", "稍後", "關閉",
+                # 误点删除/关闭类弹窗时，Cancel 是安全出口
+                "Cancel", "取消", "キャンセル"],
 }
 for key, extra in CFG.get("markers", {}).items():
     if isinstance(extra, list):

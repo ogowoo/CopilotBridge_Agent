@@ -116,13 +116,16 @@ def copilot_unavailable_reason(text: str) -> str:
 # Copilot 许可证/订阅不可用：不是限流，也不是回答格式问题，重试没有意义。
 # 识别后直接给出可操作提示，避免用户只看到“页面没反应/超时”。
 LICENSE_PATTERNS = [
-    r"don'?t have (?:a |an )?licen[cs]e",
-    r"do not have (?:a |an )?licen[cs]e",
+    # 直引号/弯引号都要认：微软页面常用 “don’t”，只写 don't 会漏。
+    r"don[’']?t have (?:a |an )?(?:valid )?licen[cs]e",
+    r"do not have (?:a |an )?(?:valid )?licen[cs]e",
     r"no (?:valid )?licen[cs]e",
+    r"valid licen[cs]e",
     r"not licensed",
     r"licen[cs]e (?:is )?(?:required|needed|expired|invalid|not available)",
     r"copilot (?:is )?not (?:available|included).{0,80}licen[cs]e",
     r"your (?:current )?licen[cs]e.{0,80}(?:does not|doesn't|not).{0,40}(?:include|support)",
+    r"it looks like you don[’']?t have.{0,80}licen[cs]e",
     r"没有.{0,20}(?:许可证|授权|授權)",
     r"(?:许可证|授權|授權).{0,20}(?:过期|過期|无效|無效|不支持|不支援|不可用)",
     r"ライセンス.{0,40}(?:ありません|が必要|が無効|が期限切れ|がありません)",
