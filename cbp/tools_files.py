@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import ast
 import asyncio
 import base64
 import difflib
@@ -81,6 +82,7 @@ class FilesMixin:
         target = self._path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}")
+        self._mark_read(path)
         offset = max(0, self._int_arg(offset, 0, "offset"))
         limit = max(0, self._int_arg(limit, 0, "limit"))
         line_start = max(0, self._int_arg(line_start, 0, "line_start"))
@@ -150,6 +152,73 @@ class FilesMixin:
             result["hint"] = "文件超过单次读取上限，已截断：请用 offset 参数分段读取全文"
         return result
 
+    def _python_symbol_table(self, text: str) -> list[dict[str, Any]]:
+        """列出 Python 顶层/嵌套函数与类（含限定名与行区间）。"""
+        tree = ast.parse(text)
+        out: list[dict[str, Any]] = []
+
+        def walk(node: ast.AST, prefix: str = "") -> None:
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    name = f"{prefix}{child.name}"
+                    # 装饰器在 def/class 行之前：整段替换要连同装饰器一起替换，
+                    # 否则会留下孤立的 @decorator。
+                    starts = [int(getattr(child, "lineno", 0))]
+                    starts += [int(getattr(d, "lineno", 0))
+                               for d in getattr(child, "decorator_list", []) if getattr(d, "lineno", 0)]
+                    out.append({"name": name,
+                                "kind": type(child).__name__,
+                                "start": min(starts),
+                                "end": int(getattr(child, "end_lineno", 0) or 0)})
+                    walk(child, name + ".")
+
+        walk(tree)
+        return out
+
+    async def python_symbols(self, path: str) -> dict[str, Any]:
+        """按 AST 列出 Python 符号与行号，便于按函数/类精确修改。"""
+        target = self._path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        if target.suffix.lower() != ".py":
+            raise ToolError("python_symbols 只支持 .py 文件")
+        try:
+            text = target.read_text(encoding="utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise ToolError(f"文件不是有效的 UTF-8 文本: {exc}") from exc
+        self._mark_read(path)
+        try:
+            symbols = self._python_symbol_table(text)
+        except SyntaxError as exc:
+            raise ToolError(f"Python 语法错误，无法解析符号: {exc}") from exc
+        return {"path": path, "symbols": symbols, "count": len(symbols)}
+
+    async def replace_python_symbol(self, path: str, name: str,
+                                    content: str) -> dict[str, Any]:
+        """用 AST 定位函数/类，整段替换（比按文本匹配更稳）。"""
+        if not str(name or "").strip():
+            raise ToolError("name 不能为空")
+        target = self._path(path)
+        if not target.is_file():
+            raise ToolError(f"文件不存在: {path}")
+        self._require_read(path)
+        try:
+            text = target.read_text(encoding="utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise ToolError(f"文件不是有效的 UTF-8 文本: {exc}") from exc
+        try:
+            symbols = self._python_symbol_table(text)
+        except SyntaxError as exc:
+            raise ToolError(f"Python 语法错误，无法定位符号: {exc}") from exc
+        hit = next((s for s in symbols if s["name"] == str(name).strip()), None)
+        if not hit:
+            names = ", ".join(s["name"] for s in symbols[:20]) or "（无）"
+            raise ToolError(f"未找到 Python 符号: {name}。可用符号: {names}")
+        start, end = int(hit["start"]), int(hit["end"])
+        if start < 1 or end < start:
+            raise ToolError(f"符号 {name} 的行号范围无效: {start}-{end}")
+        return await self.replace_lines(path, start, end - start + 1, content)
+
     @staticmethod
     def _hash(path: Path) -> str | None:
         if not path.is_file(): return None
@@ -157,6 +226,49 @@ class FilesMixin:
         with path.open("rb") as f:
             for chunk in iter(lambda:f.read(1048576),b""): h.update(chunk)
         return h.hexdigest()
+
+    def _read_key(self, path: str) -> str:
+        try:
+            return str(self._path(path)).casefold()
+        except Exception:
+            return str(path).casefold()
+
+    def _mark_read(self, path: str) -> None:
+        """记录本会话读过的文件：编辑现有文件前必须有这个记录。"""
+        sid = str(getattr(self, "current_session_id", "") or "")
+        cache = getattr(self, "_read_files", None)
+        if cache is None:
+            cache = self._read_files = {}
+        cache.setdefault(sid, set()).add(self._read_key(path))
+
+    def _require_read(self, path: str) -> None:
+        sid = str(getattr(self, "current_session_id", "") or "")
+        # 直接调用 ToolRegistry 的脚本/单测没有会话上下文：不做读后编辑约束。
+        # 真实 Agent 回合会在 agentrun 里设置 current_session_id，才启用该守卫。
+        if not sid:
+            return
+        seen = (getattr(self, "_read_files", None) or {}).get(sid) or set()
+        if self._read_key(path) not in seen:
+            raise ToolError(
+                f"编辑前必须先读取文件: {path}。请先 read_text（可用 line_start/line_count 只看目标段），"
+                "再用 apply_patch / replace_text / replace_lines 做局部修改；不要凭记忆整篇重写。")
+
+    @staticmethod
+    def _diff_payload(path: str, before: str, after: str) -> dict[str, Any]:
+        """返回结构化 diff：让模型/用户看到改了哪几行，而不是“写了多少字符”。"""
+        before_lines = str(before or "").splitlines()
+        after_lines = str(after or "").splitlines()
+        diff_lines = list(difflib.unified_diff(
+            before_lines, after_lines,
+            fromfile=f"a/{path}", tofile=f"b/{path}", lineterm=""))
+        changed = sum(1 for line in diff_lines
+                      if line.startswith(("+", "-")) and not line.startswith(("+++", "---")))
+        hunks = sum(1 for line in diff_lines if line.startswith("@@"))
+        text = "\n".join(diff_lines)
+        if len(text) > 12000:
+            text = text[:12000] + "\n...（diff 过长，已截断）"
+        return {"changed": before != after, "changed_lines": changed,
+                "hunks": hunks, "diff": text}
 
     def _check_plain_code_size(self, path: str, content: str) -> None:
         """代码类文件不允许"一大段明文塞进单个 JSON 动作"。
@@ -176,20 +288,40 @@ class FilesMixin:
                 "Base64 分块每块不超过 3000 字符，写第一块用 write_text_b64、后续用 "
                 "append_text_b64 追加。文档类（.md/.txt/.log）才允许明文分块直接写。")
 
-    async def write_text(self, path: str, content: str, via_b64: bool = False) -> dict[str, Any]:
+    async def write_text(self, path: str, content: str, via_b64: bool = False,
+                         overwrite: bool = False) -> dict[str, Any]:
         if len(content) > self.max_write:
             raise ToolError("写入内容超过限制")
         # via_b64=True 时不限明文长度：Base64 分块就是代码类大文件的正路
         if not via_b64:
             self._check_plain_code_size(path, content)
         target = self._path(path)
+        existed = target.is_file() and target.stat().st_size > 0
+        if existed and not overwrite:
+            raise ToolError(
+                f"文件已存在: {path}。修改现有文件请用 apply_patch / replace_text / replace_lines "
+                "做局部修改；确实要整体重写时才传 overwrite=true（不要为了省事整篇覆盖）。")
+        if existed:
+            self._require_read(path)
+        before_text = ""
+        if existed:
+            try:
+                with target.open("r", encoding="utf-8", errors="replace", newline="") as f:
+                    before_text = f.read()
+            except Exception:
+                before_text = ""
         self._snap("write_text", path, target)
         target.parent.mkdir(parents=True, exist_ok=True)
         before=self._hash(target)
         # newline=""：原样写入，Windows 下不把 \n 静默转成 \r\n
         with target.open("w", encoding="utf-8", newline="") as f: f.write(content)
         after=self._hash(target)
-        return {"path":path,"written_chars":len(content),"file_event":{"tool":"write_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
+        out = {"path":path,"written_chars":len(content),
+               "file_event":{"tool":"write_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
+        out.update(self._diff_payload(path, before_text, content))
+        if existed and out.get("changed_lines", 0):
+            out["note"] = "本次为整体覆盖写入；已返回 diff。后续修改现有文件优先用 apply_patch / replace_text。"
+        return out
 
     async def append_text(self, path: str, content: str, via_b64: bool = False) -> dict[str, Any]:
         if len(content) > self.max_write:
@@ -219,9 +351,10 @@ class FilesMixin:
                         "Base64 编码后放进 content_b64（纯文本文件也可改用 write_text/append_text）")
             raise ToolError(f"Base64 UTF-8 内容无效: {exc}{hint}") from exc
 
-    async def write_text_b64(self, path: str, content_b64: str) -> dict[str, Any]:
+    async def write_text_b64(self, path: str, content_b64: str,
+                             overwrite: bool = False) -> dict[str, Any]:
         content = self._decode_b64(content_b64)
-        result = await self.write_text(path, content, via_b64=True)
+        result = await self.write_text(path, content, via_b64=True, overwrite=overwrite)
         result["tool"] = "write_text_b64"
         return result
 
@@ -267,6 +400,7 @@ class FilesMixin:
         target = self._path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}")
+        self._require_read(path)
         # 严格解码 + newline=""：非 UTF-8 文件拒绝替换（避免乱码写回），
         # CRLF 文件保持 CRLF，不做换行符静默转换。
         try:
@@ -312,15 +446,17 @@ class FilesMixin:
                                 + self._nearest_hint(text, old)
                                 + "。" + editmatch.first_diff(text, old))
         replaced = found if count == 0 else min(found, count)
+        after_text = (text.replace(old_used, new_used) if count == 0
+                      else text.replace(old_used, new_used, count))
         before=self._hash(target)
         self._snap("replace_text", path, target)
         with target.open("w", encoding="utf-8", newline="") as f:
-            f.write(text.replace(old_used, new_used) if count == 0
-                    else text.replace(old_used, new_used, count))
+            f.write(after_text)
         after=self._hash(target)
         _left = max(0, found - replaced)
         _out = {"path":path,"replaced":replaced,"remaining_matches":_left,"match":strategy,
                 "file_event":{"tool":"replace_text","path":path,"before_hash":before,"after_hash":after,"result":"ok"}}
+        _out.update(self._diff_payload(path, text, after_text))
         if strategy != "exact":
             _out["note"] = (f"片段与文件并非逐字相同（按 {strategy} 容错匹配，且已按文件缩进校正新内容）；"
                             "下次可直接复用文件里的原样片段")
@@ -352,6 +488,7 @@ class FilesMixin:
         target = self._path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}")
+        self._require_read(path)
         try:
             with target.open("r", encoding="utf-8", errors="strict", newline="") as f:
                 raw = f.read()
@@ -377,11 +514,13 @@ class FilesMixin:
         with target.open("w", encoding="utf-8", newline="") as f:
             f.write(text)
         after = self._hash(target)
-        return {"path": path, "replaced_lines": hi - lo, "start": start,
-                "inserted_lines": len(new_lines), "total_lines": len(out_lines),
-                "changed": before != after,
-                "file_event": {"tool": "replace_lines", "path": path,
-                               "before_hash": before, "after_hash": after, "result": "ok"}}
+        out = {"path": path, "replaced_lines": hi - lo, "start": start,
+               "inserted_lines": len(new_lines), "total_lines": len(out_lines),
+               "changed": before != after,
+               "file_event": {"tool": "replace_lines", "path": path,
+                              "before_hash": before, "after_hash": after, "result": "ok"}}
+        out.update(self._diff_payload(path, raw, text))
+        return out
 
     async def apply_patch(self, path: str, patch: str = "", edits: Any = None,
                           count: int = 1) -> dict[str, Any]:
@@ -399,6 +538,7 @@ class FilesMixin:
         target = self._path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}（apply_patch 只改现有文件；新建请用 write_text）")
+        self._require_read(path)
         try:
             with target.open("r", encoding="utf-8", errors="strict", newline="") as f:
                 text = f.read()
@@ -465,6 +605,7 @@ class FilesMixin:
             "file_event": {"tool": "apply_patch", "path": path,
                            "before_hash": before, "after_hash": after, "result": "ok"},
         }
+        out.update(self._diff_payload(path, text, current))
         if fuzzy:
             out["note"] = (f"有 {len(fuzzy)} 块是容错匹配（空白/缩进差异），已按文件缩进校正；"
                            "后续可用 read_text 复核")

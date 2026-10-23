@@ -23,12 +23,15 @@ DESC_EN: dict[str, str] = {
     "read_text": ("Read UTF-8 text; reads the whole file by default (up to max_read_chars). "
                   "For huge files page by characters with offset/limit, or read by line with "
                   "line_start/line_count (returns line numbers, handy for editing a few lines)"),
-    "write_text": ("Overwrite a UTF-8 plain-text file. Documents (.md/.txt/.log) may be written "
-                   "whole; code files only up to 1500 characters (use b64 chunks for more)"),
+    "write_text": ("Write a UTF-8 plain-text file. **New files only**: existing files are rejected "
+                   "unless overwrite=true; read_text first and edit with apply_patch/replace_text/"
+                   "replace_lines. Documents (.md/.txt/.log) may be written whole; code files only "
+                   "up to 1500 characters (use b64 chunks for more)"),
     "append_text": ("Append UTF-8 plain text. Use it to continue documents in chunks; code files "
                     "only up to 1500 characters (use append_text_b64 for more)"),
-    "write_text_b64": ("Base64-decode and overwrite as UTF-8; required for code, JSON, HTML and "
-                       "Markdown"),
+    "write_text_b64": ("Base64-decode and write as UTF-8. **New files only**: existing files are "
+                       "rejected unless overwrite=true; read_text first and edit with apply_patch/"
+                       "replace_text/replace_lines"),
     "append_text_b64": ("Base64-decode and append as UTF-8; required for code, JSON, HTML and "
                         "Markdown"),
     "replace_text": ("Replace a short exact snippet in an existing file; prefer this when editing "
@@ -45,6 +48,10 @@ DESC_EN: dict[str, str] = {
     "replace_lines": ("Replace a whole line range by line number (1-based, inclusive) keeping the "
                       "file's newline style. More robust than replace_text for re-indentation or "
                       "whole-section rewrites; no shell needed"),
+    "python_symbols": ("List functions/classes in a .py file with AST line ranges (qualified names "
+                       "such as Class.method); use it before rewriting a whole function/class"),
+    "replace_python_symbol": ("Replace one Python function/class by AST symbol name; more robust "
+                              "than text matching for whole-implementation rewrites"),
     "make_directory": "Create a directory",
     "copy_path": "Copy a file or directory",
     "move_path": "Move a file or directory",
@@ -75,10 +82,12 @@ ARG_EN: dict[str, str] = {
     "read_text.reveal_whitespace": "Show spaces as · and tabs as → (essential for checking indentation)",
     "write_text.path": "Relative path",
     "write_text.content": "Text",
+    "write_text.overwrite": "true only for an intentional whole-file rewrite of an existing file",
     "append_text.path": "Relative path",
     "append_text.content": "Text",
     "write_text_b64.path": "Relative path",
     "write_text_b64.content_b64": "Base64 of the UTF-8 content",
+    "write_text_b64.overwrite": "true only for an intentional whole-file rewrite of an existing file",
     "append_text_b64.path": "Relative path",
     "append_text_b64.content_b64": "Base64 of the UTF-8 content",
     "replace_text.path": "Relative path",
@@ -103,6 +112,10 @@ ARG_EN: dict[str, str] = {
     "replace_lines.start": "First line number, 1-based",
     "replace_lines.count": "How many lines to replace, default 1",
     "replace_lines.content": ("New content (may span lines; an empty string deletes these lines)"),
+    "python_symbols.path": "Relative path to a .py file",
+    "replace_python_symbol.path": "Relative path to a .py file",
+    "replace_python_symbol.name": "Symbol name, e.g. Class.method or func",
+    "replace_python_symbol.content": "Complete new symbol source (including def/class line and indentation)",
     "make_directory.path": "Relative path",
     "copy_path.source": "Relative path",
     "copy_path.destination": "Relative path",

@@ -102,12 +102,15 @@ Only two formats exist:
 Rules: inspect before you modify; paths are relative to the working directory; adapt after a
 tool failure; return final as soon as the work is complete.
 File routing: {{CBP_FILE_ROUTING}}
-Editing existing text: for a **single** small edit prefer replace_text (it tolerates indentation
-and trailing-whitespace differences and reports the first mismatch); for **three or more** edits
-or several small hunks use apply_patch in one shot (atomic: if any hunk fails nothing is written,
-which saves round trips); for whole sections or re-indentation use replace_lines by line number,
-or convert_indentation to change indentation in bulk. Always edit file contents with the file
-tools, never with scripts or shell commands.
+Editing existing text: **read_text first, then edit**. For a **single** small edit prefer
+replace_text (it tolerates indentation and trailing-whitespace differences and reports the first
+mismatch); for **three or more** edits or several small hunks use apply_patch in one shot (atomic:
+if any hunk fails nothing is written, which saves round trips); for whole sections or re-indentation
+use replace_lines by line number, or convert_indentation to change indentation in bulk; for a whole
+function/class rewrite use python_symbols to get its line range, then replace_python_symbol.
+**write_text / write_text_b64 are for new files only**: existing files are rejected by default;
+pass overwrite=true only when you really intend a whole-file rewrite. Always edit file contents
+with the file tools, never with scripts or shell commands.
 Reading a large local file in chunks: read_text accepts limit up to 20000 characters per chunk
 (do not split too finely — that wastes turns). Page with the returned total_chars and
 next_offset until the target range has been read, then draw conclusions.
@@ -123,9 +126,10 @@ append_text, up to 4000 characters per call, appending in chunks for long docume
 contains backslash escape sequences (for example \\u0020, literal \\n) or large code fences, switch
 to b64 to avoid JSON escape corruption. Plain-text writes of code files above 1500 characters are
 rejected by the tool — that does not mean "retry smaller", it means switch to b64 chunks.
-Standard flow for a large file: write_text_b64 the first chunk → append_text_b64 until everything
-is written (never repeat already-written content) → spot-check with read_text → only then run
-validate_python and run_unittest.
+Standard flow for a **new** large file: write_text_b64 the first chunk → append_text_b64 until
+everything is written (never repeat already-written content) → spot-check with read_text → only
+then run validate_python and run_unittest. Do **not** use this flow to modify an existing file;
+use read_text + apply_patch / replace_text / replace_lines for local edits.
 Never run validate_python or run_unittest before the file is complete: a half-written file always
 fails syntax checks, and that is not a defect to fix. If validation fails because the file is
 incomplete, append the remaining chunks instead of rewriting the file or patching a partial file.

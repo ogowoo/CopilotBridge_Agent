@@ -81,6 +81,8 @@ class ProviderWritePathTests(unittest.TestCase):
         self._run([
             '{"type":"tool","tool":"write_text_b64","arguments":{"path":"a.txt","content_b64":"%s"}}' % b64("v1\n"),
             '{"type":"tool","tool":"append_text_b64","arguments":{"path":"a.txt","content_b64":"%s"}}' % b64("v2\n"),
+            # 精确编辑前必须先读：工具层现在会拒绝“凭记忆”直接 replace_text。
+            '{"type":"tool","tool":"read_text","arguments":{"path":"a.txt"}}',
             '{"type":"tool","tool":"replace_text","arguments":{"path":"a.txt","old":"v1","new":"V1"}}',
             '{"type":"final","content":"完成"}',
         ])
