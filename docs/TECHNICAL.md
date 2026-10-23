@@ -65,7 +65,11 @@ FastAPI 路由层  app.py(shim) → cbp/api.py
 |---|---|---|
 | `app.py` | 21 | 组装 shim：`from cbp.api import app`（uvicorn 加载点） |
 | `cbp/api.py` | ~700 | HTTP 路由、鉴权中间件、SSE、会话控制、自升级/快照端点、静态资源 |
-| `cbp/bridge.py` | ~2400 | 配置与运行态、回合编排（`run_agent`）、快照/记忆/自升级接线、facade 重导出 |
+| `cbp/bridge.py` | ~1100 | 配置与运行态、Agent 工具装配、快照/记忆/自升级接线、facade 重导出 |
+| `cbp/agentrun.py` | ~870 | 回合编排：`run_agent` 主流程、等回答、回合标记与缓存、待办同步、纯对话回合 |
+| `cbp/downloads.py` | ~300 | 回答区下载：候选链接解析、href 落盘、`copilot_file` |
+| `cbp/workspace_files.py` | ~130 | 工作区写文件/建目录/系统目录对话框 |
+| `cbp/research.py` | ~130 | 深研任务、插件任务、确定性扇出 |
 | `cbp/page.py` | ~1220 | 页面自动化：新对话、模型菜单识别与锚定、发消息、取回答/Markdown、流式更新 |
 | `cbp/browser.py` | ~260 | 浏览器生命周期（启动/复用/无头回退）、窗口池与提供商逻辑槽调度 |
 | `cbp/answer.py` | ~240 | 回答解析：回合标记定位、噪声/思考占位剔除、服务不可用与满对话识别 |
@@ -75,7 +79,14 @@ FastAPI 路由层  app.py(shim) → cbp/api.py
 | `cbp/orchestration.py` | ~290 | ralph / workflow / 对抗式审计 |
 | `cbp/subagents.py` | ~300 | 子代理（派发/驱动/续跑/fork/列表） |
 | `cbp/agent.py` | ~1090 | 动作协议与容错解析、批量动作、主循环、压缩/换会话、验证闭环（旗持久化） |
-| `cbp/tools.py` | ~1240 | 工作区沙箱与文件工具、Office、Outlook 路由、技能 list/read/create、self_* 与权限门 |
+| `cbp/tools.py` | ~880 | 工具注册表与分派、路径沙箱/权限门、计划模式、工具分组（核心 mixin） |
+| `cbp/tools_files.py` | ~660 | 文件读写/替换/补丁/缩进/目录操作 |
+| `cbp/tools_exec.py` | ~95 | validate_python / run_unittest / run_code / run_python |
+| `cbp/tools_office.py` | ~200 | Excel / Word / PPT / PDF |
+| `cbp/tools_outlook.py` | ~250 | Outlook（COM + OWA 双后端） |
+| `cbp/tools_skills.py` | ~150 | 技能库 list/read/create |
+| `cbp/tools_memory.py` | ~80 | 长期记忆写入/检索/遗忘 |
+| `cbp/tools_self.py` | ~180 | 自升级读写/校验/单测/回滚 |
 | `cbp/session_store.py` | ~240 | SQLite 持久化、列迁移、状态机、统计与清理 |
 | `cbp/snapshots.py` | ~250 | 任务级快照：捕获原像、按根维度回滚、原子还原、保留策略 |
 | `cbp/copilot_delete.py` | ~600 | 侧栏会话删除：定位、同属校验、确认、对账补删、URL 级复核 |

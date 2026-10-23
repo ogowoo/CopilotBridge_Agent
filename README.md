@@ -870,7 +870,11 @@ start.py          服务入口
 install.py        依赖安装
 cbp/              核心包
   api.py            HTTP 路由层：FastAPI 应用与全部端点，只做请求/响应适配
-  bridge.py         配置、运行状态、回合编排与会话编排（facade 重导出各子模块）
+  bridge.py         配置、运行状态、工具装配与接线（facade 重导出各子模块）
+  agentrun.py       回合编排：run_agent 主流程、等回答、回合标记/缓存、待办同步
+  downloads.py      回答区下载解析与 copilot_file
+  workspace_files.py 工作区写文件/建目录/目录选择
+  research.py       深研任务、插件任务、扇出
   page.py           页面自动化：新对话、模型菜单、发消息、取回答/流式更新
   browser.py        浏览器生命周期与窗口池（多窗口并行、提供商逻辑槽）
   answer.py         回答解析：回合标记、噪声/思考占位剔除、服务不可用识别
@@ -881,7 +885,14 @@ cbp/              核心包
   copilot_delete.py Copilot 侧栏会话删除流程（URL 身份 + 标记同属校验 + 对账终验）
   owa.py            Outlook 网页版（OWA）自动化后端
   agent.py          Agent 主循环、JSON 动作协议、容错解析、压缩/换会话
-  tools.py          工作区工具集（路径沙箱、Office 文档、Outlook 路由）
+  tools.py          工具注册表/分派、路径沙箱与权限门（核心 mixin）
+  tools_files.py    文件读写/替换/补丁/缩进/目录操作
+  tools_exec.py     validate_python / run_unittest / run_code / run_python
+  tools_office.py   Excel / Word / PPT / PDF
+  tools_outlook.py  Outlook（COM + OWA）
+  tools_skills.py   技能库 list/read/create
+  tools_memory.py   长期记忆
+  tools_self.py     自升级（读写/校验/单测/回滚）
   providers.py      API 提供商接入层（OpenAI/DeepSeek/Kimi/Grok 等）
   session_store.py  SQLite 会话持久化、中断恢复、会话实测统计
   snapshots.py      改动前原像快照与任务级回滚（自我升级 failback）
