@@ -28,6 +28,7 @@ from cbp.tools import ToolRegistry
 
 APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
 BRIDGE = (BASE / "cbp" / "bridge.py").read_text(encoding="utf-8")
+SUBAGENTS = (BASE / "cbp" / "subagents.py").read_text(encoding="utf-8")
 EXTRA = (BASE / "cbp" / "tools_extra.py").read_text(encoding="utf-8")
 
 
@@ -131,21 +132,22 @@ class ExtraToolsActiveRegTests(unittest.TestCase):
 
 class SubagentRootTests(unittest.TestCase):
     def test_run_subagent_uses_task_root(self):
-        i = BRIDGE.index("async def run_subagent")
-        seg = BRIDGE[i:i + 1200]
-        self.assertIn("task_tools().root", seg)
+        # 子代理代码在 cbp/subagents.py（bridge.py 解耦后）
+        i = SUBAGENTS.index("async def run_subagent")
+        seg = SUBAGENTS[i:i + 1200]
+        self.assertIn("b.task_tools().root", seg)
         self.assertNotIn("parent_root = str(AGENT_TOOLS.root)", seg)
 
     def test_drive_child_gets_own_registry(self):
-        i = BRIDGE.index("async def _drive_child")
-        seg = BRIDGE[i:i + 6000]
-        self.assertIn("child_reg = task_tools().clone()", seg)
+        i = SUBAGENTS.index("async def _drive_child")
+        seg = SUBAGENTS[i:i + 6000]
+        self.assertIn("child_reg = b.task_tools().clone()", seg)
         self.assertIn("AgentRunner(child_reg", seg)
         self.assertIn("child_reg.set_root(", seg)
 
     def test_drive_child_does_not_reset_global_root(self):
-        i = BRIDGE.index("async def _drive_child")
-        seg = BRIDGE[i:i + 6000]
+        i = SUBAGENTS.index("async def _drive_child")
+        seg = SUBAGENTS[i:i + 6000]
         self.assertNotIn("AGENT_TOOLS.set_root(parent_root", seg)
 
     def test_snapshot_hook_uses_task_root(self):
