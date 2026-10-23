@@ -531,6 +531,9 @@ const SLASH_COMMANDS=[
    const tasks=String(arg||'').split('|').map(x=>x.trim()).filter(Boolean);
    if(tasks.length<2){toast(tr('用法：/fanout 任务1 | 任务2 | 任务3（至少两个）'),'err');return}
    fanoutNow(tasks)}},
+ {id:'audit',label:'audit',aliases:['audit','审计','对抗审计','review'],
+  desc:'对抗式审计：多名审计员 + 裁判核验，循环到只剩小问题',
+  run:(arg)=>{auditNow(arg)}},
  {id:'agent',label:'agent',aliases:['agent','执行'],
   desc:'切到 Agent 执行模式',run:()=>{setTaskMode('agent');toast(tr('已切到 Agent 执行'),'ok')}},
  {id:'chat',label:'chat',aliases:['chat','对话'],
@@ -683,6 +686,20 @@ async function fanoutNow(tasks){
         fail?'err':'ok');
   if(d.session_id) load(d.session_id);
  }catch(e){toast(tr('扇出失败: ')+e,'err')}
+}
+async function auditNow(arg){
+ let objective=String(arg||'').trim();
+ if(!objective){
+  objective=await dlgPrompt(tr('审计目标：要审什么改动/项目？（范围默认当前工作区）'),'',tr('开始审计'),tr('对抗式审计'));
+  if(objective==null)return;
+ }
+ try{
+  const d=await api('/v1/agent/audit',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({objective,model:currentModel||undefined})});
+  toast(tr('对抗式审计已启动'),'ok');
+  await refreshSessions();
+  if(d.session_id)await load(d.session_id);
+ }catch(e){toast(tr('审计启动失败: ')+((e&&(e.text||e.detail))||e),'err')}
 }
 function slashRun(text){
  const m=/^\/(\S+)\s*([\s\S]*)$/.exec(String(text||'').trim());

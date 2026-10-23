@@ -723,6 +723,23 @@ cbp fanout --task "审计 workspace/core" --task "审计 workspace/webui" --mode
 - 上限 8 个；`POST /v1/agent/fanout` 是同一能力，供脚本/CI 调用
 - 与"模型自己决定要不要用子代理"互补：提示词 + 运行时提示让它想起来，这个入口让它**必定发生**
 
+### 5.4.1 对抗式审计（多个审计员 + 裁判，循环到只剩小问题）
+
+`/audit 审计目标说明`（或对话框输入 `/audit` 回车）：后台开一个 `audit-*` 会话：
+
+1. **N 名审计员**（默认 3 个不同角度：正确性 / 健壮性 / 安全 / 一致性）各自只读审查，
+   只报「有证据」的问题（文件 + 行号 + 分级 p0/p1/p2），输出 JSON 清单；
+2. **裁判**亲自用 `read_text` 核验每条证据，合并去重、剔除误报、重新分级，
+   给出 verdict：`clean`（没有）/ `minor`（仅剩 p2）/ `major`（还有 p0/p1）；
+3. major 且开了自动修复（默认开）→ 派一个修复子代理逐个修（最小改动 + 验证闭环），
+   再进入下一轮；**直至 clean/minor 或轮次用完**（默认 3 轮，上限 8）；
+4. 每轮报告与最终汇总写进审计会话的消息里（点开会话就能看）。
+
+网页通道顺序执行（窗口数 1 时不抢父窗口）；提供商通道按 `agent.subagent_parallel` 并行。
+
+HTTP：`POST /v1/agent/audit {objective, target?, auditors?, max_rounds?, auto_fix?, model?}`
+后台执行，返回 `{session_id, started}`。
+
 ### 5.4 子代理：新建 / 继续 / 分叉
 
 | 工具 | 作用 |

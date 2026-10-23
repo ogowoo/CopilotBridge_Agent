@@ -865,6 +865,40 @@ async def agent_fanout(payload: dict | None = None):
         raise HTTPException(400, str(exc))
 
 
+@app.post("/v1/agent/audit")
+async def agent_audit(payload: dict | None = None):
+    """对抗式审计：多名审计员 + 裁判核验，循环到只剩小问题（后台跑，返回会话 id）。
+
+    {objective, target?, auditors?, max_rounds?, auto_fix?, model?}
+    结果与每轮报告写进 `audit-*` 会话（消息 + 步骤），前端刷新会话即可看到进度。
+    """
+    data = payload or {}
+    objective = str(data.get("objective") or data.get("task") or "").strip()
+    if not objective:
+        raise HTTPException(400, "objective 不能为空（审计目标/说明）")
+    sid = "audit-" + uuid.uuid4().hex[:10]
+    ws = str(b.AGENT_TOOLS.root)
+    b.AGENT_SESSIONS.create(sid, "对抗式审计: " + objective[:80], ws,
+                            str(data.get("model") or b.DEFAULT_MODEL))
+
+    async def _run():
+        tok = b._SESSION_CTX.set(sid)
+        try:
+            await b.adversarial_audit(
+                target=str(data.get("target") or ""), objective=objective,
+                auditors=int(data.get("auditors") or 3),
+                max_rounds=int(data.get("max_rounds") or 3),
+                auto_fix=bool(data.get("auto_fix", True)),
+                model=str(data.get("model") or ""), session_id=sid)
+        except Exception as exc:
+            b.AGENT_SESSIONS.patch(sid, state="failed", last_error=str(exc))
+        finally:
+            b._SESSION_CTX.reset(tok)
+
+    asyncio.create_task(_run())
+    return {"session_id": sid, "started": True}
+
+
 @app.get("/v1/agent/subagents")
 async def list_subagents(parent: str | None = None, limit: int = 50):
     """子代理列表：id / 任务 / 状态 / 进度 / 父会话（供 WebUI 子代理面板）。"""
