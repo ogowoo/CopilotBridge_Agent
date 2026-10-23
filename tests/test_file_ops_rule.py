@@ -30,9 +30,13 @@ class FileToolsArePurePythonTests(unittest.TestCase):
     SPAWN_ATTRS = {"create_subprocess_exec", "create_subprocess_shell", "run", "Popen",
                    "call", "check_output", "system", "popen"}
 
+    # 文件工具已拆到 cbp/tools_files.py（tools.py 第四批解耦），两处都要查
+    SOURCES = ("tools.py", "tools_files.py")
+
     def _tree(self):
         import ast
-        return ast.parse((BASE / "cbp" / "tools.py").read_text(encoding="utf-8"))
+        return [ast.parse((BASE / "cbp" / name).read_text(encoding="utf-8"))
+                for name in self.SOURCES]
 
     def test_file_tools_never_spawn_a_process(self):
         import ast
@@ -41,40 +45,43 @@ class FileToolsArePurePythonTests(unittest.TestCase):
                    "find_files", "make_directory", "copy_path", "move_path", "delete_path",
                    "grep"}
         offenders = []
-        for node in ast.walk(self._tree()):
-            if not isinstance(node, ast.FunctionDef) or node.name not in targets:
-                continue
-            for sub in ast.walk(node):
-                if isinstance(sub, ast.Attribute) and sub.attr in self.SPAWN_ATTRS:
-                    offenders.append(f"{node.name} -> .{sub.attr}")
-                if isinstance(sub, ast.Import):
-                    for a in sub.names:
-                        if a.name.split(".")[0] in ("subprocess",):
-                            offenders.append(f"{node.name} -> import {a.name}")
+        for tree in self._tree():
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.FunctionDef) or node.name not in targets:
+                    continue
+                for sub in ast.walk(node):
+                    if isinstance(sub, ast.Attribute) and sub.attr in self.SPAWN_ATTRS:
+                        offenders.append(f"{node.name} -> .{sub.attr}")
+                    if isinstance(sub, ast.Import):
+                        for a in sub.names:
+                            if a.name.split(".")[0] in ("subprocess",):
+                                offenders.append(f"{node.name} -> import {a.name}")
         self.assertEqual(offenders, [], f"文件工具里出现了进程调用: {offenders}")
 
     def test_no_powershell_program_passed_to_exec(self):
         import ast
         bad = []
-        for node in ast.walk(self._tree()):
-            if not isinstance(node, ast.Call):
-                continue
-            fname = ""
-            if isinstance(node.func, ast.Attribute):
-                fname = node.func.attr
-            elif isinstance(node.func, ast.Name):
-                fname = node.func.id
-            if fname not in self.SPAWN_ATTRS:
-                continue
-            for arg in node.args[:2]:
-                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                    low = arg.value.lower()
-                    if "powershell" in low or low.endswith("pwsh") or "/pwsh" in low:
-                        bad.append(arg.value[:60])
+        for tree in self._tree():
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                fname = ""
+                if isinstance(node.func, ast.Attribute):
+                    fname = node.func.attr
+                elif isinstance(node.func, ast.Name):
+                    fname = node.func.id
+                if fname not in self.SPAWN_ATTRS:
+                    continue
+                for arg in node.args[:2]:
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        low = arg.value.lower()
+                        if "powershell" in low or low.endswith("pwsh") or "/pwsh" in low:
+                            bad.append(arg.value[:60])
         self.assertEqual(bad, [], f"有子进程调用 PowerShell: {bad}")
 
     def test_file_tools_use_pathlib_with_explicit_utf8(self):
-        src = (BASE / "cbp" / "tools.py").read_text(encoding="utf-8")
+        src = "".join((BASE / "cbp" / name).read_text(encoding="utf-8")
+                      for name in self.SOURCES)
         # 写/读必须显式指定编码，否则中文在 GBK 机器上会乱码
         self.assertIn('encoding="utf-8"', src)
         self.assertIn("newline=", src,
