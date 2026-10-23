@@ -93,6 +93,17 @@ class JapaneseAnswerExtractionTests(unittest.TestCase):
         # 没有 assistant 锚点：返回空，由上层走超时/诊断，而不是把问题当答案
         self.assertEqual(b.extract_latest_answer(body), "")
 
+    def test_status_placeholder_and_footer_not_answer(self):
+        """日文界面的“まとめています…”是状态占位，不是回答。"""
+        body = (
+            "あなたの発言:\n「收到」とだけ答えて\n\n"
+            "Copilot の回答:\nまとめています…\n\n"
+            "Copilot にメッセージを送信する\n"
+            "AI で生成されたコンテンツは誤りを含む可能性があります。\n"
+        )
+        answer = b.extract_latest_answer(body)
+        self.assertEqual(b._clean_answer(answer), "")
+
 
 class JapanesePatternTests(unittest.TestCase):
     def test_unavailable_matches_japanese(self):

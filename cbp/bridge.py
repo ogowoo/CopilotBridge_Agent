@@ -38,19 +38,22 @@ DIAG = bool(CFG.get("diagnostics", True))
 # displays different wording.
 MODELS = {
     "copilot-auto": {
-        "ui_names": ["Auto", "自动"],
+        "ui_names": ["Auto", "自动", "自動"],
         "description": "由 Microsoft 365 Copilot 自动选择回答模式",
         "description_en": "Let Microsoft 365 Copilot pick the response mode",
     },
     "copilot-quick-response": {
-        "ui_names": ["Quick response", "Quick", "快速响应", "快速"],
+        "ui_names": ["Quick response", "Quick", "快速响应", "快速",
+                     "快速回應", "クイック応答", "簡単な応答", "迅速な応答"],
         "description": "优先快速响应",
         "description_en": "Prefer fast responses",
     },
     "copilot-think-deeper": {
-        # 中文界面实测是「深度思考」，不是「深入思考」；两种都保留，
-        # 避免换语言/换租户后模型选择静默回退到 Auto。
-        "ui_names": ["Think deeper", "Think Deeper", "深度思考", "深入思考"],
+        # 中文界面实测是「深度思考」，不是「深入思考」；日文界面是「深く考える」。
+        # 多语言变体都保留，避免换语言/换租户后模型选择静默回退到 Auto。
+        "ui_names": ["Think deeper", "Think Deeper", "深度思考", "深入思考",
+                     "更深入思考", "深く考える", "より深く考える",
+                     "深い思考", "思考を深める"],
         "description": "使用更深入的推理模式",
         "description_en": "Use deeper reasoning mode",
     },
@@ -131,7 +134,8 @@ MARKERS = {
                   "你說:", "你說：", "您說:", "您說：", "使用者:", "使用者：",
                   "你的發言:", "你的發言：", "您的發言:", "您的發言："],
     "answer_end": ["\nSources\n", "\n出典\n", "\n参考資料\n", "\nMessage Copilot\n",
-                   "\nCopilot へのメッセージ\n", "\nメッセージを入力\n",
+                   "\nCopilot へのメッセージ\n", "\nCopilot にメッセージを送信する\n",
+                   "\nメッセージを入力\n",
                    "\n向 Copilot 发送消息\n", "\n向 Copilot 发送訊息\n",
                    "\n向 Copilot 傳送訊息\n", "\n发消息给 Copilot\n",
                    "\n来源\n", "\n來源\n", "\n傳送訊息給 Copilot\n", "\n訊息 Copilot\n",
@@ -140,6 +144,8 @@ MARKERS = {
                    "AI-generated content may be incorrect",
                    "AI 生成的内容可能不正确", "AI 生成的内容可能不准确",
                    "AI によって生成されたコンテンツは正しくない可能性があります",
+                   "AI で生成されたコンテンツは誤りを含む可能性があります",
+                   "AI で生成されたコンテンツは誤りを含む可能性があります。",
                    "AI 產生的內容可能不正確", "AI 產生的內容可能不正確。"],
     "sources": ["Sources", "出典", "参考資料", "ソース", "来源", "來源", "參考資料", "相關資訊"],
     "ignored_lines": ["Copy", "Like", "Dislike", "More", "Share", "Regenerate",

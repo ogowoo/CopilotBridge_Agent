@@ -145,6 +145,7 @@ async def model_button():
         button = await b.visible_locator([
             b.page.locator('button[aria-label*="Model Selector" i]'),
             b.page.locator('button[aria-label*="模型"][aria-haspopup]'),
+            b.page.locator('button[aria-label*="モデル"][aria-haspopup]'),
             b.page.locator('button[aria-label*="model" i][aria-haspopup="menu"]'),
             b.page.locator('button[aria-label*="model" i][aria-haspopup="listbox"]'),
         ])

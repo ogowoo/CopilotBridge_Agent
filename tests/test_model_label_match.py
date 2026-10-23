@@ -54,9 +54,9 @@ class RegistryTests(unittest.TestCase):
         cases = {
             "copilot-gpt-5-6-sol-think-deeper": ["GPT-5.6 Sol Think", "GPT-5.6 Sol Think deeper"],
             "copilot-gpt-5-6-sol-quick-response": ["GPT-5.6 Sol Quick"],
-            "copilot-auto": ["Auto", "自动"],
-            "copilot-quick-response": ["Quick response", "快速响应"],
-            "copilot-think-deeper": ["Think deeper", "深度思考", "深入思考"],
+            "copilot-auto": ["Auto", "自动", "自動"],
+            "copilot-quick-response": ["Quick response", "快速响应", "クイック応答"],
+            "copilot-think-deeper": ["Think deeper", "深度思考", "深入思考", "深く考える"],
         }
         for mid, labels in cases.items():
             names = MODELS[mid]["ui_names"]

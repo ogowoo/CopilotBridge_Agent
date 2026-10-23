@@ -155,6 +155,8 @@ async def conversation_full_check() -> str:
 _ANSWER_NOISE = (
     "Press Tab to access the More options button.",
     "按 Tab 访问“更多选项”按钮。",
+    "按 Tab 鍵以存取 [其他選項] 按鈕。",
+    "Tab キーを押して [その他のオプション] ボタンにアクセスします。",
     "Press Tab to access the More options",
 )
 
@@ -167,6 +169,9 @@ _THINKING_PHRASES = (
     "checking that now", "lining things up", "gathering details", "just a sec",
     "give me a moment", "working on it", "one moment", "hold on",
     "正在查找", "正在整理", "正在准备", "正在思考", "稍等一下", "请稍等",
+    "まとめています", "考えています", "準備しています", "確認しています",
+    "処理しています", "作成しています", "生成しています",
+    "少々お待ちください", "お待ちください",
 )
 
 
