@@ -283,7 +283,9 @@ def _state_keys_are_persistable() -> None:
         raise InvariantError("allowed 白名单解析异常（过少）")
 
     checked = 0
-    for fname in ("agent.py", "bridge.py", "api.py"):
+    for fname in ("agent.py", "bridge.py", "api.py",
+                     "routes_core.py", "routes_config.py",
+                     "routes_agents.py", "routes_sessions.py"):
         tree = ast.parse((HERE / fname).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -386,7 +388,9 @@ def _api_calls_exist_on_store() -> None:
     """
     from .session_store import SessionStore
 
-    src = (HERE / "api.py").read_text(encoding="utf-8")
+    src = "".join((HERE / f).read_text(encoding="utf-8") for f in
+                ("api.py", "routes_core.py", "routes_config.py",
+                 "routes_agents.py", "routes_sessions.py"))
     names = set(re.findall(r"AGENT_SESSIONS\.([a-z_]+)\(", src))
     if not names:
         raise InvariantError("未在 api.py 里解析到 AGENT_SESSIONS 调用（正则失效？）")
@@ -438,7 +442,8 @@ def _ui_assets_whitelisted() -> None:
     """
     web = ROOT / "webui"
     html = (web / "index.html").read_text(encoding="utf-8")
-    api = (HERE / "api.py").read_text(encoding="utf-8")
+    api = "".join((HERE / f).read_text(encoding="utf-8") for f in
+                ("api.py", "routes_core.py"))  # /ui/{asset} 端点已拆到 routes_core.py
     m = re.search(r'if asset not in \(([^)]*)\):', api)
     if not m:
         raise InvariantError("api.py 里找不到 /ui/{asset} 白名单")
@@ -527,7 +532,9 @@ def _backend_errors_translated() -> None:
     """
     from . import i18n as backend_i18n
 
-    src = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
+    src = "".join((ROOT / "cbp" / f).read_text(encoding="utf-8") for f in
+                ("api.py", "routes_core.py", "routes_config.py",
+                 "routes_agents.py", "routes_sessions.py"))
     msgs = re.findall(r'HTTPException\(\s*\d{3}\s*,\s*"([^"]+)"', src)
     # 纯英文/无中文的（如 "Not Found"）不需要翻译
     cjk = [m for m in msgs if re.search(r"[\u4e00-\u9fff]", m)]

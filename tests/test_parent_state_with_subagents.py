@@ -35,7 +35,7 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 STORE = (BASE / "cbp" / "session_store.py").read_text(encoding="utf-8")
-API = (BASE / "cbp" / "api.py").read_text(encoding="utf-8")
+API = ((BASE / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
 
 from cbp.session_store import SessionStore  # noqa: E402
@@ -102,7 +102,7 @@ class RunningCountTests(unittest.TestCase):
 class ApiAndFrontendTests(unittest.TestCase):
     def test_api_exposes_subagent_running(self):
         self.assertIn('"subagent_running"', API)
-        i = API.index('@app.get("/v1/agent/sessions")')
+        i = API.index('@router.get("/v1/agent/sessions")')  # 端点已拆到 routes_sessions.py
         seg = API[i:i + 1800]
         self.assertTrue("subagent_totals_all" in seg or "subagent_summary_by_parent" in seg,
                         "列表端点要批量补子代理状态，否则侧栏徽标永远是绿色")

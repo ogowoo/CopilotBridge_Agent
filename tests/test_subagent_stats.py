@@ -28,7 +28,7 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
-API = (BASE / "cbp" / "api.py").read_text(encoding="utf-8")
+API = ((BASE / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 STORE = (BASE / "cbp" / "session_store.py").read_text(encoding="utf-8")
 
 
@@ -85,7 +85,7 @@ class ApiExposureTests(unittest.TestCase):
             self.assertIn(f'"{key}"', API, f"runtime 快照缺 {key}")
 
     def test_session_detail_merges_totals(self):
-        i = API.index('@app.get("/v1/agent/sessions/{sid}")')
+        i = API.index('@router.get("/v1/agent/sessions/{sid}")')  # 端点已拆到 routes_sessions.py
         seg = API[i:i + 1400]
         self.assertIn("subagent_stats", seg)
         self.assertIn('x["subagent_steps"]', seg)

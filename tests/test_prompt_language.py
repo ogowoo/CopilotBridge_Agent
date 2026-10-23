@@ -28,7 +28,7 @@ sys.path.insert(0, str(BASE))
 from cbp import prompt, prompt_lang  # noqa: E402
 from cbp.s2t_data import S2T  # noqa: E402
 
-API = (BASE / "cbp" / "api.py").read_text(encoding="utf-8")
+API = ((BASE / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 AGENT = (BASE / "cbp" / "agent.py").read_text(encoding="utf-8")
 
 

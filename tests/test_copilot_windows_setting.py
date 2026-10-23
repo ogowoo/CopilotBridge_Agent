@@ -18,12 +18,12 @@ class WindowsSettingTests(unittest.TestCase):
         self.assertEqual(spec["group"], "exec")
 
     def test_post_config_applies_to_pool(self):
-        src = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
+        src = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
         self.assertIn("agent.copilot_windows", src)
         self.assertIn("WINDOWS.set_max", src, "保存后必须立刻生效")
 
     def test_runtime_exposes_windows(self):
-        src = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
+        src = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
         self.assertIn('"windows": b.WINDOWS.stats()', src)
         # 会话是否在跑要看"窗口池 + 逻辑槽"（提供商任务不占窗口，只看 WINDOWS 会漏判）
         self.assertIn("b.session_running(sid)", src)

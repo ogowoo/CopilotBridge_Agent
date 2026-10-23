@@ -23,7 +23,7 @@ class ImportSideEffectTests(unittest.TestCase):
                              "模块级的 AGENT_SESSIONS.recover_interrupted() 会污染任何 import")
 
     def test_recover_runs_in_lifespan(self):
-        src = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
+        src = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
         i = src.find("async def lifespan(")
         j = src.find("\n@app", i) if i > 0 else -1
         body = src[i:j if j > 0 else i + 4000]

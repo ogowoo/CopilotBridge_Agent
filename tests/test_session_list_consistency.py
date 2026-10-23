@@ -27,7 +27,7 @@ sys.path.insert(0, str(BASE))
 
 APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
 HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
-API = (BASE / "cbp" / "api.py").read_text(encoding="utf-8")
+API = ((BASE / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 STORE = (BASE / "cbp" / "session_store.py").read_text(encoding="utf-8")
 
 

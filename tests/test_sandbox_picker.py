@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-API = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
+API = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 HTML = (ROOT / "webui" / "index.html").read_text(encoding="utf-8")
 APP = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
 I18N = (ROOT / "webui" / "i18n.js").read_text(encoding="utf-8")
@@ -24,8 +24,8 @@ class BackendContractTests(unittest.TestCase):
                          ("read-only", "workspace-write", "danger-full-access"))
 
     def test_endpoints_exist_and_validate(self):
-        self.assertIn('@app.get("/v1/agent/sandbox")', API)
-        self.assertIn('@app.post("/v1/agent/sandbox")', API)
+        self.assertIn('@router.get("/v1/agent/sandbox")', API)
+        self.assertIn('@router.post("/v1/agent/sandbox")', API)
         self.assertIn("mode 必须是", API, "非法档位要被拒绝")
         self.assertIn("persist", API, "要能落库")
 

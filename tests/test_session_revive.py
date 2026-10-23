@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-API = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
+API = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 PROV = (ROOT / "cbp" / "providers.py").read_text(encoding="utf-8")
 
 

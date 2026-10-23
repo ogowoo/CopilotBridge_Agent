@@ -27,7 +27,7 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
-API = (BASE / "cbp" / "api.py").read_text(encoding="utf-8")
+API = ((BASE / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
 I18N = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
 _RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")

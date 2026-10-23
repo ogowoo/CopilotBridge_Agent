@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-API = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
+API = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 HTML = (ROOT / "webui" / "index.html").read_text(encoding="utf-8")
 APP = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
 I18N = (ROOT / "webui" / "i18n.js").read_text(encoding="utf-8")
@@ -17,8 +17,8 @@ I18N = (ROOT / "webui" / "i18n.js").read_text(encoding="utf-8")
 
 class ConfigEndpointTests(unittest.TestCase):
     def test_routes_exist(self):
-        self.assertIn('@app.get("/v1/config")', API)
-        self.assertIn('@app.post("/v1/config")', API)
+        self.assertIn('@router.get("/v1/config")', API)
+        self.assertIn('@router.post("/v1/config")', API)
 
     def test_schema_is_whitelist(self):
         """只允许改白名单里的键；未知键必须被拒绝。"""

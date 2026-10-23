@@ -34,7 +34,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
 BRIDGE = (BASE / "cbp" / "bridge.py").read_text(encoding="utf-8")
-API = (BASE / "cbp" / "api.py").read_text(encoding="utf-8")
+API = ((BASE / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 
 
 class BackendClearsQuestionTests(unittest.TestCase):
@@ -46,7 +46,7 @@ class BackendClearsQuestionTests(unittest.TestCase):
                       "回答/超时后必须把 question 清掉，否则前端轮询会把提问条重画")
 
     def test_answer_endpoint_clears_question(self):
-        i = API.index('@app.post("/v1/agent/sessions/{sid}/answer")')
+        i = API.index('@router.post("/v1/agent/sessions/{sid}/answer")')  # 端点已拆到 routes_sessions.py
         seg = API[i:i + 1200]
         self.assertIn("question=None", seg, "/answer 成功必须立即清 question")
         # 404 分支也要清（陈旧字段），否则用户只能靠刷新页面
