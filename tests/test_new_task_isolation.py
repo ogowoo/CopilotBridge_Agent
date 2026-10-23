@@ -16,7 +16,9 @@ sys.path.insert(0, str(ROOT))
 class NewTaskIsolationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.src = (ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
+        # 页面自动化层已拆到 cbp/page.py（bridge.py 第三批解耦）
+        cls.src = ((ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
+                   + (ROOT / "cbp" / "page.py").read_text(encoding="utf-8"))
 
     def test_first_turn_declares_new_task(self):
         self.assertIn("【新任务】忽略此前任何对话的话题与进度", self.src)

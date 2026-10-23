@@ -23,7 +23,9 @@ sys.path.insert(0, str(BASE))
 
 from cbp import bridge as b
 
-BRIDGE = (BASE / "cbp" / "bridge.py").read_text(encoding="utf-8")
+# 页面自动化层已拆到 cbp/page.py（bridge.py 第三批解耦），源码断言两处一起读
+BRIDGE = ((BASE / "cbp" / "bridge.py").read_text(encoding="utf-8")
+          + (BASE / "cbp" / "page.py").read_text(encoding="utf-8"))
 
 
 class JapaneseMarkersTests(unittest.TestCase):

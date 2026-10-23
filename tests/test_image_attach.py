@@ -33,7 +33,9 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
-BRIDGE = (BASE / "cbp" / "bridge.py").read_text(encoding="utf-8")
+# 页面自动化层已拆到 cbp/page.py（bridge.py 第三批解耦）
+BRIDGE = ((BASE / "cbp" / "bridge.py").read_text(encoding="utf-8")
+          + (BASE / "cbp" / "page.py").read_text(encoding="utf-8"))
 
 
 class CacheKeyTests(unittest.TestCase):

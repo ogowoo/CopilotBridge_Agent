@@ -9,7 +9,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 POOL = (ROOT / "cbp" / "window_pool.py").read_text(encoding="utf-8")
-BRIDGE = (ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
+# 浏览器/窗口池层已拆到 cbp/browser.py（bridge.py 第三批解耦），源码断言两处一起读
+BRIDGE = ((ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
+          + (ROOT / "cbp" / "browser.py").read_text(encoding="utf-8"))
 API = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
 
 
