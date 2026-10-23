@@ -113,6 +113,35 @@ def copilot_unavailable_reason(text: str) -> str:
     return ""
 
 
+# Copilot 许可证/订阅不可用：不是限流，也不是回答格式问题，重试没有意义。
+# 识别后直接给出可操作提示，避免用户只看到“页面没反应/超时”。
+LICENSE_PATTERNS = [
+    r"don'?t have (?:a |an )?licen[cs]e",
+    r"do not have (?:a |an )?licen[cs]e",
+    r"no (?:valid )?licen[cs]e",
+    r"not licensed",
+    r"licen[cs]e (?:is )?(?:required|needed|expired|invalid|not available)",
+    r"copilot (?:is )?not (?:available|included).{0,80}licen[cs]e",
+    r"your (?:current )?licen[cs]e.{0,80}(?:does not|doesn't|not).{0,40}(?:include|support)",
+    r"没有.{0,20}(?:许可证|授权|授權)",
+    r"(?:许可证|授權|授權).{0,20}(?:过期|過期|无效|無效|不支持|不支援|不可用)",
+    r"ライセンス.{0,40}(?:ありません|が必要|が無効|が期限切れ|がありません)",
+    r"ライセンスが(?:見つかりません|不足しています)",
+]
+
+
+def license_reason(text: str) -> str:
+    """返回许可证提示原文片段；空字符串表示没有命中。"""
+    value = re.sub(r"\s+", " ", (text or "").strip())
+    if not value or len(value) > 600:
+        return ""
+    for pattern in LICENSE_PATTERNS:
+        m = re.search(pattern, value, re.I)
+        if m:
+            return value[max(0, m.start() - 40):m.end() + 80][:240]
+    return ""
+
+
 # Copilot 对话长度达到上限的典型提示（英文/中文/日文）。命中后的正确处理是
 # 切换新会话，而不是原地重试，因此与服务限流分开识别。
 CONVERSATION_FULL_PATTERNS = [

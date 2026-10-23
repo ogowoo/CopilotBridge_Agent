@@ -1021,7 +1021,8 @@ async def periodic_session_cleanup():
 from .answer import (  # noqa: F401
     _last_turn, _ANSWER_NOISE, _THINKING_PHRASES, _strip_thinking, _clean_answer,
     _echo_only, _has_complete_agent_action, COPILOT_UNAVAILABLE_PATTERNS,
-    copilot_unavailable_reason, CONVERSATION_FULL_PATTERNS, conversation_full_reason,
+    copilot_unavailable_reason, LICENSE_PATTERNS, license_reason,
+    CONVERSATION_FULL_PATTERNS, conversation_full_reason,
     conversation_full_check, extract_latest_answer, _status_before_marker,
     strip_suggestion_tail,
 )

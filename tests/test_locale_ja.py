@@ -14,6 +14,7 @@
 
 本文件用假页面文本验证日文锚点能命中，不依赖真实浏览器。
 """
+import asyncio
 import sys
 import unittest
 from pathlib import Path
@@ -22,6 +23,7 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 from cbp import bridge as b
+from cbp import page as p
 
 # 页面自动化层已拆到 cbp/page.py（bridge.py 第三批解耦），源码断言两处一起读
 BRIDGE = ((BASE / "cbp" / "bridge.py").read_text(encoding="utf-8")
@@ -54,7 +56,7 @@ class JapaneseMarkersTests(unittest.TestCase):
 
     def test_new_chat_uses_selector_text(self):
         i = BRIDGE.index("async def new_chat")
-        seg = BRIDGE[i:i + 700]
+        seg = BRIDGE[i:i + 3000]
         self.assertIn('SELECTOR_TEXT["new_chat"]', seg)
 
     def test_dismiss_uses_selector_text(self):
@@ -113,6 +115,27 @@ class JapanesePatternTests(unittest.TestCase):
     def test_conversation_full_matches_japanese(self):
         self.assertTrue(b.conversation_full_reason("会話が長くなりすぎました。新しい会話を開始してください。"))
         self.assertFalse(b.conversation_full_reason("正常な回答です。"))
+
+
+class ChatSurfaceTests(unittest.TestCase):
+    """Notebooks 页面不能被误判成“空聊天页”。"""
+
+    def _run(self, text):
+        async def fake_body_text():
+            return text
+        orig = b.body_text
+        b.body_text = fake_body_text
+        try:
+            return asyncio.run(p._chat_surface_ready())
+        finally:
+            b.body_text = orig
+
+    def test_notebook_page_is_not_chat(self):
+        self.assertFalse(self._run(
+            "Notebooks\nSuggested notebooks\nNo suggestions yet\nCreate new"))
+
+    def test_chat_page_is_chat(self):
+        self.assertTrue(self._run("What can I help with?\n\nMessage Copilot"))
 
 
 if __name__ == "__main__":

@@ -58,17 +58,52 @@ async def dismiss():
             pass
 
 
+_CHAT_SURFACE_HINTS = (
+    "Message Copilot", "What can I help with?",
+    "向 Copilot 发送消息", "传消息给 Copilot",
+    "傳送訊息給 Copilot", "向 Copilot 傳送訊息",
+    "Copilot にメッセージを送信する",
+    "嗨，我能提供什麼協助", "何かお手伝いできることはありますか",
+)
+_NOTEBOOK_SURFACE_HINTS = (
+    "Suggested notebooks", "No suggestions yet",
+    "建議的筆記本", "尚無建議", "推薦的筆記本",
+    "推奨されるノートブック", "おすすめのノートブックはありません",
+)
+
+
+async def _chat_surface_ready() -> bool:
+    """当前主区域是不是聊天页（而不是 Notebooks / Library 等）。
+
+    Copilot 左侧导航切到 Notebooks 后，URL 仍可能是 /chat/，且页面上没有
+    任何 "You said:"，原来的 _empty() 会误判为“已在新对话”。这里同时检查
+    聊天输入区文案与 Notebooks 特征，避免把任务发进笔记本页面。
+    """
+    try:
+        text = await b.body_text()
+    except Exception:
+        return False
+    if any(x in text for x in _NOTEBOOK_SURFACE_HINTS):
+        return False
+    return any(x in text for x in _CHAT_SURFACE_HINTS)
+
+
 async def new_chat():
-    """开一个空对话。**必须验证真的空了**。
+    """开一个空对话。**必须验证真的空了，而且真的在聊天页**。
 
     实测（task-316f6502774b）：新任务第一轮 prompt 里明明是新任务（建 ok.txt），
     模型却接着另一条"pyshot 快捷键"对话的思路去读 pyshot/main.py。
     说明点"New chat"之后页面并没有变成空对话——后续 prompt 落在了旧上下文里，
     任务被"串"到上一条对话上（用户："为什么会窜到 pyshot 里的？"）。
+
+    实测（2026-10）：左侧导航切到 Notebooks 后 URL 仍是 /chat/，且没有
+    "You said:"，_empty() 误判为已在新对话 → 任务被发进笔记本页面。
+    因此 _empty() 同时要求“没有用户回合”+“主区域是聊天页”。
     """
     async def _empty() -> bool:
         try:
-            return await b.count_user_markers() == 0
+            return (await b.count_user_markers() == 0
+                    and await _chat_surface_ready())
         except Exception:
             return False
 
@@ -76,6 +111,9 @@ async def new_chat():
         [f'button[aria-label*="{t}" i]' for t in b.SELECTOR_TEXT["new_chat"]]
         + [f'a[aria-label*="{t}" i]' for t in b.SELECTOR_TEXT["new_chat"]]
         + [f'button:has-text("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
+        + [f'a:has-text("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
+        + [f'[role="link"]:has-text("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
+        + [f'[role="button"]:has-text("{t}")' for t in b.SELECTOR_TEXT["new_chat"]]
     )
     if btn:
         await btn.click()
@@ -85,8 +123,8 @@ async def new_chat():
         await asyncio.sleep(2)
 
     if not await _empty():
-        # 点击没生效 / 页面被复用：直接回基础地址重试一次
-        b.log("新建对话后页面仍有历史消息，回基础地址重试")
+        # 点击没生效 / 页面被复用 / 仍在 Notebooks：回基础地址重试一次
+        b.log("新建对话后页面仍不是空聊天页（可能在 Notebooks 或旧会话），回基础地址重试")
         try:
             await b.page.goto(b.URL, wait_until="domcontentloaded", timeout=120000)
         except Exception:
@@ -97,8 +135,8 @@ async def new_chat():
                 break
     if not await _empty():
         raise b.CopilotSendFailed(
-            "新对话未创建成功（页面仍在旧会话）：已中止，避免把新任务接到上一条对话的上下文里。"
-            "请点『重试浏览器』或稍后再试。")
+            "新对话未创建成功（页面仍在旧会话或 Notebooks）：已中止，避免把新任务接到"
+            "错误页面的上下文里。请点『重试浏览器』或稍后再试。")
     # 新聊天会把模型重置为 Copilot 默认（Auto）：缓存记为 copilot-auto，
     # 注意这是页面行为而非我们的 default_model 配置。
     b._forget_selected_model(reset_to="copilot-auto")
@@ -1118,6 +1156,15 @@ async def send(prompt, make_new, model_id):
         raise b.CopilotSendFailed(
             "Copilot 未就绪（未登录或页面未加载完）：本轮无法发送。"
             "请在自动化浏览器窗口登录 Copilot，或改用提供商模型后重试。")
+    try:
+        _license = b.license_reason(await b.body_text())
+    except Exception:
+        _license = ""
+    if _license:
+        raise RuntimeError(
+            "Microsoft 365 Copilot 许可证不可用：" + _license +
+            "。请确认自动化浏览器当前登录的账号已分配 Copilot 许可证"
+            "（不是 Copilot Chat Basic）；换有许可证的账号后重试。")
     await b.dismiss()
     if make_new:
         await b.new_chat()

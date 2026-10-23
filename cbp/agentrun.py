@@ -86,6 +86,13 @@ async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_chec
             if unavailable and quiet_for >= max(1.0, b.POLL * 3):
                 await b.diagnostics("copilot_service_unavailable")
                 raise b.CopilotRateLimited(unavailable)
+            _license = b.license_reason(current)
+            if _license and quiet_for >= max(1.0, b.POLL * 3):
+                await b.diagnostics("copilot_license_missing")
+                raise RuntimeError(
+                    "Microsoft 365 Copilot 许可证不可用：" + _license +
+                    "。请确认自动化浏览器当前登录的账号已分配 Copilot 许可证"
+                    "（不是 Copilot Chat Basic）；换有许可证的账号后重试。")
             # 无法解析的回答有可能是"暂歇"而非写完：Copilot 生成 JSON 中途停顿
             # （渲染文件链接、网络抖动）时，3 秒静默就取快照会拿到半截文本，上层
             # 只能报 invalid_action——实测就发生过：界面上答案完整（final JSON），
