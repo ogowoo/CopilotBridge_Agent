@@ -148,16 +148,6 @@ for key, extra in CFG.get("markers", {}).items():
                 if isinstance(value, str) and value and value not in SELECTOR_TEXT[key]:
                     SELECTOR_TEXT[key].append(value)
 
-
-def _last_turn(text: str, markers: list) -> tuple:
-    """Return (position, length) of the last occurring marker, or (-1, 0)."""
-    best_pos, best_len = -1, 0
-    for marker in markers:
-        pos = text.rfind(marker)
-        if pos > best_pos:
-            best_pos, best_len = pos, len(marker)
-    return best_pos, best_len
-
 pw = ctx = None
 _PAGE_RAW = None          # 共享页（窗口 0，启动时创建）
 lock = asyncio.Lock()      # 兼容保留：仅作"有任务在跑"的旧式标记，不再用于串行
@@ -1418,25 +1408,6 @@ async def body_text_raw():
         return ""
 
 
-def extract_latest_answer(text):
-    # Select only the final Copilot said block to avoid sidebar/history text.
-    pos, marker_len = _last_turn(text or "", MARKERS["assistant_turn"])
-    if pos < 0:
-        return ""
-    answer = text[pos + marker_len:]
-    positions = [answer.find(m) for m in MARKERS["answer_end"] if answer.find(m) >= 0]
-    if positions:
-        answer = answer[:min(positions)]
-    ignored = set(MARKERS["ignored_lines"])
-    lines = []
-    for line in answer.splitlines():
-        line = line.rstrip()
-        if line.strip() in ignored:
-            continue
-        lines.append(line)
-    return "\n".join(lines).strip()
-
-
 async def _wait_dom_stable(timeout: float = 8.0, interval: float = 0.6) -> None:
     """等答案区域的 DOM 稳定。
 
@@ -1508,20 +1479,6 @@ async def answer_markdown(plain: str = "") -> str:
         return md
     except Exception:
         return ""
-
-
-def _status_before_marker(text: str) -> str:
-    """回答区上方那行"状态气泡"文本（Copilot 会把思考状态同时渲染在答案上方）。
-
-    这是判断"占位文本不是答案"的**结构信号**：状态短语会轮换（Checking that now… /
-    Lining things up… / Digging in… …），穷举不可靠，但"回答区上方最后一行"与
-    "Copilot said: 后面那行"相同，就说明答案还没开始。
-    """
-    pos, _marker_len = _last_turn(str(text or ""), MARKERS["assistant_turn"])
-    if pos < 0:
-        return ""
-    lines = [ln.strip() for ln in str(text)[:pos].splitlines() if ln.strip()]
-    return lines[-1] if lines else ""
 
 
 async def current_answer():
@@ -2776,328 +2733,6 @@ async def auto_resume_interrupted():
             log(f"会话 {sid} 自动恢复失败: {exc}")
 
 
-# ── 跟进消息队列：入队即返回，后台按序消费（DSH 式串行队列）──────────
-# 此前 continue_session_message 同步阻塞到整轮跑完才返回：任务正在跑时，
-# 用户发跟进消息会一直卡"发送中"。改为每会话一个 FIFO 队列，入队立即响应，
-# 由后台 worker 逐条取用；run_agent/plain_chat_turn 内部仍抢全局锁，
-# 因此跨会话也天然串行。
-_MSG_QUEUES: dict[str, "collections.deque"] = {}
-_MSG_WAKE: dict[str, asyncio.Event] = {}
-_MSG_WORKERS: dict[str, asyncio.Task] = {}
-_MSG_INFLIGHT: dict[str, dict] = {}
-
-
-def queue_depth(sid: str) -> int:
-    dq = _MSG_QUEUES.get(sid)
-    return len(dq) if dq else 0
-
-
-def queue_items(sid: str) -> list[dict]:
-    """队列条目（含正在处理的那条）：处理中的标 processing 且位置 0，其余按 FIFO。
-
-    只有"等待中"的条目（deque 内）可编辑/删除；处理中的只展示。
-    """
-    out = []
-    inflight = _MSG_INFLIGHT.get(sid)
-    if inflight:
-        out.append({"id": inflight["id"], "position": 0, "processing": True,
-                    "content": inflight["content"],
-                    "mode": "agent" if inflight.get("agent_mode") else "chat",
-                    "model_id": inflight.get("model_id")})
-    dq = _MSG_QUEUES.get(sid)
-    if dq:
-        for i, item in enumerate(dq):
-            out.append({"id": item["id"], "position": i + 1, "content": item["content"],
-                        "mode": "agent" if item.get("agent_mode") else "chat",
-                        "model_id": item.get("model_id")})
-    return out
-
-
-async def _message_worker(sid: str):
-    dq = _MSG_QUEUES[sid]
-    wake = _MSG_WAKE[sid]
-    while True:
-        while dq:
-            item = dq.popleft()
-            _MSG_INFLIGHT[sid] = item
-            try:
-                await _process_queued_message(sid, item)
-            except Exception as exc:  # 单条失败不影响队列继续
-                log(f"会话 {sid} 队列消息处理失败: {exc}")
-            finally:
-                _MSG_INFLIGHT.pop(sid, None)
-        wake.clear()
-        try:
-            await wake.wait()        # 无待处理任务时挂起，等 enqueue 唤醒
-        except asyncio.CancelledError:
-            raise
-
-
-def cancel_message_queue(sid: str) -> None:
-    """删除会话时清理其队列与 worker（避免等待中的 worker 永久挂起）。"""
-    task = _MSG_WORKERS.pop(sid, None)
-    if task and not task.done():
-        task.cancel()
-    _MSG_QUEUES.pop(sid, None)
-    _MSG_WAKE.pop(sid, None)
-    _MSG_INFLIGHT.pop(sid, None)
-
-
-async def _process_queued_message(sid: str, item: dict):
-    content, model_id = item["content"], item["model_id"]
-    attach_paths = item.get("attach_paths") or []
-    state = AGENT_SESSIONS.get(sid)
-    conv_idx = int(state.get("conversation_index", 0)) if state else 0
-    runtime_update(sid, phase="followup_processing", detail=f"正在处理跟进消息：{content[:80]}")
-    if item.get("agent_mode"):
-        req = AgentRequest(
-            model=model_id,
-            messages=[Message(role="user", content=content)],
-            stream=False, session_id=sid, reuse_session=True,
-            workspace=state.get("workspace") if state else None)
-        try:
-            result, _ = await run_agent(req, attach_paths=attach_paths)
-            answer = result.content
-            # run_agent 收尾时**已经**把最终回答落库了（幂等）。这里以前也存一次，
-            # 于是同一条回答出现两条（实测 message id 181/182，同一秒同内容）。
-            # 与 L2510 那次修复同类问题，只是当年 agent 路径不走 run_agent 的落库。
-        except Exception as exc:
-            answer = f"[错误] {exc}"
-            AGENT_SESSIONS.add_message(sid, "assistant", answer, conv_idx)
-        runtime_update(sid, phase="followup_completed", answer_preview=answer[-12000:],
-                       detail="跟进消息处理完成")
-    else:
-        pm = providers_mod.split_provider_model(model_id)
-        try:
-            if pm and pm[0] in PROVIDERS:
-                answer = (await provider_session_chat(sid, content, model_id))["content"]
-            else:
-                answer = (await plain_chat_turn(sid, content, model_id, attach_paths=attach_paths))["content"]
-            # 内层（plain_chat_turn / provider_session_chat）已存消息并设了 answer_preview
-            # ——且对话模式存的是 markdown 版——这里**不再重复存**、也不覆盖 answer_preview。
-            # 此前外层 L2017 又存了一次：同一回复出现两条（一条 markdown、一条纯文本）。
-            runtime_update(sid, phase="followup_completed", detail="跟进消息处理完成")
-        except Exception as exc:
-            answer = f"[错误] {exc}"
-            AGENT_SESSIONS.add_message(sid, "assistant", answer, conv_idx)
-            runtime_update(sid, phase="followup_completed", answer_preview=answer[-12000:],
-                           detail="跟进消息处理完成")
-    publish_event(sid, "messages")     # 新回复：通知前端立即刷新对话
-
-
-async def enqueue_session_message(sid: str, content: str, model_id: str,
-                                  agent_mode: bool, attach_paths: list | None = None,
-                                  message_id: int | None = None) -> dict:
-    """把跟进消息入队并确保 worker 在跑。返回排队位置（1 表示马上处理）。"""
-    dq = _MSG_QUEUES.get(sid)
-    if dq is None:
-        dq = collections.deque()
-        _MSG_QUEUES[sid] = dq
-        _MSG_WAKE[sid] = asyncio.Event()
-        _MSG_WORKERS[sid] = asyncio.create_task(_message_worker(sid))
-    ahead = len(dq)
-    item_id = uuid.uuid4().hex[:12]
-    dq.append({"id": item_id, "content": content, "model_id": model_id,
-               "agent_mode": agent_mode, "attach_paths": attach_paths or [],
-               "message_id": message_id})
-    _MSG_WAKE[sid].set()
-    publish_event(sid, "queue")
-    publish_event(sid, "messages")
-    return {"session_id": sid, "queued": True, "id": item_id, "position": ahead + 1,
-            "mode": "agent" if agent_mode else "chat"}
-
-
-def find_queue_item(sid: str, item_id: str) -> dict | None:
-    dq = _MSG_QUEUES.get(sid)
-    if not dq:
-        return None
-    for item in dq:
-        if item.get("id") == item_id:
-            return item
-    return None
-
-
-def remove_queue_item(sid: str, item_id: str) -> bool:
-    """从等待队列移除一条；同步删除其已落库的 user 消息。返回是否移除。"""
-    dq = _MSG_QUEUES.get(sid)
-    if not dq:
-        return False
-    for i, item in enumerate(list(dq)):
-        if item.get("id") == item_id:
-            del dq[i]
-            if item.get("message_id"):
-                AGENT_SESSIONS.delete_message(sid, item["message_id"])
-            publish_event(sid, "queue")
-            publish_event(sid, "messages")
-            return True
-    return False
-
-
-def update_queue_item(sid: str, item_id: str, content: str | None = None,
-                      model_id: str | None = None) -> bool:
-    """修改等待队列里的一条；同步更新其已落库的 user 消息。返回是否更新。"""
-    item = find_queue_item(sid, item_id)
-    if not item:
-        return False
-    if content is not None and content.strip():
-        item["content"] = content.strip()
-        if item.get("message_id"):
-            AGENT_SESSIONS.update_message(sid, item["message_id"], content.strip())
-    if model_id:
-        item["model_id"] = normalize_model_soft(model_id)
-    return True
-
-
-def _has_complete_agent_action(text: str) -> bool:
-    try:
-        # 用模块级已导入的 AgentRunner：函数体内 `from agent import ...`
-        # 在包结构下必然 ModuleNotFoundError，会被下面裸 except 吞掉，
-        # 使本函数恒返回 False（完整动作被当畸形、合法 final 被当限流）。
-        return AgentRunner._parse(text).get("type") in {"tool", "final"}
-    except Exception:
-        return False
-
-# Copilot 限流/服务不可用的典型整段提示。仅在回答很短（<=600 字符）且命中
-# 特征时判定为服务问题；可解析的 Agent JSON 动作优先于本判定，不会误判。
-COPILOT_UNAVAILABLE_PATTERNS = [
-    r"temporarily unable to respond",
-    r"try again later",
-    r"too many requests",
-    r"rate\s*limit(?:ed)?",
-    r"something went wrong",
-    r"currently (?:busy|unavailable)",
-    r"service (?:is )?currently unavailable",
-    r"having trouble (?:responding|processing)",
-    r"请稍后(?:再试|重试)",
-    r"稍后(?:再试|重试)",
-    r"暂时无法(?:响应|处理|为你服务|回答)",
-    r"请求(?:过多|过于频繁|频率过高)",
-    r"服务(?:暂时)?不可用",
-    r"出了点问题",
-    # 日文
-    r"しばらく(?:お待ちください|してからもう一度)",
-    r"現在(?:応答|利用)(?:できません|できない)",
-    r"リクエストが(?:多すぎます|多すぎる)",
-    r"サービスは現在利用できません",
-    r"問題が発生しました",
-]
-
-
-def copilot_unavailable_reason(text: str) -> str:
-    value = re.sub(r"\s+", " ", (text or "").strip())
-    if not value or len(value) > 600:
-        return ""
-    # 含有 Agent 动作结构的文本一律视为正常回答，不参与服务判定。
-    if re.search(r"['\"]type['\"]\s*:", value):
-        return ""
-    for pattern in COPILOT_UNAVAILABLE_PATTERNS:
-        if re.search(pattern, value, re.I):
-            return value[:200]
-    return ""
-
-
-# Copilot 对话长度达到上限的典型提示（英文/中文/日文）。命中后的正确处理是
-# 切换新会话，而不是原地重试，因此与服务限流分开识别。
-CONVERSATION_FULL_PATTERNS = [
-    r"reached (?:its|the) (?:maximum |max )?(?:length|limit)",
-    r"conversation (?:is|has become) too long",
-    r"start a new (?:conversation|chat) to continue",
-    r"longer than (?:the )?(?:maximum|allowed)",
-    r"对话(?:已)?达到(?:长度)?上限",
-    r"对话(?:内容)?(?:过长|太多|超出)",
-    r"(?:请)?开始新(?:的)?(?:对话|会话|聊天)(?:以继续|再继续)",
-    r"新(?:建)?(?:对话|会话|聊天)以继续",
-    # 日文
-    r"会話(?:が)?(?:上限|長さ制限)(?:に達しました|を超えました)",
-    r"新しい会話を開始して(?:ください|続行)",
-    r"会話が長くなりすぎました",
-]
-
-
-def conversation_full_reason(text: str) -> str:
-    value = re.sub(r"\s+", " ", (text or "").strip())
-    if not value:
-        return ""
-    for pattern in CONVERSATION_FULL_PATTERNS:
-        m = re.search(pattern, value, re.I)
-        if m:
-            return value[max(0, m.start() - 60):m.end() + 60]
-    return ""
-
-
-async def conversation_full_check() -> str:
-    """在整页文本中探测对话上限横幅；剔除最近一条回答正文，
-    避免把 Copilot 正常回答里的相关措辞误判为上限提示。"""
-    body = await body_text()
-    answer = extract_latest_answer(body)
-    if answer:
-        body = body.replace(answer, " ")
-    return conversation_full_reason(body)
-
-
-_ANSWER_NOISE = (
-    "Press Tab to access the More options button.",
-    "按 Tab 访问“更多选项”按钮。",
-    "Press Tab to access the More options",
-)
-
-# Copilot 在真正回答前会先在回答区渲染一条"思考中"占位文本，随后**整段替换**成答案。
-# 实测（2026-10，英文租户）：Checking that now… / Lining things up… / Gathering details…
-# / Just a sec… / Give me a moment…。它们不是答案，但会被 extract_latest_answer 当成
-# 回答正文 → 流式通道先把占位文本发出去，真答案出现时前缀对不上、再也发不出去，
-# 调用方拿到的就是 "Checking that now…"。所以在这里整行剔除。
-_THINKING_PHRASES = (
-    "checking that now", "lining things up", "gathering details", "just a sec",
-    "give me a moment", "working on it", "one moment", "hold on",
-    "正在查找", "正在整理", "正在准备", "正在思考", "稍等一下", "请稍等",
-)
-
-
-def _strip_thinking(text: str) -> str:
-    """剔除"思考中"占位行（只匹配**整行且很短**的提示，避免误删正文）。"""
-    lines = []
-    for line in str(text or "").splitlines():
-        s = line.strip().lower().rstrip(".…。 ")
-        if s and any(s == p or (s.startswith(p) and len(s) <= len(p) + 12)
-                     for p in _THINKING_PHRASES):
-            continue
-        lines.append(line)
-    return "\n".join(lines).strip()
-
-
-
-def _clean_answer(text: str) -> str:
-    """去掉答案里的 CBP 标记与 Copilot 的无障碍提示（它们会混进正文）。
-
-    这些噪声以前会一路混到模型手里（实测：模型收到的"回答"其实是自己的问题
-    加一句 Press Tab…），导致 JSON 解析失败、任务空转。
-    """
-    t = str(text or "")
-    # 标记是 `[CBP-AGENT][sid][C000]`（连续多个方括号），要把整串都去掉，
-    # 只去第一个会留下 `[sid][C000]` 混进正文。
-    t = re.sub(r"\[CBP-(?:AGENT|TURN)\](?:\[[^\]\n]*\])*", "", t)
-    t = re.sub(r"\[CBP-TURN:[^\]]*\]\s*", "", t)
-    for junk in _ANSWER_NOISE:
-        t = t.replace(junk, "")
-    t = _strip_thinking(t)
-    # 收尾可能有零宽/多余空白
-    return t.strip()
-
-
-def _echo_only(value: str, sent: str) -> bool:
-    """清洗后的内容是否只是"我刚发出去的那句"（含标记残留），不含真正回答。"""
-    v = _clean_answer(value)
-    q = _clean_answer(sent)
-    if not v:
-        return True
-    if not q:
-        return False
-    short = q.splitlines()[0].strip()[:40]
-    if not short:
-        return False
-    return short in v and len(v) <= len(short) + 80
-
-
 async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_check=None,
                             sent: str = "") -> str:
     """Wait using inactivity timeout, not a fixed per-turn wall-clock timeout.
@@ -3225,27 +2860,6 @@ async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_chec
         f"Copilot 单步等待超过硬上限 {int(hard_timeout)} 秒，请查看 last_page.txt"
     )
 
-def strip_suggestion_tail(text: str) -> str:
-    """去掉 Copilot 回答尾部的"后续建议"文字。
-
-    实测（task-afa55d82ff7a）：回答正文是一个完整 JSON 动作，后面紧跟三行建议——
-    「继续读取匹配代码 / 搜索菜单初始化函数 / 查看快捷键相关测试」。
-    那些是页面上的建议按钮，被 `inner_text` 一起读进来了。JSON 动作本身不受影响
-    （解析器只取第一个完整对象），但存库/展示的正文会被污染。
-    """
-    raw = text or ""
-    body = raw.strip()
-    if not body.startswith("{"):
-        return raw
-    try:
-        _obj, end = json.JSONDecoder().raw_decode(body)
-    except Exception:
-        return raw                      # 解析不了就原样返回，交给后面的解析容错
-    tail = body[end:].strip()
-    if not tail:
-        return body
-    return body[:end].rstrip()
-
 
 async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pause_check=None,
                           interrupt_check=None) -> str:
@@ -3277,194 +2891,6 @@ async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pa
     _answer = await wait_agent_answer(previous, pause_check=pause_check, sent=prompt,
                                       interrupt_check=interrupt_check)
     return strip_suggestion_tail(_answer)
-
-# API 提供商的协议强化：网页 Copilot 对 JSON 协议遵循度高，但 DeepSeek/Kimi
-# 等聊天模型爱在动作外面加解释或输出两段 JSON（撞严格防线烧回合）。
-# 用独立 system 消息下达硬性输出约束，实测可显著降低解析失败率。
-_PROVIDER_PROTOCOL = """你在与一个自动化执行器对话。你的整个回复必须严格遵守输出协议：
-1. 只输出一个 JSON 对象：第一个字符必须是 {，最后一个字符必须是 }。
-2. 禁止任何解释、思考过程、Markdown、代码块围栏（```），禁止输出第二个 JSON 对象。
-3. JSON 只能是两种之一：
-   {"type":"tool","tool":"工具名","arguments":{},"reason":"原因"}
-   {"type":"final","content":"最终答复"}
-4. 创建/追加代码、JSON、HTML、Markdown 内容必须用 write_text_b64 / append_text_b64，
-   内容放 content_b64 字段（UTF-8 的 Base64），单次解码后不超过 8000 字符。
-5. 工具名只能从用户消息末尾的可用工具清单里逐字照抄（如 list_directory、read_text），
-   禁止猜测或创造工具名（如 list_dir、list_files、bash 都不存在）。
-违反任何一条都会被系统拒绝执行并浪费回合。"""
-
-
-# provider 普通对话的按会话锁：同 sid 并发请求基于相同历史交错写回的防护
-_PROVIDER_LOCKS: dict[str, asyncio.Lock] = {}
-
-# API 提供商 Agent 模式的按会话对话历史。
-#
-# 为什么必须留历史：AgentRunner 只在首回合（total==0）把系统提示词（含可用
-# 工具清单）放进 prompt，后续回合只发"继续同一任务。上一动作实际结果：…"。
-# 浏览器版 Copilot 自己保留对话上下文所以没问题；提供商是无状态 HTTP 调用，
-# 若不把历史一起发过去，第二回合起模型既看不到工具清单也看不到任务目标
-# （实测报错："本轮消息仍未附带可用工具清单，也没有给出任务目标…"直接卡死）。
-_PROVIDER_AGENT_HISTORY: dict[str, list[dict]] = {}
-_PROVIDER_HISTORY_MAX_CHARS = 160000
-
-
-def _trim_provider_history(hist: list[dict], max_chars: int | None = None) -> None:
-    """按字符上限回收历史：保留 system、**首条任务/工具清单消息**与最近一轮。
-
-    首条 user 消息里带着完整的系统提示词（含可用工具清单），必须保住：
-    实测 493 步的真实任务里，历史被裁剪后模型忘记了工具名，开始瞎编
-    run_tests / check_syntax / execute_command，最后卡在验证门上判 failed。
-    因此裁剪从 index 2 开始（跳过 system 与首条消息）。
-
-    max_chars 取调用时的模块常量（作为函数默认参数会在定义时固定，
-    运行期改常量就失效了）。至少留 system + 首条 + 最近一轮。
-    """
-    cap = _PROVIDER_HISTORY_MAX_CHARS if max_chars is None else max_chars
-
-    def total() -> int:
-        return sum(len(m.get("content") or "") for m in hist)
-    while total() > cap and len(hist) > 4:
-        hist.pop(2)                                   # 保留 system 与首条（工具清单）
-        if len(hist) > 2 and hist[2].get("role") == "assistant":
-            hist.pop(2)                               # 它的回复一起丢，保持配对
-
-
-def _repair_provider_history(hist: list[dict]) -> int:
-    """按**真实 API 契约**校验并自愈提供商对话序列，返回修掉的条数。
-
-    契约（实测 OpenAI 兼容行为，不是我当初想当然的"严格交替"）：
-      · system 必须在首位（缺失则补回）；
-      · 其后**不能以 assistant 打头**（没有对应用户输入的回答）；
-      · 连续的 user 消息是**合法的**（服务端会顺次理解），不能为了"交替"去删；
-      · 连续 assistant 才会被合并（保留较新的一条）。
-
-    这里踩过两次坑，都由既有测试当场抓到：
-      1. 先写"严格交替"→ 把锚点（首条含工具清单的 prompt）与最近一轮 user 拆开，
-         既有测试断言"最近一轮仍在"立刻失败；
-      2. 再写"与锚点冲突就丢新来的"→ 又把最近一轮 user 丢了，仍然失败。
-    教训：契约要按**真实 API 行为**定，不要按"看起来更整齐"定。
-    """
-    fixed = 0
-    if not hist:
-        return fixed
-
-    head = hist[0] if hist[0].get("role") == "system" else {"role": "system", "content": _PROVIDER_PROTOCOL}
-    if head is not hist[0]:
-        fixed += 1
-    rest = list(hist[1:]) if hist[0].get("role") == "system" else list(hist)
-
-    out: list[dict] = [head]
-    for msg in rest:
-        role = msg.get("role")
-        if role not in ("user", "assistant"):
-            fixed += 1
-            continue
-        if role == "assistant" and len(out) == 1:
-            fixed += 1                     # 不能以 assistant 打头（其 user 已丢失）
-            continue
-        if role == "assistant" and out[-1].get("role") == "assistant":
-            out[-1] = msg                  # 连续 assistant：保留较新
-            fixed += 1
-            continue
-        out.append(msg)                    # 连续 user 合法，原样保留
-
-    if fixed:
-        hist[:] = out
-        log(f"提供商对话历史结构已自愈：修正 {fixed} 条（system 首位、不以 assistant 打头）")
-    return fixed
-
-
-def discard_provider_agent_history(sid: str) -> None:
-    """会话删除时清理提供商对话历史（避免长期运行内存里堆积）。"""
-    _PROVIDER_AGENT_HISTORY.pop(sid, None)
-
-
-def sync_provider_history_message(sid: str, old: str, new: str | None) -> bool:
-    """把"编辑/删除了一条消息"同步到提供商的内存对话历史。
-
-    为什么必须做：提供商路径的上下文来自 `_PROVIDER_AGENT_HISTORY`（增量累积），
-    不是每回合从 messages 表重建——只改库不同步内存，模型**下一回合仍会看到旧文本**。
-
-    匹配策略：从后往前找第一条 content 与 old 相同的条目（最近的更可能是它）。
-    找不到就返回 False（例如该回合已被上下文裁剪掉），由调用方如实告知用户。
-    """
-    hist = _PROVIDER_AGENT_HISTORY.get(sid)
-    if not hist:
-        return False
-    for i in range(len(hist) - 1, -1, -1):
-        item = hist[i]
-        if not isinstance(item, dict) or item.get("role") == "system":
-            continue
-        if str(item.get("content") or "") == str(old or ""):
-            if new is None:
-                hist.pop(i)
-            else:
-                item["content"] = new
-            return True
-    return False
-
-
-# ── 强行插入指令的"立即中断"信号 ────────────────────────────────────
-# 用户 Ctrl+J 插入指令时置位。提供商路径用它取消底层 HTTP 调用（取消即"这轮
-# 没发生"）；网页路径只在"本回合还没产出内容"时中止等待（见 wait_agent_answer）。
-_INTERRUPTS: dict[str, asyncio.Event] = {}
-
-
-def _interrupt_event(sid: str) -> asyncio.Event:
-    ev = _INTERRUPTS.get(sid)
-    if ev is None:
-        ev = asyncio.Event()
-        _INTERRUPTS[sid] = ev
-    return ev
-
-
-def request_interrupt(sid: str) -> None:
-    """请求立即中断该会话当前回合（由 /inject 在运行中调用）。"""
-    _interrupt_event(sid).set()
-
-
-def interrupt_pending(sid: str) -> bool:
-    """只窥探不清除：等待循环每 POLL 都会问一次，若在这里清掉，
-    "已开始生成所以不中断"的那次询问就会把信号吃掉、再也不会生效。"""
-    ev = _INTERRUPTS.get(sid)
-    return bool(ev and ev.is_set())
-
-
-def clear_interrupt(sid: str) -> None:
-    ev = _INTERRUPTS.get(sid)
-    if ev is not None:
-        ev.clear()
-
-
-def discard_interrupts(sid: str) -> None:
-    _INTERRUPTS.pop(sid, None)
-
-
-async def _await_interruptible(sid: str, coro, what: str):
-    """等待 coro；若期间该会话被要求"立即插入"，取消它并抛 AgentInterrupted。
-
-    注意这里把底层协程包成 task 再取消，因此**外层看到的是 AgentInterrupted 而不是
-    CancelledError**——provider_turn 的 `except Exception` 清理逻辑照常生效，
-    历史里那条 user 消息不会残留（否则下一回合会重复追加）。
-    """
-    ev = _interrupt_event(sid)
-    task = asyncio.ensure_future(coro)
-    waiter = asyncio.ensure_future(ev.wait())
-    try:
-        done, _ = await asyncio.wait({task, waiter}, return_when=asyncio.FIRST_COMPLETED)
-    except BaseException:
-        task.cancel(); waiter.cancel()
-        raise
-    if task in done:
-        waiter.cancel()
-        return await task
-    task.cancel()
-    try:
-        await task
-    except BaseException:
-        pass
-    clear_interrupt(sid)
-    raise AgentInterrupted(f"已插入新指令，{what}被中断，改为下一回合按新指令执行")
 
 
 def remember_initial_prompt(sid: str, prompt: str) -> None:
@@ -3510,130 +2936,6 @@ def rebuild_initial_prompt(state: dict) -> str:
     except Exception:
         pass
     return runner._system_prompt() + "\n\n用户任务：\n" + task
-
-
-async def provider_turn(sid: str, model_id: str, prompt: str, force_new: bool = False) -> str:
-    """API 提供商的 Agent 回合：带会话历史的 system 协议约束 + 累积对话。
-
-    与浏览器版的关键差异：提供商每回合都是独立 HTTP 调用，必须把历史一起
-    发过去（否则模型看不到工具清单与任务目标）。force_new（换会话/滚动摘要）
-    时重置历史，从新的摘要提示重新开始。
-
-    限流/5xx/超时映射为 CopilotRateLimited，复用 AgentRunner 的指数退避重试；
-    其他错误原样抛出计入解析失败/失败处理。失败回合会把刚追加的 user 消息
-    回滚掉，避免重试时同一提示在历史里堆叠。
-    """
-    pm = providers_mod.split_provider_model(model_id)
-    provider = PROVIDERS[pm[0]]
-    if force_new or sid not in _PROVIDER_AGENT_HISTORY:
-        _PROVIDER_AGENT_HISTORY[sid] = [{"role": "system", "content": _PROVIDER_PROTOCOL}]
-    hist = _PROVIDER_AGENT_HISTORY[sid]
-    hist.append({"role": "user", "content": prompt})
-    _trim_provider_history(hist)
-    _repair_provider_history(hist)
-    remember_initial_prompt(sid, prompt)
-    # 提供商 Agent 回合原先完全不写 runtime，导致 WebUI 的"最近发送内容/
-    # Copilot 当前回答/当前执行状态"三个面板全程空白——这里补齐。
-    clear_interrupt(sid)   # 新回合开始：上一轮的插入信号已由 pending 承接，别误伤本回合
-    runtime_update(sid, phase="api_sending", detail=f"正在调用 {pm[0]} API（{pm[1]}）",
-                   prompt_preview=prompt[-12000:], answer_preview="")
-
-    def _rollback_user() -> None:
-        """回滚本次追加的 user 消息（含取消/中断），避免重试时重复追加。"""
-        if hist and hist[-1].get("role") == "user":
-            hist.pop()
-
-    async def _call() -> str:
-        """调用提供商：优先流式（边收边写 answer_preview，界面就能"逐字"看到），
-        流式不可用（服务不支持 response_format+stream 等）则退回非流式 complete()。
-
-        只在**一个增量都没收到**时才退回：已经收到内容再重发会重复计费、
-        也可能拿到两份不同的回答。
-        """
-        if not bool(CFG.get("stream_provider_agent", True)) or not hasattr(provider, "stream"):
-            return await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
-        chunks: list[str] = []
-        last_push = 0.0
-        try:
-            async for piece in provider.stream(pm[1], hist,
-                                               response_schema=AGENT_ACTION_SCHEMA):
-                if not piece:
-                    continue
-                chunks.append(piece)
-                now = time.monotonic()
-                # 节流：最多每 150ms 写一次 runtime，避免高频 DB 写入
-                if now - last_push >= 0.15:
-                    last_push = now
-                    runtime_update(sid, phase="api_streaming",
-                                   detail=f"{pm[0]} API 正在流式返回…",
-                                   answer_preview="".join(chunks)[-12000:])
-        except (providers_mod.ProviderError, providers_mod.ProviderUnavailable) as exc:
-            if chunks:
-                raise
-            log(f"提供商流式不可用，退回非流式：{exc}")
-            return await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
-        except AttributeError as exc:
-            # 自定义 provider 对象没实现 stream（保留兼容）
-            log(f"提供商不支持流式（{exc}），改用非流式")
-            return await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
-        text = "".join(chunks)
-        if not text.strip():
-            log("提供商流式返回为空，退回非流式")
-            return await provider.complete(pm[1], hist, response_schema=AGENT_ACTION_SCHEMA)
-        # 收尾必推完整文本：节流可能让最后一次增量没发出去，预览会停在半截
-        runtime_update(sid, phase="api_streaming",
-                       detail=f"{pm[0]} API 流式返回完成，正在解析动作",
-                       answer_preview=text[-12000:])
-        return text
-
-    try:
-        # 强行插入指令时立即取消这次 HTTP 调用：提供商是无状态请求，取消即
-        # "这轮没发生"，下一回合直接带上新指令重发，不用等它跑完。
-        answer = await _await_interruptible(sid, _call(), "调用提供商 API")
-    except providers_mod.ProviderUnavailable as exc:
-        _rollback_user()
-        # window_seconds=0：提供商走"下次重试"倒计时，不用 Copilot 网页实测的
-        # 1 小时固定窗口（提供商的 429/5xx/网络抖动通常几秒~几分钟就恢复）。
-        raise CopilotRateLimited(str(exc), window_seconds=0) from exc
-    except BaseException:
-        # BaseException：包含 CancelledError——外部取消整个任务时也要回滚，
-        # 否则下次运行会看到一条残留的 user 消息（重复追加）。
-        _rollback_user()
-        raise
-    hist.append({"role": "assistant", "content": answer})
-    _trim_provider_history(hist)
-    _repair_provider_history(hist)
-    runtime_update(sid, phase="api_received", detail=f"{pm[0]} API 已返回，正在解析动作",
-                   answer_preview=answer[-12000:])
-    return answer
-
-
-async def provider_session_chat(sid: str, content: str, model_id: str) -> dict:
-    """API 提供商的普通对话：用 Session 的消息记录作上下文，写回双方消息。
-
-    调用方（continue_session_message）已写入本次 user 消息；新任务由
-    plain_completions 先建 Session 再调本函数。
-    """
-    async with _PROVIDER_LOCKS.setdefault(sid, asyncio.Lock()):
-        pm = providers_mod.split_provider_model(model_id)
-        provider = PROVIDERS[pm[0]]
-        history = [{"role": m["role"], "content": m["content"]}
-                   for m in AGENT_SESSIONS.messages(sid)]
-        runtime_update(sid, phase="api_sending", detail=f"正在调用 {pm[0]} API",
-                       prompt_preview=content, answer_preview="")
-        try:
-            answer = await provider.complete(pm[1], history)
-        except providers_mod.ProviderUnavailable as exc:
-            raise CopilotRateLimited(str(exc), window_seconds=0) from exc
-        current = AGENT_SESSIONS.get(sid)
-        if not current:
-            raise RuntimeError("会话在执行期间被删除")
-        AGENT_SESSIONS.add_message(sid, "assistant", answer, int(current.get("conversation_index", 0)))
-        AGENT_SESSIONS.patch(sid, model=model_id)
-        runtime_update(sid, phase="api_completed", answer_preview=answer[-12000:],
-                       detail=f"{pm[0]} API 调用完成")
-        return {"session_id": sid, "role": "assistant", "content": answer,
-                "url": None, "mode": "chat", "provider": pm[0]}
 
 
 def _conv_index(sid: str) -> int:
@@ -5110,3 +4412,31 @@ async def shutdown_browser():
 from . import owa as _owa_mod
 
 AGENT_TOOLS.outlook_backend = _owa_mod.OWA_BACKEND
+
+# ── 拆出去的纯解析层（answer.py）：facade 重新导出，b.xxx 调用与既有测试不变 ──
+# 必须放在**文件末尾**：answer.py 顶部 `from . import bridge as b`，这里 import 它时
+# bridge 主体已初始化（MARKERS 等），不存在 import 期循环。
+from .answer import (  # noqa: F401
+    _last_turn, _ANSWER_NOISE, _THINKING_PHRASES, _strip_thinking, _clean_answer,
+    _echo_only, _has_complete_agent_action, COPILOT_UNAVAILABLE_PATTERNS,
+    copilot_unavailable_reason, CONVERSATION_FULL_PATTERNS, conversation_full_reason,
+    conversation_full_check, extract_latest_answer, _status_before_marker,
+    strip_suggestion_tail,
+)
+# ── 中断信号（interrupts.py）+ 提供商通道（provider.py），同样 facade 重新导出 ──
+from .interrupts import (  # noqa: F401
+    _INTERRUPTS, request_interrupt, interrupt_pending, clear_interrupt,
+    discard_interrupts, _await_interruptible,
+)
+from .provider import (  # noqa: F401
+    provider_turn, provider_session_chat, discard_provider_agent_history,
+    sync_provider_history_message, _PROVIDER_AGENT_HISTORY, _PROVIDER_PROTOCOL,
+    _trim_provider_history, _repair_provider_history, _PROVIDER_LOCKS,
+    _PROVIDER_HISTORY_MAX_CHARS,
+)
+# ── 消息队列（queue.py），facade 重新导出 ──
+from .queue import (  # noqa: F401
+    _MSG_QUEUES, _MSG_WAKE, _MSG_WORKERS, _MSG_INFLIGHT, queue_depth, queue_items,
+    cancel_message_queue, _process_queued_message, enqueue_session_message,
+    find_queue_item, remove_queue_item, update_queue_item, _message_worker,
+)
