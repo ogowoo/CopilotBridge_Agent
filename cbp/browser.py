@@ -20,6 +20,12 @@ def _launch_kwargs(headless: bool) -> dict:
         headless=headless,
         viewport={"width": 1440, "height": 1000},
     )
+    # 可选：强制浏览器区域语言（如 zh-CN / zh-TW / ja-JP / en-US）。
+    # Copilot 网页若按浏览器语言自动选择 UI，这能把界面切到对应语言，
+    # 用于真实验证多语言回合锚点；不配则沿用系统/账号语言。
+    _locale = str(b.CFG.get("browser_locale") or "").strip()
+    if _locale:
+        kwargs["locale"] = _locale
     if headless:
         # 降低无头模式被页面自动化检测的概率。
         kwargs["args"] = ["--disable-blink-features=AutomationControlled"]
