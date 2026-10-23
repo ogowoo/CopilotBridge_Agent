@@ -40,7 +40,8 @@ class ConfigEndpointTests(unittest.TestCase):
         self.assertIn("persisted", API)
 
     def test_todo_nudge_every_is_configurable(self):
-        bridge = (ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
+        bridge = ((ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
+                  + (ROOT / "cbp" / "agentrun.py").read_text(encoding="utf-8"))
         self.assertIn("_todo_nudge_every", bridge)
         self.assertIn('AGENT_CFG.get("todo_nudge_every"', bridge)
 

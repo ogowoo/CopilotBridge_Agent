@@ -14,7 +14,8 @@ class SendGuardTests(unittest.TestCase):
         # 页面自动化层已拆到 cbp/page.py、浏览器层拆到 cbp/browser.py（第三批解耦）
         cls.src = ((ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
                    + (ROOT / "cbp" / "page.py").read_text(encoding="utf-8")
-                   + (ROOT / "cbp" / "browser.py").read_text(encoding="utf-8"))
+                   + (ROOT / "cbp" / "browser.py").read_text(encoding="utf-8")
+                   + (ROOT / "cbp" / "agentrun.py").read_text(encoding="utf-8"))
 
     def test_send_raises_when_not_ready(self):
         i = self.src.find("async def send(prompt, make_new, model_id):")

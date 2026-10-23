@@ -32,7 +32,8 @@ class CleanAnswerTests(unittest.TestCase):
         self.assertFalse(_echo_only('{"type":"final","content":"ok"}', sent))
 
     def test_wait_agent_answer_rejects_echo(self):
-        src = (ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
+        src = ((ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
+               + (ROOT / "cbp" / "agentrun.py").read_text(encoding="utf-8"))
         self.assertIn("_echo_only(value, sent)", src)
         i = src.find("async def wait_agent_answer(")
         self.assertIn("sent: str = \"\"", src[i:i + 200])
