@@ -146,7 +146,8 @@ validate_python, then run_unittest. A real verification failure must be fixed â€
 final. Validation that fails only because files are still incomplete does not count as a failure;
 continue appending per the chunk flow above.
 Claim work is done, or mark a TODO completed, only after both validate_python and run_unittest
-return passed=true.
+return passed=true. If the workspace had **no tests/ directory to begin with**, do not create one
+just to pass the gate: validate_python passing is enough unless the task explicitly asks for tests.
 Keep the todo list updated as you go: call todo_write again the moment an item is finished (rewrite
 the whole list) and mark it completed; you may mark the current item in_progress when you start it.
 Call it one final time at the end and mark everything completed except items genuinely not done â€”

@@ -63,9 +63,21 @@ class GateProportionalTests(unittest.TestCase):
                          f"声明只做语法检查时不应被单测卡住（steps={[x.get('status') for x in self.steps]}）")
         self.assertNotIn("run_unittest", [x.get("tool") for x in self.steps])
 
-    def test_unittest_still_required_by_default(self):
+    def test_unittest_not_required_when_workspace_has_no_tests(self):
+        """原工作区没有 tests/：不要为一次性脚本现造测试，validate 通过即可。"""
         result, state, calls = self._run("创建 eval_only.py 并验证通过", self._script())
-        self.assertNotEqual(state.get("state"), "completed", "默认仍必须跑单测才允许完成")
+        self.assertEqual(state.get("state"), "completed",
+                         f"没有项目测试时不应强制单测（steps={[x.get('status') for x in self.steps]}）")
+        self.assertNotIn("run_unittest", [x.get("tool") for x in self.steps])
+
+    def test_unittest_still_required_when_project_has_tests(self):
+        tests = self.ws / "tests"
+        tests.mkdir()
+        (tests / "test_fail.py").write_text(
+            "import unittest\n\nclass T(unittest.TestCase):\n    def test_fail(self):\n        self.assertTrue(False)\n",
+            encoding="utf-8")
+        result, state, calls = self._run("创建 eval_only.py 并验证通过", self._script())
+        self.assertNotEqual(state.get("state"), "completed", "项目测试失败时不能允许完成")
         self.assertTrue(any(x.get("status") in ("validation_gate", "gate_blocked") for x in self.steps))
 
     def test_config_can_disable_requirement_globally(self):
@@ -73,6 +85,12 @@ class GateProportionalTests(unittest.TestCase):
                                         {"require_unittest": False})
         self.assertEqual(state.get("state"), "completed")
         self.assertFalse(any(x.get("status") == "gate_blocked" for x in self.steps))
+
+    def test_config_can_force_unittest_without_project_tests(self):
+        result, state, calls = self._run("创建 eval_only.py 并验证通过", self._script(),
+                                        {"require_unittest_without_tests": True})
+        self.assertNotEqual(state.get("state"), "completed")
+        self.assertTrue(any(x.get("status") in ("validation_gate", "gate_blocked") for x in self.steps))
 
 
 if __name__ == "__main__":

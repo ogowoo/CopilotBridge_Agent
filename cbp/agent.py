@@ -507,8 +507,18 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
         # 目录与测试文件——实测 gate-limit 因此涨到 24 步。故允许按任务放宽。
         _relax_words = ("只做语法检查", "只需语法检查", "不用单测", "无需单测", "不需要单测",
                         "不用写测试", "syntax only", "no tests")
-        self._require_unittest = bool(self.config.get("require_unittest", True)) and not any(
-            w in (task or "") for w in _relax_words)
+        # 工作区原本没有 tests/ 时，不强制单测：否则模型会给一次性脚本现造
+        # tests/ 与测试文件，测试写坏了反而把简单修改卡成 gate_blocked。
+        # 需要“即使没有测试也必须跑 unittest”的场景可显式开
+        # require_unittest_without_tests=true。
+        _tests_dir = Path(getattr(self.tools, "root", ".")) / "tests"
+        _has_project_tests = _tests_dir.is_dir() and any(_tests_dir.glob("test_*.py"))
+        _force_unittest = bool(self.config.get("require_unittest_without_tests", False))
+        self._require_unittest = (
+            bool(self.config.get("require_unittest", True))
+            and not any(w in (task or "") for w in _relax_words)
+            and (_has_project_tests or _force_unittest)
+        )
         self._task_text = task
         self._agent_md = self._load_agent_md()
         self._skills = self._load_skill_catalog()
