@@ -219,6 +219,62 @@ def _echo_only(value: str, sent: str) -> bool:
     return short in v and len(v) <= len(short) + 80
 
 
+_SUGGESTION_ZH = re.compile(
+    r"^(?:改成|换一种|換一種|再提供|提供|总结|總結|翻译|翻譯|列出|解释|解釋|写|寫|"
+    r"生成|比较|比較|用|给|給|添加|删除|刪除|优化|優化|简化|簡化|扩展|擴展|"
+    r"继续|繼續|搜索|搜尋|查看|读取|讀取|分析|整理|润色|潤色|改写|改寫|"
+    r"缩短|縮短|补充|補充)"
+)
+_SUGGESTION_JA = re.compile(
+    r"(?:にして|してください|教えて|翻訳して|要約して|書き換えて|説明して|"
+    r"もっと|別の|ビジネス向け|英語に|日本語に|簡潔に|詳しく|"
+    r"具体例|箇条書き)"
+)
+_SUGGESTION_EN = re.compile(
+    r"^(?:Make|Write|Translate|Summarize|Explain|Give|Add|Remove|Change|Show|"
+    r"List|Compare|Continue|Search|Read|Analyze|Analyse|Provide|Rewrite|Use|"
+    r"Try|Generate|Create|Draft|Shorten|Expand|Improve|Polish)\b",
+    re.I,
+)
+
+
+def _looks_like_suggestion(line: str) -> bool:
+    s = line.strip()
+    if not s or len(s) > 80:
+        return False
+    if s[0] in "-*0123456789":
+        return False
+    if s[-1] in "。！？.!?":
+        return False
+    return bool(_SUGGESTION_ZH.match(s) or _SUGGESTION_JA.search(s)
+                or _SUGGESTION_EN.match(s))
+
+
+def _strip_plain_suggestion_tail(raw: str) -> str:
+    """剥离普通对话尾部的建议按钮文字（中/繁/日/英）。
+
+    这些文字是页面的快捷建议按钮，不是回答正文。只处理**最后一个空行之后**
+    的 2~4 行短句，且至少 2 行命中建议句式；带编号/项目符号或句末标点的
+    正常列表不处理，避免误删正文。
+    """
+    text = raw.rstrip()
+    if not text:
+        return raw
+    lines = text.splitlines()
+    # 从末尾往前找最后一个空行，只检查它之后的那一段
+    cut = len(lines)
+    for i in range(len(lines) - 1, -1, -1):
+        if not lines[i].strip():
+            cut = i + 1
+            break
+    tail = [x for x in lines[cut:] if x.strip()]
+    if not 2 <= len(tail) <= 4:
+        return raw
+    if sum(1 for x in tail if _looks_like_suggestion(x)) < 2:
+        return raw
+    return "\n".join(lines[:cut]).rstrip()
+
+
 def strip_suggestion_tail(text: str) -> str:
     """去掉 Copilot 回答尾部的"后续建议"文字。
 
@@ -230,7 +286,7 @@ def strip_suggestion_tail(text: str) -> str:
     raw = text or ""
     body = raw.strip()
     if not body.startswith("{"):
-        return raw
+        return _strip_plain_suggestion_tail(raw)
     try:
         _obj, end = json.JSONDecoder().raw_decode(body)
     except Exception:
