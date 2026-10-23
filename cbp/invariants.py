@@ -218,6 +218,7 @@ def _eval_assertions_exist() -> None:
 def _prompt_tools_single_source() -> None:
     """系统提示词里的工具清单必须由 tools.descriptions() 生成，不得手写第三方清单。"""
     src = (HERE / "agent.py").read_text(encoding="utf-8")
+    src += (HERE / "agent_prompt.py").read_text(encoding="utf-8")
     if "self.tools.descriptions(" not in src:
         raise InvariantError("未从 tools.descriptions() 取工具清单")
     if re.search(r"可用工具：\n\[\s*\{", src):
