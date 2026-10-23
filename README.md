@@ -870,7 +870,14 @@ start.py          服务入口
 install.py        依赖安装
 cbp/              核心包
   api.py            HTTP 路由层：FastAPI 应用与全部端点，只做请求/响应适配
-  bridge.py         配置、运行状态、Copilot 浏览器自动化核心与会话编排
+  bridge.py         配置、运行状态、回合编排与会话编排（facade 重导出各子模块）
+  page.py           页面自动化：新对话、模型菜单、发消息、取回答/流式更新
+  browser.py        浏览器生命周期与窗口池（多窗口并行、提供商逻辑槽）
+  answer.py         回答解析：回合标记、噪声/思考占位剔除、服务不可用识别
+  provider.py       外部提供商通道（HTTP 回合、历史裁剪）
+  queue.py          会话消息队列（排队/取消/插入）
+  orchestration.py  ralph / workflow / 对抗式审计
+  subagents.py      子代理派发、驱动、续跑与 fork
   copilot_delete.py Copilot 侧栏会话删除流程（URL 身份 + 标记同属校验 + 对账终验）
   owa.py            Outlook 网页版（OWA）自动化后端
   agent.py          Agent 主循环、JSON 动作协议、容错解析、压缩/换会话

@@ -65,7 +65,15 @@ FastAPI 路由层  app.py(shim) → cbp/api.py
 |---|---|---|
 | `app.py` | 21 | 组装 shim：`from cbp.api import app`（uvicorn 加载点） |
 | `cbp/api.py` | ~700 | HTTP 路由、鉴权中间件、SSE、会话控制、自升级/快照端点、静态资源 |
-| `cbp/bridge.py` | ~2100 | 页面自动化、模型识别与锚定、回合标记、回答收集、会话编排、快照接线、自升级状态 |
+| `cbp/bridge.py` | ~2400 | 配置与运行态、回合编排（`run_agent`）、快照/记忆/自升级接线、facade 重导出 |
+| `cbp/page.py` | ~1220 | 页面自动化：新对话、模型菜单识别与锚定、发消息、取回答/Markdown、流式更新 |
+| `cbp/browser.py` | ~260 | 浏览器生命周期（启动/复用/无头回退）、窗口池与提供商逻辑槽调度 |
+| `cbp/answer.py` | ~240 | 回答解析：回合标记定位、噪声/思考占位剔除、服务不可用与满对话识别 |
+| `cbp/provider.py` | ~270 | 外部提供商通道（HTTP 回合、历史裁剪与修复） |
+| `cbp/interrupts.py` | ~70 | 插入指令/中断信号 |
+| `cbp/queue.py` | ~190 | 会话消息队列（排队、取消、插入） |
+| `cbp/orchestration.py` | ~290 | ralph / workflow / 对抗式审计 |
+| `cbp/subagents.py` | ~300 | 子代理（派发/驱动/续跑/fork/列表） |
 | `cbp/agent.py` | ~1090 | 动作协议与容错解析、批量动作、主循环、压缩/换会话、验证闭环（旗持久化） |
 | `cbp/tools.py` | ~1240 | 工作区沙箱与文件工具、Office、Outlook 路由、技能 list/read/create、self_* 与权限门 |
 | `cbp/session_store.py` | ~240 | SQLite 持久化、列迁移、状态机、统计与清理 |
