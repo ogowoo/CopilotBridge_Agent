@@ -541,6 +541,24 @@ async def agent_debug_download(payload: dict | None = None):
         raise HTTPException(409, str(exc)) from exc
 
 
+@app.get("/v1/agent/debug/page")
+async def agent_debug_page(limit: int = 6000):
+    """只读诊断：返回当前页面的纯文本尾部（排查界面语言/锚点，不改任何状态）。
+
+    非任务上下文：直接读共享页，不占窗口、不导航。
+    """
+    try:
+        url = b.current_page().url if b.current_page() else None
+    except Exception:
+        url = None
+    try:
+        text = await b.body_text()
+    except Exception as exc:
+        return {"url": url, "error": str(exc), "text": ""}
+    lim = max(200, int(limit))
+    return {"url": url, "len": len(text), "text": text[-lim:]}
+
+
 @app.get("/v1/agent/sandbox")
 async def get_sandbox():
     """查询当前沙箱档位与可选值。"""

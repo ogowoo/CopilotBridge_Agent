@@ -113,21 +113,40 @@ DEFAULT_MODEL = CFG.get("default_model", "copilot-auto")
 PROVIDERS = providers_mod.build_providers(CFG)
 
 # Copilot 页面可访问性文本锚点。桥接依赖这些文本定位回合与回答边界；
-# 租户界面语言不同（例如中文界面）时，在 config.json 的 "markers" 中
+# 租户界面语言不同（例如中文/日文界面）时，在 config.json 的 "markers" 中
 # 追加对应文案即可——配置值会并入下方默认列表，任一命中即生效。
 MARKERS = {
-    "assistant_turn": ["Copilot said:"],
-    "user_turn": ["You said:"],
-    "answer_end": ["\nSources\n", "\nMessage Copilot\n", "AI-generated content may be incorrect"],
-    "sources": ["Sources"],
+    "assistant_turn": ["Copilot said:", "Copilot の回答:", "Copilot からの応答:",
+                       "Copilot からの回答:"],
+    "user_turn": ["You said:", "あなたの発言:", "あなた:", "ユーザー:"],
+    "answer_end": ["\nSources\n", "\n出典\n", "\n参考資料\n", "\nMessage Copilot\n",
+                   "\nCopilot へのメッセージ\n", "\nメッセージを入力\n",
+                   "AI-generated content may be incorrect",
+                   "AI によって生成されたコンテンツは正しくない可能性があります"],
+    "sources": ["Sources", "出典", "参考資料"],
     "ignored_lines": ["Copy", "Like", "Dislike", "More", "Share", "Regenerate",
-                      "复制", "来源", "赞", "踩", "更多", "分享", "重新生成"],
+                      "复制", "来源", "赞", "踩", "更多", "分享", "重新生成",
+                      "コピー", "高評価", "低評価", "その他", "共有", "再生成"],
+}
+# 选择器里用的按钮/提示文案（日文系统实测收不到回信，就是这类锚点没命中）。
+SELECTOR_TEXT = {
+    "stop": ["Stop generating", "停止生成", "生成を停止", "生成を中止"],
+    "stop_aria": ["Stop", "停止"],
+    "new_chat": ["New chat", "新建聊天", "新しいチャット", "新規チャット"],
+    "send_aria": ["Send", "发送", "送信"],
+    "dismiss": ["Accept", "接受", "Got it", "知道了", "Not now", "暂不",
+                "同意する", "あとで", "OK", "閉じる"],
 }
 for key, extra in CFG.get("markers", {}).items():
-    if key in MARKERS and isinstance(extra, list):
-        for value in extra:
-            if isinstance(value, str) and value and value not in MARKERS[key]:
-                MARKERS[key].append(value)
+    if isinstance(extra, list):
+        if key in MARKERS:
+            for value in extra:
+                if isinstance(value, str) and value and value not in MARKERS[key]:
+                    MARKERS[key].append(value)
+        if key in SELECTOR_TEXT:
+            for value in extra:
+                if isinstance(value, str) and value and value not in SELECTOR_TEXT[key]:
+                    SELECTOR_TEXT[key].append(value)
 
 
 def _last_turn(text: str, markers: list) -> tuple:
@@ -525,14 +544,7 @@ async def visible_locator(locators):
 
 
 async def dismiss():
-    b = await visible([
-        'button:has-text("Accept")',
-        'button:has-text("接受")',
-        'button:has-text("Got it")',
-        'button:has-text("知道了")',
-        'button:has-text("Not now")',
-        'button:has-text("暂不")',
-    ])
+    b = await visible([f'button:has-text("{t}")' for t in SELECTOR_TEXT["dismiss"]])
     if b:
         try:
             await b.click(timeout=1000)
@@ -554,12 +566,11 @@ async def new_chat():
         except Exception:
             return False
 
-    b = await visible([
-        'button[aria-label*="New chat" i]',
-        'a[aria-label*="New chat" i]',
-        'button:has-text("New chat")',
-        'button:has-text("新建聊天")',
-    ])
+    b = await visible(
+        [f'button[aria-label*="{t}" i]' for t in SELECTOR_TEXT["new_chat"]]
+        + [f'a[aria-label*="{t}" i]' for t in SELECTOR_TEXT["new_chat"]]
+        + [f'button:has-text("{t}")' for t in SELECTOR_TEXT["new_chat"]]
+    )
     if b:
         await b.click()
         await asyncio.sleep(1)
@@ -1549,11 +1560,10 @@ async def _prefer_unfolded(text: str) -> str:
 
 
 async def generating():
-    return bool(await visible([
-        'button[aria-label*="Stop" i]',
-        'button:has-text("Stop generating")',
-        'button:has-text("停止生成")',
-    ]))
+    return bool(await visible(
+        [f'button[aria-label*="{t}" i]' for t in SELECTOR_TEXT["stop_aria"]]
+        + [f'button:has-text("{t}")' for t in SELECTOR_TEXT["stop"]]
+    ))
 
 
 async def count_user_markers():
@@ -1609,14 +1619,12 @@ async def sent_successfully(box, before_count, prompt):
 
 
 async def click_send_button():
-    button = await visible([
-        'button[aria-label="Send"]',
-        'button[aria-label*="Send" i]',
-        'button[title*="Send" i]',
-        'button[aria-label*="发送"]',
-        'button[title*="发送"]',
-        'button[data-testid*="send" i]',
-    ])
+    button = await visible(
+        [f'button[aria-label="{t}"]' for t in SELECTOR_TEXT["send_aria"]]
+        + [f'button[aria-label*="{t}" i]' for t in SELECTOR_TEXT["send_aria"]]
+        + [f'button[title*="{t}" i]' for t in SELECTOR_TEXT["send_aria"]]
+        + ['button[data-testid*="send" i]']
+    )
     if button:
         try:
             await button.click(timeout=2000)
@@ -2966,6 +2974,12 @@ COPILOT_UNAVAILABLE_PATTERNS = [
     r"请求(?:过多|过于频繁|频率过高)",
     r"服务(?:暂时)?不可用",
     r"出了点问题",
+    # 日文
+    r"しばらく(?:お待ちください|してからもう一度)",
+    r"現在(?:応答|利用)(?:できません|できない)",
+    r"リクエストが(?:多すぎます|多すぎる)",
+    r"サービスは現在利用できません",
+    r"問題が発生しました",
 ]
 
 
@@ -2982,7 +2996,7 @@ def copilot_unavailable_reason(text: str) -> str:
     return ""
 
 
-# Copilot 对话长度达到上限的典型提示（英文/中文）。命中后的正确处理是
+# Copilot 对话长度达到上限的典型提示（英文/中文/日文）。命中后的正确处理是
 # 切换新会话，而不是原地重试，因此与服务限流分开识别。
 CONVERSATION_FULL_PATTERNS = [
     r"reached (?:its|the) (?:maximum |max )?(?:length|limit)",
@@ -2993,6 +3007,10 @@ CONVERSATION_FULL_PATTERNS = [
     r"对话(?:内容)?(?:过长|太多|超出)",
     r"(?:请)?开始新(?:的)?(?:对话|会话|聊天)(?:以继续|再继续)",
     r"新(?:建)?(?:对话|会话|聊天)以继续",
+    # 日文
+    r"会話(?:が)?(?:上限|長さ制限)(?:に達しました|を超えました)",
+    r"新しい会話を開始して(?:ください|続行)",
+    r"会話が長くなりすぎました",
 ]
 
 

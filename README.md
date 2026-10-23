@@ -156,22 +156,33 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 | `models` | `{}` | 扩展模型：`{"copilot-custom": {"ui_names": ["Custom"], "description": "..."}}` |
 | `markers` | 见下 | Copilot 页面可访问性文本锚点，界面语言不同时在此追加文案 |
 
-`markers` 的配置值会**并入**内置默认列表（不是覆盖），任一命中即生效，共 5 组：
+`markers` 的配置值会**并入**内置默认列表（不是覆盖），任一命中即生效。
+内置默认已含 **英文 + 中文 + 日文**（`Copilot said:` / `You said:` / `Sources` /
+`出典` / `あなたの発言:` / `Copilot の回答:` 等），另外按钮/浮层文案
+（`stop` / `new_chat` / `send_aria` / `dismiss`）也可在这里追加：
 
 ```json
 "markers": {
-  "assistant_turn": ["Copilot said:"],
-  "user_turn": ["You said:"],
-  "answer_end": ["\nSources\n", "\nMessage Copilot\n"],
-  "sources": ["Sources"],
-  "ignored_lines": ["Copy", "复制", "更多"]
+  "assistant_turn": ["Copilot said:", "Copilot の回答:"],
+  "user_turn": ["You said:", "あなたの発言:"],
+  "answer_end": ["\nSources\n", "\nMessage Copilot\n", "\n出典\n"],
+  "sources": ["Sources", "出典"],
+  "ignored_lines": ["Copy", "复制", "更多", "コピー", "その他"],
+  "stop": ["Stop generating", "停止生成", "生成を停止"],
+  "new_chat": ["New chat", "新建聊天", "新しいチャット"],
+  "send_aria": ["Send", "发送", "送信"],
+  "dismiss": ["Accept", "接受", "同意する"]
 }
 ```
 
-- `assistant_turn` / `user_turn`：回合分隔文本，用于定位最新回答与统计用户回合数——**界面中文化导致读取超时时，优先在这里追加中文锚点**；
+- `assistant_turn` / `user_turn`：回合分隔文本，用于定位最新回答与统计用户回合数——**界面非英文/中文导致读取超时时，优先在这里追加对应语言锚点**；
 - `answer_end`：回答正文的结束标记（来源区、输入提示等）；
 - `sources`：回答中出现即视为生成完成的区块标题；
-- `ignored_lines`：从回答中剔除的按钮残留文本。
+- `ignored_lines`：从回答中剔除的按钮残留文本；
+- `stop` / `new_chat` / `send_aria` / `dismiss`：停止生成、新建对话、发送按钮、弹窗关闭的文案锚点（日文系统实测"能发出去但收不到回信"就是这组锚点没命中）。
+
+> 日文等其它语言的默认文案是**按常见写法内置**的，若测试租户用了不同措辞，
+> 直接用 `markers` 追加即可，不必改代码。
 
 ### agent 段
 
