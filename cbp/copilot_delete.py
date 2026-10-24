@@ -171,6 +171,19 @@ async def _ensure_page_for_delete() -> None:
     except Exception:
         ready = True
     if not ready:
+        # 页面停在 /chat/all、Notebooks 等没有输入框的页面时，wait_copilot_ready
+        # 会误判为“未登录”。先回到基础聊天页再判定，避免把“不在对话页”当成登录失效。
+        try:
+            await _b.page.goto(str(CFG.get("copilot_url") or "https://m365.cloud.microsoft/chat/"),
+                               wait_until="domcontentloaded", timeout=120000)
+            await asyncio.sleep(1.5)
+        except Exception:
+            pass
+        try:
+            ready = await wait_copilot_ready(timeout=30)
+        except Exception:
+            ready = True
+    if not ready:
         raise RuntimeError(
             "Copilot 未就绪（需要登录）：请在自动化浏览器窗口完成登录后重试，"
             "或改为仅清理本地记录。")
