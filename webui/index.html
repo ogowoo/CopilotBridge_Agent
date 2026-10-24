@@ -138,14 +138,16 @@
       <!-- 待办与子代理合并成一张卡：两块本来都是"这个任务正在做什么"的信息，
            拆成两张小卡既占高度又显得零碎（用户：合并吧 / 学 DSH 那样放）。 -->
       <section class="card teamcard" id="teamCard" hidden>
-        <div id="goalBar" class="goalbar" hidden></div>
+        <div id="goalBar" class="goalbar urow" hidden></div>
         <section class="subagents" id="subagentBar" style="display:none">
-        <div class="chead"><span class="dot-on" id="subagentDot"></span>
-          <button type="button" class="cardchev" data-act="cardCollapse" data-arg="subagents"
-                  title="收起/展开子代理（点标题也行）"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 L6 8 L9.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <b data-i18n="子代理">子代理</b><span id="subagentCount" class="subcount"></span>
-          <!-- 刷新按钮已移除：runtime() 每秒重画子代理列表，按钮多余 -->
-        </div>
+          <div class="chead urow"><span class="dot-on urow-ic" id="subagentDot"></span>
+            <b class="urow-label" data-i18n="子代理">子代理</b>
+            <span id="subagentCount" class="subcount urow-count"></span>
+            <span class="urow-right">
+              <button type="button" class="cardchev" data-act="cardCollapse" data-arg="subagents"
+                      title="收起/展开子代理（点标题也行）"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 L6 8 L9.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </span>
+          </div>
           <div id="subagentList" class="subagentlist"></div>
         </section>
       </section>
@@ -224,7 +226,7 @@
                随时能看到当前在干什么，又不用抬头找。点一下仍旧展开/收起完整状态。 -->
           <!-- 工具调用记录：默认只显示**最新一条**（与状态条同款一行），点它浮动展开 -->
         <section class="toollog" id="toolLog" hidden>
-          <div class="toolloglatest" id="toolLogLatest" data-act="toggleToolLog"
+          <div class="toolloglatest urow" id="toolLogLatest" data-act="toggleToolLog"
                title="点一下浮动展开全部调用记录" data-i18n-title="点一下浮动展开全部调用记录">
             <span class="ss-ic" id="toolLogIc">•</span>
             <span class="toollogcount" id="toolLogCount"></span>
@@ -242,8 +244,8 @@
             <div class="toollogbody" id="toolLogBody"></div>
           </div>
         </section>
-        <div class="streamstatus" id="streamStatus" data-act="toggleStreamDetail" title="点一下展开/收起完整状态">—</div>
-          <pre id="activity" class="term livepane streamdetail" hidden>—</pre>
+        <div class="streamstatus urow" id="streamStatus" data-act="toggleStreamDetail" title="点一下展开/收起完整状态">—</div>
+          <div id="activity" class="kvpane streamdetail" hidden></div>
         </div>
       </section>
       <div class="content">

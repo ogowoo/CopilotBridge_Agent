@@ -1088,8 +1088,8 @@ body #bootBar #bootRetry{flex:none;margin-left:auto;padding:1px 9px;font-size:11
 .streamstatus .ss-meta{color:var(--faint);font-variant-numeric:tabular-nums}
 .streamstatus .ss-err{color:var(--amber, #d97706)}
 .streamstatus .ss-sep{color:var(--line2)}
-#activity.streamdetail{max-height:30vh;overflow:auto;border-top:1px solid var(--line);
-  border-bottom:0}
+#activity.streamdetail{max-height:34vh;overflow:auto;border-top:1px solid var(--line);
+  border-bottom:0;padding:10px 12px;background:var(--panel2);font-size:12.5px;line-height:1.6}
 
 /* STREAMSTEP: 实时流里穿插的步骤行（消息气泡之间的一条条"做了什么"）。
    紧凑一行：图标 · 工具名 · 理由 · 时间；点开 <details> 看参数与结果。 */
@@ -1362,7 +1362,7 @@ html,body{overflow:hidden}
   padding:9px 14px}
 #teamCard > #subagentBar{border-top:1px solid var(--line);padding:0}
 #teamCard > #subagentBar .chead{padding:8px 14px;border-bottom:0}
-#teamCard > #subagentBar .subagentlist{padding:2px 10px 8px}
+#teamCard > #subagentBar .subagentlist{padding:2px 12px 8px}
 /* 展开待办时，清单仍在卡内滚动，别把卡撑爆 */
 #teamCard > .goalbar .todolist{max-height:34vh;overflow:auto}
 /* 子代理块收起（自己的 ▾）：不再依赖 .card 祖先 */
@@ -1377,7 +1377,7 @@ html,body{overflow:hidden}
 #chat > #teamCard > .goalbar{padding:9px 12px}
 #chat > #teamCard > #subagentBar{border-top:1px solid var(--line)}
 #chat > #teamCard > #subagentBar .chead{padding:9px 12px}
-#chat > #teamCard > #subagentBar .subagentlist{padding:0 8px 6px}
+#chat > #teamCard > #subagentBar .subagentlist{padding:2px 12px 8px}
 
 /* TEAMROW-LIKE-STATUS: 待办条 / 子代理条与底部 `completed · 步 · Token` 状态条**同款**：
    同一字号（12.5px）、同一内边距（9px 12px）、同一前景色（--muted），
@@ -1826,3 +1826,119 @@ html,body{overflow:hidden}
 .md-body .md-hr{margin:1.1em 0}
 .md-body .md-tablewrap{margin:.8em 0}
 .md-body strong, .md-body b{color:var(--text)}
+
+/* UROW-UNIFIED: 待办 / 子代理 / 调用记录 / 状态 四条横条用**同一款行**。
+   高度 36、左右内边距 12、字号 12.5、顶部一条分隔线、hover 同色；
+   左边图标 + 粗体标签 + 计数，中间单行省略的摘要，右边时间/步数/Token + 折叠箭头。
+   （此前四条各写一套：emoji 图标、胶囊计数、箭头位置、行高都不一样。） */
+.urow{display:flex;align-items:center;gap:8px;min-height:36px;padding:2px 12px;
+  box-sizing:border-box;font-size:12.5px;line-height:1.6;color:var(--muted);
+  background:var(--panel);border:0;border-top:1px solid var(--line);border-radius:0;
+  cursor:pointer;user-select:none;flex-wrap:nowrap;overflow:hidden}
+.urow:hover{background:var(--panel2)}
+.urow .urow-ic{flex:none;width:14px;text-align:center;font-size:12px;color:var(--faint)}
+.urow .urow-label{flex:none;font-size:12.5px;font-weight:600;color:var(--text)}
+.urow .urow-count{flex:none;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums;
+  border:0;background:none;padding:0;margin:0}
+.urow .urow-text{flex:1 1 auto;min-width:0;color:var(--muted);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.urow .urow-right{flex:none;margin-left:auto;display:inline-flex;align-items:center;gap:8px;
+  color:var(--faint);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.urow .urow-chev{flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:14px;height:14px;color:var(--faint)}
+.urow .urow-chev svg{width:12px;height:12px;display:block;transition:transform .15s ease}
+.urow.open .urow-chev svg{transform:rotate(180deg)}
+
+/* 待办条：🎯目标 + 待办按钮都在同一行里，摘要单行省略，按钮靠右 */
+#goalBar.goalbar{flex-wrap:wrap}
+#goalBar.goalbar > .gb-goal{flex:0 1 auto;min-width:0;max-width:none;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--text);font-size:12.5px}
+#goalBar.goalbar > .gb-meta{flex:none;color:var(--faint);font-size:12px}
+#goalBar.goalbar > .gb-sep{flex:none;color:var(--line2)}
+#goalBar.goalbar > .gb-todo{flex:none;margin-left:auto;display:inline-flex;align-items:center;gap:5px;
+  font-size:12.5px;font-weight:600;color:var(--text);background:none;border:0;padding:0;cursor:pointer}
+#goalBar.goalbar > .gb-todo:hover{color:var(--accent)}
+/* 待办展开区：整行宽、缩进对齐，不挤在横条里 */
+#goalBar.goalbar > .todolist{flex:1 1 100%;margin:0;border-left:0;
+  padding:2px 12px 8px;max-height:34vh;overflow:auto}
+
+/* 子代理条：图标/标签/计数/右侧箭头，和状态条同一行样式 */
+#subagentBar > .chead.urow{padding:2px 12px;min-height:36px}
+#subagentBar .chead .subcount{margin-left:0;font-size:12px;color:var(--faint)}
+#subagentBar .chead .dot-on{font-size:9px}
+#subagentBar .chead .cardchev{width:14px;height:14px;color:var(--faint);background:none;border:0;padding:0}
+#subagentBar.collapsed > .chead .cardchev svg{transform:rotate(-90deg)}
+
+/* 调用记录条：计数不再是胶囊，摘要单行省略，右侧时间 + 展开入口 */
+#toolLog .toolloglatest.urow{padding:2px 12px;gap:8px}
+#toolLog .toollogcount{flex:none;color:var(--faint);font-size:12px;border:0;background:none;padding:0}
+#toolLog .toollogrow{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;color:var(--muted)}
+#toolLog .toollogclock{flex:none;color:var(--faint);font-size:11.5px}
+#toolLog .tolexpandhint{flex:none;color:var(--accent);font-size:11.5px;padding-left:0}
+
+/* 状态条：相位当标签、摘要单行省略、步数/Token 靠右，并给一个折叠箭头位 */
+#streamStatus.streamstatus.urow{flex-wrap:nowrap;padding:2px 12px;min-height:36px;gap:8px}
+#streamStatus .ss-phase{flex:none;font-size:12.5px;font-weight:600}
+#streamStatus .ss-detail{flex:1 1 auto;min-width:0;max-width:none;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+#streamStatus .ss-meta{flex:none;color:var(--faint);font-size:11.5px}
+#streamStatus .ss-err{flex:none;max-width:38ch;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--amber, #d97706);font-size:11.5px}
+#streamStatus .ss-sep{color:var(--line2)}
+
+/* UROW-HEIGHT: 四条横条等高（36）；待办展开清单时才变高（内容要往下长）。 */
+.urow{height:36px}
+#goalBar.goalbar{height:36px;align-items:center}
+#goalBar.goalbar:has(> .todolist){height:auto;min-height:36px;align-items:flex-start}
+/* 子代理子行：与横条同一套排版（描述省略、右侧状态/步数） */
+.subagentrow{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:12px;
+  color:var(--muted);cursor:pointer;border-radius:6px}
+.subagentrow:hover{background:var(--panel2)}
+.subagentrow.sel{background:color-mix(in srgb, var(--accent) 10%, var(--panel))}
+.subagentrow .sa-desc{flex:1 1 auto;min-width:0;color:var(--text);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.subagentrow .sa-meta{flex:none;margin-left:auto;color:var(--faint);font-size:11.5px;
+  white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* UROW-EXPANDED: 四条横条展开后的内容区用同一套规范——
+   左侧缩进对齐行首（12px）、上下内边距 4/8、限高 34vh 内部滚动、
+   行高 1.6、字号 12.5、hover 同色；列表项统一 5px 6px + 圆角。 */
+.todolist, #subagentList, #activity.streamdetail{max-height:34vh;overflow:auto}
+.todolist{margin:0;padding:2px 12px 8px;border-left:0}
+#subagentList{padding:2px 12px 8px}
+#activity.streamdetail{padding:10px 12px;background:var(--panel2);
+  border-top:1px solid var(--line);font-size:12.5px;line-height:1.6}
+.toollogpop .toollogbody{padding:6px 12px 10px}
+.toollogpop .toollogbody .streamstep{margin:0 0 6px}
+
+/* 列表项（待办 / 子代理）同一套：同样的内边距、圆角、hover、字号 */
+.todoitem, .subagentrow{padding:5px 6px;border-radius:7px;font-size:12.5px;line-height:1.6;
+  gap:8px;transition:background-color .12s ease}
+.todoitem:hover, .subagentrow:hover{background:var(--panel2)}
+.todoitem .tic, .subagentrow > span:first-child{flex:none;width:14px;text-align:center}
+.todoitem .tst{flex:none;margin-left:auto;font-size:11px;color:var(--faint);
+  border:1px solid var(--line2);border-radius:999px;padding:0 7px;line-height:1.65}
+
+/* UROW-EXPANDED2: 展开区的统一规范（id 级选择器，压过历史规则）。
+   对齐线：左缩进 12px（和行首文字对齐）；上下 2/8；限高 34vh 内部滚动；12.5px。 */
+#goalBar .todolist,
+#subagentBar #subagentList,
+#activity.streamdetail{max-height:34vh;overflow:auto;font-size:12.5px;line-height:1.6}
+#goalBar .todolist{margin:0;padding:2px 12px 8px;border-left:0}
+#subagentBar #subagentList{padding:2px 12px 8px}
+#activity.streamdetail{padding:10px 12px;background:var(--panel2);border-top:1px solid var(--line)}
+#goalBar .todoitem,
+#subagentBar .subagentrow{padding:5px 6px;border-radius:7px;font-size:12.5px;line-height:1.6;gap:8px}
+#goalBar .todoitem .tst{margin-left:auto}
+
+/* KVPANE: 状态条展开后的键值行。与待办/子代理的展开区同一规范：
+   12px 左内边距、12.5px、行高 1.6、限高 34vh 内部滚动、不染色 hover。 */
+#activity.kvpane{max-height:34vh;overflow:auto;padding:10px 12px;background:var(--panel2);
+  border-top:1px solid var(--line);font-size:12.5px;line-height:1.6}
+#activity.kvpane[hidden]{display:none}
+#activity.kvpane .kvrow{display:flex;gap:10px;padding:3px 0}
+#activity.kvpane .kvk{flex:0 0 96px;color:var(--faint)}
+#activity.kvpane .kvv{flex:1 1 auto;min-width:0;color:var(--text);
+  white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:760px){#activity.kvpane .kvk{flex-basis:80px}}

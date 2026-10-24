@@ -350,7 +350,7 @@ function renderSubagents(list){
  // 用 'block' 而非 ''：'' 会回退到样式表里的 .subagents{display:none}（实测踩到）
  bar.style.display='block';
  const running=list.filter(s=>s.state==='running').length;
- cnt.textContent=tr(' · {n} 个',{n:list.length})+(running?tr('（{r} 个运行中）',{r:running}):'');
+ cnt.textContent=String(list.length)+(running?tr(' · {r} 运行中',{r:running}):'');
  box.innerHTML='';
  // 返回父会话（只有当前会话是子代理时才出现）
  if(parentOfCurrent){
@@ -374,7 +374,8 @@ function renderSubagents(list){
   desc.setAttribute('data-i18n-skip','1');
   desc.textContent=s.description||s.task||_sid;
   const meta=document.createElement('span');meta.className='sa-meta';
-  meta.textContent=stateText(s.state)+' · '+s.steps+' '+tr('步')+(s.phase?' · '+s.phase:'');
+  meta.textContent=stateText(s.state)+' · '+s.steps+' '+tr('步')
+    +(s.phase?' · '+tr(PHASE_LABEL[s.phase]||s.phase):'');
   row.appendChild(dot);row.appendChild(desc);row.appendChild(meta);
   box.appendChild(row)});
  try{syncTeamCard()}catch(e){}
@@ -1352,6 +1353,13 @@ function stepView(btn){
 let streamSig='';
 /* 工具显示名（三语）。键是工具 id（与后端一致，永不翻译），值是给人看的名字。
    没收录的工具回落为原始 id —— 宁可见 id，也不要显示空白。 */
+/* 运行时 phase 是后端英文枚举（thinking/waiting/executing…），界面按语言显示 */
+const PHASE_LABEL={
+ thinking:'思考中', waiting:'等待中', queued:'排队中', executing:'执行中',
+ followup_queued:'跟进排队', followup_sending:'发送跟进', followup_completed:'跟进完成',
+ manual_sending:'发送中', manual_completed:'发送完成', completed:'已完成',
+ failed:'失败', cancelled:'已取消', paused:'已暂停', suspended:'限流挂起',
+};
 const TOOL_LABELS={
  list_directory:{zh:'列出目录',tw:'列出目錄',en:'List dir'},
  find_files:{zh:'查找文件',tw:'尋找檔案',en:'Find files'},
@@ -1653,7 +1661,9 @@ function renderToolLog(steps,opts){
    icEl.className='ss-ic '+(failed?'bad':(st==='ok'?'good':''));
   }
   const tool=String(last.tool||'').trim()||(failed?tr('系统'):tr('汇总'));
-  one.textContent=toolLabel(tool)+' · '+(errText||String(last.reason||'').trim());
+  const _why=errText||String(last.reason||'').trim();
+  one.innerHTML='<b class="urow-label" title="'+esc(tool)+'">'+esc(toolLabel(tool))+'</b>'
+    +(_why?'<span class="urow-text" title="'+esc(_why)+'">· '+esc(_why)+'</span>':'');
   one.title=one.textContent;
   const clock=document.getElementById('toolLogClock');
   if(clock)clock.textContent=last._time
@@ -2482,9 +2492,12 @@ function updateStreamStatus(r){
  const parts=[];
  parts.push('<b class="ss-phase ss-'+esc(st||'running')+'">'+esc(tr(st||phase||'未知'))+'</b>');
  if(r.detail)parts.push('<span class="ss-detail" data-i18n-skip="1">'+esc(String(r.detail))+'</span>');
+ const right=[];
  if(r.total_steps!==undefined&&r.total_steps!==null)
-  parts.push('<span class="ss-meta">'+esc(tr('步'))+' '+esc(String(r.total_steps))+'</span>');
- if(r.estimated_tokens)parts.push('<span class="ss-meta">'+esc(tr('Token'))+' '+esc(String(r.estimated_tokens))+'</span>');
+  right.push('<span class="ss-meta">'+esc(tr('步'))+' '+esc(String(r.total_steps))+'</span>');
+ if(r.estimated_tokens)right.push('<span class="ss-meta">'+esc(tr('Token'))+' '+esc(String(r.estimated_tokens))+'</span>');
+ if(right.length)parts.push('<span class="urow-right">'+right.join('<span class="ss-sep">·</span>')
+   +'<span class="urow-chev" id="statusChev">▾</span></span>');
  if(r.last_error)parts.push('<span class="ss-err">⚠ '+esc(String(r.last_error).slice(0,60))+'</span>');
  if(r.model_warning)parts.push('<span class="ss-err">⚠ '+esc(String(r.model_warning).slice(0,60))+'</span>');
  const html=parts.join('<span class="ss-sep">·</span>');
@@ -2497,6 +2510,8 @@ function toggleStreamDetail(){
  d.hidden=!d.hidden;
  const el=document.getElementById('streamStatus');
  if(el)el.classList.toggle('open',!d.hidden);
+ const chev=document.getElementById('statusChev');
+ if(chev)chev.textContent=d.hidden?'▾':'▴';
 }
 /* 「最近发送」：把最近一次真正发给模型的完整内容显示出来（原「最近发送内容」标签页）。 */
 async function showLastPrompt(){
@@ -2612,9 +2627,11 @@ function renderGoalBar(r){
   // 按 status 计数；兼容旧的 done 字段
   const isDone=x=>!!x&&(x.status==='completed'||x.done===true);
   const done=todos.filter(isDone).length;
-  parts.push('<button type="button" class="gb-todo" data-act="toggleTodos" '
-    +'title="'+esc(tr('待办清单：Agent 用 todo_write 维护，点一下展开/收起；与 /plan 计划模式无关'))+'">'
-    +'☑ '+esc(tr('待办'))+' '+done+'/'+todos.length+' '+(todosOpen?'▾':'▸')+'</button>');
+  parts.push('<span class="urow-ic">☑</span>'
+    +'<b class="urow-label" title="'
+    +esc(tr('待办清单：Agent 用 todo_write 维护，点一下展开/收起；与 /plan 计划模式无关'))+'">'
+    +esc(tr('待办'))+'</b><span class="urow-count">'+done+'/'+todos.length+'</span>'
+    +'<span class="urow-right"><span class="urow-chev">'+(todosOpen?'▾':'▸')+'</span></span>');
  }
  el.innerHTML=parts.join('<span class="gb-sep">·</span>');
  if(todos.length&&todosOpen){
@@ -2669,19 +2686,27 @@ async function applyRuntime(r){
     if(_sc&&_st2&&_sc.dataset.state!==_st2)_sc.dataset.state=_st2;
   }catch(e){}
   const _dash=(v)=> (v===undefined||v===null||v==='')?'—':v;
-   const _actTxt=`${tr('阶段')}: ${_dash(r.phase||r.session_state)}`
-    +`\n${r.detail||''}`
-    +`\n${tr('总步骤')}: ${_dash(r.total_steps)}`
-    +`\n${tr('当前会话步骤')}: ${_dash(r.conversation_steps)}`
-    +`\n${tr('Token估算')}: ${_dash(r.estimated_tokens)}`
-    +`\n${tr('会话序号')}: ${(r.conversation_index??0)+1}`
-    +(r.queue_pending?`${tr('队列')}: ${r.queue_pending} ${tr('条待处理')}\n`:'')
-    // 暂停/失败时把原因摆出来：以前只显示一个空的「最后更新:」
-    +(r.last_error?`\n${tr('最近错误')}: ${r.last_error}`:'')
-    +`\n${tr('最后更新')}: ${r.updated?new Date(r.updated*1000).toLocaleTimeString():'—'}`
-    +(r.model_warning?`\n\n⚠ ${r.model_warning}`:'');
-  const _actEl=document.getElementById('activity');
-  if(_actEl.textContent!==_actTxt)_actEl.textContent=_actTxt;   // 内容没变不重写：否则每秒打断文本选择/重排
+   // 展开的完整状态：与待办/子代理同一套「键值行」，不再是一坨 <pre> 纯文本
+   const _rows=[
+     [tr('阶段'), _dash(tr(PHASE_LABEL[r.phase]||'')||r.phase||r.session_state)],
+     r.detail?[tr('正在做什么'), String(r.detail)]:null,
+     [tr('总步骤'), _dash(r.total_steps)],
+     [tr('当前会话步骤'), _dash(r.conversation_steps)],
+     [tr('Token估算'), _dash(r.estimated_tokens)],
+     [tr('会话序号'), (r.conversation_index??0)+1],
+     r.queue_pending?[tr('队列'), r.queue_pending+' '+tr('条待处理')]:null,
+     r.last_error?[tr('最近错误'), String(r.last_error)]:null,
+     r.model_warning?[tr('模型提示'), String(r.model_warning)]:null,
+     [tr('最后更新'), r.updated?new Date(r.updated*1000).toLocaleTimeString():'—'],
+   ].filter(Boolean);
+   const _actHtml=_rows.map(([k,v])=>
+     '<div class="kvrow"><span class="kvk">'+esc(String(k))+'</span>'
+     +'<span class="kvv">'+esc(String(v))+'</span></div>').join('');
+   const _actEl=document.getElementById('activity');
+   if(_actEl&&_actEl.dataset.sig!==_actHtml){   // 内容没变不重写：否则每秒打断文本选择
+     _actEl.dataset.sig=_actHtml;
+     _actEl.innerHTML=_actHtml;
+   }
   updateStreamStatus(r);
   let _ans=r.answer_preview||'等待模型回答…',_ae=document.getElementById('answer'),_pj=null;
   try{_pj=JSON.parse(_ans)}catch(e){}

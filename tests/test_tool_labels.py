@@ -30,7 +30,7 @@ class ToolLabelTests(unittest.TestCase):
 
     def test_used_in_step_row_and_log(self):
         self.assertIn("toolLabel(tool)", JS)
-        self.assertIn("toolLabel(tool)+' · '", JS)
+        self.assertIn('esc(toolLabel(tool))', JS, "调用记录那一行用显示名")
         self.assertIn("title=", JS, "步骤行要给原始 id 留 title")
 
     def test_summary_key_translated(self):
