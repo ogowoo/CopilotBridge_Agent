@@ -1304,7 +1304,7 @@ function renderSteps(steps,force){
   }else{
    whyTxt=s.reason||s.error||'';
   }
-  e.innerHTML=`<div class="head"><b>${tr('步骤')} ${esc(s.step??'-')} · ${esc(s.tool||s.status||'event')}</b><span class="schip">${esc(chipTxt)}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(whyTxt)}</div>${detail}`;
+  e.innerHTML=`<div class="head"><b>${tr('步骤')} ${esc(s.step??'-')} · <span data-i18n-skip="1">${esc(s.tool||s.status||'event')}</span></b><span class="schip">${esc(chipTxt)}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(whyTxt)}</div>${detail}`;
   box.prepend(e)});
  renderedSteps=shown.length;
  if(!shown.length&&!box.innerHTML.trim()){
