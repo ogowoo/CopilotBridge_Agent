@@ -227,22 +227,15 @@
           <!-- 工具调用记录：默认只显示**最新一条**（与状态条同款一行），点它浮动展开 -->
         <section class="toollog" id="toolLog" hidden>
           <div class="toolloglatest urow" id="toolLogLatest" data-act="toggleToolLog"
-               title="点一下浮动展开全部调用记录" data-i18n-title="点一下浮动展开全部调用记录">
+                 title="点一下展开/收起调用记录" data-i18n-title="点一下展开/收起调用记录">
             <span class="ss-ic" id="toolLogIc">•</span>
-            <span class="toollogcount" id="toolLogCount"></span>
-            <span class="toollogrow" id="toolLogOne" data-i18n-skip="1"></span>
+            <b class="urow-label" data-i18n="调用记录">调用记录</b>
+            <span class="toollogcount urow-count" id="toolLogCount"></span>
+            <span class="toollogrow urow-text" id="toolLogOne" data-i18n-skip="1"></span>
             <span class="toollogclock" id="toolLogClock"></span>
-            <span class="tolexpandhint" id="toolLogMore" data-act="toolLogAll"
-                  title="浮动展开 / 收起全部调用记录" data-i18n-title="浮动展开 / 收起全部调用记录" data-i18n="展开全部">展开全部</span>
+            <span class="urow-right"><span class="urow-chev" id="toolLogChev">▸</span></span>
           </div>
-          <div class="toollogpop" id="toolLogPop" hidden>
-            <div class="toollogpophead">
-              <b data-i18n="调用记录">调用记录</b>
-              <span class="hint" id="toolLogPopCount"></span>
-              <span class="tolclose" data-act="toggleToolLog" title="关闭" data-i18n="关闭">关闭</span>
-            </div>
-            <div class="toollogbody" id="toolLogBody"></div>
-          </div>
+          <div class="toollogbody" id="toolLogBody" hidden></div>
         </section>
         <div class="streamstatus urow" id="streamStatus" data-act="toggleStreamDetail" title="点一下展开/收起完整状态">—</div>
           <div id="activity" class="kvpane streamdetail" hidden></div>

@@ -1679,17 +1679,14 @@ html,body{overflow:hidden}
 .tolexpandhint:hover{text-decoration:underline}
 
 /* 浮层：贴在那一行上方，宽度对齐，内部滚动 */
-.toollogpop{position:fixed;z-index:70;display:flex;flex-direction:column;min-height:0;
-  background:var(--panel);border:1px solid var(--line2);border-radius:12px;
-  box-shadow:0 18px 48px -12px var(--menu-shadow);overflow:hidden}
-.toollogpop[hidden]{display:none}
-.toollogpophead{display:flex;align-items:center;gap:8px;padding:9px 12px;flex:none;
-  border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted)}
-.toollogpophead b{color:var(--text);font-weight:600}
-.toollogpophead .hint{color:var(--faint);font-size:11.5px}
-.toollogpophead .tolclose{margin-left:auto;color:var(--accent);cursor:pointer;font-size:11.5px}
-.toollogpop .toollogbody{flex:1 1 auto;min-height:0;overflow:auto;padding:6px 10px 8px}
-.toollogpop .streamstep{margin:0 0 2px}
+
+
+
+
+
+
+
+
 
 
 /* ── 任务完成卡片：本次改动 / 交付物（对齐 DSH 的 Edited N files）── */
@@ -1890,7 +1887,6 @@ html,body{overflow:hidden}
 /* UROW-HEIGHT: 四条横条等高（36）；待办展开清单时才变高（内容要往下长）。 */
 .urow{height:36px}
 #goalBar.goalbar{height:36px;align-items:center}
-#goalBar.goalbar:has(> .todolist){height:auto;min-height:36px;align-items:flex-start}
 /* 子代理子行：与横条同一套排版（描述省略、右侧状态/步数） */
 .subagentrow{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:12px;
   color:var(--muted);cursor:pointer;border-radius:6px}
@@ -1909,8 +1905,8 @@ html,body{overflow:hidden}
 #subagentList{padding:2px 12px 8px}
 #activity.streamdetail{padding:10px 12px;background:var(--panel2);
   border-top:1px solid var(--line);font-size:12.5px;line-height:1.6}
-.toollogpop .toollogbody{padding:6px 12px 10px}
-.toollogpop .toollogbody .streamstep{margin:0 0 6px}
+
+
 
 /* 列表项（待办 / 子代理）同一套：同样的内边距、圆角、hover、字号 */
 .todoitem, .subagentrow{padding:5px 6px;border-radius:7px;font-size:12.5px;line-height:1.6;
@@ -1954,24 +1950,101 @@ html,body{overflow:hidden}
 
 /* TOOLLOG-COMPACT: 调用记录浮层里的步骤行改成紧凑行（与待办/子代理展开区同款）：
    无边框、无底色块、12.5px、行内 5px 6px、hover 高亮；详情折叠成一行小字。 */
-.toollogpop .toollogbody{padding:4px 8px 8px}
-.toollogpop .streamstep{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;
-  margin:0;padding:5px 6px;border:0;border-radius:7px;background:none;
-  font-size:12.5px;line-height:1.6}
-.toollogpop .streamstep:hover{background:var(--panel2)}
-.toollogpop .streamstep .ss-ic{flex:none;width:14px;text-align:center;color:var(--faint)}
-.toollogpop .streamstep.ok .ss-ic{color:var(--green)}
-.toollogpop .streamstep.error .ss-ic{color:var(--red)}
-.toollogpop .streamstep .ss-tool{flex:none;font-family:inherit;font-weight:600;color:var(--text)}
-.toollogpop .streamstep .ss-reason{flex:1 1 0;min-width:0;color:var(--muted);
+
+/* TOOLLOG-INLINE: 调用记录改成**行内展开**（与待办/子代理/状态同一种展开方式，
+   不再浮层弹出）。展开区与其它三块同一规范：12px 内边距、限高 34vh 内部滚动。 */
+#toolLog{flex:none;border-top:1px solid var(--line);background:var(--panel)}
+#toolLog[hidden]{display:none}
+#toolLog > #toolLogBody{max-height:34vh;overflow:auto;padding:4px 12px 10px}
+#toolLog > #toolLogBody[hidden]{display:none}
+#toolLog > #toolLogBody .streamstep{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;
+  margin:0;padding:5px 6px;border:0;border-radius:7px;background:none;font-size:12.5px;line-height:1.6}
+#toolLog > #toolLogBody .streamstep:hover{background:var(--panel2)}
+#toolLog > #toolLogBody .streamstep .ss-ic{flex:none;width:14px;text-align:center;color:var(--faint)}
+#toolLog > #toolLogBody .streamstep.ok .ss-ic{color:var(--green)}
+#toolLog > #toolLogBody .streamstep.error .ss-ic{color:var(--red)}
+#toolLog > #toolLogBody .streamstep .ss-tool{flex:none;font-family:inherit;font-weight:600;color:var(--text)}
+#toolLog > #toolLogBody .streamstep .ss-reason{flex:1 1 0;min-width:0;color:var(--muted);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.toollogpop .streamstep .ss-clock{flex:none;margin-left:auto;color:var(--faint);font-size:11.5px}
-.toollogpop .streamstep .ss-det{flex:0 0 auto;order:4;margin:0}
-.toollogpop .streamstep .ss-det[open]{flex:1 1 100%;order:5;margin:4px 0 0}
-.toollogpop .streamstep .ss-det summary{cursor:pointer;color:var(--faint);font-size:11.5px;
-  list-style:none;white-space:nowrap}
-.toollogpop .streamstep .ss-det summary::-webkit-details-marker{display:none}
-.toollogpop .streamstep .ss-det summary::before{content:"▸ ";color:var(--faint)}
-.toollogpop .streamstep .ss-det[open] summary::before{content:"▾ "}
-.toollogpop .streamstep .ss-det pre{margin:4px 0 0;max-height:220px;overflow:auto;
+#toolLog > #toolLogBody .streamstep .ss-clock{flex:none;margin-left:auto;color:var(--faint);font-size:11.5px}
+#toolLog > #toolLogBody .streamstep .ss-det{flex:0 0 auto;order:4;margin:0}
+#toolLog > #toolLogBody .streamstep .ss-det[open]{flex:1 1 100%;order:5;margin:4px 0 0}
+#toolLog > #toolLogBody .streamstep .ss-det summary{cursor:pointer;color:var(--faint);
+  font-size:11.5px;list-style:none;white-space:nowrap}
+#toolLog > #toolLogBody .streamstep .ss-det summary::-webkit-details-marker{display:none}
+#toolLog > #toolLogBody .streamstep .ss-det summary::before{content:"▸ ";color:var(--faint)}
+#toolLog > #toolLogBody .streamstep .ss-det[open] summary::before{content:"▾ "}
+#toolLog > #toolLogBody .streamstep .ss-det pre{margin:4px 0 0;max-height:220px;overflow:auto;
   padding:7px 9px;font-size:12px;line-height:19px}
+
+/* TODO-HOVER-VISIBLE: 待办条目 hover 必须一眼看出"鼠标在哪一条"（用户：看不出来，
+   子代理那边反而清楚）。用 id 级选择器压过 .todo-completed / .todo-in_progress
+   的底色规则，hover 时统一加一层强调色。 */
+#goalBar .todoitem{transition:background-color .12s ease}
+#goalBar .todoitem:hover{background:color-mix(in srgb, var(--accent) 16%, var(--panel))}
+#goalBar .todoitem.todo-completed:hover{background:color-mix(in srgb, var(--accent) 12%, var(--panel))}
+#goalBar .todoitem.todo-in_progress:hover{background:color-mix(in srgb, var(--accent) 26%, var(--panel))}
+#goalBar .todoitem:hover .ttxt{color:var(--text)}
+#goalBar .todoitem:hover .tic{color:var(--accent)}
+/* 子代理行同样用强调色的 hover（与待办一致，不只是 --panel2 那一点点） */
+#subagentBar .subagentrow:hover{background:color-mix(in srgb, var(--accent) 10%, var(--panel))}
+
+/* ROW-HOVER-ONE: 所有行的 hover 底色统一成一个变量（之前待办 16%、子代理 10%，
+   肉眼一看就是两个色）。`--row-hover` 引用主题变量，切主题自动跟随。 */
+:root{--row-hover:color-mix(in srgb, var(--accent) 13%, var(--panel))}
+.urow:hover{background:var(--row-hover)}
+#goalBar .todoitem:hover,
+#goalBar .todoitem.todo-completed:hover,
+#goalBar .todoitem.todo-in_progress:hover{background:var(--row-hover)}
+#subagentBar .subagentrow:hover{background:var(--row-hover)}
+#toolLog > #toolLogBody .streamstep:hover{background:var(--row-hover)}
+.toollogpop .streamstep:hover{background:var(--row-hover)}
+
+/* HOVER-SCOPE: hover 只高亮**被指的那一行**。
+   问题：展开的待办清单 `.todolist` 是 `#goalBar` 的子元素，鼠标移到条目上时
+   父级 `#goalBar:hover` 也被命中 → 整块（横条 + 清单）一起变色（用户："应该不会整体变"）。
+   这里在"鼠标位于清单内"时把父级底色撤掉，只留条目自己的高亮。 */
+/* 横条本身（含目标信息）仍可 hover 高亮 */
+
+/* HOVER-SCOPE2: 压掉 `#chat > #teamCard > .goalbar:hover{background:var(--panel2)}`
+   （它让 hover 待办条目时整块变成 #f4f6fa）。同一条选择器链上补 id，优先级更高：
+   ① 鼠标在展开清单内 → 父级不画底色（保持 --panel 的白）；
+   ② 鼠标在横条本身 → 用统一的 --row-hover。 */
+/* 子代理条同理：鼠标在列表里时横条不高亮 */
+
+/* HOVER-ITEM-ONLY: 待办块（#goalBar）本身 hover 时**不变色**。
+   之前只有"鼠标在清单里"才排除父级，于是横条、分组边缘、底部提示行 hover 时
+   整块仍会变色（用户截图：上下两端移动上去就变）。现在父级恒定用面板底色，
+   高亮只发生在 `.todoitem` 上——这才是"指哪亮哪"。 */
+#chat > #teamCard > #goalBar.goalbar,
+#chat > #teamCard > #goalBar.goalbar:hover,
+#goalBar.goalbar,
+#goalBar.goalbar:hover{background:transparent}
+
+/* ROW-HOVER-FINAL: 所有"行"的 hover 用同一条规则、同一个颜色。
+   之前：待办 16%、子代理 10%、`#goalBar:hover` 用 --panel2（偏灰蓝）——三者肉眼可辨。
+   现在：统一 `--row-hover`（accent 14% 兑 panel），并用 id 级选择器覆盖
+   `.todo-in_progress` 自带底色，保证"指哪亮哪、颜色一致"。 */
+:root{--row-hover:color-mix(in srgb, var(--accent) 14%, var(--panel))}
+.urow:hover,
+#goalBar .todoitem:hover,
+#goalBar .todoitem.todo-completed:hover,
+#goalBar .todoitem.todo-in_progress:hover,
+#goalBar .todoitem.todo-stale:hover,
+#subagentBar .subagentrow:hover,
+#toolLog > #toolLogBody .streamstep:hover{background:var(--row-hover)}
+/* 父级绝不参与 hover：整块不再变色 */
+#goalBar.goalbar,
+#goalBar.goalbar:hover,
+#chat > #teamCard > #goalBar.goalbar,
+#chat > #teamCard > #goalBar.goalbar:hover{background:var(--panel)}
+
+/* GOALHEAD: 待办块拆成"行 + 清单"两层后的结构样式。
+   `#goalBar` 只是容器（不参与 hover，恒定面板底色）；
+   `.goalhead` 才是那一行（与其它三条横条同款 .urow）；`.todolist` 是它的兄弟。 */
+#goalBar.goalbar{display:block;height:auto;min-height:0;margin:0;padding:0;
+  background:var(--panel);border:0;border-radius:0}
+#goalBar.goalbar:hover{background:var(--panel)}
+#goalBar .goalhead{width:100%}
+#goalBar .goalhead:hover{background:var(--row-hover)}
+#goalBar .todolist{padding:2px 12px 8px;margin:0;border-left:0}

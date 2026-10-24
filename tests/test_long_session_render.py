@@ -55,17 +55,23 @@ class LazyTimelineTests(unittest.TestCase):
 
 
 class LazyToolLogTests(unittest.TestCase):
+    """调用记录改成行内展开后，仍要"没展开不建 DOM，展开才建"。"""
+
     def test_body_not_built_eagerly(self):
         i = APP.index("function renderToolLog(steps,opts)")
         seg = APP[i:i + 2600]
-        self.assertIn("if(toolLogOpen)fillToolLogBody()", seg)
+        self.assertIn("if(!body.hidden)fillToolLogBody()", seg)
         self.assertNotIn("for(const s of all)body.appendChild", seg)
 
     def test_opening_builds_body(self):
-        i = APP.index("function toggleToolLogPop")
+        i = APP.index("function toggleToolLog(")
         seg = APP[i:i + 1200]
-        self.assertIn("fillToolLogBody()", seg)
-        self.assertIn("body.innerHTML=''", seg.replace(" ", ""), "收起时要释放长列表 DOM")
+        self.assertIn("renderToolLog(toolLogSteps,{force:true})", seg.replace(" ", ""))
+        self.assertIn("body.hidden=!open", seg.replace(" ", ""))
+
+    def test_inline_expansion_not_popover(self):
+        self.assertNotIn("positionToolLogPop", APP)
+        self.assertNotIn("toolLogPop", APP)
 
 
 class DetailFetchOnceTests(unittest.TestCase):

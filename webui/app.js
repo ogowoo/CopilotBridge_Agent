@@ -319,15 +319,6 @@ document.addEventListener('click',(ev)=>{
 });
 document.addEventListener('click',onCardHeadClick);
 /* 调用记录浮层：点别处 / Esc 关闭（点行本身与浮层内部不关） */
-document.addEventListener('click',ev=>{
- if(!toolLogOpen)return;
- const t=ev.target;
- if(t.closest&&(t.closest('#toolLogPop')||t.closest('#toolLogLatest')))return;
- toggleToolLogPop(false);
-},true);
-document.addEventListener('keydown',ev=>{
- if(ev.key==='Escape'&&toolLogOpen)toggleToolLogPop(false);
-});
 
 /* 待办条：点横条任意位置都能展开/收起（与状态条一致的交互）。
    内部 `.todolist` 里的条目、以及「待办 x/y」按钮自己会处理点击，别重复触发。 */
@@ -374,8 +365,11 @@ function renderSubagents(list){
   desc.setAttribute('data-i18n-skip','1');
   desc.textContent=s.description||s.task||_sid;
   const meta=document.createElement('span');meta.className='sa-meta';
+  // 阶段只在**运行中**有意义：已结束的子代理 phase 会停在最后一次的值
+  //（实测显示成"已完成 · 41 步 · 等待中"，自相矛盾）。
+  const _live=String(s.state||'')==='running'||String(s.state||'')==='waiting';
   meta.textContent=stateText(s.state)+' · '+s.steps+' '+tr('步')
-    +(s.phase?' · '+tr(PHASE_LABEL[s.phase]||s.phase):'');
+    +((_live&&s.phase)?' · '+tr(PHASE_LABEL[s.phase]||s.phase):'');
   row.appendChild(dot);row.appendChild(desc);row.appendChild(meta);
   box.appendChild(row)});
  try{syncTeamCard()}catch(e){}
@@ -1543,7 +1537,6 @@ function scrollChatToEnd(){
 /* 调用记录：默认只显示**最新一条**（与状态条同款一行），点它浮动展开全部。
    不占布局（浮层定位于该行上方），和状态条的"点开看详情"是同一个交互。 */
 let toolLogSig='';
-let toolLogOpen=false;
 let toolLogSteps=[];        // 调用记录数据：浮层打开时才建 DOM（长会话省 ~1s）
 /* ── 视图缓存：从子代理返回父会话时不要整棵重建 ─────────────────────
    用户："从 subagent 返回到 live stream 的时候会很卡。"
@@ -1629,6 +1622,25 @@ function applySessionChrome(s){
  document.getElementById('sessionView').style.display='';
 }
 
+/* 调用记录：行内展开（与待办/子代理/状态同一种方式，不再浮层弹出） */
+function toggleToolLog(){
+ const body=document.getElementById('toolLogBody');
+ const chev=document.getElementById('toolLogChev');
+ const wrap=document.getElementById('toolLog');
+ const row=document.getElementById('toolLogLatest');
+ if(!body)return;
+ const open=body.hidden;                 // 当前隐藏 → 展开
+ body.hidden=!open;
+ if(wrap)wrap.classList.toggle('open',open);
+ if(row)row.classList.toggle('open',open);
+ if(chev)chev.textContent=open?'▾':'▸';
+ try{localStorage.setItem('cbp.toolLogOpen',open?'1':'0')}catch(e){}
+ if(open){
+  try{renderToolLog(toolLogSteps,{force:true})}catch(e){}
+  body.scrollTop=body.scrollHeight;          // 展开后停在最新一步
+ }
+}
+
 function renderToolLog(steps,opts){
  opts=opts||{};
  const wrap=document.getElementById('toolLog');
@@ -1640,11 +1652,6 @@ function renderToolLog(steps,opts){
  const sig=all.length+'|'+(last?String(last.step??'')+'|'+String(last._time||''):'');
  const cnt=document.getElementById('toolLogCount');
  if(cnt)cnt.textContent=all.length?`${all.length}`:'';
- const popCnt=document.getElementById('toolLogPopCount');
- if(popCnt){
-  const okc=all.filter(s=>s.status==='ok').length;
-  popCnt.textContent=all.length?tr('{n} 步 · 成功 {ok}',{n:all.length,ok:okc}):'';
- }
  if(!all.length){wrap.hidden=true;toolLogSig=sig;body.innerHTML='';one.textContent='';return}
  wrap.hidden=false;
  if(sig===toolLogSig&&!opts.force)return;
@@ -1671,9 +1678,7 @@ function renderToolLog(steps,opts){
  }
  // 浮层内容：**打开时才建**（1500 步全量建 DOM 要 ~0.9s，而它默认是收起的）
  toolLogSteps=all;
- body.innerHTML='';
- if(toolLogOpen)fillToolLogBody();
- if(toolLogOpen)positionToolLogPop();
+ if(!body.hidden)fillToolLogBody();      // 行内展开时才建 DOM（1500 步全建要 ~0.9s）
 }
 function fillToolLogBody(){
  const body=document.getElementById('toolLogBody');
@@ -1682,35 +1687,6 @@ function fillToolLogBody(){
  for(const s of toolLogSteps)body.appendChild(stepRowEl(s));
  try{translateAttrs(body)}catch(e){}
  body.scrollTop=body.scrollHeight;
-}
-function positionToolLogPop(){
- const pop=document.getElementById('toolLogPop');
- const row=document.getElementById('toolLogLatest');
- if(!pop||!row)return;
- const r=row.getBoundingClientRect();
- pop.style.bottom=Math.round(window.innerHeight-r.top+8)+'px';
- pop.style.left=Math.round(r.left)+'px';
- pop.style.width=Math.round(r.width)+'px';
- pop.style.maxHeight=Math.round(Math.min(window.innerHeight*0.55,r.top-24))+'px';
-}
-function toggleToolLogPop(force){
- const pop=document.getElementById('toolLogPop');
- const row=document.getElementById('toolLogLatest');
- const more=document.getElementById('toolLogMore');
- if(!pop)return;
- toolLogOpen=(typeof force==='boolean')?force:!toolLogOpen;
- pop.hidden=!toolLogOpen;
- if(row)row.classList.toggle('open',toolLogOpen);
- if(more)more.textContent=toolLogOpen?tr('收起'):tr('展开全部');
- if(toolLogOpen){
-  fillToolLogBody();               // 首次展开才建全量行（数据在上面的 renderToolLog 里已备好）
-  positionToolLogPop();
-  const body=document.getElementById('toolLogBody');
-  if(body)body.scrollTop=body.scrollHeight;
- }else{
-  const body=document.getElementById('toolLogBody');
-  if(body)body.innerHTML='';       // 收起时释放长列表 DOM
- }
 }
 
 
@@ -2633,7 +2609,8 @@ function renderGoalBar(r){
     +esc(tr('待办'))+'</b><span class="urow-count">'+done+'/'+todos.length+'</span>'
     +'<span class="urow-right"><span class="urow-chev">'+(todosOpen?'▾':'▸')+'</span></span>');
  }
- el.innerHTML=parts.join('<span class="gb-sep">·</span>');
+ // 行与清单分两层：#goalBar 只是容器，hover 只作用在 .goalhead / .todoitem 上
+ el.innerHTML='<div class="goalhead urow">'+parts.join('<span class="gb-sep">·</span>')+'</div>';
  if(todos.length&&todosOpen){
   const list=document.createElement('div');
   list.className='todolist';
@@ -4572,8 +4549,7 @@ const ACTIONS={
  activate:()=>activate(),
  openCopilot:()=>openCopilot(),
  toggleMore:(el,e)=>toggleMore(el, e),
- toggleToolLog:()=>toggleToolLogPop(),
- toolLogAll:(el,e)=>{if(e&&e.stopPropagation)e.stopPropagation();toggleToolLogPop();},
+ toggleToolLog:()=>toggleToolLog(),
  openSettings:()=>openSettings(),
  swapModelResume:(el)=>swapModelResume(el&&el.dataset&&el.dataset.arg),
  dismissRetry:()=>dismissRetryOverlay(),

@@ -719,6 +719,7 @@ Object.assign(I18N_EN, {
   "数据": "Data",
   "设置": "Settings",
   "外观": "Appearance",
+ "点一下展开/收起调用记录": "Click to expand / collapse tool calls",
  "思考中": "Thinking",
  "等待中": "Waiting",
  "排队中": "Queued",
