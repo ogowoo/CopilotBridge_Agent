@@ -4225,7 +4225,7 @@ attachPasteHandler('followup','follow');
   }
  applyI18n(document);   // 静态界面按当前语言渲染（data-i18n + 静态 DOM 直译）
  applyLangButton();
- mountTimelineIntoTab();mountTeamCard();applyCardCollapsed();applyTopbarCollapsed();
+ loadVersion();mountTimelineIntoTab();mountTeamCard();applyCardCollapsed();applyTopbarCollapsed();
  loadModels();loadSandbox();browserState();mergePluginI18n(true);
  refreshSessions().then(()=>{if(DEMO&&sessCache.length&&!current)load(sessCache[0].id)});
  setInterval(()=>{refreshSessions();runtime();refreshQueue()},1000)})();
@@ -4600,3 +4600,20 @@ document.addEventListener('keydown',e=>{
 /* 启动后同步一次输入框显隐：空状态默认就可见（没有 style 变更事件），
    观察器不会触发，必须在这里主动算一次，否则空状态与常驻输入框会同时出现。 */
 try{syncComposer()}catch(e){}
+
+/* 版本信息：侧栏底部那颗淡淡的小标签。
+   数据来自 GET /（后端 app 的 version），拿不到就保持隐藏——不喧哗。 */
+async function loadVersion(){
+ const el=document.getElementById('appVersion');
+ if(!el)return;
+ try{
+  const r=await fetch('/',{cache:'no-store'});
+  if(!r.ok)return;
+  const d=await r.json();
+  const v=String(d.version||'').trim();
+  if(!v)return;
+  el.textContent='v'+v;
+  el.title=tr('版本')+'：'+v+'（'+(d.name||'Copilot Local Bridge Agent')+'）';
+  el.hidden=false;
+ }catch(e){/* 拿不到就不显示 */}
+}

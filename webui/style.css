@@ -1756,3 +1756,12 @@ html,body{overflow:hidden}
 .chatlog .msg{content-visibility:auto;contain-intrinsic-size:auto 96px}
 #steps .step{content-visibility:auto;contain-intrinsic-size:auto 72px}
 
+/* BOTTOM-VER2: 版本号 = 侧栏底部一行"背景字"：无边框、无底色、11.5px、--faint。
+   高度 34px + 下边距 14px，和固定定位的设置齿轮（bottom:14、34px）**同一水平线**；
+   左侧留 56px 让开齿轮。因为占布局，会话列表不会被它压住。 */
+.railfoot{flex:none;height:34px;margin:0 0 14px;display:flex;align-items:center;
+  padding-left:56px;pointer-events:none}
+.btmver{font-size:11.5px;line-height:1;letter-spacing:.02em;color:var(--faint);
+  background:none;border:0;padding:0;user-select:none;white-space:nowrap;opacity:.9}
+.btmver[hidden]{visibility:hidden}
+@media(max-width:860px){.railfoot{padding-left:52px;margin-bottom:12px}}
