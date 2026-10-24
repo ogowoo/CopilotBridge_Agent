@@ -165,6 +165,15 @@ def states(page):
           try { await openSettings() } catch (e) {}
         }""")
         page.wait_for_timeout(700)
+        # 设置页是"左导航 + 右内容"，非当前分组 display:none —— 只扫可见页会漏掉
+        # 隐藏分组里的漏翻（实测「提示词语言」就这样漏了一版）。这里临时全展开。
+        page.evaluate("""() => {
+          document.querySelectorAll('#settingsBody [data-pane]').forEach(p => {
+            p.dataset.prevDisplay = p.style.display || '';
+            p.style.display = 'block';
+          });
+        }""")
+        page.wait_for_timeout(250)
     except Exception:
         pass
     # 权限档位菜单（chip + 三档说明）是 JS 不生成的静态 DOM，但默认收起——
@@ -182,7 +191,13 @@ def states(page):
 
     yield "设置弹窗"
     try:
-        page.evaluate("() => { try { closeSettings() } catch (e) {} }")
+        page.evaluate("""() => {
+          document.querySelectorAll('#settingsBody [data-pane]').forEach(p => {
+            p.style.display = p.dataset.prevDisplay || '';
+            delete p.dataset.prevDisplay;
+          });
+          try { closeSettings() } catch (e) {}
+        }""")
     except Exception:
         pass
 

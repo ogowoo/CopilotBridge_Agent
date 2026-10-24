@@ -21,8 +21,12 @@
       <input id="gsInput" aria-label="跨会话搜索" placeholder="跨会话搜索对话内容…（Esc 关闭）" data-act-input="gsInput" data-act-key="gsKey">
       <div id="gsResults" class="gsresults"></div>
     </div>
-  <!-- 版本信息：侧栏底部一行背景字（无框），与设置齿轮同一水平线 -->
-  <div class="railfoot"><span id="appVersion" class="btmver" data-i18n-skip="1" hidden></span></div>
+  <!-- 侧栏底部：设置 + 版本号（固定行，不在滚动区里，像 DSH 那样） -->
+  <footer class="railfoot">
+    <button type="button" id="settingsBtn" class="railgear" data-act="openSettings"
+            title="设置" data-i18n-title="设置" aria-label="设置"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-1.55-1H2a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 3.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.16.5.6.9 1.15 1H21a2 2 0 1 1 0 4h-.09c-.55.1-.99.5-1.15 1z"/></svg><span class="raillabel" data-i18n="设置">设置</span></button>
+    <span id="appVersion" class="btmver" data-i18n-skip="1" hidden></span>
+  </footer>
   </aside>
   <div id="railScrim" class="railscrim" data-act="closeRail" title="关闭会话列表"></div>
     <main class="main">
@@ -308,8 +312,6 @@
 </div>
 
 <!-- 设置入口：整个页面左下角浮动（不占侧栏工具行，任何页面状态都在） -->
-<button type="button" id="settingsBtn" class="gearfix" title="设置" data-i18n-title="设置"
-        data-act="openSettings" aria-label="设置"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-1.55-1H2a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 3.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.16.5.6.9 1.15 1H21a2 2 0 1 1 0 4h-.09c-.55.1-.99.5-1.15 1z"/></svg></button>
 <div class="toasts" id="toasts"></div>
 <!-- 通用模态层：通知确认 / 危险确认 / 文本输入 -->
 <div class="mask" role="dialog" aria-modal="true" aria-labelledby="gmTitle" id="gmMask" data-act="maskGm">

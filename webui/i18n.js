@@ -719,6 +719,7 @@ Object.assign(I18N_EN, {
   "数据": "Data",
   "设置": "Settings",
   "外观": "Appearance",
+ "提示词语言": "Prompt language",
  "Copilot 自动化窗口数（并行任务数；1=串行）": "Copilot automation windows (parallel tasks; 1 = serial)",
  "浮动展开 / 收起全部调用记录": "Expand / collapse all tool calls in a floating panel",
  "点一下浮动展开全部调用记录": "Click to expand all tool calls in a floating panel",
