@@ -1804,3 +1804,25 @@ html,body{overflow:hidden}
 .toast.ok{border-color:var(--green);color:var(--green)}
 @media(max-width:860px){.toasts{top:calc(6px + var(--boot-h,0px) + var(--banner-h,0px));
   max-width:94vw}}
+
+/* MD-READABLE: 让"报告类"回答好读。
+   之前只有 .md-h/.md-hr 几条，段落之间几乎没间距、列表贴边、正文宽度吃满整屏，
+   一屏 100+ 字的行宽读起来很累（用户："markdown 相当于没有，一点都不易读"）。 */
+.md-body{line-height:1.78;font-size:13.5px}
+.md-body > *:first-child{margin-top:0}
+.md-body > *:last-child{margin-bottom:0}
+.md-body p{margin:.6em 0}
+.md-body p + p{margin-top:.75em}
+/* 正文限宽：超宽屏上不要一行 200 字（表格/代码块不受限，自己滚） */
+.md-body > p, .md-body > ul, .md-body > ol, .md-body > blockquote,
+.md-body > .md-h, .md-body > .md-hr{max-width:76ch}
+.md-body ul, .md-body ol{margin:.5em 0 .6em;padding-left:1.35em}
+.md-body li{margin:.22em 0}
+.md-body li > ul, .md-body li > ol{margin:.2em 0}
+.md-body .md-h{margin:1.1em 0 .45em;letter-spacing:.01em}
+.md-body .md-h2{border-bottom:1px solid var(--line);padding-bottom:.25em}
+.md-body blockquote{margin:.7em 0;padding:.15em 0 .15em .9em;
+  border-left:3px solid var(--line2);color:var(--muted)}
+.md-body .md-hr{margin:1.1em 0}
+.md-body .md-tablewrap{margin:.8em 0}
+.md-body strong, .md-body b{color:var(--text)}

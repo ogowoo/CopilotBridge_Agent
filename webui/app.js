@@ -1305,7 +1305,7 @@ function renderSteps(steps,force){
   }else{
    whyTxt=s.reason||s.error||'';
   }
-  e.innerHTML=`<div class="head"><b>${tr('步骤')} ${esc(s.step??'-')} · <span data-i18n-skip="1">${esc(s.tool||s.status||'event')}</span></b><span class="schip">${esc(chipTxt)}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(whyTxt)}</div>${detail}`;
+  e.innerHTML=`<div class="head"><b>${tr('步骤')} ${esc(s.step??'-')} · <span data-i18n-skip="1" title="${esc(String(s.tool||s.status||'event'))}">${esc(s.tool?toolLabel(s.tool):(s.status||'event'))}</span></b><span class="schip">${esc(chipTxt)}</span>${tm?`<span class="schip" style="border-style:dashed">${tm}</span>`:''}</div><div class="why">${esc(whyTxt)}</div>${detail}`;
   box.prepend(e)});
  renderedSteps=shown.length;
  if(!shown.length&&!box.innerHTML.trim()){
@@ -1350,6 +1350,69 @@ function stepView(btn){
    两个数据源都有 epoch 时间：消息用 created，步骤用 _time，直接归并排序即可。
    消息沿用 msgEl()（气泡、附件、编辑、代码块全都照旧），步骤是新做的紧凑行。 */
 let streamSig='';
+/* 工具显示名（三语）。键是工具 id（与后端一致，永不翻译），值是给人看的名字。
+   没收录的工具回落为原始 id —— 宁可见 id，也不要显示空白。 */
+const TOOL_LABELS={
+ list_directory:{zh:'列出目录',tw:'列出目錄',en:'List dir'},
+ find_files:{zh:'查找文件',tw:'尋找檔案',en:'Find files'},
+ grep:{zh:'搜索内容',tw:'搜尋內容',en:'Grep'},
+ read_text:{zh:'读取文本',tw:'讀取文字',en:'Read text'},
+ write_text:{zh:'写文件',tw:'寫檔案',en:'Write'},
+ append_text:{zh:'追加文本',tw:'追加文字',en:'Append'},
+ write_text_b64:{zh:'写文件(b64)',tw:'寫檔案(b64)',en:'Write b64'},
+ append_text_b64:{zh:'追加(b64)',tw:'追加(b64)',en:'Append b64'},
+ replace_text:{zh:'替换文本',tw:'取代文字',en:'Replace'},
+ replace_lines:{zh:'按行替换',tw:'按行取代',en:'Replace lines'},
+ apply_patch:{zh:'批量修改',tw:'批次修改',en:'Apply patch'},
+ convert_indentation:{zh:'转换缩进',tw:'轉換縮排',en:'Re-indent'},
+ indent_lines:{zh:'调整缩进',tw:'調整縮排',en:'Indent lines'},
+ make_directory:{zh:'创建目录',tw:'建立目錄',en:'Mkdir'},
+ copy_path:{zh:'复制',tw:'複製',en:'Copy'},
+ move_path:{zh:'移动',tw:'移動',en:'Move'},
+ delete_path:{zh:'删除',tw:'刪除',en:'Delete'},
+ validate_python:{zh:'语法检查',tw:'語法檢查',en:'Validate'},
+ run_unittest:{zh:'跑测试',tw:'跑測試',en:'Unittest'},
+ run_python:{zh:'跑脚本',tw:'跑腳本',en:'Run python'},
+ pwsh:{zh:'执行命令',tw:'執行指令',en:'Shell'},
+ read_image:{zh:'看图',tw:'看圖',en:'Read image'},
+ subagent:{zh:'派子代理',tw:'派子代理',en:'Subagent'},
+ subagent_many:{zh:'批量子代理',tw:'批次子代理',en:'Subagents'},
+ subagent_send:{zh:'子代理追问',tw:'子代理追問',en:'Ask subagent'},
+ subagent_list:{zh:'子代理列表',tw:'子代理清單',en:'List subagents'},
+ subagent_fork:{zh:'分叉子代理',tw:'分叉子代理',en:'Fork subagent'},
+ todo_write:{zh:'更新待办',tw:'更新待辦',en:'Update todos'},
+ memory_write:{zh:'记一条记忆',tw:'記一條記憶',en:'Remember'},
+ memory_search:{zh:'回忆',tw:'回憶',en:'Recall'},
+ memory_forget:{zh:'遗忘',tw:'遺忘',en:'Forget'},
+ skill_list:{zh:'技能列表',tw:'技能清單',en:'List skills'},
+ skill_read:{zh:'读技能',tw:'讀技能',en:'Read skill'},
+ skill_create:{zh:'存为技能',tw:'存為技能',en:'Save skill'},
+ tool_list:{zh:'工具清单',tw:'工具清單',en:'List tools'},
+ ask_user_question:{zh:'向你提问',tw:'向你提問',en:'Ask you'},
+ create_goal:{zh:'建目标',tw:'建目標',en:'Create goal'},
+ update_goal:{zh:'更新目标',tw:'更新目標',en:'Update goal'},
+ get_goal:{zh:'读目标',tw:'讀目標',en:'Get goal'},
+ job_list:{zh:'后台任务',tw:'背景任務',en:'List jobs'},
+ job_output:{zh:'读任务输出',tw:'讀任務輸出',en:'Job output'},
+ job_kill:{zh:'停后台任务',tw:'停背景任務',en:'Kill job'},
+ present:{zh:'交付文件',tw:'交付檔案',en:'Present'},
+ web_fetch:{zh:'抓网页',tw:'抓網頁',en:'Fetch URL'},
+ web_search:{zh:'联网搜索',tw:'聯網搜尋',en:'Web search'},
+ copilot_file:{zh:'让 Copilot 生成文件',tw:'讓 Copilot 生成檔案',en:'Copilot file'},
+ copilot_attach:{zh:'交给 Copilot 分析',tw:'交給 Copilot 分析',en:'Copilot attach'},
+ exit_plan_mode:{zh:'提交方案',tw:'提交方案',en:'Exit plan'},
+ ralph:{zh:'目标迭代',tw:'目標迭代',en:'Ralph'},
+ workflow:{zh:'编排子代理',tw:'編排子代理',en:'Workflow'},
+};
+function toolLabel(id){
+ const key=String(id||'').trim();
+ if(!key)return '';
+ const m=TOOL_LABELS[key];
+ if(!m)return key;                       // 没收录：显示原始 id
+ const lang=(typeof currentLang==='function')?currentLang():'zh';
+ return m[lang]||m.zh||key;
+}
+
 function stepRowEl(s){
  const st=String(s.status||'');
  const errText=String(s.error||'').trim();
@@ -1365,7 +1428,7 @@ function stepRowEl(s){
  const tool=String(s.tool||'').trim()||(failed?tr('系统'):tr('汇总'));
  const reason=errText||String(s.reason||'').trim();
  el.innerHTML='<span class="ss-ic">'+esc(icon)+'</span>'
-   +'<span class="ss-tool">'+esc(tool)+'</span>'
+   +'<span class="ss-tool" title="'+esc(tool)+'">'+esc(toolLabel(tool))+'</span>'
    +'<span class="ss-reason" data-i18n-skip="1" title="'+esc(reason)+'">'+esc(reason)+'</span>'
    +'<span class="ss-clock">'+esc(time)+'</span>';
  // 详情**照抄步骤时间线的渲染**（用户："可以像步骤时间线那样"）：
@@ -1590,7 +1653,7 @@ function renderToolLog(steps,opts){
    icEl.className='ss-ic '+(failed?'bad':(st==='ok'?'good':''));
   }
   const tool=String(last.tool||'').trim()||(failed?tr('系统'):tr('汇总'));
-  one.textContent=tool+' · '+(errText||String(last.reason||'').trim());
+  one.textContent=toolLabel(tool)+' · '+(errText||String(last.reason||'').trim());
   one.title=one.textContent;
   const clock=document.getElementById('toolLogClock');
   if(clock)clock.textContent=last._time
