@@ -1942,3 +1942,36 @@ html,body{overflow:hidden}
 #activity.kvpane .kvv{flex:1 1 auto;min-width:0;color:var(--text);
   white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:760px){#activity.kvpane .kvk{flex-basis:80px}}
+
+/* DOT-FIX: 状态圆点必须固定 9×9 正圆，不能被行布局拉成椭圆。
+   之前 `.urow-ic{width:14px}` + `.subagentrow > span:first-child{width:14px}`
+   把 9px 的点撑成 14×9 的扁椭圆（用户截图）。 */
+.dot-on,.dot-off,.dot-bad{flex:none;width:9px;height:9px;min-width:9px;min-height:9px;
+  border-radius:50%;display:inline-block;align-self:center;padding:0;font-size:0;line-height:0}
+#subagentBar .chead .dot-on{width:9px;height:9px}
+.subagentrow > span:first-child{flex:none;width:9px !important;height:9px !important;
+  padding:0;font-size:0;line-height:0;align-self:center}
+
+/* TOOLLOG-COMPACT: 调用记录浮层里的步骤行改成紧凑行（与待办/子代理展开区同款）：
+   无边框、无底色块、12.5px、行内 5px 6px、hover 高亮；详情折叠成一行小字。 */
+.toollogpop .toollogbody{padding:4px 8px 8px}
+.toollogpop .streamstep{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;
+  margin:0;padding:5px 6px;border:0;border-radius:7px;background:none;
+  font-size:12.5px;line-height:1.6}
+.toollogpop .streamstep:hover{background:var(--panel2)}
+.toollogpop .streamstep .ss-ic{flex:none;width:14px;text-align:center;color:var(--faint)}
+.toollogpop .streamstep.ok .ss-ic{color:var(--green)}
+.toollogpop .streamstep.error .ss-ic{color:var(--red)}
+.toollogpop .streamstep .ss-tool{flex:none;font-family:inherit;font-weight:600;color:var(--text)}
+.toollogpop .streamstep .ss-reason{flex:1 1 0;min-width:0;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toollogpop .streamstep .ss-clock{flex:none;margin-left:auto;color:var(--faint);font-size:11.5px}
+.toollogpop .streamstep .ss-det{flex:0 0 auto;order:4;margin:0}
+.toollogpop .streamstep .ss-det[open]{flex:1 1 100%;order:5;margin:4px 0 0}
+.toollogpop .streamstep .ss-det summary{cursor:pointer;color:var(--faint);font-size:11.5px;
+  list-style:none;white-space:nowrap}
+.toollogpop .streamstep .ss-det summary::-webkit-details-marker{display:none}
+.toollogpop .streamstep .ss-det summary::before{content:"▸ ";color:var(--faint)}
+.toollogpop .streamstep .ss-det[open] summary::before{content:"▾ "}
+.toollogpop .streamstep .ss-det pre{margin:4px 0 0;max-height:220px;overflow:auto;
+  padding:7px 9px;font-size:12px;line-height:19px}
