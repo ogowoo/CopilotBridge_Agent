@@ -96,7 +96,7 @@ textarea{resize:vertical}
    实测过：只挪位置解决不了（顶部浮层必然压住顶栏的标题/状态）。 */
 .main{overflow:hidden;min-width:0;display:flex;flex-direction:column;
   padding:calc(18px + var(--banner-h,0px) + min(var(--boot-h,0px),120px)) 22px
-          calc(6px + var(--toast-h,0px))}   /* 不再给限流浮卡预留：它已改成全屏遮罩 */
+          calc(6px)}   /* 不再给限流浮卡预留：它已改成全屏遮罩 */
 #sessionView{flex:1;display:flex;flex-direction:column;min-height:0}
 .empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--faint)}
 .empty .big{font-size:44px;font-weight:700;letter-spacing:2px;color:var(--big)}
@@ -517,7 +517,6 @@ mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--
 /* ── 页面内通知与通用弹层（替代浏览器原生 alert/confirm/prompt） ── */
 /* 提示气泡挪到左下角：右下会盖住对话区的"发送"按钮（实测重叠 64%），
    左下是会话列表底部（非交互区），盖住也只会挡到列表项的尾部。 */
-.toasts{position:fixed;top:auto;bottom:28px;left:16px;right:auto;transform:none;z-index:120;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
 .toast{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:10px 18px;font-size:13px;box-shadow:0 10px 32px var(--dlg-shadow);animation:dlgIn .16s ease-out;max-width:min(560px,90vw);white-space:pre-wrap;word-break:break-word;pointer-events:none}
 .toast.err{border-color:var(--red);color:var(--danger-text)}
 .toast.ok{border-color:var(--green);color:var(--green)}
@@ -749,7 +748,6 @@ section.card:has(#stepCount){margin-top:14px}
   /* 窄屏宽度必须扣的是内容区（单列 = 整宽），不能再用"减掉侧栏 318px"的公式，
      否则宽度被压成 158px、文字竖排、高度冲到 296px（实测 600px 视口）。 */
 }
-.toasts{bottom:calc(16px + var(--retry-h,0px) + 12px)}
 .approvalbar{bottom:16px}
 
 /* ── 中等宽度（861–1100px）顶栏挤压 ─────────────────────────────────
@@ -1693,13 +1691,6 @@ html,body{overflow:hidden}
 .toollogpop .toollogbody{flex:1 1 auto;min-height:0;overflow:auto;padding:6px 10px 8px}
 .toollogpop .streamstep{margin:0 0 2px}
 
-/* GEAR-TOAST-GAP: 设置齿轮固定在左下角（left:14 bottom:14，34px），
-   toast 原来也是 left:16 / bottom:28，窄屏一弹就压住齿轮（布局审计实测 32x20）。
-   让 toast 让开那一格：整体上移，窄屏再右移。 */
-.toasts{left:16px;bottom:calc(56px + var(--retry-h,0px))}
-@media(max-width:900px){
-  .toasts{left:60px}
-}
 
 /* ── 任务完成卡片：本次改动 / 交付物（对齐 DSH 的 Edited N files）── */
 .chgcard{margin:10px 0 4px;border:1px solid var(--line2);border-radius:12px;
@@ -1796,3 +1787,20 @@ html,body{overflow:hidden}
   :root[data-rail="open"] .rail > #sessions{flex:1 1 auto;min-height:0;overflow:auto}
   :root[data-rail="open"] .railfoot{flex:none}
 }
+
+/* TOAST-TOP: 提示信息统一在**顶部居中**显示（像 DSH 的通知条）。
+   顶部可能还有"连接异常"横幅与"浏览器未就绪"细横条，用 --banner-h/--boot-h 让开；
+   多条提示向下堆叠，窄屏限宽。提示不再占底部空间（--toast-h 从底部内边距里移除）。 */
+.toasts{position:fixed;top:calc(10px + var(--boot-h,0px) + var(--banner-h,0px));
+  left:50%;right:auto;bottom:auto;transform:translateX(-50%);
+  z-index:120;display:flex;flex-direction:column;align-items:center;gap:8px;
+  max-width:min(560px,92vw);pointer-events:none}
+.toast{background:var(--panel);border:1px solid var(--line2);border-radius:10px;
+  padding:9px 16px;font-size:13px;line-height:1.5;color:var(--text);
+  box-shadow:0 10px 28px -10px var(--menu-shadow);max-width:100%;
+  white-space:pre-wrap;word-break:break-word;pointer-events:none;
+  animation:dlgIn .16s ease-out}
+.toast.err{border-color:var(--red);color:var(--danger-text)}
+.toast.ok{border-color:var(--green);color:var(--green)}
+@media(max-width:860px){.toasts{top:calc(6px + var(--boot-h,0px) + var(--banner-h,0px));
+  max-width:94vw}}

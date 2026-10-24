@@ -64,7 +64,8 @@ function syncFixedLanes(){
   // 限流卡已改为**全屏遮罩**（不占布局），小标 retryChip 仍是浮层但很矮：
  // 这里只按小标高度预留，遮罩不再撑开 live stream 与输入框之间的间距。
  rs.setProperty('--retry-h', h('retryChip')+'px');
-  rs.setProperty('--toast-h', h('toasts')+'px');
+  // 提示信息已统一到顶部居中显示：不再占底部空间，故不计算 --toast-h
+  rs.setProperty('--toast-h', '0px');
  }catch(e){}}
 window.addEventListener('resize',()=>syncFixedLanes());
 setInterval(syncFixedLanes,1500);   // 文案变化/换行导致高度变化时靠它跟上（成本极低）
