@@ -96,7 +96,7 @@ textarea{resize:vertical}
    实测过：只挪位置解决不了（顶部浮层必然压住顶栏的标题/状态）。 */
 .main{overflow:hidden;min-width:0;display:flex;flex-direction:column;
   padding:calc(18px + var(--banner-h,0px) + min(var(--boot-h,0px),120px)) 22px
-          calc(26px + var(--toast-h,0px))}   /* 不再给限流浮卡预留：它已改成全屏遮罩 */
+          calc(6px + var(--toast-h,0px))}   /* 不再给限流浮卡预留：它已改成全屏遮罩 */
 #sessionView{flex:1;display:flex;flex-direction:column;min-height:0}
 .empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--faint)}
 .empty .big{font-size:44px;font-weight:700;letter-spacing:2px;color:var(--big)}
@@ -1189,7 +1189,7 @@ section.card.collapsed .cardchev svg{transform:rotate(-90deg)}
    输入条自己贴着这块空间的下沿绝对定位；只有内容变多、它往上长出来的那部分
    才会压在对话/时间线内容上 —— 对话区不会被挤小，也不会被常态挡住。
    --fu-rest 由 JS 校准（常态高度），+54 = 42px 贴底距 + 12px 视觉间距。 */
-#sessionView{padding-bottom:calc(var(--fu-rest,67px) + 28px)}
+#sessionView{padding-bottom:calc(var(--fu-rest,67px) + 18px)}
 /* 输入框被藏起来时（步骤时间线页 / 空状态）不要留它的空位（app.js syncComposer 挂的类） */
 .main.no-composer #sessionView{padding-bottom:0}
 #sessionView > section.card{flex:1 1 auto;min-height:0}
@@ -1203,7 +1203,7 @@ section.card.collapsed .cardchev svg{transform:rotate(-90deg)}
      ③ 半透明底 + backdrop-filter 模糊 + 投影，于是下面滚动的内容会从框底透出一点；
      ④ 框上方再压一层从页面底色渐隐的"帘子"，内容滚到框边自然淡出。 */
 .main > .composer{
-  position:absolute;left:22px;right:22px;bottom:42px;z-index:30;
+  position:absolute;left:22px;right:22px;bottom:12px;z-index:30;
   margin:0;
   padding:7px 7px 7px 14px;
   border:1px solid var(--line2);
