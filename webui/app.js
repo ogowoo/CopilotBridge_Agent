@@ -1524,6 +1524,12 @@ function renderStream(messages,steps,opts){
  });
  items.sort((x,y)=>x.t-y.t);
  renderToolLog(steps||[],opts);
+ // 任务进行中：让底部那条分隔线动起来（纯视觉，不影响布局）
+ try{
+  const _tc=document.getElementById('teamCard');
+  const _busy=!!(window.lastRuntime&&window.lastRuntime.busy);
+  if(_tc&&_tc.classList.contains('busy')!==_busy)_tc.classList.toggle('busy',_busy);
+ }catch(e){}
  const sig=items.length+'|'+(items.length?items[items.length-1].t:'');
  if(sig===streamSig&&!opts.force)return;      // 没变化不重建
  streamSig=sig;
@@ -2671,6 +2677,51 @@ function refreshChatBarMeta(){
    tr('强行插入指令（运行中即时生效）');
 }
 
+/* 后端 status detail 是中文（cbp 里 28 处 detail=），英文界面会露中文。
+   这里做一张"详情翻译表"（正则 → 英文模板 $1..$9），只在英文模式生效。 */
+const DETAIL_EN=[
+ [/^正在提交 Agent 回合 (\S+)$/,'Submitting agent turn $1'],
+ [/^Agent 回合 (\S+) 已确认，等待 Copilot 回答$/,'Agent turn $1 confirmed, waiting for Copilot'],
+ [/^任务已进入执行队列$/,'Task queued'],
+ [/^已读取文件 (.+)$/,'Loaded file $1'],
+ [/^新 Copilot 会话已绑定唯一标识$/,'New Copilot conversation bound'],
+ [/^正在执行第 (\d+) 步 · (.+)$/,'Running step $1 · $2'],
+ [/^第 (\d+) 步已完成（(.+)）$/,'Step $1 done ($2)'],
+ [/^用户暂停，可从检查点恢复$/,'Paused — resumable from checkpoint'],
+ [/^⚠ 当前模型不支持图片：已跳过 (\d+) 张附件.*$/,'⚠ This model cannot take images: $1 attachment(s) skipped'],
+ [/^正在发送普通对话$/,'Sending chat message'],
+ [/^普通对话完成$/,'Chat message done'],
+ [/^正在处理跟进消息：(.*)$/,'Processing follow-up: $1'],
+ [/^跟进消息处理完成$/,'Follow-up handled'],
+ [/^跟进消息已排队：(.*)$/,'Follow-up queued: $1'],
+ [/^已插入紧急指令（next-step）：(.*)$/,'Urgent instruction inserted: $1'],
+ [/^已插入指令并中断当前回合：(.*)$/,'Instruction inserted; current turn interrupted: $1'],
+ [/^已切换到该 Session 的 Copilot 页面$/,"Switched to this session's Copilot page"],
+ [/^正在调用 (.+) API（(.+)）$/,'Calling $1 API ($2)'],
+ [/^(.+) API 正在流式返回…$/,'$1 API streaming…'],
+ [/^(.+) API 流式返回完成，正在解析动作$/,'$1 API stream done, parsing action'],
+ [/^(.+) API 已返回，正在解析动作$/,'$1 API returned, parsing action'],
+ [/^正在调用 (.+) API$/,'Calling $1 API'],
+ [/^(.+) API 调用完成$/,'$1 API call done'],
+ [/^对抗式审计第 (\d+)\/(\d+) 轮：(.*)$/,'Adversarial audit round $1/$2: $3'],
+ [/^第 (\d+) 轮：(\d+) 个原始问题，裁判合并核验…$/,'Round $1: $2 raw issues, judge merging…'],
+ [/^第 (\d+) 轮有 p0\/p1，进入修复…$/,'Round $1 has p0/p1 — fixing…'],
+ [/^对抗式审计完成$/,'Adversarial audit done'],
+];
+function trDetail(text){
+ const s=String(text==null?'':text);
+ if(!s)return s;
+ // 语言状态由 i18n.js 的 currentLang() 决定（localStorage: cbp-lang）
+ let _lg='zh';
+ try{_lg=(typeof currentLang==='function')?currentLang():'zh'}catch(e){_lg='zh'}
+ if(String(_lg).toLowerCase()!=='en')return s;
+ for(const [re,out] of DETAIL_EN){
+  const m=s.match(re);
+  if(m)return out.replace(/\$(\d)/g,(_,i)=>m[Number(i)]||'');
+ }
+ return s;
+}
+
 function updateStreamStatus(r){
  const el=document.getElementById('streamStatus');
  if(!el||!r)return;
@@ -2690,7 +2741,7 @@ function updateStreamStatus(r){
  const _badNow=(_stNow==='failed'||_stNow==='cancelled');
  const _detailTxt=_badNow
    ? String(r.last_error||'').trim()          // 失败时只说真实原因；没有就整段省略
-   : String(r.detail||'').trim();
+   : trDetail(String(r.detail||'').trim());
  if(_detailTxt)parts.push('<span class="ss-detail" data-i18n-skip="1">'+esc(_detailTxt.slice(0,160))+'</span>');
  const right=[];
  if(r.total_steps!==undefined&&r.total_steps!==null)
@@ -2896,7 +2947,7 @@ async function applyRuntime(r){
    // 展开的完整状态：与待办/子代理同一套「键值行」，不再是一坨 <pre> 纯文本
    const _rows=[
      [tr('阶段'), _dash(tr(PHASE_LABEL[r.phase]||'')||r.phase||r.session_state)],
-     r.detail?[tr('正在做什么'), String(r.detail)]:null,
+     r.detail?[tr('正在做什么'), trDetail(String(r.detail))]:null,
      [tr('总步骤'), _dash(r.total_steps)],
      [tr('当前会话步骤'), _dash(r.conversation_steps)],
      [tr('Token估算'), _dash(r.estimated_tokens)],

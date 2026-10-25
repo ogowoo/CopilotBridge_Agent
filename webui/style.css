@@ -2300,3 +2300,27 @@ html,body{overflow:hidden}
   color:var(--faint);user-select:none}
 .filecard .fc-img{display:block;max-width:100%;height:auto;background:var(--panel2)}
 .filecard img{cursor:zoom-in}
+
+/* EMPTY-ROW-FIX: `#goalBar.goalbar{display:block}` 盖掉了 `[hidden]`，
+   没有待办时仍留一条 36px 空白行（还会响应 hover）。强制隐藏。 */
+#chat > #teamCard > #goalBar[hidden],
+#chat > #teamCard > #subagentBar[hidden],
+#chat > #teamCard > #toolLog[hidden],
+#chat > #teamCard > #activity[hidden]{display:none !important}
+
+/* LINE-RUNNING: 任务进行中，底部那条分隔线变成走马灯（中间一段亮光来回跑）。 */
+#chat > #teamCard.busy::before{
+  height:2px;
+  background:linear-gradient(90deg,
+    transparent 0%, color-mix(in srgb, var(--accent) 0%, transparent) 18%,
+    var(--accent) 45%, color-mix(in srgb, var(--accent) 55%, var(--line)) 55%,
+    transparent 82%);
+  background-size:220% 100%;
+  animation:cbpLineRun 1.9s linear infinite;
+  opacity:.9}
+@keyframes cbpLineRun{
+  from{background-position:-120% 0}
+  to{background-position:220% 0}}
+@media (prefers-reduced-motion: reduce){
+  #chat > #teamCard.busy::before{animation:none;background:var(--line)}
+}
