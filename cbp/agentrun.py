@@ -16,7 +16,7 @@ from . import bridge as b
 
 
 async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_check=None,
-                            sent: str = "") -> str:
+                            sent: str = "", marker: str = "") -> str:
     """Wait using inactivity timeout, not a fixed per-turn wall-clock timeout.
 
     TIMEOUT now means: fail only when no answer progress is observed for this
@@ -44,7 +44,14 @@ async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_chec
             raise b.AgentPaused("用户请求暂停，回合等待已中断")
         now = time.monotonic()
         still_generating = await b.generating()
-        value = b._clean_answer(await b.current_answer())
+        # 有回合标记时只认标记之后的文本：新回合还没出字就是空串（继续等），
+        # 不会像以前那样把上一次的最终答复当成本次回答。
+        if marker:
+            value = b._clean_answer(await b.answer_after_marker(marker))
+            if not value:
+                value = ""
+        else:
+            value = b._clean_answer(await b.current_answer())
 
         # 插入指令的半中断点：还没产出任何内容 -> 放弃等待不丢东西
         if (interrupt_check and interrupt_check() and not still_generating
@@ -67,7 +74,9 @@ async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_chec
 
         # 只有"我的问题回声 + UI 提示"不算答案：继续等真正的回答出现
         _echo = bool(sent) and b._echo_only(value, sent)
-        is_candidate = bool(value) and (value != previous or generation_seen) and not _echo
+        # 严格：文本必须与 before 快照不同。以前 `or generation_seen` 放行了
+        # "生成中指示闪一下、文本没变"的情况，于是把旧答复当新答复（实测 5 秒"完成"）。
+        is_candidate = bool(value) and (value != previous or bool(marker)) and not _echo
         if is_candidate:
             candidate_seen = True
             if value != current:
@@ -178,7 +187,7 @@ async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pa
 
     b.runtime_update(phase="waiting", detail=f"Agent 回合 {turn_id} 已确认，等待 Copilot 回答")
     _answer = await wait_agent_answer(previous, pause_check=pause_check, sent=prompt,
-                                      interrupt_check=interrupt_check)
+                                      interrupt_check=interrupt_check, marker=marker)
     return b.strip_suggestion_tail(_answer)
 
 
@@ -840,9 +849,11 @@ async def plain_chat_turn(sid: str, content: str, model_id: str, attach_paths: l
             send_content = (marker + "\n" + content) if make_new else content
             # 追加唯一回合标记：虚拟化列表里"You said"计数不可靠，
             # sent_successfully 用标记确认送达，避免误判重发。
-            send_content = send_content.rstrip() + f"\n\n[CBP-TURN:{uuid.uuid4().hex[:12]}]"
+            turn_marker = f"[CBP-TURN:{uuid.uuid4().hex[:12]}]"
+            send_content = send_content.rstrip() + "\n\n" + turn_marker
             await b.send(send_content, make_new, model_id)
-            answer = (await wait_agent_answer(previous, sent=content)).strip()
+            answer = (await wait_agent_answer(previous, sent=content,
+                                              marker=turn_marker)).strip()
             # 显示/存储用 markdown（保留代码块/列表/标题/粗体）；纯文本只用于回合判定。
             # 失败时回退纯文本，保证对话总能落库。
             # 先等 DOM 稳定：否则代码块还没渲染出来，取到的 markdown 缺代码块

@@ -1060,6 +1060,25 @@ async def current_answer():
     return b._strip_thinking(await b._prefer_unfolded(text))
 
 
+async def answer_after_marker(marker: str) -> str:
+    """只取**本次回合标记之后**的最新回答。
+
+    虚拟化列表里旧答复仍在页面上，靠"和上一次不同"判断不可靠；
+    标记是每次请求唯一的，出现在我发出的消息里，因此标记之后的文本一定是新回合的。
+    """
+    if not marker:
+        return ""
+    raw = await b.body_text()
+    idx = raw.rfind(marker)
+    if idx < 0:
+        return ""
+    tail = raw[idx + len(marker):]
+    text = b.extract_latest_answer(tail)
+    if text and len(text) <= 80 and text == b._status_before_marker(tail):
+        return ""
+    return b._strip_thinking(await b._prefer_unfolded(text))
+
+
 async def _prefer_unfolded(text: str) -> str:
     """若渲染文本把 JSON 参数里的连续空格折叠了，改用 textContent 版本。
 
