@@ -18,8 +18,24 @@ BINARY_EXT = {".pdf", ".zip", ".7z", ".gz", ".tar", ".xlsx", ".xls", ".docx", ".
               ".pptx", ".exe", ".dll", ".so", ".dylib", ".bin", ".ico", ".woff", ".woff2",
               ".ttf", ".otf", ".mp4", ".mp3", ".wav", ".mov"}
 
-VERBS = ("看", "查看", "打开", "加载", "显示", "展示", "读", "输出", "贴出", "打印", "dump", "cat")
-NOUNS = ("文件", "内容", "文档", "正文", "源码", "代码", "图片", "图", "截图", "md")
+# 动词/名词都做多语言：简体、繁体、英文（大小写不敏感，比较前统一 lower）。
+VERBS = (
+    # 简体
+    "看", "查看", "打开", "加载", "显示", "展示", "读", "输出", "贴出", "打印", "列出",
+    # 繁体
+    "查看", "打開", "載入", "顯示", "展示", "讀取", "輸出", "貼出", "列印", "印出",
+    # 英文
+    "show", "view", "open", "load", "display", "print", "read", "cat", "dump",
+    "inspect", "reveal", "render", "output", "view file", "show me",
+)
+NOUNS = (
+    "文件", "内容", "文档", "正文", "源码", "代码", "图片", "图", "截图", "md",
+    "檔案", "內容", "文件", "原文", "原始碼", "程式碼", "圖片", "截圖",
+    "file", "files", "content", "contents", "doc", "docs", "document", "source",
+    "code", "image", "screenshot", "picture", "text", "md",
+)
+# 英文动词单独出现太容易撞（"read the code and fix the bug"），因此英文要求
+# 同时出现"名词"或"带扩展名的路径"，这一条在 looks_file 里已经覆盖。
 
 MAX_TEXT_BYTES = 400_000
 
@@ -77,11 +93,16 @@ def maybe_file_view(text: str, root: Path) -> dict | None:
     """命中"给我看这个文件"就返回描述，否则 None。"""
     if not text or not str(text).strip():
         return None
-    low = str(text)
-    if not any(v in low for v in VERBS):
+    raw = str(text)
+    low = raw.lower()
+    if not any(v.lower() in low for v in VERBS):
         return None
-    looks_file = any(n in low for n in NOUNS) or bool(
-        re.search(r"\.(?:md|txt|py|js|ts|json|ya?ml|toml|cs|cpp|h|ps1|sh|html|css|log|png|jpe?g|gif|webp|pdf|zip|xlsx?)\b",
+    looks_file = any(n.lower() in low for n in NOUNS) or bool(
+        re.search(r"\.(?:md|markdown|txt|py|js|mjs|cjs|ts|tsx|jsx|json|ya?ml|toml|ini|cfg|conf|"
+                  r"cs|cpp|cc|c|h|hpp|ps1|psm1|sh|bat|sql|html?|css|scss|log|xml|csv|tsv|"
+                  r"rs|go|java|kt|gradle|props|targets|sln|csproj|editorconfig|env|"
+                  r"png|jpe?g|gif|webp|bmp|svg|pdf|zip|7z|gz|tar|xlsx?|docx?|pptx?|exe|dll|so|bin|ico|woff2?|ttf|otf|mp4|mp3|wav|mov)"
+                  r"(?![A-Za-z0-9_])",
                   low, re.I))
     if not looks_file:
         return None

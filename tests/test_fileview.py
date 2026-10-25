@@ -77,3 +77,49 @@ class FileViewTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class MultiLangIntentTests(unittest.TestCase):
+    """动词/名词支持英文与繁体；英文单独出现也不能误判（要能落到真实文件）。"""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / "docs").mkdir()
+        (self.root / "docs" / "roadmap.md").write_text("# t\nbody\n", encoding="utf-8")
+        (self.root / "src").mkdir()
+        (self.root / "src" / "main.py").write_text("print(1)\n", encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_traditional_chinese(self):
+        self.assertEqual((maybe_file_view("打開 docs/roadmap.md 給我看", self.root) or {}).get("path"),
+                         "docs/roadmap.md")
+        self.assertEqual((maybe_file_view("載入 docs/roadmap.md，顯示內容", self.root) or {}).get("path"),
+                         "docs/roadmap.md")
+        self.assertEqual((maybe_file_view("讀取 src/main.py 的原始碼", self.root) or {}).get("path"),
+                         "src/main.py")
+
+    def test_english_verbs(self):
+        for text in ("show me docs/roadmap.md",
+                     "Show me the contents of docs/roadmap.md",
+                     "open docs/roadmap.md please",
+                     "display src/main.py",
+                     "read docs/roadmap.md and summarize it",
+                     "cat src/main.py",
+                     "print the file docs/roadmap.md"):
+            with self.subTest(text=text):
+                v = maybe_file_view(text, self.root)
+                self.assertIsNotNone(v, text)
+                self.assertIn(v["path"], ("docs/roadmap.md", "src/main.py"))
+
+    def test_english_without_real_file_not_matched(self):
+        for text in ("read the code and fix the bug",
+                     "open the settings panel",
+                     "show me the diff of the last commit"):
+            with self.subTest(text=text):
+                self.assertIsNone(maybe_file_view(text, self.root))
+
+
+if __name__ == "__main__":
+    unittest.main()
