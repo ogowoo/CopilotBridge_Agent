@@ -1060,6 +1060,89 @@ async def current_answer():
     return b._strip_thinking(await b._prefer_unfolded(text))
 
 
+_SIDE_PANEL_JS = r"""
+() => {
+  const W = window.innerWidth, H = window.innerHeight;
+  const out = {candidates: []};
+  const sels = [
+    'aside', '[role="complementary"]', '[role="dialog"]',
+    '[data-testid*="canvas" i]', '[data-testid*="panel" i]', '[data-testid*="preview" i]',
+    '[class*="SidePanel" i]', '[class*="side-panel" i]', '[class*="RightPane" i]',
+    '[class*="rightRail" i]', '[class*="Canvas" i]', '[class*="Preview" i]',
+    '[class*="Pane" i]', '[class*="Panel" i]', '[aria-label*="文件"]', '[aria-label*="File"]',
+    '[aria-label*="预览"]', '[aria-label*="Preview"]'
+  ];
+  const seen = new Set();
+  const boxes = [];
+  for (const sel of sels) {
+    for (const el of document.querySelectorAll(sel)) {
+      if (seen.has(el)) continue;
+      seen.add(el);
+      const r = el.getBoundingClientRect();
+      const txt = (el.innerText || '').trim();
+      if (r.width < 200 || r.height < 160) continue;
+      // 只看"右侧"的块：面板通常在窗口右半边
+      if (r.left < W * 0.35) continue;
+      // 排除聊天区自己
+      if (el.closest('main [class*="chat" i]') && !el.matches('aside,[role="complementary"]')) continue;
+      boxes.push({el: el, r: r, txt: txt, sel: sel});
+    }
+  }
+  if (!boxes.length) return out;
+  boxes.sort((a, b) => (b.txt.length - a.txt.length));
+  const best = boxes[0];
+  let md = '';
+  try {
+    // 面板里若已经是 markdown 渲染结果，直接用 innerText 即可（保留段落换行）
+    md = (best.el.innerText || '').trim();
+  } catch (e) { md = ''; }
+  const head = best.el.querySelector('h1,h2,[class*="title" i],[aria-label]');
+  out.title = head ? (head.innerText || head.getAttribute('aria-label') || '').trim().slice(0, 120) : '';
+  out.text = md;
+  out.len = md.length;
+  out.sel = best.sel;
+  out.rect = [Math.round(best.r.left), Math.round(best.r.top),
+              Math.round(best.r.width), Math.round(best.r.height)];
+  out.candidates = boxes.slice(0, 12).map(b => ({
+    sel: b.sel, cls: (b.el.className || '').toString().slice(0, 60),
+    len: b.txt.length, rect: [Math.round(b.r.left), Math.round(b.r.top),
+                              Math.round(b.r.width), Math.round(b.r.height)]
+  }));
+  return out;
+}
+"""
+
+
+async def side_panel() -> dict:
+    """右侧面板（文件预览/侧栏）里的正文；没有面板时返回 {}。"""
+    try:
+        r = await b.page.evaluate(_SIDE_PANEL_JS)
+    except Exception:
+        return {}
+    if not r or not isinstance(r, dict):
+        return {}
+    text = (r.get("text") or "").strip()
+    # 太短的多半是工具栏/标题，不算内容
+    if len(text) < 120:
+        return {}
+    return {"title": r.get("title") or "", "text": text, "selector": r.get("sel") or ""}
+
+
+async def debug_side_panel() -> dict:
+    """排障：面板候选块一览（尺寸/类名/文本长度）。"""
+    try:
+        r = await b.page.evaluate(_SIDE_PANEL_JS)
+    except Exception as exc:
+        return {"error": str(exc)[:200]}
+    if not r:
+        return {"error": "no result"}
+    r = dict(r)
+    if r.get("text"):
+        r["head"] = r["text"][:300]
+        r["text"] = f"（{len(r['text'])} 字符，已省略）"
+    return r
+
+
 async def answer_after_marker(marker: str) -> str:
     """只取**本次回合标记之后**的最新回答。
 

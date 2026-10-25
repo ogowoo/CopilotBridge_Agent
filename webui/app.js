@@ -2320,6 +2320,36 @@ function codeBlockHtml(rawCode,lang,opts){
    因此模型输出里的 <script>/javascript: 之类不会变成可执行内容。
    支持：围栏代码块（带语言标签与复制）、标题、粗斜体、行内代码、
    无序/有序列表（含一层缩进嵌套）、引用、表格、分隔线、链接。 */
+/* 文件卡片：```cbpfile <kind> <path>
+   kind: text（带行号、可折叠）/ image（直接显示）/ binary（类型+大小+下载）。
+   原图与下载都走 /v1/sessions/{sid}/file?path=…，不把大内容塞进 data URL。 */
+function fileCardHtml(kind,path,content){
+ const sid=current||'';
+ const url='/v1/agent/sessions/'+encodeURIComponent(sid)+'/file?path='+encodeURIComponent(path);
+ const tk=apiToken();
+ const q=tk?'&token='+encodeURIComponent(tk):'';
+ const base=path.split('/').pop()||path;
+ const bytes=new Blob([content||'']).size;
+ const kb=Math.max(1,Math.round(bytes/1024));
+ if(kind==='image'){
+  return '<figure class="filecard img"><figcaption><span class="fc-name" title="'+esc(path)+'">'
+   +'📄 '+esc(base)+'</span><span class="fc-meta">'+kb+' KB</span>'
+   +'<a class="fc-btn" href="'+url+q+'" target="_blank" rel="noopener">原图</a></figcaption>'
+   +'<img class="fc-img" src="'+url+q+'" alt="'+esc(base)+'" loading="lazy" data-act="imgZoom" data-arg="'+esc(path)+'">'
+   +'</figure>'}
+ if(kind==='binary'){
+  return '<div class="filecard"><div class="fc-head"><span class="fc-name" title="'+esc(path)+'">'
+   +'📦 '+esc(base)+'</span><span class="fc-meta">'+kb+' KB · 二进制</span>'
+   +'<a class="fc-btn" href="'+url+'&download=1'+q.replace('&','&')+'" target="_blank" rel="noopener">下载</a>'
+   +'</div></div>'}
+ const lines=(content||'').split('\n');
+ const numbered=lines.map((l,i)=>'<span class="fc-ln">'+(i+1)+'</span>'+esc(l)).join('\n');
+ return '<div class="filecard"><div class="fc-head"><span class="fc-name" title="'+esc(path)+'">'
+  +'📄 '+esc(base)+'</span><span class="fc-meta">'+lines.length+' 行 · '+kb+' KB</span>'
+  +'<button type="button" class="fc-btn" data-act="copyFile" data-arg="'+esc(path)+'">复制</button>'
+  +'<a class="fc-btn" href="'+url+'&download=1'+(tk?'&token='+encodeURIComponent(tk):'')+'" target="_blank" rel="noopener">下载</a>'
+  +'</div><pre class="fc-body md-code" data-path="'+esc(path)+'">'+numbered+'</pre></div>'}
+
 function mdToHtml(src){
  const lines=String(src==null?'':src).replace(/\r\n?/g,'\n').split('\n');
  const inline=(s)=>esc(s)
@@ -2338,13 +2368,21 @@ function mdToHtml(src){
  for(let i=0;i<lines.length;i++){
   const line=lines[i];
   // 围栏代码块
-  let m=/^\s*```(\S*)\s*$/.exec(line);
+  let m=/^\s*```([^\n]*?)\s*$/.exec(line);
   if(m){
-   const lang=m[1]||'code',buf=[];
+   const info=m[1]||'code',buf=[];
    i++;
    while(i<lines.length&&!/^\s*```\s*$/.test(lines[i])){buf.push(lines[i]);i++}
    closeLists(0);
-   out.push(codeBlockHtml(buf.join('\n'),lang));
+   // ```cbpfile <kind> <path> —— 文件卡片（文本带行号 / 图片直接显示 / 二进制给下载）
+   if(info.startsWith('cbpfile')){
+     const rest=info.slice('cbpfile'.length).trim();
+     const sp=rest.indexOf(' ');
+     const kind=(sp<0?rest:rest.slice(0,sp))||'text';
+     const path=(sp<0?'':rest.slice(sp+1)).trim();
+     out.push(fileCardHtml(kind,path,buf.join('\n')));
+     continue}
+   out.push(codeBlockHtml(buf.join('\n'),info));
    continue}
   // 表格：本行含 | 且下一行是分隔行
   if(line.includes('|')&&i+1<lines.length&&/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i+1])&&/-/.test(lines[i+1])){
@@ -4712,6 +4750,17 @@ async function saveSettings(){
 }
 
 const ACTIONS={
+ /* 复制文件卡片里的正文（按卡片 data-path 找到对应 pre） */
+ copyFile:async(el)=>{
+  const path=el.dataset.arg||'';
+  const pre=(path?document.querySelector('.fc-body[data-path="'+CSS.escape(path)+'"]'):null)
+    ||el.closest('.filecard').querySelector('.fc-body');
+  if(!pre)return;
+  const text=[...pre.childNodes].length?pre.innerText.replace(/^\s*\d+\s/gm,''):pre.innerText;
+  try{await navigator.clipboard.writeText(text);toast(tr('已复制'),'ok')}
+  catch(e){toast(tr('复制失败'),'err')}
+ },
+
  toggleRail:()=>toggleRail(),
  // 窄屏抽屉的遮罩：点一下收起（只有窄屏才有意义，宽屏没有遮罩）
  closeRail:()=>{const r=document.documentElement;

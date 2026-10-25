@@ -38,6 +38,12 @@ async def agent_debug_download(payload: dict | None = None):
         raise HTTPException(409, str(exc)) from exc
 
 
+@router.get("/v1/agent/debug/panel")
+async def agent_debug_panel():
+    """诊断：Copilot 右侧面板（文件预览）候选块一览。"""
+    return await b.debug_side_panel()
+
+
 @router.get("/v1/agent/debug/page")
 async def agent_debug_page(limit: int = 6000):
     """只读诊断：返回当前页面的纯文本尾部（排查界面语言/锚点，不改任何状态）。

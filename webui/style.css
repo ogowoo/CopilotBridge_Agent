@@ -2282,3 +2282,21 @@ html,body{overflow:hidden}
 /* CARD-HUG-CONTENT: 底部块按内容高度（收起时 = 四行 108px），不再强制 180px，
    否则收起调用记录后底下会留一条空白。 */
 #chat > #teamCard{flex:0 1 auto;min-height:0;max-height:min(58vh, 620px);overflow:auto}
+
+/* FILECARD: 「给我看这个文件」的卡片（文本带行号 / 图片直显 / 二进制给下载）。 */
+.filecard{margin:8px 0;border:1px solid var(--line2);border-radius:10px;
+  background:var(--panel);overflow:hidden}
+.filecard .fc-head,.filecard .fc-img-cap{display:flex;align-items:center;gap:8px;
+  padding:7px 10px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:12.5px}
+.filecard .fc-name{flex:1 1 auto;min-width:0;font-weight:600;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filecard .fc-meta{flex:none;color:var(--faint);font-size:11.5px;font-variant-numeric:tabular-nums}
+.filecard .fc-btn{flex:none;font-size:11.5px;color:var(--accent);background:none;border:0;
+  padding:0 4px;cursor:pointer;text-decoration:none}
+.filecard .fc-btn:hover{text-decoration:underline}
+.filecard .fc-body{margin:0;max-height:420px;overflow:auto;padding:8px 10px;
+  font-size:12px;line-height:1.65;white-space:pre;tab-size:4}
+.filecard .fc-body .fc-ln{display:inline-block;width:3.2em;text-align:right;margin-right:10px;
+  color:var(--faint);user-select:none}
+.filecard .fc-img{display:block;max-width:100%;height:auto;background:var(--panel2)}
+.filecard img{cursor:zoom-in}

@@ -52,6 +52,24 @@ async def sessions(include_archived: bool = False, include_subagents: bool = Tru
         1 for x in rows if str(x.get("parent_id") or "").strip())}
 
 
+@router.get("/v1/agent/sessions/{sid}/file")
+async def session_file(sid: str, path: str, download: int = 0):
+    """按会话工作区读任意文件（"给我看这个文件"的卡片用它取原图/下载）。
+
+    只允许会话工作区内的路径，防目录穿越。
+    """
+    from fastapi.responses import FileResponse
+    st = b.AGENT_SESSIONS.get(sid)
+    if not st:
+        raise HTTPException(404, "Session 不存在")
+    root = Path(str(st.get("workspace") or b.BASE / "workspace")).resolve()
+    target = (root / str(path).replace("\\", "/")).resolve()
+    if not str(target).startswith(str(root)) or not target.is_file():
+        raise HTTPException(404, "文件不存在或不在工作区内")
+    return FileResponse(str(target), filename=target.name if download else None,
+                        headers=None if download else {"Content-Disposition": "inline"})
+
+
 @router.get("/v1/agent/sessions/{sid}/turns")
 async def session_turns(sid: str):
     """整会话的回合流：每回合的提示词、回答与它之后的步骤数（界面合成"发送→回答→工具"）。"""
@@ -402,6 +420,23 @@ async def continue_session_message(sid: str, req: a.SessionMessageRequest,
     # 附件只记文件名（data/uploads 下），绝对路径会因服务目录搬家而失效。
     message_id = b.AGENT_SESSIONS.add_message(sid, "user", content, int(state.get("conversation_index", 0)),
                                               attachments=[p.name for p in attach_paths])
+    # 「给我看 xxx 文件」：本地能读就直接读出来回给界面（DSH 那样的文件卡片），
+    # 不调用 Copilot —— 否则它会去开右侧面板，我们的聊天里什么都看不到。
+    try:
+        from .fileview import maybe_file_view, render_message
+        _root = Path(str(state.get("workspace") or (b.BASE / "workspace"))).resolve()
+        _view = maybe_file_view(content, _root)
+        if _view:
+            _msg = render_message(_view, sid)
+            b.AGENT_SESSIONS.add_message(sid, "assistant", _msg,
+                                         int(state.get("conversation_index", 0)))
+            b.runtime_update(sid, phase="completed",
+                             detail=f"已读取文件 {_view['path']}")
+            return {"queued": False, "local_file": _view["path"],
+                    "kind": _view.get("kind"), "message_id": message_id}
+    except Exception as exc:      # 读文件失败不阻断正常流程
+        b.log(f"本地文件直读失败（回退到模型）：{exc}")
+
     b.runtime_update(sid, phase="followup_queued", detail=f"跟进消息已排队：{content[:80]}")
     return await b.enqueue_session_message(sid, content, model_id,
                                            bool(req.agent_mode), attach_paths, message_id)

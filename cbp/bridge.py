@@ -1068,7 +1068,7 @@ from .page import (  # noqa: F401
     attach_file_to_copilot, MAX_IMAGE_ATTACHMENTS, MAX_IMAGE_BYTES,
     save_image_attachments, input_box, wait_copilot_ready, MD_JS, body_text,
     body_text_raw, _wait_dom_stable, answer_markdown, current_answer,
-    answer_after_marker,
+    answer_after_marker, side_panel, debug_side_panel,
     _prefer_unfolded, generating, count_user_markers, box_value,
     _body_contains_turn_marker, _wait_turn_marker, sent_successfully,
     click_send_button, send, completion_signal, updates,
