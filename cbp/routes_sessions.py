@@ -10,7 +10,7 @@ import asyncio, hmac, json, logging, re, threading, time, uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request as HttpRequest
+from fastapi import APIRouter, HTTPException, Query, Request as HttpRequest
 from fastapi.responses import (StreamingResponse, FileResponse, RedirectResponse,
                                JSONResponse)
 from pydantic import BaseModel, Field
@@ -266,9 +266,35 @@ async def session_deletion_plan(sid: str):
 
 @router.delete("/v1/agent/sessions/{sid}")
 async def delete_session(sid: str, delete_remote: bool = False, force_local: bool = False,
+                         urls: list[str] | None = Query(default=None),
                          request: HttpRequest = None):
     state = b.AGENT_SESSIONS.get(sid)
     if not state:
+        # 本地记录已经删掉、但远端还有残留：WebUI 的「重试远程并强制清理本地记录」
+        # 就是这种情况——以前这里直接 404，按钮看起来"没反应"（实测）。
+        if delete_remote and urls:
+            if b.session_running(sid):
+                raise HTTPException(409, "Session 正在运行，不能删除")
+            remote_results = []
+            if b.current_page() is not None:
+                async with b._window("", wait_timeout=15):
+                    for index, url in enumerate(list(dict.fromkeys(urls))):
+                        marker = b._agent_chat_marker(sid, index)
+                        remote_results.append(
+                            await a.cd.delete_copilot_conversation(url, marker))
+                    remote_results = await a.cd.finalize_session_remote_deletion(sid, remote_results)
+            else:
+                for url in list(dict.fromkeys(urls)):
+                    remote_results.append({"url": url, "deleted": False,
+                                           "error": "自动化浏览器未启动，无法删除远端会话"})
+            lang = a._lang_of(request)
+            for item in remote_results:
+                if item.get("error"):
+                    item["error"] = backend_i18n.translate(str(item["error"]), lang)
+            return {"deleted": False, "local_deleted": False,
+                    "remote_results": remote_results,
+                    "message": backend_i18n.translate(
+                        "本地记录已不存在，本次只重试远端删除。", lang)}
         raise HTTPException(404, "Session 不存在")
     # delete_remote + force_local 是 WebUI「重试远端并强制清理本地记录」的合法组合：
     # 先尽力删远端，失败的条目如实返回，再清本地。不视为参数冲突。
