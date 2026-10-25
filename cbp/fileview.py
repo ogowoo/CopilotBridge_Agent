@@ -89,6 +89,16 @@ def _kind(p: Path) -> str:
     return "text"
 
 
+# 带这些词的就不是"给我看看"，而是要我动手做事 —— 不做本地直读，交给 Agent。
+TASK_WORDS = ("生成", "创建", "新建", "写入", "写一个", "写个", "写份", "修改", "改成",
+              "删除", "删掉", "运行", "执行", "保存", "整理", "转换", "转成", "翻译",
+              "重构", "修复", "实现", "优化", "迁移", "补全", "分析", "评估", "审计",
+              "设计", "给出建议", "治理", "排查",
+              "generate", "create", "write", "modify", "delete", "run", "execute",
+              "save", "convert", "translate", "refactor", "fix", "implement",
+              "optimize", "migrate", "analyze", "analyse", "review", "design", "audit")
+
+
 REFER_WORDS = ("原文", "原文件", "这个文件", "该文件", "刚才那个", "刚才的文件", "它", "上面的文件",
                "the file", "that file", "this file", "it")
 
@@ -100,6 +110,9 @@ def maybe_file_view(text: str, root: Path, last_path: str = "") -> dict | None:
     raw = str(text)
     low = raw.lower()
     if not any(v.lower() in low for v in VERBS):
+        return None
+    # 只要有"要动手"的词，就说明这是任务而不是单纯的"打开看看"
+    if any(w.lower() in low for w in TASK_WORDS):
         return None
     looks_file = any(n.lower() in low for n in NOUNS) or bool(
         re.search(r"\.(?:md|markdown|txt|py|js|mjs|cjs|ts|tsx|jsx|json|ya?ml|toml|ini|cfg|conf|"

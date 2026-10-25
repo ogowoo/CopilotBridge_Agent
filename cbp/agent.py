@@ -645,8 +645,11 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
                 pending_now = [str(x).strip() for x in (state.get("pending") or [])
                                if str(x).strip() and str(x).strip() not in task]
                 if pending_now:
-                    prompt += ("\n\n用户在原任务基础上追加新指令，请优先执行最新指令：\n"
-                               + "\n".join(pending_now))
+                    prompt += ("\n\n【当前目标】用户最新提出的要求（以这条为准，"
+                               "不要再重复上一轮的结论）：\n"
+                               + "\n".join(pending_now)
+                               + "\n\n如果它与原任务无关，就按这条新要求直接执行；"
+                                 "不要再用上一轮的说法回答。")
                     carrying_pending = True
                 # 新话题首轮：Copilot 网页通道可以"直接生成文件"——copilot_file 让
                 # Copilot 生成并提供下载入口，内容不经过聊天消息，因此不受单条输出
@@ -672,8 +675,11 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
                 if pending_now:
                     # 用户追加的指令直接在当前会话下达（不新建会话），保留完整上下文；
                     # 送达成功后才清除 pending，发送失败/对话已满时保留并随换会话摘要携带。
-                    prompt = ("用户在原任务基础上追加新指令，请优先执行最新指令：\n"
-                              + "\n".join(pending_now))
+                    prompt = ("【当前目标】用户最新提出的要求（以这条为准，"
+                              "不要再重复上一轮的结论）：\n"
+                              + "\n".join(pending_now)
+                              + "\n\n如果它与原任务无关，就按这条新要求直接执行；"
+                                "不要再用上一轮的说法回答。")
                     force_new = not chat_active
                     carrying_pending = True
                 else:

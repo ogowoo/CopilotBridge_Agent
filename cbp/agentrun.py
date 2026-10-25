@@ -215,6 +215,29 @@ async def run_agent(req: b.AgentRequest, attach_paths: list | None = None):
         existing=b.AGENT_SESSIONS.get(sid)
         workspace=(req.workspace.strip() if req.workspace else None) or (existing or {}).get("workspace") or b.DEFAULT_WORKSPACE
         T.set_root(workspace,False)
+        # 「把 xxx 加载进来我看看」这类请求根本不需要 Agent 循环：本地读出来直接给
+        # 文件卡片。否则模型会被 noop_guard 逼着 present/copy 一堆"产出"，还把
+        # 后续的新指令也当作"继续加载"（会话 task-mvn6jjrt 实测）。
+        try:
+            from .fileview import maybe_file_view, render_message
+            _fv = maybe_file_view(task, Path(workspace).resolve(),
+                                  last_path=str((existing or {}).get("last_view_file") or ""))
+            if _fv and _fv.get("kind"):
+                if not existing:
+                    existing = b.AGENT_SESSIONS.create(sid, task, str(workspace), req.model)
+                _msg = render_message(_fv, sid)
+                b.AGENT_SESSIONS.add_message(sid, "assistant", _msg,
+                                             int((existing or {}).get("conversation_index", 0)))
+                b.AGENT_SESSIONS.patch(sid, last_view_file=_fv["path"], state="completed")
+                b.runtime_update(sid, phase="completed",
+                                 answer_preview=_msg[-4000:],
+                                 detail=f"已读取文件 {_fv['path']}")
+                class _FV:  # 与 AgentResult 结构对齐的最小返回
+                    content = _msg
+                    steps = []
+                return _FV(), None
+        except Exception as _exc:
+            b.log(f"文件直读失败（回退 Agent）：{_exc}")
         # 沙箱档位 / 计划模式按**本次请求**生效（配置是默认值）：
         # 计划模式 = 强制只读，模型只探索并产出方案，调用 exit_plan_mode 后解除。
         _mode = str(getattr(req, "sandbox_mode", None) or b.AGENT_CFG.get("sandbox_mode")
@@ -260,9 +283,13 @@ async def run_agent(req: b.AgentRequest, attach_paths: list | None = None):
                                            + "\n".join(_lines))
             except Exception:
                 pass
-                pending = list(existing.get("pending") or [])
-                pending.append(task)
+            if task.strip() and task.strip() != (existing.get("original_task") or "").strip():
                 # 追加指令不再强制新建会话：Agent 会在当前会话直接下达，保留完整上下文。
+                # ⚠ 这三行以前被缩进到上面的 except 里（只在异常时才写），
+                # 导致跟进消息根本进不到提示词（会话 task-mvn6jjrt 实测）。
+                pending = list(existing.get("pending") or [])
+                if task not in pending:
+                    pending.append(task)
                 b.AGENT_SESSIONS.patch(sid, pending=pending, state="ready")
         b.AGENT_SESSIONS.patch(sid,workspace=str(T.root),model=req.model)
         def pause_check():
