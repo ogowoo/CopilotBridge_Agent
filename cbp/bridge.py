@@ -1066,7 +1066,7 @@ from .page import (  # noqa: F401
     _menu_signature, _wait_growth, _probe_submenu, dump_menu_diagnostics,
     COPILOT_URL_MARK, ensure_copilot_page, discover_models, select_model,
     attach_file_to_copilot, MAX_IMAGE_ATTACHMENTS, MAX_IMAGE_BYTES,
-    save_image_attachments, input_box, wait_copilot_ready, MD_JS, body_text,
+    save_image_attachments, input_box, _focus_box, wait_copilot_ready, MD_JS, body_text,
     body_text_raw, _wait_dom_stable, answer_markdown, current_answer,
     answer_after_marker, side_panel, debug_side_panel,
     _prefer_unfolded, generating, count_user_markers, box_value,

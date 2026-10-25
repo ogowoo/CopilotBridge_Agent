@@ -557,8 +557,13 @@ async def discover_models() -> dict:
     # 半渲染/子菜单未飞出时只枚举到 1 个叶子：这种"扫描结果"会把其它模型
     # 全部标成不可用（WebUI 下拉大面积消失），且在下一次成功扫描前不自愈。
     # 因此只在扫到 ≥2 个叶子时更新可见性集合；空结果保留上次快照。
-    if len(leaf_labels) >= 2 or not b.DISCOVERED_LABELS:
-        b.DISCOVERED_LABELS = leaf_labels  # 只记叶子：GPT 这类子菜单父项不是可选模型
+    # 只记叶子：GPT 这类子菜单父项不是可选模型。
+    # ⚠ 用**并集**：两级菜单经常只飞出一个子叶子，整体替换会把没扫到的模型
+    # 判成"不存在"（实测 copilot-gpt-5-6-sol-think-deeper 被误判，界面显示
+    # "（菜单里未找到）"）。观测只应"新增可用"，不应"删除可用"。
+    _prev_labels = set(b.DISCOVERED_LABELS or set())
+    if len(leaf_labels) >= 2 or not _prev_labels:
+        b.DISCOVERED_LABELS = _prev_labels | leaf_labels
     added = []
     known_names = {name.casefold() for item in b.MODELS.values() for name in item["ui_names"]}
     for label in labels:
@@ -574,9 +579,10 @@ async def discover_models() -> dict:
         known_names.add(label.casefold())
         added.append(model_id)
     # 命中数决定可用性判定的严格程度：0 命中（菜单整体改名）时放行全部内置模型
+    _seen_all = set(b.DISCOVERED_LABELS or set()) | leaf_labels
     b.DISCOVERY_MATCHED = sum(
         1 for item in b.MODELS.values()
-        if any(name.casefold() in leaf_labels for name in item["ui_names"])
+        if any(name.casefold() in _seen_all for name in item["ui_names"])
     )
     result.update({"added": added, "scanned": True, "labels": labels,
                    "menu_dump": result_menu_dump, "parents": sorted(parents),
@@ -1317,7 +1323,7 @@ async def send(prompt, make_new, model_id):
     selected_model = await b.select_model(model_id)
 
     box = await b.input_box()
-    await b._focus_box(box)
+    await _focus_box(box)
     try:
         await box.fill(prompt)
     except Exception:
@@ -1331,13 +1337,13 @@ async def send(prompt, make_new, model_id):
         b.log("问题已发送")
         return selected_model
 
-    await b._focus_box(box)
+    await _focus_box(box)
     if await b.click_send_button() and await b.sent_successfully(box, before_count, prompt):
         await b.diagnostics("sent_button")
         b.log("问题已通过发送按钮提交")
         return selected_model
 
-    await b._focus_box(box)
+    await _focus_box(box)
     await box.press("Control+Enter")
     if await b.sent_successfully(box, before_count, prompt):
         await b.diagnostics("sent_ctrl_enter")

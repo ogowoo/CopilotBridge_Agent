@@ -970,14 +970,22 @@ function fillModelSelect(sel, avail, keep){
  sel.innerHTML='';
  avail.forEach(m=>{let o=document.createElement('option');o.value=m.id;o.textContent=m.id;const _d=modelDesc(m);if(_d)o.title=_d;sel.appendChild(o)});
  if(prev&&!seen.includes(prev)){
-  let o=document.createElement('option');o.value=prev;o.textContent=prev+'（菜单里未找到）';sel.appendChild(o)}}
+  // 在当前模型被 available 过滤掉、但确实存在于模型表里时，正常显示（不打标记）：
+  // 菜单是两级结构，扫描偶尔漏掉叶子，不该把用户正在用的模型说成"不存在"。
+  const all=(window.__MODELS||[]).map(m=>m.id);
+  const label=all.includes(prev)?prev:prev+tr('（菜单里未找到）');
+  let o=document.createElement('option');o.value=prev;o.textContent=label;sel.appendChild(o)}}
 /* 会话页模型选择器：显示当前会话自己的模型 */
 function refreshSessModelOptions(){
  let sel=document.getElementById('sessModel');if(!sel)return;
  let want=currentModel||'';
  if(!want)return;
  let has=[...sel.options].some(o=>o.value===want);
- if(!has){let o=document.createElement('option');o.value=want;o.textContent=want+tr('（菜单里未找到）');sel.appendChild(o)}
+ if(!has){
+  const all=(window.__MODELS||[]).map(m=>m.id);
+  let o=document.createElement('option');o.value=want;
+  o.textContent=all.includes(want)?want:want+tr('（菜单里未找到）');
+  sel.appendChild(o)}
  sel.value=want;
  sel.title=tr('当前会话模型：{n}（下一回合生效，服务重启后仍沿用）',{n:want})}	
 async function setSessionModel(model){
