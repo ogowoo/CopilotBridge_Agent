@@ -2309,29 +2309,34 @@ html,body{overflow:hidden}
 #chat > #teamCard > #activity[hidden]{display:none !important}
 
 
-/* TOOLCARD-BUSY-LINE: 任务进行中，卡片顶部有一条**心电图式**脉冲从左扫到右。
-   - `::before`：静态渐变线（中间实、两端淡）；
-   - `::after`：ECG 波形（SVG 当 mask，颜色取 --accent，跟随主题），transform 位移，
-     行程约 80%，3s 一轮；
-   - `.busy` 时卡片顶部留 14px，波形不被裁、也不压第一行文字；
-   - 横向裁剪保证不出滚动条；prefers-reduced-motion 下只留静态线。 */
+/* TOOLCARD-BUSY-LINE: 任务进行中，卡片顶部**居中**一段"脉搏波"在扫。
+   波是纯 CSS 渐变（一个周期 = 48%，带内一次只见一个鼓包），不是 SVG/图片；
+   动画只改 background-position（本环境实测可推进），两端用渐变 mask 淡出。 */
 #chat > #teamCard{overflow-x:hidden;overflow-y:auto}
-#chat > #teamCard.busy{padding-top:14px}
+#chat > #teamCard.busy{padding-top:12px}
 #chat > #teamCard.busy::before{height:2px;opacity:.4;animation:none}
 #chat > #teamCard.busy::after{
-  content:"";position:absolute;top:0;left:0;height:14px;width:24%;
-  pointer-events:none;z-index:3;
-  background:linear-gradient(90deg,
-    transparent 0%, var(--accent) 20%, var(--accent) 80%, transparent 100%);
-  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 40' preserveAspectRatio='none'><path d='M0 32 H40 l5 -3 l5 3 l4 5 l4 -32 l6 34 l4 -7 l6 0 q7 -7 14 0 H200' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
-  mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 40' preserveAspectRatio='none'><path d='M0 32 H40 l5 -3 l5 3 l4 5 l4 -32 l6 34 l4 -7 l6 0 q7 -7 14 0 H200' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
-  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
-  -webkit-mask-size:100% 100%;mask-size:100% 100%;
-  animation:cbpEcgSweep 3s linear infinite;
-  will-change:transform}
-@keyframes cbpEcgSweep{
-  0%  {transform:translateX(-35%)}
-  100%{transform:translateX(330%)}}
+  content:"";position:absolute;top:1px;left:50%;height:8px;width:46%;
+  transform:translateX(-50%);
+  pointer-events:none;z-index:3;border-radius:4px;
+  background-image:repeating-linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 18%, transparent) 14%,
+    color-mix(in srgb, var(--accent) 70%, transparent) 24%,
+    var(--accent) 27%,
+    color-mix(in srgb, var(--accent) 70%, transparent) 30%,
+    color-mix(in srgb, var(--accent) 18%, transparent) 40%,
+    transparent 54%);
+  background-size:48% 100%;
+  background-repeat:repeat-x;
+  background-position:0 0;
+  -webkit-mask-image:linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image:linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  animation:cbpPulseWave 2.4s linear infinite;
+  will-change:background-position}
+@keyframes cbpPulseWave{
+  0%  {background-position:0 0}
+  100%{background-position:48% 0}}
 @media (prefers-reduced-motion: reduce){
-  #chat > #teamCard.busy::after{animation:none;transform:translateX(140%);opacity:.55}
+  #chat > #teamCard.busy::after{animation:none;opacity:.55}
 }
