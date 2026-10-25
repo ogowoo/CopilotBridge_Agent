@@ -2324,3 +2324,37 @@ html,body{overflow:hidden}
 @media (prefers-reduced-motion: reduce){
   #chat > #teamCard.busy::before{animation:none;background:var(--line)}
 }
+
+/* LINE-RUNNING2: 走马灯改用 **transform 位移**（实测 background-position 不推进）。
+   ::before 仍是静态渐变线；::after 是一段亮光，靠 transform 左右跑。 */
+#chat > #teamCard.busy::after{
+  content:"";position:absolute;top:0;height:2px;width:34%;left:0;
+  border-radius:2px;pointer-events:none;z-index:3;
+  background:linear-gradient(90deg,
+    transparent 0%, color-mix(in srgb, var(--accent) 45%, transparent) 35%,
+    var(--accent) 50%, color-mix(in srgb, var(--accent) 45%, transparent) 65%,
+    transparent 100%);
+  animation:cbpLineSweep 1.8s cubic-bezier(.45,.05,.55,.95) infinite;
+  will-change:transform}
+@keyframes cbpLineSweep{
+  0%  {transform:translateX(-40%)}
+  100%{transform:translateX(300%)}}
+#chat > #teamCard.busy::before{height:2px;opacity:.55}
+@media (prefers-reduced-motion: reduce){
+  #chat > #teamCard.busy::after{animation:none;transform:none;width:100%;opacity:.35}
+}
+
+/* LINE-RUNNING3: 光段更短、更慢（用户："太长了，也太快了"）。
+   段宽 16%，匀速 5.2s 扫过整条；prefers-reduced-motion 下退化成一条淡淡的整线。 */
+#chat > #teamCard.busy::after{
+  width:16%;
+  background:linear-gradient(90deg,
+    transparent 0%, color-mix(in srgb, var(--accent) 30%, transparent) 32%,
+    color-mix(in srgb, var(--accent) 85%, white) 50%,
+    color-mix(in srgb, var(--accent) 30%, transparent) 68%,
+    transparent 100%);
+  animation:cbpLineSweepSlow 5.2s linear infinite;
+  opacity:.85}
+@keyframes cbpLineSweepSlow{
+  0%  {transform:translateX(-100%)}
+  100%{transform:translateX(620%)}}

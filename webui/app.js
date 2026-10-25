@@ -1524,12 +1524,7 @@ function renderStream(messages,steps,opts){
  });
  items.sort((x,y)=>x.t-y.t);
  renderToolLog(steps||[],opts);
- // 任务进行中：让底部那条分隔线动起来（纯视觉，不影响布局）
- try{
-  const _tc=document.getElementById('teamCard');
-  const _busy=!!(window.lastRuntime&&window.lastRuntime.busy);
-  if(_tc&&_tc.classList.contains('busy')!==_busy)_tc.classList.toggle('busy',_busy);
- }catch(e){}
+
  const sig=items.length+'|'+(items.length?items[items.length-1].t:'');
  if(sig===streamSig&&!opts.force)return;      // 没变化不重建
  streamSig=sig;
@@ -2929,6 +2924,10 @@ function renderGoalBar(r){
 async function applyRuntime(r){
  if(!r)return;
  lastRuntime=r;              // 供 toggleTodos 重绘待办清单
+ // 任务进行中：底部那条分隔线动起来（纯视觉）。注意用模块作用域的 lastRuntime，
+ // 不是 window.lastRuntime（后者是 undefined，类永远挂不上）。
+ try{const _tc=document.getElementById('teamCard');
+  if(_tc)_tc.classList.toggle('busy', !!r.busy);}catch(e){}
  const myId=current;
  // SSE 推送与 1s/350ms 轮询可能并发到达同一函数：统一以"当前会话"为准，
  // 迟到的或属于别的会话的快照直接丢弃（否则会把 A 的步骤渲染进 C 的时间线）。
