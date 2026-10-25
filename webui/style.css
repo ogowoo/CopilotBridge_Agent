@@ -2048,3 +2048,109 @@ html,body{overflow:hidden}
 #goalBar .goalhead{width:100%}
 #goalBar .goalhead:hover{background:var(--row-hover)}
 #goalBar .todolist{padding:2px 12px 8px;margin:0;border-left:0}
+
+/* ROWS-ONE-SECTION: 待办/子代理/调用记录/状态**同属一个 section**（#teamCard）。
+   - 四条行之间**不画分隔线**（原来是相邻 border-top）
+   - 与对话区之间的那条线改成"中间实、两端渐隐"，与侧栏底栏一致
+   - 行 hover 到左右边缘（父级不再留 padding） */
+#chat > #teamCard{position:relative;border-top:0;background:var(--panel);padding:0}
+#chat > #teamCard::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;
+  background:linear-gradient(90deg,
+    transparent 0%, color-mix(in srgb, var(--line) 55%, transparent) 14%,
+    var(--line) 34%, var(--line) 66%,
+    color-mix(in srgb, var(--line) 55%, transparent) 86%, transparent 100%);
+  pointer-events:none}
+#chat > #teamCard > .goalbar{padding:0;margin:0;border:0;background:var(--panel)}
+#chat > #teamCard > #subagentBar{border-top:0}
+#chat > #teamCard > #toolLog,
+#chat > #teamCard > .streamstatus,
+#chat > #teamCard > #activity{border-top:0}
+#chat > #teamCard .urow{border-top:0}
+/* 行自身左右到边：内容仍由 .urow 的 12px 内边距控制 */
+#chat > #teamCard > *{width:100%;box-sizing:border-box}
+
+/* SVG-ICON-SIZE: 四条横条与步骤行统一用内联 SVG 图标（14×14，颜色跟随文字/状态）。 */
+.urow .urow-ic{display:inline-flex;align-items:center;justify-content:center;
+  flex:none;width:14px;height:14px;color:var(--faint)}
+.urow .urow-ic svg{width:14px;height:14px;display:block}
+.urow .urow-ic.ok{color:var(--green)}
+.urow .urow-ic.bad{color:var(--red)}
+.urow .urow-ic.live{color:var(--accent)}
+#toolLogBody .streamstep .ss-ic{display:inline-flex;align-items:center;justify-content:center;
+  flex:none;width:14px;height:14px;color:var(--faint)}
+#toolLogBody .streamstep .ss-ic svg{width:14px;height:14px;display:block}
+#toolLogBody .streamstep.ok .ss-ic{color:var(--green)}
+#toolLogBody .streamstep.error .ss-ic{color:var(--red)}
+/* 子代理状态点：SVG 圆，宽高固定不拉伸 */
+#subagentDot{width:10px !important;height:10px !important;color:var(--green)}
+#subagentDot svg{width:10px;height:10px}
+
+/* TURN-FLOW: 调用记录里的"发送 / 回答"行。与工具步骤同一套行样式，
+   只用左图标颜色区分：发送=强调色、回答=绿色。 */
+#toolLogBody .turnrow .ss-tool{color:var(--muted);font-weight:600}
+#toolLogBody .turnrow.tbody-send .ss-ic{color:var(--accent)}
+#toolLogBody .turnrow.tbody-answer .ss-ic{color:var(--green)}
+#toolLogBody .turnrow .ss-reason{font-style:normal}
+
+/* TOOLLOG-CHAT: 调用记录按**对话形式**展示（左/右）。
+   发送 → 右侧气泡（强调色淡底，像"你"说的话）；
+   回答 / 工具调用 → 左侧气泡（面板底，像助手）。
+   去掉行内 hover 与边框，靠气泡形状区分，和对话框一致。 */
+#toolLogBody{display:flex;flex-direction:column;gap:6px;padding:8px 12px 10px}
+#toolLogBody > .streamstep{border:0;border-radius:12px;padding:6px 10px;background:none;
+  max-width:78%;box-sizing:border-box}
+#toolLogBody > .streamstep:hover{background:none}
+#toolLogBody > .streamstep[data-side="right"],
+#toolLogBody > .turnrow.tbody-send{margin-left:auto;background:color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border:1px solid color-mix(in srgb, var(--accent) 22%, var(--line2))}
+#toolLogBody > .streamstep[data-side="left"],
+#toolLogBody > .turnrow.tbody-answer,
+#toolLogBody > .streamstep:not(.turnrow){margin-right:auto;background:var(--panel2);
+  border:1px solid var(--line2)}
+/* 发送/回答的标签更轻，像对话里的"角色" */
+#toolLogBody .turnrow .ss-tool{color:var(--faint);font-weight:600}
+/* 说明文字可点（展开详情） */
+#toolLogBody .ss-reason.clickable{cursor:pointer}
+#toolLogBody .ss-reason.clickable:hover{color:var(--text);text-decoration:underline dotted}
+/* summary 只留语义，不显示 */
+#toolLogBody summary.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* TOOLLOG-CHAT2: 对话式左右分栏（同一条选择器链上覆盖，避免被旧规则压掉）。
+   发送=右侧强调底气泡；回答/工具=左侧面板底气泡；宽度最多 78%，圆角 12。 */
+#toolLog > #toolLogBody{display:flex;flex-direction:column;gap:6px;padding:8px 12px 10px}
+#toolLog > #toolLogBody > .streamstep{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;
+  max-width:78%;margin:0;padding:6px 10px;border-radius:12px;font-size:12.5px;line-height:1.6;
+  background:var(--panel2);border:1px solid var(--line2);box-sizing:border-box}
+#toolLog > #toolLogBody > .streamstep:hover{background:var(--panel2)}
+#toolLog > #toolLogBody > .turnrow[data-side="right"],
+#toolLog > #toolLogBody > .turnrow.tbody-send{margin-left:auto;
+  background:color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-color:color-mix(in srgb, var(--accent) 24%, var(--line2))}
+#toolLog > #toolLogBody > .turnrow[data-side="left"],
+#toolLog > #toolLogBody > .turnrow.tbody-answer{margin-right:auto}
+#toolLog > #toolLogBody > .streamstep:not(.turnrow){margin-right:auto}
+#toolLog > #toolLogBody .ss-reason{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+#toolLog > #toolLogBody .ss-det{flex:1 1 100%;order:5}
+#toolLog > #toolLogBody .ss-det[open]{margin-top:4px}
+
+/* TOOLLOG-CHAT3: 左右分栏用 flex 的 align-self 明确贴边（不再依赖 margin auto）：
+   发送 = 右侧（flex-end），回答/工具 = 左侧（flex-start）+ 24px 缩进（像助手气泡）。 */
+#toolLog > #toolLogBody{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+#toolLog > #toolLogBody > .streamstep{align-self:flex-start;max-width:78%;margin:0}
+#toolLog > #toolLogBody > .turnrow[data-side="right"],
+#toolLog > #toolLogBody > .turnrow.tbody-send{align-self:flex-end;margin-left:auto;margin-right:0}
+#toolLog > #toolLogBody > .streamstep:not(.turnrow){margin-left:20px}
+/* 展开的全文 */
+#toolLog > #toolLogBody .turnfull{margin:6px 0 0;padding:8px 10px;max-height:220px;overflow:auto;
+  font-size:12px;line-height:19px;background:var(--bg);border:1px solid var(--line2);border-radius:8px;
+  white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* CHAT-KEEP-ROOM: 对话区保底高度。
+   待办/子代理/调用记录展开后会把 #chatlog 压到 300px 以下，新发的消息"看不见"
+   （用户实测："已发送的信息看不到"）。这里给对话区保底、给下面几块加最大高度。 */
+#chat > #chatlog{min-height:40vh}
+#chat > #teamCard{max-height:38vh;overflow:auto}
+#chat > #teamCard > #toolLog > #toolLogBody{max-height:26vh}
+#chat > #teamCard #subagentList{max-height:24vh}

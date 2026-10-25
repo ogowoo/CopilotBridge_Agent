@@ -1348,6 +1348,21 @@ let streamSig='';
 /* 工具显示名（三语）。键是工具 id（与后端一致，永不翻译），值是给人看的名字。
    没收录的工具回落为原始 id —— 宁可见 id，也不要显示空白。 */
 /* 运行时 phase 是后端英文枚举（thinking/waiting/executing…），界面按语言显示 */
+/* 统一图标集：全部内联 SVG，14×14、stroke=currentColor、线宽 1.8。
+   四条横条与步骤行都用它，避免 emoji（☑ ● ✓ 🔐）在不同字体下大小/基线不一。 */
+const SVG_ICONS={
+ todo:'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 10h8M8 14h5"/></svg>',
+ branch:'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="2.4"/><circle cx="17" cy="17" r="2.4"/><path d="M9.2 8.4 14.8 15.6"/></svg>',
+ tool:'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4.5a4 4 0 0 0 5 5L11 18a3 3 0 0 1-4.2-4.2z"/><path d="M4 20l2-2"/></svg>',
+ check:'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17 19 7"/></svg>',
+ cross:'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10M17 7 7 17"/></svg>',
+ dot:'<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>',
+ ring:'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/></svg>',
+ lock:'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></svg>',
+ pulse:'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12L16 12h5"/></svg>',
+};
+function svgIcon(name){return SVG_ICONS[name]||'';}
+
 const PHASE_LABEL={
  thinking:'思考中', waiting:'等待中', queued:'排队中', executing:'执行中',
  followup_queued:'跟进排队', followup_sending:'发送跟进', followup_completed:'跟进完成',
@@ -1429,7 +1444,9 @@ function stepRowEl(s){
  const time=s._time?new Date(Number(s._time)*1000).toLocaleTimeString():'';
  const tool=String(s.tool||'').trim()||(failed?tr('系统'):tr('汇总'));
  const reason=errText||String(s.reason||'').trim();
- el.innerHTML='<span class="ss-ic">'+esc(icon)+'</span>'
+ const _icSvg=(st==='ok'&&!failed)?svgIcon('check')
+   :(failed?(st==='approval_required'?svgIcon('lock'):svgIcon('cross')):svgIcon('dot'));
+ el.innerHTML='<span class="ss-ic">'+_icSvg+'</span>'
    +'<span class="ss-tool" title="'+esc(tool)+'">'+esc(toolLabel(tool))+'</span>'
    +'<span class="ss-reason" data-i18n-skip="1" title="'+esc(reason)+'">'+esc(reason)+'</span>'
    +'<span class="ss-clock">'+esc(time)+'</span>';
@@ -1440,9 +1457,20 @@ function stepRowEl(s){
  if(hasResult || hasArgs || s.error){
   const det=document.createElement('details');
   det.className='ss-det';
+  // 不再显示「查看结果」链接：点说明文字本身展开/收起（summary 只作为无障碍标签）
   const sum=document.createElement('summary');
+  sum.className='sr-only';
   sum.textContent=tr('查看结果');
   det.appendChild(sum);
+  const _rs=el.querySelector('.ss-reason');
+  if(_rs){
+    _rs.classList.add('clickable');
+    _rs.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      det.open=!det.open;
+      _rs.classList.toggle('open',det.open);
+    });
+  }
   const bar=document.createElement('div');
   bar.className='stepviewbar';
   bar.innerHTML='<button type="button" class="btn seg on" data-act="stepView" data-arg="render">'
@@ -1497,12 +1525,15 @@ function renderStream(messages,steps,opts){
   box.appendChild(msgEl(it.v.role,it.v.content,it.v.created,
     {attachments:it.v.attachments||[],id:it.v.id}));
  }
+ // 刚发出的是用户消息 → 一定贴底（否则用户看不到自己发的那条）
+ const _lastIsUser=!!(items.length&&items[items.length-1].v
+   &&items[items.length-1].v.role==='user');
  applyMsgFold(box);
  try{applyCodePrefs(box)}catch(e){}
  try{translateAttrs(box)}catch(e){}
  if(findQuery)applyFind();
  try{renderLiveBubble()}catch(e){}
- if(atBottom||opts.scrollEnd)pinChatBottom(box);
+ if(atBottom||opts.scrollEnd||_lastIsUser)pinChatBottom(box);
 }
 /* 贴底：长会话用了 content-visibility，离屏消息的高度是**估算值**——
    一次性把 scrollTop 设成 scrollHeight 会停在估算位置，真实高度展开后又跑偏
@@ -1664,8 +1695,9 @@ function renderToolLog(steps,opts){
                            'repeat_guard'].includes(st);
   const icEl=document.getElementById('toolLogIc');
   if(icEl){
-   icEl.textContent=st==='ok'&&!failed?'✓':(failed?(st==='approval_required'?'🔐':'✗'):'•');
-   icEl.className='ss-ic '+(failed?'bad':(st==='ok'?'good':''));
+   const _icName=(failed?(st==='approval_required'?'lock':'cross'):(st==='ok'?'check':'dot'));
+   icEl.innerHTML=svgIcon(_icName);
+   icEl.className='ss-ic urow-ic '+(failed?'bad':(st==='ok'?'ok':''));
   }
   const tool=String(last.tool||'').trim()||(failed?tr('系统'):tr('汇总'));
   const _why=errText||String(last.reason||'').trim();
@@ -1680,13 +1712,102 @@ function renderToolLog(steps,opts){
  toolLogSteps=all;
  if(!body.hidden)fillToolLogBody();      // 行内展开时才建 DOM（1500 步全建要 ~0.9s）
 }
+/* 回合流：把「发送 / 回答 / 工具调用」按回合边界合成一条时间线。
+   数据来自 /v1/agent/sessions/{sid}/turns（老会话没有 prompt 就标"未留存"）。 */
+let turnCache={sid:null,rows:[]};
+async function loadTurns(sid){
+ if(turnCache.sid===sid)return turnCache.rows;
+ try{
+  const d=await api('/v1/agent/sessions/'+encodeURIComponent(sid)+'/turns');
+  turnCache={sid:sid,rows:(d&&d.turns)||[]};
+ }catch(e){turnCache={sid:sid,rows:[]}}
+ return turnCache.rows;
+}
+/* 把回合回答摘要成一句人话（原始 JSON 放进 title/详情） */
+function summarizeAnswer(raw){
+ const txt=String(raw||'').trim();
+ let o=null;
+ try{o=JSON.parse(txt)}catch(e){}
+ if(o&&typeof o==='object'){
+  const t=String(o.type||'');
+  if(t==='tool')return tr('调用')+' '+(o.tool?toolLabel(o.tool):'')+' · '+String(o.reason||'');
+  if(t==='actions'){
+   const n=Array.isArray(o.actions)?o.actions.length:0;
+   const names=(o.actions||[]).map(x=>x&&x.tool?toolLabel(x.tool):'').filter(Boolean).slice(0,3);
+   return tr('批量 {n} 个动作',{n:n})+(names.length?'（'+names.join('、')+(n>names.length?'…':'')+'）':'');
+  }
+  if(t==='final')return String(o.content||'').split('\n').filter(x=>x.trim())[0]||tr('（空）');
+ }
+ return txt.split('\n').filter(x=>x.trim())[0]||tr('（空）');
+}
+
+function turnRow(kind,text,full){
+ const ic=kind==='send'?svgIcon('pulse'):svgIcon('check');
+ const label=kind==='send'?tr('发送'):tr('回答');
+ const e=document.createElement('div');
+ e.className='streamstep turnrow '+(kind==='send'?'tbody-send':'tbody-answer');
+ e.dataset.side=(kind==='send'?'right':'left');
+ e.innerHTML='<span class="ss-ic">'+ic+'</span>'
+   +'<span class="ss-tool">'+esc(label)+'</span>'
+   +'<span class="ss-reason clickable" data-i18n-skip="1" title="'+esc(full||'')+'">'
+   +esc(text||'')+'</span>';
+ // 点说明文字展开完整内容（JSON 回答同样可展开，不再只有工具步骤能点开）
+ if(full&&String(full).trim().length>String(text||'').trim().length+8){
+  const det=document.createElement('details');
+  det.className='ss-det';
+  const sum=document.createElement('summary');
+  sum.className='sr-only'; sum.textContent=tr('展开');
+  det.appendChild(sum);
+  const pre=document.createElement('pre');
+  pre.className='turnfull'; pre.textContent=String(full||'');
+  det.appendChild(pre);
+  e.appendChild(det);
+  const rs=e.querySelector('.ss-reason');
+  if(rs)rs.addEventListener('click',ev=>{
+   ev.stopPropagation();
+   det.open=!det.open;
+   rs.classList.toggle('open',det.open);
+  });
+ }
+ return e;
+}
+async function renderTurnFlow(sid,steps){
+ const body=document.getElementById('toolLogBody');
+ if(!body||!sid)return;
+ const turns=await loadTurns(sid);
+ if(!turns.length)return false;
+ const list=(steps||[]).slice().sort((x,y)=>(Number(x.step)||0)-(Number(y.step)||0));
+ let cursor=0;
+ body.innerHTML='';
+ turns.forEach((t,idx)=>{
+  const upto=Number(t.steps_after)||0;
+  const mine=list.filter(s=>{const n=Number(s.step)||0;return n>cursor&&n<=upto});
+  cursor=Math.max(cursor,upto);
+  // 发送行（提示词首行；截断展示，悬停看全文）
+  const promptTxt=String(t.prompt||'').split('\n').filter(x=>x.trim())[0]||'';
+  body.appendChild(turnRow('send',promptTxt||tr('（提示词未留存）'),String(t.prompt||'')));
+  mine.forEach(s=>body.appendChild(stepRowEl(s)));
+  // 回答行
+  body.appendChild(turnRow('answer',summarizeAnswer(t.answer),String(t.answer||'')));
+ });
+ // 最后一个回合之后若还有步骤（例如最终收尾），补上
+ list.filter(s=>(Number(s.step)||0)>cursor).forEach(s=>body.appendChild(stepRowEl(s)));
+ try{translateAttrs(body)}catch(e){}
+ body.scrollTop=body.scrollHeight;
+ return true;
+}
+
 function fillToolLogBody(){
  const body=document.getElementById('toolLogBody');
  if(!body)return;
- body.innerHTML='';
- for(const s of toolLogSteps)body.appendChild(stepRowEl(s));
- try{translateAttrs(body)}catch(e){}
- body.scrollTop=body.scrollHeight;
+ (async()=>{
+  const ok=await renderTurnFlow(current,toolLogSteps);
+  if(ok)return;                      // 有回合数据：用"发送→回答→工具"的流
+  body.innerHTML='';
+  for(const s of toolLogSteps)body.appendChild(stepRowEl(s));
+  try{translateAttrs(body)}catch(e){}
+  body.scrollTop=body.scrollHeight;
+ })();
 }
 
 
@@ -2466,6 +2587,13 @@ function updateStreamStatus(r){
  const st=String(r.session_state||r.phase||'');
  const phase=String(r.phase||'');
  const parts=[];
+ const _stLow=String(st||phase||'').toLowerCase();
+ const _stIcon=(_stLow==='completed')?svgIcon('check')
+   :(_stLow==='failed'||_stLow==='cancelled')?svgIcon('cross')
+   :(_stLow==='paused'||_stLow==='suspended')?svgIcon('lock')
+   :svgIcon('pulse');
+ parts.push('<span class="urow-ic '+(['completed','failed','cancelled'].includes(_stLow)
+   ?(_stLow==='completed'?'ok':'bad'):'live')+'">'+_stIcon+'</span>');
  parts.push('<b class="ss-phase ss-'+esc(st||'running')+'">'+esc(tr(st||phase||'未知'))+'</b>');
  if(r.detail)parts.push('<span class="ss-detail" data-i18n-skip="1">'+esc(String(r.detail))+'</span>');
  const right=[];
@@ -2527,14 +2655,16 @@ function inferCurrentTodo(todos){
 /* 待办 + 子代理并进实时流：放到「completed · steps · token」那条状态条**上面**，
    与它同一种行式样式（不再是独立卡片）。 */
 function mountTeamCard(){
+ // 结构已在 index.html 里定好：待办/子代理/调用记录/状态四行同属 #teamCard，
+ // #teamCard 本身就在 #chat 内。这里只做一次兜底（旧缓存页面可能顺序不对）。
  const card=document.getElementById('teamCard');
  const chat=document.getElementById('chat');
- // 顺序（用户要求）：todo/子代理 → 调用记录 → 状态条。
- // 所以插到 #toolLog 之前（没有 toolLog 时再退回状态条之前）。
- const anchor=document.getElementById('toolLog')||document.getElementById('streamStatus');
  if(!card||!chat||card.dataset.mounted)return;
- if(anchor&&anchor.parentElement===chat)chat.insertBefore(card,anchor);
- else chat.appendChild(card);
+ if(card.parentElement!==chat){
+  const chatlog=document.getElementById('chatlog');
+  if(chatlog&&chatlog.parentElement===chat)chat.insertBefore(card,chatlog.nextSibling);
+  else chat.appendChild(card);
+ }
  card.dataset.mounted='1';
 }
 
@@ -2547,7 +2677,11 @@ function syncTeamCard(){
  // display:''（回落到样式表的 none）都不算"有东西"，否则会留下一个空卡片。
  const hasGoal=!!(gb&&!gb.hidden&&String(gb.innerHTML||'').trim());
  const hasSub=!!(sb&&sb.style.display==='block');
- card.hidden=!(hasGoal||hasSub);
+ // 调用记录 / 状态行现在也在这个 section 里，卡片不再整体隐藏：
+ // 只在"三样内容都没有"时由行自己隐藏（保留 status 行的最小高度）。
+ const tl=document.getElementById('toolLog');
+ const hasLog=!!(tl&&!tl.hidden);
+ card.hidden=!(hasGoal||hasSub||hasLog||true);   // 状态行常驻 → 卡片常驻
 }
 
 /* 清空「待办/目标 + 子代理」两块面板与它们的外层卡片。
@@ -2603,7 +2737,7 @@ function renderGoalBar(r){
   // 按 status 计数；兼容旧的 done 字段
   const isDone=x=>!!x&&(x.status==='completed'||x.done===true);
   const done=todos.filter(isDone).length;
-  parts.push('<span class="urow-ic">☑</span>'
+  parts.push('<span class="urow-ic">'+svgIcon('todo')+'</span>'
     +'<b class="urow-label" title="'
     +esc(tr('待办清单：Agent 用 todo_write 维护，点一下展开/收起；与 /plan 计划模式无关'))+'">'
     +esc(tr('待办'))+'</b><span class="urow-count">'+done+'/'+todos.length+'</span>'

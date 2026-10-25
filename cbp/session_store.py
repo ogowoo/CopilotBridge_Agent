@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS messages (
   prompt_hash TEXT NOT NULL,
   answer TEXT NOT NULL DEFAULT '',
   steps_after INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'done',
+  status TEXT,
+                prompt TEXT NOT NULL DEFAULT 'done',
   created REAL NOT NULL,
   PRIMARY KEY (session_id, conversation_index, prompt_hash)
 );
@@ -135,6 +136,12 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 con.execute("ALTER TABLE turn_results ADD COLUMN status TEXT NOT NULL DEFAULT 'done'")
             except Exception:
                 pass  # 列已存在或表尚未创建
+            # 迁移：回合里落一份提示词正文（界面上把"发送"和工具调用对起来）。
+            # 注意：必须**独立 try**——套在上面那个 try 里时，status 已存在的库永远走不到。
+            try:
+                con.execute("ALTER TABLE turn_results ADD COLUMN prompt TEXT")
+            except Exception:
+                pass
             # 迁移：服务限流退避的倒计时信息——resume_at 供前端右上角浮窗倒数；
             # rate_limited_since 记录首次限流起点，窗口期内重试都锚定同一终点。
             try:
@@ -612,7 +619,8 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 out.append(item)
             return out
 
-    def begin_turn(self, sid: str, conv_index: int, prompt_hash: str, steps_before: int) -> None:
+    def begin_turn(self, sid: str, conv_index: int, prompt_hash: str, steps_before: int,
+                   prompt: str = "") -> None:
         """**发请求之前**登记"这一回合即将派发"（DSH 的 checkpoint-before-dispatch 思路）。
 
         崩溃/中断后若看到 status='inflight'，说明该回合已发出但结果未知——此时既不能
@@ -621,10 +629,13 @@ CREATE TABLE IF NOT EXISTS conv_stats (
         """
         with self.lock, self._connect() as con:
             con.execute(
-                "INSERT INTO turn_results(session_id,conversation_index,prompt_hash,answer,steps_after,status,created) "
-                "VALUES(?,?,?,'',?,'inflight',?) ON CONFLICT(session_id,conversation_index,prompt_hash) "
-                "DO UPDATE SET steps_after=excluded.steps_after, status='inflight', created=excluded.created",
-                (sid, int(conv_index), prompt_hash, int(steps_before), time.time()))
+                "INSERT INTO turn_results(session_id,conversation_index,prompt_hash,answer,steps_after,"
+                "status,created,prompt) VALUES(?,?,?,'',?,'inflight',?,?) "
+                "ON CONFLICT(session_id,conversation_index,prompt_hash) "
+                "DO UPDATE SET steps_after=excluded.steps_after, status='inflight', created=excluded.created, "
+                "prompt=COALESCE(NULLIF(excluded.prompt,''), turn_results.prompt)",
+                (sid, int(conv_index), prompt_hash, int(steps_before), time.time(),
+                 (prompt or "")[:8000]))
             self.append_event(sid, "turn_begin", {"prompt_hash": prompt_hash, "steps_before": int(steps_before),
                                                   "conversation_index": int(conv_index)}, con=con)
 
@@ -745,6 +756,17 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 (sid, int(conv_index), prompt_hash, (answer or "")[:4000], int(steps_after), time.time()))
             self.append_event(sid, "turn_done", {"prompt_hash": prompt_hash, "steps_after": int(steps_after),
                                                  "answer_chars": len(answer or "")}, con=con)
+
+    def turn_results(self, sid: str) -> list[dict[str, Any]]:
+        """整会话的回合记录（按时间升序）：prompt / answer / steps_after / status。
+
+        界面用它与工具步骤合成"发送 → 回答 → 工具调用"的流。
+        """
+        with self.lock, self._connect() as con:
+            rows = con.execute(
+                "SELECT conversation_index, prompt_hash, answer, steps_after, status, created, prompt "
+                "FROM turn_results WHERE session_id=? ORDER BY created", (sid,)).fetchall()
+            return [dict(r) for r in rows]
 
     def get_turn(self, sid: str, conv_index: int, prompt_hash: str) -> dict[str, Any] | None:
         with self.lock, self._connect() as con:

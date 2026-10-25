@@ -52,6 +52,15 @@ async def sessions(include_archived: bool = False, include_subagents: bool = Tru
         1 for x in rows if str(x.get("parent_id") or "").strip())}
 
 
+@router.get("/v1/agent/sessions/{sid}/turns")
+async def session_turns(sid: str):
+    """整会话的回合流：每回合的提示词、回答与它之后的步骤数（界面合成"发送→回答→工具"）。"""
+    if not b.AGENT_SESSIONS.get(sid):
+        raise HTTPException(404, "Session 不存在")
+    rows = b.AGENT_SESSIONS.turn_results(sid)
+    return {"session_id": sid, "count": len(rows), "turns": rows}
+
+
 @router.get("/v1/agent/sessions/{sid}")
 async def session(sid: str):
     x = b.AGENT_SESSIONS.get(sid)

@@ -233,6 +233,24 @@ async def run_agent(req: b.AgentRequest, attach_paths: list | None = None):
             effective_task = existing.get("original_task") or task
             if task.strip() and task.strip() != effective_task.strip():
                 effective_task += "\n\n用户追加任务：\n" + task
+            # 把「本会话最近说过的话」一起带上：只带 original_task 与步骤时，
+            # 模型会忘掉前面几轮用户的要求/自己的答复（用户实测："会忘记之前说过的内容"）。
+            try:
+                _msgs = b.AGENT_SESSIONS.messages(sid) or []
+                _recent_chat = [m for m in _msgs if str(m.get("role")) in ("user", "assistant")][-6:]
+                if _recent_chat:
+                    _lines = []
+                    for m in _recent_chat:
+                        _role = "用户" if m.get("role") == "user" else "助手"
+                        _txt = " ".join(str(m.get("content") or "").split())[:300]
+                        if _txt:
+                            _lines.append(f"- {_role}：{_txt}")
+                    if _lines:
+                        effective_task += ("\n\n【本会话最近对话】（供你回忆上下文，"
+                                           "不要逐字复述，也不要被其中过时的判断带偏）\n"
+                                           + "\n".join(_lines))
+            except Exception:
+                pass
                 pending = list(existing.get("pending") or [])
                 pending.append(task)
                 # 追加指令不再强制新建会话：Agent 会在当前会话直接下达，保留完整上下文。
@@ -298,7 +316,7 @@ async def run_agent(req: b.AgentRequest, attach_paths: list | None = None):
                             "reason": "上一回合结果未知（连接中断）：先只读核对当前状态，"
                                       "不要重复可能已发生的写入/删除等副作用。"}, ensure_ascii=False)
                     try:
-                        b.AGENT_SESSIONS.begin_turn(sid, _ci, _ph, _steps)
+                        b.AGENT_SESSIONS.begin_turn(sid, _ci, _ph, _steps, prompt)
                     except Exception:
                         pass
                 _ans = await b.provider_turn(sid, model, prompt, force_new=force_new)
