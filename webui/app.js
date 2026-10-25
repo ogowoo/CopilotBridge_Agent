@@ -1545,6 +1545,15 @@ function renderStream(messages,steps,opts){
    （实测打开长会话停在最顶部）。所以在 1.5s 内反复贴底，让高度收敛；
    用户一旦滚动（wheel/触摸）就立刻停手，不跟用户抢滚动。 */
 let chatPinTimer=null, chatPinUntil=0;
+/* 最近的可滚动祖先（#chatlog 不再自己滚时，要滚 #chat） */
+function nearestScroller(el){
+ for(let n=el;n&&n!==document.body;n=n.parentElement){
+  const cs=getComputedStyle(n);
+  if((cs.overflowY==='auto'||cs.overflowY==='scroll')&&n.scrollHeight-n.clientHeight>2)return n;
+ }
+ return el;
+}
+
 function pinChatBottom(box){
  if(!box)return;
  chatPinUntil=Date.now()+1500;
@@ -1552,7 +1561,7 @@ function pinChatBottom(box){
  const tick=()=>{
   chatPinTimer=null;
   if(Date.now()>chatPinUntil)return;
-  try{box.scrollTop=box.scrollHeight}catch(e){}
+  try{const sc=nearestScroller(box);sc.scrollTop=sc.scrollHeight}catch(e){}
   try{chatPinTimer=setTimeout(tick,60)}catch(e){}
  };
  tick();
@@ -1816,7 +1825,7 @@ async function renderTurnFlow(sid,steps){
   cursor=Math.max(cursor,upto);
   // 发送行（提示词首行；截断展示，悬停看全文）
   const promptTxt=String(t.prompt||'').split('\n').filter(x=>x.trim())[0]||'';
-  body.appendChild(turnRow('send',promptTxt||tr('（提示词未留存）'),String(t.prompt||'')));
+  body.appendChild(turnRow('send',promptTxt||tr('（旧回合未存档）'),String(t.prompt||'')));
   mine.forEach(s=>body.appendChild(stepRowEl(s)));
   // 回答行
   const _ansTxt=String(t.answer||'').trim();

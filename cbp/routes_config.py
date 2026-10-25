@@ -345,6 +345,12 @@ async def set_browser_mode(payload: dict):
     persist=true 可把新模式写回 config.json。
     """
     target_raw = payload.get("headless")
+    if target_raw is None:
+        # 只启动、不切换模式（"启动自动化浏览器"按钮就是这么调的）
+        if b.current_page() is not None:
+            return {"headless": b.HEADLESS_CURRENT, "changed": False, "fallback": False}
+        actual = await b._start_browser(b.HEADLESS_CURRENT)
+        return {"headless": actual, "changed": True, "fallback": False}
     if not isinstance(target_raw, bool):
         raise HTTPException(422, "headless 必须是布尔值")
     target = target_raw

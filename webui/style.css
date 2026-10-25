@@ -2212,3 +2212,73 @@ html,body{overflow:hidden}
    底部块保持自然高度（≥180px，≤52vh），四行永不被压成一条缝。 */
 #chat > #chatlog{flex:1 1 0;min-height:120px;overflow:auto}
 #chat > #teamCard{flex:0 1 auto;min-height:180px;max-height:52vh;overflow:auto}
+
+/* TOOLLOG-STICKY-HEAD: 调用记录"行"固定在顶部，只有下面的流滚动
+   （用户："最后一条保持在最上面不动，其它的滚动，这样我就可以点击折叠回来了"）。 */
+#chat > #teamCard > #toolLog{display:flex;flex-direction:column;min-height:0}
+#chat > #teamCard > #toolLog > #toolLogLatest{flex:none;position:sticky;top:0;z-index:3;
+  background:var(--panel)}
+#chat > #teamCard > #toolLog > #toolLogLatest:hover{background:var(--row-hover)}
+#chat > #teamCard > #toolLog > #toolLogBody{flex:1 1 auto;min-height:0;
+  max-height:min(38vh, 340px);overflow:auto;overscroll-behavior:contain}
+/* 待办/子代理/状态详情的展开也按 vh 限制，整块尽量不产生第二条滚动条 */
+#chat > #teamCard > #goalBar .todolist{max-height:min(26vh, 260px);overflow:auto}
+#chat > #teamCard #subagentList{max-height:min(22vh, 220px);overflow:auto}
+#chat > #teamCard > #activity{max-height:min(24vh, 240px);overflow:auto}
+
+/* SR-ONLY-DISPLAY-NONE: 折叠用的 summary 不参与布局——用 `position:absolute` 时
+   它是按 `#teamCard`（position:relative）定位的，会逃出 `#toolLogBody` 的滚动裁剪，
+   把卡片 scrollHeight 撑到 2600+（实测 2643，可见内容只有 604）。 */
+#toolLogBody summary.sr-only,
+#teamCard summary.sr-only{display:none !important}
+#toolLogBody .ss-det{position:relative}
+
+/* ONE-SCROLLER: 右栏只留一个滚动条（对话 + 四行 + 展开内容一起滚）。
+   去掉所有 sticky —— 那正是"状态行下面多一行空白"的来源。 */
+#chat{overflow-y:auto;overflow-x:hidden;min-height:0}
+#chat > #chatlog{flex:none;min-height:0;overflow:visible;padding-bottom:8px}
+#chat > #teamCard{flex:none;max-height:none;overflow:visible;background:var(--panel)}
+#chat > #teamCard > .streamstatus{position:static;border-top:1px solid var(--line)}
+#chat > #teamCard > #toolLog > #toolLogLatest{position:static}
+#chat > #teamCard > #toolLog > #toolLogBody{max-height:min(32vh,300px);overflow:auto}
+#chat > #teamCard > #goalBar .todolist{max-height:min(22vh,220px);overflow:auto}
+#chat > #teamCard #subagentList{max-height:min(18vh,180px);overflow:auto}
+#chat > #teamCard > #activity{max-height:min(22vh,220px);overflow:auto}
+#chat > #teamCard > *{flex:none}
+
+/* FINAL-TWO-PANE: 定稿——上（对话）自己滚、下（四行）钉底，谁都不 sticky。
+   `#chat` 回到 overflow:hidden，避免"整栏一起滚"导致四行被推到消息下面。 */
+#chat{overflow:hidden;min-height:0}
+#chat > #chatlog{flex:1 1 0;min-height:120px;overflow:auto;padding-bottom:8px}
+#chat > #teamCard{flex:0 1 auto;min-height:180px;max-height:min(58vh, 620px);
+  overflow:auto;background:var(--panel)}
+#chat > #teamCard > .streamstatus{position:static;border-top:1px solid var(--line)}
+#chat > #teamCard > #toolLog > #toolLogLatest{position:static}
+#chat > #teamCard > #toolLog > #toolLogBody{max-height:min(30vh,300px);overflow:auto}
+#chat > #teamCard > #goalBar .todolist{max-height:min(20vh,200px);overflow:auto}
+#chat > #teamCard #subagentList{max-height:min(16vh,160px);overflow:auto}
+#chat > #teamCard > #activity{max-height:min(20vh,200px);overflow:auto}
+
+/* CAPS-TIGHT: 展开区上限收紧，确保 行(36+子代理+调用记录+36) 总和 ≤ 底部块高度，
+   状态行默认就在可视范围内（不用滚动）。 */
+#chat > #teamCard > #toolLog > #toolLogBody{max-height:min(24vh, 260px);overflow:auto}
+#chat > #teamCard #subagentList{max-height:min(14vh, 140px);overflow:auto}
+#chat > #teamCard > #goalBar .todolist{max-height:min(18vh, 180px);overflow:auto}
+#chat > #teamCard > #activity{max-height:min(18vh, 180px);overflow:auto}
+
+/* CAPS-FIT-VH: 展开区高度全部用 vh，随窗口一起缩，保证整块装得下四行 + 展开内容。 */
+#chat > #teamCard > #toolLog > #toolLogBody{max-height:min(18vh, 220px);overflow:auto}
+#chat > #teamCard #subagentList{max-height:min(12vh, 140px);overflow:auto}
+#chat > #teamCard > #goalBar .todolist{max-height:min(14vh, 180px);overflow:auto}
+#chat > #teamCard > #activity{max-height:min(14vh, 180px);overflow:auto}
+
+/* CAPS-FIT-VH2: 小屏（768）也装得下——body 16vh / 子代理 11vh。 */
+#chat > #teamCard > #toolLog > #toolLogBody{max-height:min(16vh, 200px);overflow:auto}
+#chat > #teamCard #subagentList{max-height:min(11vh, 132px);overflow:auto}
+
+/* CHATLOG-MIN-96: 小屏时把对话区下限让出 24px，底部四行 + 展开内容不必再滚动。 */
+#chat > #chatlog{flex:1 1 0;min-height:96px;overflow:auto}
+
+/* CARD-HUG-CONTENT: 底部块按内容高度（收起时 = 四行 108px），不再强制 180px，
+   否则收起调用记录后底下会留一条空白。 */
+#chat > #teamCard{flex:0 1 auto;min-height:0;max-height:min(58vh, 620px);overflow:auto}

@@ -428,7 +428,8 @@ async def run_agent(req: b.AgentRequest, attach_paths: list | None = None):
                 if _cache_on:
                     try:
                         b.AGENT_SESSIONS.begin_turn(sid, _ci, _ph,
-                                                  int((b.AGENT_SESSIONS.get(sid) or {}).get("total_steps", 0)))
+                                                  int((b.AGENT_SESSIONS.get(sid) or {}).get("total_steps", 0)),
+                                                  send_prompt)
                     except Exception:
                         pass
                 try:
