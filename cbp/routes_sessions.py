@@ -425,11 +425,13 @@ async def continue_session_message(sid: str, req: a.SessionMessageRequest,
     try:
         from .fileview import maybe_file_view, render_message
         _root = Path(str(state.get("workspace") or (b.BASE / "workspace"))).resolve()
-        _view = maybe_file_view(content, _root)
+        # "原文 / 这个文件 / 刚才那个" → 复用本会话上次展示过的文件
+        _view = maybe_file_view(content, _root, last_path=str(state.get("last_view_file") or ""))
         if _view:
             _msg = render_message(_view, sid)
             b.AGENT_SESSIONS.add_message(sid, "assistant", _msg,
                                          int(state.get("conversation_index", 0)))
+            b.AGENT_SESSIONS.patch(sid, last_view_file=_view["path"])
             b.runtime_update(sid, phase="completed",
                              detail=f"已读取文件 {_view['path']}")
             return {"queued": False, "local_file": _view["path"],

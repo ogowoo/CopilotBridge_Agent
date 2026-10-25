@@ -89,7 +89,11 @@ def _kind(p: Path) -> str:
     return "text"
 
 
-def maybe_file_view(text: str, root: Path) -> dict | None:
+REFER_WORDS = ("原文", "原文件", "这个文件", "该文件", "刚才那个", "刚才的文件", "它", "上面的文件",
+               "the file", "that file", "this file", "it")
+
+
+def maybe_file_view(text: str, root: Path, last_path: str = "") -> dict | None:
     """命中"给我看这个文件"就返回描述，否则 None。"""
     if not text or not str(text).strip():
         return None
@@ -106,7 +110,11 @@ def maybe_file_view(text: str, root: Path) -> dict | None:
                   low, re.I))
     if not looks_file:
         return None
-    for token in _candidates(low):
+    cands = _candidates(low)
+    # 指代："原文 / 这个文件 / 刚才那个" → 复用本会话上次展示过的文件
+    if not cands and last_path and any(w in low for w in REFER_WORDS):
+        cands = [last_path]
+    for token in cands:
         p = _resolve(root, token)
         if not p:
             continue

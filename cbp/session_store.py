@@ -39,7 +39,8 @@ class SessionStore:
               recent_steps TEXT NOT NULL DEFAULT '[]', modified_files TEXT NOT NULL DEFAULT '{}',
               pending TEXT NOT NULL DEFAULT '[]', last_error TEXT,
               cancel_requested INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0,
-              compact_requested INTEGER NOT NULL DEFAULT 0, rollover_requested INTEGER NOT NULL DEFAULT 0
+              compact_requested INTEGER NOT NULL DEFAULT 0, rollover_requested INTEGER NOT NULL DEFAULT 0,
+              last_view_file TEXT
             );
             CREATE TABLE IF NOT EXISTS steps (
               id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
@@ -136,7 +137,12 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                 con.execute("ALTER TABLE turn_results ADD COLUMN status TEXT NOT NULL DEFAULT 'done'")
             except Exception:
                 pass  # 列已存在或表尚未创建
-            # 迁移：回合里落一份提示词正文（界面上把"发送"和工具调用对起来）。
+                        # 迁移：记住本会话上次展示过的文件（"原文/这个文件"指代用）
+            try:
+                con.execute("ALTER TABLE sessions ADD COLUMN last_view_file TEXT")
+            except Exception:
+                pass
+# 迁移：回合里落一份提示词正文（界面上把"发送"和工具调用对起来）。
             # 注意：必须**独立 try**——套在上面那个 try 里时，status 已存在的库永远走不到。
             try:
                 con.execute("ALTER TABLE turn_results ADD COLUMN prompt TEXT")
@@ -352,7 +358,7 @@ CREATE TABLE IF NOT EXISTS conv_stats (
                    "rollover_requested","conv_tokens","conv_chars","gate_state",
                    "retry_resume_at","retry_attempt","rate_limited_since","initial_prompt",
             "pending_steps","approval_pending","tag","goal","todos","plan","plan_mode",
-            "parent_id","description","suspend_reason"}
+            "parent_id","description","suspend_reason","last_view_file"}
         values = {k:v for k,v in values.items() if k in allowed}
         if "state" in values and values["state"] not in self.STATES: raise ValueError("invalid state")
         for key in ("conversation_urls","summary","recent_steps","modified_files","pending",

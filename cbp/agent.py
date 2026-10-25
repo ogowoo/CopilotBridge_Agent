@@ -472,7 +472,19 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
         _action_words = ("创建", "新建", "写", "修改", "改", "删除", "运行", "执行", "生成",
                          "保存", "记录", "记到", "整理", "转换",
                          "create", "write", "modify", "delete", "run", "save")
-        _needs_action = any(w in (task or "") for w in _action_words)
+        # 只看**最新一条指令**：original_task 里的"生成文档"不该让后续的
+        # "帮我治理发布流水线问题"（纯分析）也被逼着产出文件（实测模型会 copy 一份
+        # 文档当"产出"来满足守卫）。
+        _latest_ins = (task or "")
+        try:
+            _pend = [str(x) for x in (state.get("pending") or []) if str(x).strip()]
+            if _pend:
+                _latest_ins = _pend[-1]
+            elif "用户追加任务：" in _latest_ins:
+                _latest_ins = _latest_ins.rsplit("用户追加任务：", 1)[1]
+        except Exception:
+            pass
+        _needs_action = any(w in _latest_ins for w in _action_words)
         # "动手"类工具：成功执行即视为真的产生了产出/改动（读取、验证类不算）。
         _action_tools = {"write_text", "append_text", "write_text_b64", "append_text_b64",
                          "replace_text", "make_directory", "copy_path", "move_path",

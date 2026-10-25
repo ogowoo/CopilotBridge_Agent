@@ -75,6 +75,45 @@ class FileViewTests(unittest.TestCase):
         self.assertTrue(msg.rstrip().endswith("```"))
 
 
+
+
+class ReferentialViewTests(unittest.TestCase):
+    """"原文 / 这个文件 / 刚才那个" 用上次展示过的文件；纯分析句不命中。"""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / "docs").mkdir()
+        (self.root / "docs" / "roadmap.md").write_text("# t\n", encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_refer_words_use_last_path(self):
+        for text in ("加载一下原文文件内容", "把这个文件打开给我看", "show me that file"):
+            with self.subTest(text=text):
+                v = maybe_file_view(text, self.root, last_path="docs/roadmap.md")
+                self.assertIsNotNone(v, text)
+                self.assertEqual(v["path"], "docs/roadmap.md")
+
+    def test_refer_without_last_path_not_matched(self):
+        self.assertIsNone(maybe_file_view("加载一下原文文件内容", self.root))
+
+    def test_analysis_request_not_matched(self):
+        self.assertIsNone(maybe_file_view("现在帮我治理一下发布流水线问题", self.root))
+
+
+class NoopGuardScopeTests(unittest.TestCase):
+    """noop_guard 的"需要动手"要按**最新指令**判断，不能只看 original_task。"""
+
+    def test_needs_action_uses_latest_instruction(self):
+        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        i = src.index("_needs_action =")
+        seg = src[max(0, i - 900):i + 200]
+        self.assertIn("_latest_ins", seg, "要按最新指令（pending/追加任务）判断")
+        self.assertIn("用户追加任务：", seg, "追加任务要从 original_task 里切出来")
+
+
 if __name__ == "__main__":
     unittest.main()
 

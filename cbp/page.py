@@ -1260,6 +1260,36 @@ async def click_send_button():
     return False
 
 
+async def _focus_box(box=None, timeout: float = 4000):
+    """让输入框获得焦点。点击可能被附件条/浮层挡住（实测 30s 超时直接失败），
+    所以要有关闭浮层与强制聚焦两级兜底。"""
+    box = box or await b.input_box()
+    try:
+        await box.click(timeout=timeout)
+        return box
+    except Exception:
+        pass
+    try:
+        await b.dismiss()
+    except Exception:
+        pass
+    try:
+        await box.click(timeout=timeout)
+        return box
+    except Exception:
+        pass
+    try:
+        await box.evaluate("el => { el.focus(); "
+                           "const r=document.createRange(); r.selectNodeContents(el); "
+                           "const s=getSelection(); s.removeAllRanges(); s.addRange(r); }")
+    except Exception:
+        try:
+            await box.focus()
+        except Exception:
+            raise RuntimeError("输入框无法聚焦（被遮挡？），请关闭自动化窗口里的弹窗后重试")
+    return box
+
+
 async def send(prompt, make_new, model_id):
     if not await b.ensure_browser_ready():
         raise b.CopilotSendFailed(
@@ -1287,7 +1317,7 @@ async def send(prompt, make_new, model_id):
     selected_model = await b.select_model(model_id)
 
     box = await b.input_box()
-    await box.click()
+    await b._focus_box(box)
     try:
         await box.fill(prompt)
     except Exception:
@@ -1301,13 +1331,13 @@ async def send(prompt, make_new, model_id):
         b.log("问题已发送")
         return selected_model
 
-    await box.click()
+    await b._focus_box(box)
     if await b.click_send_button() and await b.sent_successfully(box, before_count, prompt):
         await b.diagnostics("sent_button")
         b.log("问题已通过发送按钮提交")
         return selected_model
 
-    await box.click()
+    await b._focus_box(box)
     await box.press("Control+Enter")
     if await b.sent_successfully(box, before_count, prompt):
         await b.diagnostics("sent_ctrl_enter")
