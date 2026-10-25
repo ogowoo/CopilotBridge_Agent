@@ -2358,3 +2358,15 @@ html,body{overflow:hidden}
 @keyframes cbpLineSweepSlow{
   0%  {transform:translateX(-100%)}
   100%{transform:translateX(620%)}}
+
+/* LINE-RUNNING4: ①亮段不许撑出横向滚动条（整个块横向裁剪）
+   ②再慢一档：14% 宽、11s 匀速（约 70 px/s）。 */
+#chat > #teamCard{overflow-x:hidden;overflow-y:auto}
+#chat > #teamCard.busy::after{
+  width:14%;
+  animation-duration:11s;
+  animation-timing-function:linear;
+  opacity:.8}
+@keyframes cbpLineSweepSlow{
+  0%  {transform:translateX(-110%)}
+  100%{transform:translateX(640%)}}
