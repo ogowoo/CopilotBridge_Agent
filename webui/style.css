@@ -2308,65 +2308,26 @@ html,body{overflow:hidden}
 #chat > #teamCard > #toolLog[hidden],
 #chat > #teamCard > #activity[hidden]{display:none !important}
 
-/* LINE-RUNNING: 任务进行中，底部那条分隔线变成走马灯（中间一段亮光来回跑）。 */
-#chat > #teamCard.busy::before{
-  height:2px;
-  background:linear-gradient(90deg,
-    transparent 0%, color-mix(in srgb, var(--accent) 0%, transparent) 18%,
-    var(--accent) 45%, color-mix(in srgb, var(--accent) 55%, var(--line)) 55%,
-    transparent 82%);
-  background-size:220% 100%;
-  animation:cbpLineRun 1.9s linear infinite;
-  opacity:.9}
-@keyframes cbpLineRun{
-  from{background-position:-120% 0}
-  to{background-position:220% 0}}
-@media (prefers-reduced-motion: reduce){
-  #chat > #teamCard.busy::before{animation:none;background:var(--line)}
-}
 
-/* LINE-RUNNING2: 走马灯改用 **transform 位移**（实测 background-position 不推进）。
-   ::before 仍是静态渐变线；::after 是一段亮光，靠 transform 左右跑。 */
+/* TOOLCARD-BUSY-LINE: 任务进行中，卡片顶上那条分隔线有一条光段匀速扫过。
+   - `::before`：静态渐变线（中间实、两端淡），不参与动画；
+   - `::after`：14% 宽的亮段，从左侧扫到约 80% 处就停，7s 一轮（约 100 px/s）；
+   - 横向裁剪由 #teamCard{overflow-x:hidden} 保证，不会撑出滚动条。 */
+#chat > #teamCard{overflow-x:hidden;overflow-y:auto}
+#chat > #teamCard.busy::before{height:2px;opacity:.5;animation:none}
 #chat > #teamCard.busy::after{
-  content:"";position:absolute;top:0;height:2px;width:34%;left:0;
-  border-radius:2px;pointer-events:none;z-index:3;
-  background:linear-gradient(90deg,
-    transparent 0%, color-mix(in srgb, var(--accent) 45%, transparent) 35%,
-    var(--accent) 50%, color-mix(in srgb, var(--accent) 45%, transparent) 65%,
-    transparent 100%);
-  animation:cbpLineSweep 1.8s cubic-bezier(.45,.05,.55,.95) infinite;
-  will-change:transform}
-@keyframes cbpLineSweep{
-  0%  {transform:translateX(-40%)}
-  100%{transform:translateX(300%)}}
-#chat > #teamCard.busy::before{height:2px;opacity:.55}
-@media (prefers-reduced-motion: reduce){
-  #chat > #teamCard.busy::after{animation:none;transform:none;width:100%;opacity:.35}
-}
-
-/* LINE-RUNNING3: 光段更短、更慢（用户："太长了，也太快了"）。
-   段宽 16%，匀速 5.2s 扫过整条；prefers-reduced-motion 下退化成一条淡淡的整线。 */
-#chat > #teamCard.busy::after{
-  width:16%;
+  content:"";position:absolute;top:0;left:0;height:2px;width:14%;
+  border-radius:2px;pointer-events:none;z-index:3;opacity:.8;
   background:linear-gradient(90deg,
     transparent 0%, color-mix(in srgb, var(--accent) 30%, transparent) 32%,
     color-mix(in srgb, var(--accent) 85%, white) 50%,
     color-mix(in srgb, var(--accent) 30%, transparent) 68%,
     transparent 100%);
-  animation:cbpLineSweepSlow 5.2s linear infinite;
-  opacity:.85}
-@keyframes cbpLineSweepSlow{
-  0%  {transform:translateX(-100%)}
-  100%{transform:translateX(620%)}}
-
-/* LINE-RUNNING4: ①亮段不许撑出横向滚动条（整个块横向裁剪）
-   ②再慢一档：14% 宽、11s 匀速（约 70 px/s）。 */
-#chat > #teamCard{overflow-x:hidden;overflow-y:auto}
-#chat > #teamCard.busy::after{
-  width:14%;
-  animation-duration:11s;
-  animation-timing-function:linear;
-  opacity:.8}
-@keyframes cbpLineSweepSlow{
-  0%  {transform:translateX(-110%)}
-  100%{transform:translateX(640%)}}
+  animation:cbpLineSweep80 7s linear infinite;
+  will-change:transform}
+@keyframes cbpLineSweep80{
+  0%  {transform:translateX(-14%)}
+  100%{transform:translateX(470%)}}
+@media (prefers-reduced-motion: reduce){
+  #chat > #teamCard.busy::after{animation:none;transform:none;width:100%;opacity:.3}
+}
