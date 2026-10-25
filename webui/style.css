@@ -2309,25 +2309,25 @@ html,body{overflow:hidden}
 #chat > #teamCard > #activity[hidden]{display:none !important}
 
 
-/* TOOLCARD-BUSY-LINE: 任务进行中，卡片顶上那条分隔线有一条光段匀速扫过。
+/* TOOLCARD-BUSY-LINE: 任务进行中，卡片顶上那条分隔线**中央**有一段呼吸光。
    - `::before`：静态渐变线（中间实、两端淡），不参与动画；
-   - `::after`：14% 宽的亮段，从左侧扫到约 80% 处就停，7s 一轮（约 100 px/s）；
-   - 横向裁剪由 #teamCard{overflow-x:hidden} 保证，不会撑出滚动条。 */
+   - `::after`：居中固定（left:50% + translateX(-50%)），只做明暗呼吸，不位移；
+   - #teamCard 横向裁剪，不会撑出滚动条。 */
 #chat > #teamCard{overflow-x:hidden;overflow-y:auto}
 #chat > #teamCard.busy::before{height:2px;opacity:.5;animation:none}
 #chat > #teamCard.busy::after{
-  content:"";position:absolute;top:0;left:0;height:2px;width:14%;
-  border-radius:2px;pointer-events:none;z-index:3;opacity:.8;
+  content:"";position:absolute;top:0;left:50%;height:2px;width:44%;
+  transform:translateX(-50%);
+  border-radius:2px;pointer-events:none;z-index:3;
   background:linear-gradient(90deg,
-    transparent 0%, color-mix(in srgb, var(--accent) 30%, transparent) 32%,
-    color-mix(in srgb, var(--accent) 85%, white) 50%,
-    color-mix(in srgb, var(--accent) 30%, transparent) 68%,
+    transparent 0%, color-mix(in srgb, var(--accent) 18%, transparent) 26%,
+    color-mix(in srgb, var(--accent) 90%, white) 50%,
+    color-mix(in srgb, var(--accent) 18%, transparent) 74%,
     transparent 100%);
-  animation:cbpLineSweep80 7s linear infinite;
-  will-change:transform}
-@keyframes cbpLineSweep80{
-  0%  {transform:translateX(-14%)}
-  100%{transform:translateX(470%)}}
+  animation:cbpLineBreath 3.4s ease-in-out infinite}
+@keyframes cbpLineBreath{
+  0%,100%{opacity:.22;transform:translateX(-50%) scaleX(.9)}
+  50%    {opacity:.95;transform:translateX(-50%) scaleX(1)}}
 @media (prefers-reduced-motion: reduce){
-  #chat > #teamCard.busy::after{animation:none;transform:none;width:100%;opacity:.3}
+  #chat > #teamCard.busy::after{animation:none;opacity:.5}
 }
