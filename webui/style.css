@@ -2154,3 +2154,61 @@ html,body{overflow:hidden}
 #chat > #teamCard{max-height:38vh;overflow:auto}
 #chat > #teamCard > #toolLog > #toolLogBody{max-height:26vh}
 #chat > #teamCard #subagentList{max-height:24vh}
+
+/* SCROLL-TWO-LEVELS: 只允许两层滚动——对话区 + 底部整块。
+   展开区内部不再各自限高滚动（之前嵌套 5 层，滚轮落哪都不对）。 */
+#chat > #teamCard{max-height:44vh;overflow:auto;overscroll-behavior:contain}
+#chat > #teamCard .todolist,
+#chat > #teamCard #subagentList,
+#chat > #teamCard > #toolLog > #toolLogBody,
+#chat > #teamCard > #activity,
+#chat > #teamCard .streamstep{max-height:none;overflow:visible}
+#chat > #chatlog{overscroll-behavior:contain}
+
+/* TURN-MORE: 调用记录顶部的「显示更早的 N 个回合」（默认只画最近 20 个回合，
+   否则 388 步的会话展开就是 4.3 万像素的一条流）。 */
+#toolLogBody > .turnmore{align-self:center;background:none;border:1px dashed var(--line2);
+  border-radius:999px;padding:3px 12px;margin:2px auto 4px}
+#toolLogBody > .turnmore .ss-tool{color:var(--accent);font-weight:600}
+#toolLogBody > .turnmore:hover{background:color-mix(in srgb, var(--accent) 6%, var(--panel))}
+
+/* FIT-CHAT-FLEX: 对话区与底部四条行必须一起装进 #chat（它 overflow:hidden）。
+   之前 teamCard 是 flex:none 不能收缩、chatlog 又固定 40vh，合计超过容器 →
+   四条行下半截被裁掉，看起来"什么都看不见"。 */
+#chat > #chatlog{flex:1 1 auto;min-height:120px}
+#chat > #teamCard{flex:0 1 auto;min-height:0;max-height:46vh;overflow:auto}
+#chat > #teamCard > *{flex:none}
+
+/* STATUS-STICKY: 状态行（completed/failed · 步 · Token）吸附在滚动块底部，
+   展开调用记录往上翻时它依然可见。 */
+#chat > #teamCard > .streamstatus{position:sticky;bottom:0;z-index:2;
+  background:var(--panel);border-top:1px solid var(--line)}
+#chat > #teamCard > .streamstatus:hover{background:var(--row-hover)}
+
+/* LAYOUT-FINAL-CLEAN: 底部四行的布局定稿。
+   之前让整块 `#teamCard` 滚动，会把某一行切一半（用户："成了不可用了"）。
+   现在：块本身不滚、不裁剪；只有"展开的内容区"各自限高滚动，行永远完整。 */
+#chat > #chatlog{flex:1 1 auto;min-height:0;overflow:auto}
+#chat > #teamCard{flex:none;max-height:none;overflow:visible}
+#chat > #teamCard > .streamstatus{position:static;border-top:1px solid var(--line)}
+#chat > #teamCard > #toolLog > #toolLogBody{max-height:240px;overflow:auto}
+#chat > #teamCard > #goalBar .todolist{max-height:30vh;overflow:auto}
+#chat > #teamCard #subagentList{max-height:24vh;overflow:auto}
+#chat > #teamCard > #activity{max-height:28vh;overflow:auto}
+
+/* BOTTOM-BLOCK-OK: 底部四行定稿——整块可滚动但绝不被压成一条缝，
+   四行（36 + 子代理列表 + 36 + 36）总能在 52vh 内完整呈现；状态行吸底。 */
+#chat > #chatlog{flex:1 1 auto;min-height:120px;overflow:auto}
+#chat > #teamCard{flex:0 1 auto;min-height:0;max-height:52vh;overflow:auto;
+  overscroll-behavior:contain}
+#chat > #teamCard > .streamstatus{position:sticky;bottom:0;z-index:2;
+  background:var(--panel);border-top:1px solid var(--line)}
+#chat > #teamCard > #toolLog > #toolLogBody{max-height:240px;overflow:auto}
+#chat > #teamCard #subagentList{max-height:24vh;overflow:auto}
+#chat > #teamCard > #goalBar .todolist{max-height:28vh;overflow:auto}
+#chat > #teamCard > #activity{max-height:26vh;overflow:auto}
+
+/* FLEX-ORDER-FIX: 对话区只在"剩余空间"里长大（flex-basis:0），
+   底部块保持自然高度（≥180px，≤52vh），四行永不被压成一条缝。 */
+#chat > #chatlog{flex:1 1 0;min-height:120px;overflow:auto}
+#chat > #teamCard{flex:0 1 auto;min-height:180px;max-height:52vh;overflow:auto}

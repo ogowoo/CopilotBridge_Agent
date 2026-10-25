@@ -1241,6 +1241,7 @@ function collapseTransient(steps){
 }
 function renderSteps(steps,force){
  lastSteps=collapseTransient(steps||[]);
+ if(document.hidden&&!force)return;       // 后台标签页不建步骤 DOM
  const box=document.getElementById('steps');
  const filtered=!!(stepFilter.tool||stepFilter.status);
  const shown=lastSteps.filter(stepMatch);
@@ -1496,6 +1497,10 @@ function stepRowEl(s){
 }
 function renderStream(messages,steps,opts){
  opts=opts||{};
+ if(document.hidden&&!opts.force){        // 后台标签页：不重建 DOM（可见后补渲染）
+  try{renderToolLog(steps||[],{})}catch(e){}
+  return;
+ }
  const box=document.getElementById('chatlog');
  if(!box)return;
  lastMessages=messages||[];
@@ -1568,6 +1573,8 @@ function scrollChatToEnd(){
 /* 调用记录：默认只显示**最新一条**（与状态条同款一行），点它浮动展开全部。
    不占布局（浮层定位于该行上方），和状态条的"点开看详情"是同一个交互。 */
 let toolLogSig='';
+let toolLogBodySig='';
+let toolLogBodyTimer=null;
 let toolLogSteps=[];        // 调用记录数据：浮层打开时才建 DOM（长会话省 ~1s）
 /* ── 视图缓存：从子代理返回父会话时不要整棵重建 ─────────────────────
    用户："从 subagent 返回到 live stream 的时候会很卡。"
@@ -1710,7 +1717,16 @@ function renderToolLog(steps,opts){
  }
  // 浮层内容：**打开时才建**（1500 步全量建 DOM 要 ~0.9s，而它默认是收起的）
  toolLogSteps=all;
- if(!body.hidden)fillToolLogBody();      // 行内展开时才建 DOM（1500 步全建要 ~0.9s）
+ // 行内展开时才建 DOM；且只在签名变化时重建 + 120ms 防抖。
+ // 之前每次快照（~1s）都全量重建（388 步 → 573 个节点），逐秒重排会把机器拖死。
+ if(!body.hidden){
+   const _bsig=all.length+'|'+(last?String(last.step??''):'')+'|'+String(toolLogSteps.length);
+   if(_bsig!==toolLogBodySig){
+     toolLogBodySig=_bsig;
+     clearTimeout(toolLogBodyTimer);
+     toolLogBodyTimer=setTimeout(()=>{try{fillToolLogBody()}catch(e){}},120);
+   }
+ }
 }
 /* 回合流：把「发送 / 回答 / 工具调用」按回合边界合成一条时间线。
    数据来自 /v1/agent/sessions/{sid}/turns（老会话没有 prompt 就标"未留存"）。 */
@@ -1771,14 +1787,29 @@ function turnRow(kind,text,full){
  }
  return e;
 }
+let turnShown=20;                  // 默认只画最近 20 个回合（可点"显示更早"加量）
 async function renderTurnFlow(sid,steps){
  const body=document.getElementById('toolLogBody');
  if(!body||!sid)return;
- const turns=await loadTurns(sid);
- if(!turns.length)return false;
+ const allTurns=await loadTurns(sid);
+ if(!allTurns.length)return false;
  const list=(steps||[]).slice().sort((x,y)=>(Number(x.step)||0)-(Number(y.step)||0));
- let cursor=0;
+ const from=Math.max(0, allTurns.length-turnShown);
+ const turns=allTurns.slice(from);
+ // 被裁掉的回合所占的步骤也要跳过
+ let cursor=from>0?(Number(allTurns[from-1].steps_after)||0):0;
  body.innerHTML='';
+ if(from>0){
+  const more=document.createElement('div');
+  more.className='streamstep turnmore';
+  more.innerHTML='<span class="ss-tool" style="cursor:pointer">'
+    +esc(tr('显示更早的 {n} 个回合',{n:from}))+'</span>';
+  more.addEventListener('click',()=>{
+    turnShown+=40;
+    try{fillToolLogBody()}catch(e){}
+  });
+  body.appendChild(more);
+ }
  turns.forEach((t,idx)=>{
   const upto=Number(t.steps_after)||0;
   const mine=list.filter(s=>{const n=Number(s.step)||0;return n>cursor&&n<=upto});
@@ -1788,7 +1819,9 @@ async function renderTurnFlow(sid,steps){
   body.appendChild(turnRow('send',promptTxt||tr('（提示词未留存）'),String(t.prompt||'')));
   mine.forEach(s=>body.appendChild(stepRowEl(s)));
   // 回答行
-  body.appendChild(turnRow('answer',summarizeAnswer(t.answer),String(t.answer||'')));
+  const _ansTxt=String(t.answer||'').trim();
+  if(_ansTxt)body.appendChild(turnRow('answer',summarizeAnswer(_ansTxt),_ansTxt));
+  // 没有回答内容的回合（失败/被限流打断）不画「回答（空）」——那是噪声
  });
  // 最后一个回合之后若还有步骤（例如最终收尾），补上
  list.filter(s=>(Number(s.step)||0)>cursor).forEach(s=>body.appendChild(stepRowEl(s)));
@@ -1800,11 +1833,13 @@ async function renderTurnFlow(sid,steps){
 function fillToolLogBody(){
  const body=document.getElementById('toolLogBody');
  if(!body)return;
+ if(document.hidden)return;                 // 后台标签页不渲染，省 CPU/内存
  (async()=>{
   const ok=await renderTurnFlow(current,toolLogSteps);
   if(ok)return;                      // 有回合数据：用"发送→回答→工具"的流
   body.innerHTML='';
-  for(const s of toolLogSteps)body.appendChild(stepRowEl(s));
+  const _tail=toolLogSteps.slice(-300);     // 上千步全画会拖死浏览器
+  for(const s of _tail)body.appendChild(stepRowEl(s));
   try{translateAttrs(body)}catch(e){}
   body.scrollTop=body.scrollHeight;
  })();
@@ -2595,7 +2630,13 @@ function updateStreamStatus(r){
  parts.push('<span class="urow-ic '+(['completed','failed','cancelled'].includes(_stLow)
    ?(_stLow==='completed'?'ok':'bad'):'live')+'">'+_stIcon+'</span>');
  parts.push('<b class="ss-phase ss-'+esc(st||'running')+'">'+esc(tr(st||phase||'未知'))+'</b>');
- if(r.detail)parts.push('<span class="ss-detail" data-i18n-skip="1">'+esc(String(r.detail))+'</span>');
+ // failed/cancelled 时不要把上一句"已完成"的详情留在状态条上（自相矛盾）
+ const _stNow=String(r.session_state||'').toLowerCase();
+ const _badNow=(_stNow==='failed'||_stNow==='cancelled');
+ const _detailTxt=_badNow
+   ? String(r.last_error||'').trim()          // 失败时只说真实原因；没有就整段省略
+   : String(r.detail||'').trim();
+ if(_detailTxt)parts.push('<span class="ss-detail" data-i18n-skip="1">'+esc(_detailTxt.slice(0,160))+'</span>');
  const right=[];
  if(r.total_steps!==undefined&&r.total_steps!==null)
   right.push('<span class="ss-meta">'+esc(tr('步'))+' '+esc(String(r.total_steps))+'</span>');

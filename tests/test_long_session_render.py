@@ -59,9 +59,18 @@ class LazyToolLogTests(unittest.TestCase):
 
     def test_body_not_built_eagerly(self):
         i = APP.index("function renderToolLog(steps,opts)")
-        seg = APP[i:i + 2600]
-        self.assertIn("if(!body.hidden)fillToolLogBody()", seg)
+        seg = APP[i:i + 3200]
+        # 只在展开时建 DOM，且按签名 + 防抖（每次快照全量重建会把机器拖死）
+        self.assertIn("if(!body.hidden){", seg)
+        self.assertIn("toolLogBodySig", seg)
+        self.assertIn("setTimeout(", seg)
         self.assertNotIn("for(const s of all)body.appendChild", seg)
+
+    def test_body_render_is_capped(self):
+        i = APP.index("function fillToolLogBody(")
+        seg = APP[i:i + 900]
+        self.assertIn("toolLogSteps.slice(-300)", seg, "上千步只画最近 300 条")
+        self.assertIn("document.hidden", seg, "后台标签页不渲染")
 
     def test_opening_builds_body(self):
         i = APP.index("function toggleToolLog(")

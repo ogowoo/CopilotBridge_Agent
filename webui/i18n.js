@@ -719,6 +719,7 @@ Object.assign(I18N_EN, {
   "数据": "Data",
   "设置": "Settings",
   "外观": "Appearance",
+ "显示更早的 {n} 个回合": "Show {n} earlier turns",
  "子代理状态": "Subagent status",
  "有子代理失败": "A subagent failed",
  "子代理运行中": "Subagent running",
