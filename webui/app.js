@@ -33,11 +33,8 @@ function demoApi(u,o={}){
 }
 
 function apiToken(){try{return localStorage.getItem('cbp-token')||''}catch(e){return ''}}
-/* 这个分支是 **预览版**：功能还没收尾（多窗口并行等）。
-   页签标题带 -preview,方便一眼区分手上的页面是稳定版还是预览版。 */
-const PREVIEW_BUILD='preview.2';
-try{document.addEventListener('DOMContentLoaded',()=>{
- document.title=document.title.replace(/\s*-\s*preview.*$/i,'')+' - '+PREVIEW_BUILD})}catch(e){}
+/* 页签标题里的版本**不再硬编码**：曾经写死一个预览号，版本一升标题就对不上
+   （用户实测）。现在由 loadVersion() 用 GET / 的真实版本拼，见 applyTitleVersion。 */
 let lastMessages=[];        // 最近一次渲染的消息（对话搜索基于它重渲染；曾漏声明导致搜索抛异常）
 let tokenPrompting=null;   // 并发 401 只弹一次：每秒轮询可能同时发起多个请求
 let tokenPromptCancelled=false;  // 用户取消过令牌输入 → 不再每秒弹窗，改用常驻横幅
@@ -5134,6 +5131,14 @@ try{syncComposer()}catch(e){}
 
 /* 版本信息：侧栏底部那颗淡淡的小标签。
    数据来自 GET /（后端 app 的 version），拿不到就保持隐藏——不喧哗。 */
+/* 页签标题 = 基础名 + 真实版本；幂等（先把旧的 " - v…" 尾巴去掉再拼）。 */
+function applyTitleVersion(version, name){
+ const base=String(name||'CopilotBridge Agent').trim()||'CopilotBridge Agent';
+ const v=String(version||'').trim();
+ const t=v?(base+' - v'+v):base;
+ if(document.title!==t)document.title=t;
+}
+
 async function loadVersion(){
  const el=document.getElementById('appVersion');
  if(!el)return;
@@ -5146,5 +5151,6 @@ async function loadVersion(){
   el.textContent='v'+v;
   el.title=tr('版本')+'：'+v+'（'+(d.name||'Copilot Local Bridge Agent')+'）';
   el.hidden=false;
+  applyTitleVersion(v, d.name);
  }catch(e){/* 拿不到就不显示 */}
 }
