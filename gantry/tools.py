@@ -262,11 +262,14 @@ class ToolsCoreMixin:
         # self_whitelist：自升级可触达的路径前缀（安装目录内相对路径）
         self.global_root: Path | None = None
         self.allow_self_upgrade = bool(config.get("allow_self_upgrade", False))
+        # 白名单**始终**构造（不要跟在 allow_self_upgrade 后面）：
+        # 危险区开关是即时生效的——如果构造时空白名单，运行时把开关打开
+        # 会发现"允许了但什么文件都不让碰"（self_find_files 实测就是这个）。
         self.self_whitelist = tuple(config.get("self_upgrade_paths") or (
             "gantry/", "webui/", "scripts/", "docs/", "tests/", "skills/",
             "app.py", "start.py", "install.py", "requirements.txt",
             "AGENT.md", "README.md", "config.example.json",
-        )) if self.allow_self_upgrade else ()
+        ))
         # 代码类文件禁止"一大段明文塞进单个 JSON 动作"：模型在 JSON 里塞长代码
         # 会被转义/截断搞坏（实测），所以代码类超过这个字符数必须走 b64 分块。
         # 文档类（md/txt/log）不受限：写 20KB 报告本来就该明文分块，不该逼模型
@@ -593,6 +596,8 @@ class ToolsCoreMixin:
             ]
         if self.allow_self_upgrade:
             items += [
+                {"name": "self_find_files", "description": "【自升级】列举服务目录下的文件（模糊任务的「先定位」第一步：不知道文件在哪就先列）", "arguments": {"pattern": "glob，如 gantry/*.py，默认 **/*.py"}},
+                {"name": "self_search_text", "description": "【自升级】在服务目录里搜文本/正则（用户给的是模糊描述时：先搜出代码在哪，再改）", "arguments": {"query": "文本或正则", "path": "目录，默认 .", "max_results": "默认 50"}},
                 {"name": "self_read_text", "description": "【自升级】读取服务自身代码（安装目录相对路径，白名单内）", "arguments": {"path": "如 gantry/agent.py", "offset": "字符偏移，默认0", "limit": "默认全文件"}},
                 {"name": "self_write_text_b64", "description": "【自升级】覆盖写入服务自身文件；代码必须 Base64 分块（每块≤3000字符），全部写完后用 self_validate + self_unittest 验证", "arguments": {"path": "安装目录相对路径", "content_b64": "Base64"}},
                 {"name": "self_append_text_b64", "description": "【自升级】追加写入服务自身文件（分块续写用）", "arguments": {"path": "安装目录相对路径", "content_b64": "Base64"}},

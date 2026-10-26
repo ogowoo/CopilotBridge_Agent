@@ -14,6 +14,31 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.8] - 2026-10-27
+
+用户："我不记得具体的文件和路径，模糊的说法（让 Agent 自升级）不成功吗？"
+
+诚实答案：之前**不行**——自升级工具只有 read/write/replace/validate/unittest/rollback，
+**没有搜索/列举**，agent 拿到模糊描述连"代码在哪个文件"都不知道。本版补齐。
+
+### Added
+
+- **`self_find_files(pattern)`**：glob 列举服务目录（如 `gantry/*.py`）——"先定位"第一步；
+- **`self_search_text(query, path, max_results)`**：在服务目录里搜文本/正则，返回
+  file:line + 内容——"那个按钮/那个报错"先搜出来再改；
+- `/self-upgrade` 模板加"**不记得文件名就先调 self_search_text 搜**，把定位报给你确认后再改"。
+
+### Fixed
+
+- **白名单在 `allow_self_upgrade=False` 时构造为空**（`tools.py:265`）：危险区开关即时生效，
+  但运行时把开关打开会遇到"允许了却什么文件都不让碰"。现在白名单**始终构造**，
+  与开关解耦（`_self_path` 本就先查开关）。
+
+### Added（测试）
+
+- `tests/test_self_search.py`（5 条）：搜索/列举在开关打开时可用、关闭时被拒、
+  黑名单（config.json）搜不到、新工具已注册进工具列表。
+
 ## [11.0.0-preview.7] - 2026-10-27
 
 ### Added

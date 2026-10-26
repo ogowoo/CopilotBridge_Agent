@@ -61,6 +61,77 @@ class SelfUpgradeMixin:
         except Exception:
             pass
 
+    async def self_find_files(self, pattern: str = "**/*.py") -> dict[str, Any]:
+        """glob 列举服务目录下的文件（如 `gantry/*.py`）；模糊任务的"先定位"第一步。"""
+        # 根目录只校验"开关已开 + 目录已设置"：白名单是给具体文件的，
+        # 拿 "." 去过白名单会被拒（"路径不在自升级白名单内: ."）。逐文件再校验。
+        if not self.allow_self_upgrade:
+            raise ToolError("自升级已在 config.json 中禁用（allow_self_upgrade=false）")
+        if not self.global_root:
+            raise ToolError("未设置服务安装目录，无法自升级")
+        root = self.global_root
+        pat = str(pattern or "**/*.py").strip() or "**/*.py"
+        if pat.startswith(("/", "\\")) or ".." in pat.split("/"):
+            raise ToolError("pattern 不能是绝对路径，也不能含 ..")
+        out = []
+        for f in sorted(root.glob(pat)):
+            if not f.is_file():
+                continue
+            rel = self._self_rel(f)
+            try:
+                self._self_path(rel)     # 过白名单/黑名单
+            except ToolError:
+                continue
+            out.append(rel)
+            if len(out) >= 300:
+                break
+        return {"pattern": pat, "count": len(out), "files": out,
+                "truncated": len(out) >= 300}
+
+    async def self_search_text(self, query: str, path: str = ".",
+                               max_results: int = 50) -> dict[str, Any]:
+        """在服务目录里搜文本/正则：返回 file:line + 该行内容。
+
+        模糊任务的关键工具：用户说"那个按钮/那个报错"，先搜出在哪，再决定改哪。
+        """
+        q = str(query or "").strip()
+        if not q:
+            raise ToolError("query 不能为空")
+        if not self.allow_self_upgrade:
+            raise ToolError("自升级已在 config.json 中禁用（allow_self_upgrade=false）")
+        if not self.global_root:
+            raise ToolError("未设置服务安装目录，无法自升级")
+        base = self._self_path(path) if str(path or ".").strip() not in ("", ".") else self.global_root
+        try:
+            rx = re.compile(q)
+        except re.error:
+            rx = re.compile(re.escape(q))
+        cap = max(1, min(int(max_results or 50), 200))
+        hits = []
+        files = sorted(base.rglob("*")) if base.is_dir() else [base]
+        for f in files:
+            if not f.is_file() or f.suffix.lower() not in (".py", ".js", ".html", ".css",
+                                                           ".md", ".json", ".toml", ".txt"):
+                continue
+            rel = self._self_rel(f)
+            try:
+                self._self_path(rel)
+            except ToolError:
+                continue
+            try:
+                for i, line in enumerate(f.read_text(encoding="utf-8",
+                                                     errors="replace").splitlines(), 1):
+                    if rx.search(line):
+                        hits.append({"file": rel, "line": i, "text": line.strip()[:200]})
+                        if len(hits) >= cap:
+                            break
+            except Exception:
+                continue
+            if len(hits) >= cap:
+                break
+        return {"query": q, "count": len(hits), "hits": hits,
+                "truncated": len(hits) >= cap}
+
     async def self_read_text(self, path: str, offset: int = 0, limit: int = 0) -> dict[str, Any]:
         target = self._self_path(path)
         if not target.is_file():
