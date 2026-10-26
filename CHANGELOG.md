@@ -14,6 +14,53 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.4] - 2026-10-26
+
+### Fixed
+
+- **issue #1 `Locator.press: Timeout 30000ms exceeded`**（用户中午提的 issue）。
+  日志显示 locator 已解析到 Lexical 编辑器
+  `<span data-lexical-editor="true" id="m365-chat-editor-target-element">`，
+  但 `elementHandle.press("Enter")` 等满 30 秒超时。
+
+  根因：`send()` 在 `fill()` 之后继续用**同一个句柄**按键，而 Copilot 的 Lexical
+  编辑器在输入后会重渲染，旧 `<span>` 脱离 DOM —— Playwright 的可操作性检查
+  永远等不到元素，30 秒后抛错（表现为任务卡半分钟后失败）。
+
+  修法（三级兜底，且每级都缩短超时，失败要快而不是干等 30s）：
+  1. 当前句柄 `press(keys, timeout=6s)`；
+  2. 失败 → 重新 `input_box()` 取新句柄再按；
+  3. 再失败 → `page.keyboard.press(keys)`（走当前焦点元素，不依赖旧句柄）。
+
+  `Control+A` / `Enter` / `Control+Enter` 全部改走 `_press_box()`；提示词写入改走
+  `_type_prompt()`（`fill` → 重新取句柄逐字 → `keyboard.type`）。
+
+### Added
+
+- `tests/test_press_fallback.py`（5 条）：句柄失效时必须在**新句柄**或
+  `page.keyboard` 上重试，且 `send()` 不得再用可能失效的句柄直接 `press`。
+
+## [11.0.0-preview.3] - 2026-10-26
+
+审核遗留项收尾（用户确认"都改完"并给 token 加了 `workflow` scope）：
+
+### Changed
+
+- **安装名也改成 Gantry**：`pyproject.toml` 的 `name` 从 `copilotbridge-agent` 改为
+  `gantry`（`import gantry` 与 CLI 入口 `gantry` 本来就已经是 gantry）；
+  补 `[project.urls]`（Homepage / Repository / Changelog）。
+  迁移：`pip uninstall copilotbridge-agent` → `pip install -e .`（或 `pip install gantry`）。
+- **CI 发布产物改名**：`.github/workflows/release.yml` 的暂存目录、压缩包、artifact、
+  Release 标题全部 `CopilotBridge_*` → `Gantry-*`。
+- **发布前加 fail-closed 校验**：`tag == gantry/version.py 的 VERSION`，且
+  `CHANGELOG.md` 必须有同名小节（`docs/VERSIONING.md §6` 要求 1:1）。
+  位置在"解析版本"之后、构建之前；用 `pwsh` 写（整个 job 是 `windows-latest`，
+  最初的 bash 写法在 Windows runner 上会直接失败——这是审核指出的另一处）。
+
+### Fixed
+
+- `release.yml` 的校验 step 最初被追加到文件末尾（构建之后）且语法是 bash，已改正。
+
 ## [11.0.0-preview.2] - 2026-10-26
 
 改名收尾（多 agent 交叉审核发现的问题，逐条修）：

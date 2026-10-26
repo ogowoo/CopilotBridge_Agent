@@ -53,6 +53,19 @@ jobs:
           }
           "version=$version" >> $env:GITHUB_OUTPUT
 
+      - name: 校验版本一致性（tag ↔ version.py ↔ CHANGELOG）
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.version.outputs.version }}" -replace '^v', ''
+          $pyver = (python -c "import sys;sys.path.insert(0,'.');from gantry.version import VERSION;print(VERSION)").Trim()
+          Write-Host "tag=$tag version.py=$pyver"
+          if ($tag -ne $pyver) {
+            throw "VERSION 必须与 tag 一致：tag=$tag，但 gantry/version.py=$pyver（见 docs/VERSIONING.md）"
+          }
+          if (-not (Select-String -Path CHANGELOG.md -Pattern "^## \[$([regex]::Escape($tag))\]" -Quiet)) {
+            throw "CHANGELOG.md 缺少 [$tag] 小节（见 docs/VERSIONING.md §6）"
+          }
+
       - name: Install locked dependencies and release tools
         shell: pwsh
         run: |
@@ -96,7 +109,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $stage = "dist/CopilotBridge_Agent-$env:VERSION"
+          $stage = "dist/Gantry-$env:VERSION"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           $required = @("app.py", "start.py", "install.py", "gantry", "webui", "scripts", "docs", "requirements.txt", "requirements-lock.txt", "config.example.json", "README.md")
           foreach ($item in $required) {
@@ -114,8 +127,8 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $archive = "dist/CopilotBridge_Agent-$env:VERSION-windows.zip"
-          Compress-Archive -Path "dist/CopilotBridge_Agent-$env:VERSION/*" -DestinationPath $archive -Force
+          $archive = "dist/Gantry-$env:VERSION-windows.zip"
+          Compress-Archive -Path "dist/Gantry-$env:VERSION/*" -DestinationPath $archive -Force
           $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $(Split-Path -Leaf $archive)" | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding ascii
 
@@ -125,10 +138,10 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           $files = @(
-            "dist/CopilotBridge_Agent-$env:VERSION-windows.zip",
+            "dist/Gantry-$env:VERSION-windows.zip",
             "dist/SHA256SUMS.txt",
-            "dist/CopilotBridge_Agent-$env:VERSION/licenses.txt",
-            "dist/CopilotBridge_Agent-$env:VERSION/sbom.cdx.json"
+            "dist/Gantry-$env:VERSION/licenses.txt",
+            "dist/Gantry-$env:VERSION/sbom.cdx.json"
           )
           foreach ($file in $files) {
             if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing release output: $file" }
@@ -138,12 +151,12 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CopilotBridge-Agent-${{ steps.version.outputs.version }}
+          name: Gantry-${{ steps.version.outputs.version }}
           path: |
-            dist/CopilotBridge_Agent-${{ steps.version.outputs.version }}-windows.zip
+            dist/Gantry-${{ steps.version.outputs.version }}-windows.zip
             dist/SHA256SUMS.txt
-            dist/CopilotBridge_Agent-${{ steps.version.outputs.version }}/licenses.txt
-            dist/CopilotBridge_Agent-${{ steps.version.outputs.version }}/sbom.cdx.json
+            dist/Gantry-${{ steps.version.outputs.version }}/licenses.txt
+            dist/Gantry-${{ steps.version.outputs.version }}/sbom.cdx.json
           if-no-files-found: error
           retention-days: 30
 
@@ -151,7 +164,7 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            dist/CopilotBridge_Agent-${{ steps.version.outputs.version }}-windows.zip
+            dist/Gantry-${{ steps.version.outputs.version }}-windows.zip
             dist/SHA256SUMS.txt
 
       - name: Publish GitHub release
@@ -161,8 +174,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           gh release create "$env:VERSION" `
-            "dist/CopilotBridge_Agent-$env:VERSION-windows.zip" `
+            "dist/Gantry-$env:VERSION-windows.zip" `
             "dist/SHA256SUMS.txt" `
             --verify-tag `
             --generate-notes `
-            --title "CopilotBridge Agent $env:VERSION"
+            --title "Gantry $env:VERSION"

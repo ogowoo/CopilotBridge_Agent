@@ -1296,6 +1296,55 @@ async def _focus_box(box=None, timeout: float = 4000):
     return box
 
 
+async def _press_box(box, keys, timeout: float = 6000):
+    """按一个键：句柄失效（Lexical 重渲染后旧 span 脱离 DOM）时逐级兜底。
+
+    issue #1 实录：`fill()` 之后编辑器重渲染，旧句柄 press("Enter") 会一直等
+    可操作性，30 秒后抛 `Locator.press: Timeout 30000ms exceeded`。
+    这里把 30s 拆成"短超时三次尝试"，任何一级成功即返回。
+    """
+    try:
+        await box.press(keys, timeout=timeout)
+        return True
+    except Exception:
+        pass
+    try:
+        fresh = await b.input_box()
+        await fresh.press(keys, timeout=timeout)
+        return True
+    except Exception:
+        pass
+    try:
+        await b.page.keyboard.press(keys)
+        return True
+    except Exception:
+        return False
+
+
+async def _type_prompt(box, prompt):
+    """把提示词写进输入框：fill → 键盘逐字（不依赖旧句柄）→ 直接 type。"""
+    try:
+        await box.fill(prompt)
+        return True
+    except Exception:
+        pass
+    try:
+        if await _press_box(box, "Control+A"):
+            try:
+                fresh = await b.input_box()
+                await fresh.press_sequentially(prompt, timeout=20000)
+                return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        await b.page.keyboard.type(prompt)
+        return True
+    except Exception:
+        return False
+
+
 async def send(prompt, make_new, model_id):
     if not await b.ensure_browser_ready():
         raise b.CopilotSendFailed(
@@ -1324,14 +1373,11 @@ async def send(prompt, make_new, model_id):
 
     box = await b.input_box()
     await _focus_box(box)
-    try:
-        await box.fill(prompt)
-    except Exception:
-        await box.press("Control+A")
-        await box.press_sequentially(prompt)
+    # issue #1：fill 之后编辑器会重渲染，旧句柄会失效；统一走带兜底的 helper
+    await _type_prompt(box, prompt)
     before_count = await b.count_user_markers()
 
-    await box.press("Enter")
+    await _press_box(box, "Enter")
     if await b.sent_successfully(box, before_count, prompt):
         await b.diagnostics("sent")
         b.log("问题已发送")
@@ -1344,7 +1390,7 @@ async def send(prompt, make_new, model_id):
         return selected_model
 
     await _focus_box(box)
-    await box.press("Control+Enter")
+    await _press_box(box, "Control+Enter")
     if await b.sent_successfully(box, before_count, prompt):
         await b.diagnostics("sent_ctrl_enter")
         b.log("问题已通过 Ctrl+Enter 提交")
