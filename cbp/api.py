@@ -241,7 +241,8 @@ async def periodic_suspend_resume():
                 pass
 
 
-app = FastAPI(title="Copilot Local Bridge Agent", version="10.3.0-preview.2", lifespan=lifespan)
+from .version import VERSION as _APP_VERSION
+app = FastAPI(title="Copilot Local Bridge Agent", version=_APP_VERSION, lifespan=lifespan)
 
 def _lang_of(request) -> str:
     """从 X-CBP-Lang 头取界面语言（缺省中文）。"""

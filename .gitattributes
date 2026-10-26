@@ -1,0 +1,44 @@
+# 行尾统一：仓库内文本一律 LF，检出到 Windows 时由 git 负责转换。
+# 目的：多机器（Windows / macOS / Linux）协作时不再出现"整文件全变"的假改动。
+* text=auto eol=lf
+
+# 代码与文本：明确按 LF 存
+*.py        text eol=lf
+*.pyi       text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+*.ts        text eol=lf
+*.css       text eol=lf
+*.html      text eol=lf
+*.json      text eol=lf
+*.toml      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+*.ps1       text eol=lf
+*.sh        text eol=lf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# 二进制：不要做行尾转换，也不要尝试 diff
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.7z        binary
+*.gz        binary
+*.xlsx      binary
+*.docx      binary
+*.pptx      binary
+*.db        binary
+*.sqlite    binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary

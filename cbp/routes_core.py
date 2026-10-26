@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request as HttpRequest
+
+from .version import VERSION as _APP_VERSION
 from fastapi.responses import (StreamingResponse, FileResponse, RedirectResponse,
                                JSONResponse)
 from pydantic import BaseModel, Field
@@ -121,7 +123,7 @@ async def stream_provider(p, model: str, messages: list):
 
 @router.get("/")
 async def root():
-    return {"name": "Copilot Local Bridge Agent", "version": "10.3.0-preview.2", "docs": "/docs",
+    return {"name": "Copilot Local Bridge Agent", "version": _APP_VERSION, "docs": "/docs",
             "models": "/v1/models", "agent": "/v1/agent/completions"}
 
 
