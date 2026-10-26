@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.bridge import strip_suggestion_tail  # noqa: E402
+from gantry.bridge import strip_suggestion_tail  # noqa: E402
 
 REAL = ('{"step":17,"tool":"grep","arguments":{"pattern":"x"},"reason":"定位调用链"}\n'
         '\n继续读取匹配代码\n搜索菜单初始化函数\n查看快捷键相关测试')

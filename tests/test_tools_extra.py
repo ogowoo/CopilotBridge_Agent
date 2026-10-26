@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""扩展工具（cbp/tools_extra.py）：搜索 / 网页 / 命令 / 任务清单 / 图片 / 提问。
+"""扩展工具（gantry/tools_extra.py）：搜索 / 网页 / 命令 / 任务清单 / 图片 / 提问。
 
 这些工具是解耦模块，通过 register_extra_tools() 挂到 ToolRegistry 上；
 本测试只验证工具本身的行为与安全默认，不依赖 Copilot 网页。
@@ -13,8 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.tools import ToolRegistry
-from cbp.tools_extra import ExtraToolError, register_extra_tools
+from gantry.tools import ToolRegistry
+from gantry.tools_extra import ExtraToolError, register_extra_tools
 
 
 class ExtraToolsTests(unittest.TestCase):

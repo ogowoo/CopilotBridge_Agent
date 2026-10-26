@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.session_store import SessionStore
+from gantry.session_store import SessionStore
 
 
 class ApprovalScopeTests(unittest.TestCase):

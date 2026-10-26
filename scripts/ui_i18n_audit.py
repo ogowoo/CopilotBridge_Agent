@@ -179,7 +179,7 @@ def audit(url: str, as_json: bool) -> int:
             # 切回中文"，此时 DOM 直译已经把英文当"原文"缓存下来，会把中文覆盖掉。
             # 只在同一次加载里 setLang('en')→setLang('zh') 是复现不出来的。
             try:
-                page.evaluate("localStorage.setItem('cbp-lang','en')")
+                page.evaluate("localStorage.setItem('gantry-lang','en')")
                 page.reload(wait_until="domcontentloaded")
             except Exception:
                 pass

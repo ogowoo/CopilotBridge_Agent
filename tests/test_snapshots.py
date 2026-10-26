@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.snapshots import SnapshotStore
-from cbp.tools import ToolRegistry
+from gantry.snapshots import SnapshotStore
+from gantry.tools import ToolRegistry
 
 
 class SnapshotStoreTests(unittest.TestCase):

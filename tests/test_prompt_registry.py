@@ -7,9 +7,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import AgentRunner
-from cbp.prompt import AGENT_PROTOCOL, PromptError, PromptRegistry
-from cbp.tools import ToolRegistry
+from gantry.agent import AgentRunner
+from gantry.prompt import AGENT_PROTOCOL, PromptError, PromptRegistry
+from gantry.tools import ToolRegistry
 
 
 class RegistryTests(unittest.TestCase):

@@ -10,7 +10,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp.tools import ToolError, ToolRegistry  # noqa: E402
+from gantry.tools import ToolError, ToolRegistry  # noqa: E402
 
 
 class PreciseEditGuardTests(unittest.TestCase):

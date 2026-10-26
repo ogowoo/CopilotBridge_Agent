@@ -128,7 +128,7 @@ def main():
         print("\n-- 专用 COM 线程模式验证（服务端新代码路径）--")
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-            from cbp.tools import _ComWorker
+            from gantry.tools import _ComWorker
 
             async def worker_probe():
                 def work():

@@ -79,8 +79,8 @@ def analyse(recs: list[dict]) -> dict:
             b = by_tool.setdefault(attrs.get("gen_ai.tool.name") or "?", {"count": 0, "errors": 0, "ms": [], "chars": []})
             b["count"] += 1
             b["ms"].append(ms)
-            b["chars"].append(float(attrs.get("cbp.result_chars") or 0))
-        sid = attrs.get("cbp.session_id") or "(unknown)"
+            b["chars"].append(float(attrs.get("gantry.result_chars") or 0))
+        sid = attrs.get("gantry.session_id") or "(unknown)"
         s = by_session.setdefault(sid, {"count": 0, "errors": 0, "ms": [], "turns": 0, "tools": 0})
         s["count"] += 1
         s["errors"] += err
@@ -158,7 +158,7 @@ def main() -> int:
             r = json.loads(line)
         except Exception:
             continue
-        if args.session and (r.get("attributes") or {}).get("cbp.session_id") != args.session:
+        if args.session and (r.get("attributes") or {}).get("gantry.session_id") != args.session:
             continue
         recs.append(r)
     if not recs:

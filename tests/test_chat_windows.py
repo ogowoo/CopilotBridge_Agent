@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi import HTTPException
 
-from cbp import api, bridge as b
-from cbp.window_pool import Window
+from gantry import api, bridge as b
+from gantry.window_pool import Window
 
 
 class FakeWindow:

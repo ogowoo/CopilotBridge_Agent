@@ -14,9 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from cbp import bridge as b
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 
 class SessionModelTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class SessionModelTests(unittest.TestCase):
         b.SNAPSHOTS = SnapshotStore(self.tmp / "snaps")
         b.AGENT_TOOLS.root = self.ws
         b.AGENT_SESSIONS.create("s1", "任务标题", str(self.ws), "copilot-think-deeper")
-        from cbp.api import app
+        from gantry.api import app
         # 本机 config.json 可能配置了 api_token（合法部署）：测试要带上它，
         # 否则会因 401 失败，把"配置正确"误报成"代码有问题"。
         headers = {}

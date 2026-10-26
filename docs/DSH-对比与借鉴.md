@@ -33,7 +33,7 @@ DSH 的强项是**关注点隔离**（一个关注点一个包）、**日志即�
 - 以 user 角色 `<system-reminder>` 注入，**正文里的 `</system-reminder>` 被转义**。
 
 **我们的落点**
-- `cbp/agent.py::_system_prompt()` 是数百行巨型 f-string（本次会话我两次改坏它）→ 拆成
+- `gantry/agent.py::_system_prompt()` 是数百行巨型 f-string（本次会话我两次改坏它）→ 拆成
   "分段注册 + order + 作用域遮蔽"，让工具/技能/沙箱各自贡献文本；
 - 两级 AGENT.md 现在各自 8000 字符**硬截断**且**不转义闭合标签** → 采纳"丢宽泛优先 + 可见预算 + 转义"。
 
@@ -198,13 +198,13 @@ profile = bundle 顺序叠层。slot = 浏览器 UI 插槽；inspect provider = 
 | P0-4 | AGENT.md 预算（丢宽泛优先）+ 闭合标签转义 | ✅ 已落地 | `_load_agent_md()`、`escape_instruction_text()`、`tests/test_instruction_budget.py` |
 | P1-5 | 沙箱拒绝结构化（`FS_SANDBOX_*`） | ✅ 已落地 | `_sandbox_denied()`、`tests/test_sandbox_errors.py` |
 | P1-6 | 破坏性工具一次性审批（fail-closed、allowed-once） | ✅ 已落地 | `approvals` 表、`requires_approval()`、`approval_check` 回调、`/approvals` 路由、`tests/test_approval.py`（真机端到端未做：三类开关默认全关，需用户决策） |
-| P1-7 | 运行时不变量注册表 | ✅ 已落地 | `cbp/invariants.py`（9 条）、`scripts/invariants.py`、`tests/test_invariants.py` |
+| P1-7 | 运行时不变量注册表 | ✅ 已落地 | `gantry/invariants.py`（9 条）、`scripts/invariants.py`、`tests/test_invariants.py` |
 | P1-8 | next-turn / next-step 队列分离 + 批量中途抢占 | ✅ 已落地 | `pending_steps`、`step_preempted`、`tests/test_two_queue.py` |
-| P2-9 | 提示词分段注册表（拆 `_system_prompt`） | ✅ 已落地（**输出逐字不变**：3918=3918） | `cbp/prompt.py`（order/scope 遮蔽/变量 fail-fast）、`AGENT_PROTOCOL` 常量、`tests/test_prompt_registry.py` |
+| P2-9 | 提示词分段注册表（拆 `_system_prompt`） | ✅ 已落地（**输出逐字不变**：3918=3918） | `gantry/prompt.py`（order/scope 遮蔽/变量 fail-fast）、`AGENT_PROTOCOL` 常量、`tests/test_prompt_registry.py` |
 | P2-10 | 事件溯源化（日志即唯一真相，状态可重建） | 🟢 **一、二、三期均已落地**（第三期＝小步切换：`event_source=projection` 时"结果未知步骤"改读投影，不一致自动回退到列；默认仍 columns。实测投影模式评测 7/7 与列模式一致） | `events` 表、`append_event()/events()`、检查点+文件改动+队列+消息+审批共 **13 个发点**、`tests/test_event_log.py`、巡检脚本 `scripts/health.py`（一致/不一致/覆盖告警/遗留四类）；评测器每条任务自动做一次事件核对（`scripts/eval.py`） |
 | P2-11 | 对话/提示词结构契约 | ✅ 已落地（按真实 API 契约自愈：system 首位、不以 assistant 打头、连续 user 合法、连续 assistant 合并保留较新） | `_repair_provider_history()`、`tests/test_provider_history.py`；提示词稳定由 `tests/test_prompt_stability.py` 守 |
 | P2-12 | 工具结果 spill 落盘（替代纯截断） | ✅ 已落地 | `_spill_result()`、工作区 `.spill/`、`tests/test_spill.py` |
-| P2-13 | `run_code` 式程序化工具调用（白名单 + 进程隔离） | ✅ 已落地（默认关闭；12 文件场景实测 17→7 步，4 文件场景模型不采纳） | `cbp/run_code.py`、`tests/test_run_code.py`；顺带修掉「未分组工具被裁剪滤掉」的缺陷 |
+| P2-13 | `run_code` 式程序化工具调用（白名单 + 进程隔离） | ✅ 已落地（默认关闭；12 文件场景实测 17→7 步，4 文件场景模型不采纳） | `gantry/run_code.py`、`tests/test_run_code.py`；顺带修掉「未分组工具被裁剪滤掉」的缺陷 |
 
 **顺带修掉的真缺陷**（不在原计划内，由真实任务/评测暴露）：
 参数错误不可行动（`tests/test_tool_arg_errors.py`）、恢复后 `pending_steps` 逻辑、

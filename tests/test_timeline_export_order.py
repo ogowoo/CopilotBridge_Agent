@@ -65,7 +65,7 @@ class RealExportShapeTests(unittest.TestCase):
     """用真实接口数据验证排序结果（不依赖前端在浏览器里跑）。"""
 
     def test_sorted_payload_matches_timestamps(self):
-        p = BASE / "for debug" / "cbp-task-mveq9t5g-timeline-2026-10-19-10-35-24.json"
+        p = BASE / "for debug" / "gantry-task-mveq9t5g-timeline-2026-10-19-10-35-24.json"
         if not p.is_file():
             self.skipTest("没有可用的历史导出样本")
         d = json.loads(p.read_text(encoding="utf-8"))

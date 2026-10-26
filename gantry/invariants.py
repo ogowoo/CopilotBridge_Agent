@@ -410,7 +410,7 @@ def _ui_actions_wired() -> None:
     - 页面/JS 里出现的每个 data-act 都要在 ACTIONS 里有实现；
     - ACTIONS 里每一项都要被引用（否则是死代码或拼错的名字）。
     """
-    web = ROOT / "webui"          # 注意是 ROOT：HERE 指向 cbp/ 包目录
+    web = ROOT / "webui"          # 注意是 ROOT：HERE 指向 gantry/ 包目录
     if not web.is_dir():
         raise InvariantError(f"找不到 webui 目录: {web}")
     html = (web / "index.html").read_text(encoding="utf-8")
@@ -525,7 +525,7 @@ def _static_attrs_translated() -> None:
 
 @invariant("后端错误文案都有英文翻译")
 def _backend_errors_translated() -> None:
-    """`HTTPException(4xx, "中文…")` 的 detail 必须能被 `cbp/i18n.py` 翻成英文。
+    """`HTTPException(4xx, "中文…")` 的 detail 必须能被 `gantry/i18n.py` 翻成英文。
 
     真事：界面文案三语了，但错误 detail 一直中文——英文界面下 toast 里弹出
     "Session 不存在"。48 处 raise 靠人记不住，改成全局处理器 + 翻译表之后，
@@ -533,7 +533,7 @@ def _backend_errors_translated() -> None:
     """
     from . import i18n as backend_i18n
 
-    src = "".join((ROOT / "cbp" / f).read_text(encoding="utf-8") for f in
+    src = "".join((ROOT / "gantry" / f).read_text(encoding="utf-8") for f in
                 ("api.py", "routes_core.py", "routes_config.py",
                  "routes_agents.py", "routes_sessions.py"))
     msgs = re.findall(r'HTTPException\(\s*\d{3}\s*,\s*"([^"]+)"', src)
@@ -545,7 +545,7 @@ def _backend_errors_translated() -> None:
                       if not re.search(r"[\u4e00-\u9fff]", backend_i18n.translate(m, "en"))]
     if really_missing:
         raise InvariantError(
-            f"这些错误文案在英文下仍是中文（补到 cbp/i18n.py）: {really_missing[:6]}")
+            f"这些错误文案在英文下仍是中文（补到 gantry/i18n.py）: {really_missing[:6]}")
 
 
 @invariant("title 提示不要直接写中文")

@@ -22,7 +22,7 @@ import subprocess
 import time
 
 PROTOCOL = "2024-11-05"
-_CLIENT_INFO = {"name": "cbp-mcp", "version": "0.2.0"}
+_CLIENT_INFO = {"name": "gantry-mcp", "version": "0.2.0"}
 _REQ_TIMEOUT = 30.0
 
 

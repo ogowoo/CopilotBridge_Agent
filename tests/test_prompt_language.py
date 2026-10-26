@@ -13,7 +13,7 @@
   `auto` 时跟随当次请求的 `X-CBP-Lang`（API 中间件写进 contextvar）;
 - 四段指令（协议 / 子代理分工 / 交付物表述 / 文件操作纪律）+ "回答语言"指令
   + "文件分流"一句，都按语言取；中文原文仍是唯一真源，英文是译本，
-  繁体由 `cbp/s2t_data.py` 按字转换（该表**由 `webui/i18n.js` 的 S2T_CHARS 生成**）;
+  繁体由 `gantry/s2t_data.py` 按字转换（该表**由 `webui/i18n.js` 的 S2T_CHARS 生成**）;
 - `PromptRegistry.add()` 支持**零参可调用对象**,渲染时才求值（语言是 contextvar,
   import 时还不知道）。
 """
@@ -25,12 +25,12 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp import prompt, prompt_lang  # noqa: E402
-from cbp.s2t_data import S2T  # noqa: E402
+from gantry import prompt, prompt_lang  # noqa: E402
+from gantry.s2t_data import S2T  # noqa: E402
 
-API = ((BASE / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
-AGENT = ((BASE / "cbp" / "agent.py").read_text(encoding="utf-8")
-         + (BASE / "cbp" / "agent_prompt.py").read_text(encoding="utf-8"))
+API = ((BASE / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
+AGENT = ((BASE / "gantry" / "agent.py").read_text(encoding="utf-8")
+         + (BASE / "gantry" / "agent_prompt.py").read_text(encoding="utf-8"))
 
 
 class ResolveTests(unittest.TestCase):
@@ -155,11 +155,11 @@ class WholePromptTests(unittest.TestCase):
     """整段提示词：英文模式下中文占比必须明显下降（剩余是工具描述等结构化内容）。"""
 
     def _build(self, lang: str) -> str:
-        from cbp import bridge as b
-        from cbp.agent import AgentRunner
+        from gantry import bridge as b
+        from gantry.agent import AgentRunner
         import tempfile
-        from cbp.session_store import SessionStore
-        from cbp.snapshots import SnapshotStore
+        from gantry.session_store import SessionStore
+        from gantry.snapshots import SnapshotStore
         tmp = Path(tempfile.mkdtemp())
         saved = (b.AGENT_SESSIONS, b.SNAPSHOTS)
         try:
@@ -198,9 +198,9 @@ class ToolDescriptionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import tempfile
-        from cbp import bridge as b
-        from cbp.session_store import SessionStore
-        from cbp.snapshots import SnapshotStore
+        from gantry import bridge as b
+        from gantry.session_store import SessionStore
+        from gantry.snapshots import SnapshotStore
         cls.tmp = Path(tempfile.mkdtemp())
         cls.saved = (b.AGENT_SESSIONS, b.SNAPSHOTS)
         b.AGENT_SESSIONS = SessionStore(cls.tmp / "a.db")
@@ -229,7 +229,7 @@ class ToolDescriptionTests(unittest.TestCase):
 
     def test_every_tool_and_argument_is_covered(self):
         """新增工具/参数必须同时补英文，否则会在英文界面悄悄露出中文。"""
-        from cbp.tool_i18n import ARG_EN, DESC_EN
+        from gantry.tool_i18n import ARG_EN, DESC_EN
         items = self.tools.descriptions()
         missing_desc = [x["name"] for x in items if x["name"] not in DESC_EN]
         missing_args = [f'{x["name"]}.{k}' for x in items

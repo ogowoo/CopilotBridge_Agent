@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import invariants as inv
+from gantry import invariants as inv
 
 
 class InvariantTests(unittest.TestCase):

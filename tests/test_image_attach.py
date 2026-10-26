@@ -33,15 +33,15 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
-# 页面自动化层已拆到 cbp/page.py（bridge.py 第三批解耦）
-BRIDGE = ((BASE / "cbp" / "bridge.py").read_text(encoding="utf-8")
-          + (BASE / "cbp" / "page.py").read_text(encoding="utf-8")
-          + (BASE / "cbp" / "agentrun.py").read_text(encoding="utf-8"))
+# 页面自动化层已拆到 gantry/page.py（bridge.py 第三批解耦）
+BRIDGE = ((BASE / "gantry" / "bridge.py").read_text(encoding="utf-8")
+          + (BASE / "gantry" / "page.py").read_text(encoding="utf-8")
+          + (BASE / "gantry" / "agentrun.py").read_text(encoding="utf-8"))
 
 
 class CacheKeyTests(unittest.TestCase):
     def setUp(self):
-        from cbp import bridge
+        from gantry import bridge
         self.bridge = bridge
         self.tmp = Path(tempfile.mkdtemp())
 
@@ -79,11 +79,11 @@ class ProviderDropTests(unittest.TestCase):
     """provider 分支收到图片必须留下痕迹（步骤 + 提示），不能静默丢弃。"""
 
     def test_records_step_and_warns(self):
-        from cbp import bridge
+        from gantry import bridge
         tmp = Path(tempfile.mkdtemp())
         saved_sessions = bridge.AGENT_SESSIONS
         try:
-            from cbp.session_store import SessionStore
+            from gantry.session_store import SessionStore
             bridge.AGENT_SESSIONS = SessionStore(tmp / "agent.db")
             bridge.AGENT_SESSIONS.create("s1", "贴图测试", str(tmp), "deepseek-v4")
             img = tmp / "shot.png"
@@ -101,11 +101,11 @@ class ProviderDropTests(unittest.TestCase):
             bridge.AGENT_SESSIONS = saved_sessions
 
     def test_empty_attach_list_is_noop(self):
-        from cbp import bridge
+        from gantry import bridge
         tmp = Path(tempfile.mkdtemp())
         saved = bridge.AGENT_SESSIONS
         try:
-            from cbp.session_store import SessionStore
+            from gantry.session_store import SessionStore
             bridge.AGENT_SESSIONS = SessionStore(tmp / "agent.db")
             bridge.AGENT_SESSIONS.create("s1", "x", str(tmp), "deepseek-v4")
             bridge.warn_provider_cannot_attach("s1", "deepseek-v4-flash", [])

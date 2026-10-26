@@ -68,7 +68,7 @@ jobs:
           from pathlib import Path
 
           entries = [Path("app.py"), Path("start.py"), Path("install.py")]
-          roots = [Path("cbp"), Path("scripts"), Path("tests")]
+          roots = [Path("gantry"), Path("scripts"), Path("tests")]
           missing = [str(p) for p in entries if not p.is_file()]
           missing += [str(p) for p in roots if not p.is_dir()]
           if missing:
@@ -98,7 +98,7 @@ jobs:
         run: |
           $stage = "dist/CopilotBridge_Agent-$env:VERSION"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          $required = @("app.py", "start.py", "install.py", "cbp", "webui", "scripts", "docs", "requirements.txt", "requirements-lock.txt", "config.example.json", "README.md")
+          $required = @("app.py", "start.py", "install.py", "gantry", "webui", "scripts", "docs", "requirements.txt", "requirements-lock.txt", "config.example.json", "README.md")
           foreach ($item in $required) {
             if (-not (Test-Path -LiteralPath $item)) { throw "Missing required release path: $item" }
             Copy-Item -LiteralPath $item -Destination $stage -Recurse -Force

@@ -8,14 +8,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.tools import ToolError, ToolRegistry
+from gantry.tools import ToolError, ToolRegistry
 
 
 class WorkspaceGuardTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cbp_wsguard_"))
         self.install = self.tmp / "install"
-        (self.install / "cbp").mkdir(parents=True)
+        (self.install / "gantry").mkdir(parents=True)
         (self.install / "config.json").write_text("{}", encoding="utf-8")
         (self.install / "data").mkdir()
         self.ws = self.tmp / "ws"

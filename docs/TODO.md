@@ -1,4 +1,4 @@
-# CopilotBridge Agent 治理 TODO
+# Gantry 治理 TODO
 
 ## 优先级定义
 
@@ -23,7 +23,7 @@
 
 - 问题：非回环绑定未确认强制认证。
 - 影响：可能远程暴露高权限 API。
-- 文件：start.py、cbp/api.py、config.example.json。
+- 文件：start.py、gantry/api.py、config.example.json。
 - 实施：Token 为空时拒绝非 loopback 启动。
 - 验收：回环地址可无 Token 启动；非回环无 Token 必须失败；配置组合测试通过。
 - 依赖：无。
@@ -61,7 +61,7 @@
 
 - 问题：已修复主要 SQLite 测试夹具和运行路径中的连接释放缺陷。
 - 影响：降低长期运行时连接句柄累积和测试退出阶段告警风险。
-- 文件：cbp/session_store.py、cbp/tools.py、cbp/invariants.py、测试清理路径。
+- 文件：gantry/session_store.py、gantry/tools.py、gantry/invariants.py、测试清理路径。
 - 实施：明确连接所有权，使用受管连接并补齐 close() 协议。
 - 验收：仓库语法检查通过，离线测试三组全部通过；部分独立测试仍观察到零星 ResourceWarning，列为后续清理项。
 - 依赖：无。
@@ -70,7 +70,7 @@
 
 - 问题：SQLite、内存、SSE、浏览器和 WebUI 存在多状态源。
 - 影响：可能出现竞态、过期审批或状态漂移。
-- 文件：cbp/agentrun.py、cbp/session_store.py、相关路由和 WebUI。
+- 文件：gantry/agentrun.py、gantry/session_store.py、相关路由和 WebUI。
 - 实施：定义状态机、合法迁移、幂等操作和状态版本。
 - 验收：暂停、恢复、审批、终止和重启场景测试通过。
 - 依赖：P1-RES-01。
@@ -88,7 +88,7 @@
 
 - 问题：已有多条回滚通道，但需持续验证。
 - 影响：灾难场景中的恢复时间不确定。
-- 文件：cbp/snapshots.py、scripts/rollback.py、tests/。
+- 文件：gantry/snapshots.py、scripts/rollback.py、tests/。
 - 实施：自动演练新增、修改、移动、删除和 revision 回滚。
 - 验收：记录 RTO、RPO 和不可回滚边界。
 - 依赖：P0-CI-01。
@@ -97,7 +97,7 @@
 
 - 问题：类型、范围、未知字段和危险组合需统一校验。
 - 影响：错误配置可能延迟到运行时暴露。
-- 文件：config.example.json、cbp/routes_config.py、启动逻辑。
+- 文件：config.example.json、gantry/routes_config.py、启动逻辑。
 - 实施：定义 Schema、重启要求和安全影响。
 - 验收：错误类型、越界值和危险组合均被拒绝。
 - 依赖：支撑 P0-SEC-01。
@@ -106,7 +106,7 @@
 
 - 问题：窗口范围在多个模块和文档中不一致。
 - 影响：配置校验与运行行为不一致。
-- 文件：cbp/browser.py、cbp/routes_config.py、cbp/window_pool.py、docs/MULTI-WINDOW.md。
+- 文件：gantry/browser.py、gantry/routes_config.py、gantry/window_pool.py、docs/MULTI-WINDOW.md。
 - 实施：确定唯一范围并同步代码、配置和文档。
 - 验收：最小值、最大值和越界测试通过。
 - 依赖：P1-CFG-01。
@@ -124,7 +124,7 @@
 
 - 问题：健康状态可能混合进程、浏览器和外部服务状态。
 - 影响：编排系统难判断是否可接收请求。
-- 文件：cbp/routes_core.py、cbp/api.py、tests/。
+- 文件：gantry/routes_core.py、gantry/api.py、tests/。
 - 实施：增加 /health/live 与 /health/ready。
 - 验收：不同故障场景返回明确状态码。
 - 依赖：P1-OBS-01。
@@ -144,7 +144,7 @@
 
 - 问题：浏览器通道依赖外部 DOM，工具可见性依赖关键词。
 - 影响：页面更新或表达变化可能导致功能失效。
-- 文件：cbp/browser.py、cbp/page.py、cbp/tools.py。
+- 文件：gantry/browser.py、gantry/page.py、gantry/tools.py。
 - 实施：选择器契约测试、诊断降级和按需工具发现。
 - 验收：关键 DOM 变化可快速检测；必要工具可动态发现。
 - 依赖：P0-CI-01。

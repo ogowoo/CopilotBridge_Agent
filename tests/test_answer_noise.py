@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 class CleanAnswerTests(unittest.TestCase):
     def test_strips_markers_and_ui_hint(self):
-        from cbp.bridge import _clean_answer
+        from gantry.bridge import _clean_answer
         raw = ("[CBP-AGENT][task-x][C000]\n只回一个词：banana"
                "Press Tab to access the More options button.")
         out = _clean_answer(raw)
@@ -19,11 +19,11 @@ class CleanAnswerTests(unittest.TestCase):
         self.assertIn("banana", out)
 
     def test_keeps_real_answer(self):
-        from cbp.bridge import _clean_answer
+        from gantry.bridge import _clean_answer
         self.assertEqual(_clean_answer('[CBP-TURN:abc]\n{"type":"final"}'), '{"type":"final"}')
 
     def test_echo_only_detected(self):
-        from cbp.bridge import _echo_only
+        from gantry.bridge import _echo_only
         sent = "只回一个词：banana"
         echo = ("[CBP-AGENT][task-x][C000]\n只回一个词：banana"
                 "Press Tab to access the More options button.")
@@ -32,8 +32,8 @@ class CleanAnswerTests(unittest.TestCase):
         self.assertFalse(_echo_only('{"type":"final","content":"ok"}', sent))
 
     def test_wait_agent_answer_rejects_echo(self):
-        src = ((ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
-               + (ROOT / "cbp" / "agentrun.py").read_text(encoding="utf-8"))
+        src = ((ROOT / "gantry" / "bridge.py").read_text(encoding="utf-8")
+               + (ROOT / "gantry" / "agentrun.py").read_text(encoding="utf-8"))
         self.assertIn("_echo_only(value, sent)", src)
         i = src.find("async def wait_agent_answer(")
         self.assertIn("sent: str = \"\"", src[i:i + 200])

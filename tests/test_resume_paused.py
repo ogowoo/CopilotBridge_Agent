@@ -17,9 +17,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import bridge as b
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 
 class ResumePausedRunnerTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class ResumePausedRunnerTests(unittest.TestCase):
 
     def _hold_window(self, sid):
         """把会话标记成"正占用一个自动化窗口"（模拟还在跑的 runner）。"""
-        from cbp.window_pool import Window
+        from gantry.window_pool import Window
 
         win = Window(1, object())
         win.sid = sid
@@ -111,7 +111,7 @@ class ResumePausedRunnerTests(unittest.TestCase):
 
     def test_resume_endpoint_reports_note(self):
         """端点必须给出可读的 note，避免"弹了已恢复却没跑"的误导。"""
-        from cbp.api import app
+        from gantry.api import app
         from fastapi.testclient import TestClient
         c = TestClient(app)
         b.AGENT_SESSIONS.patch("s1", state="paused")
@@ -125,7 +125,7 @@ class ResumePausedRunnerTests(unittest.TestCase):
             task.cancel()
 
     def test_resume_terminal_state_refused_with_reason(self):
-        from cbp.api import app
+        from gantry.api import app
         from fastapi.testclient import TestClient
         c = TestClient(app)
         b.AGENT_SESSIONS.patch("s1", state="completed")

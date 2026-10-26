@@ -73,8 +73,8 @@ class PluginLoadTests(unittest.TestCase):
         self.assertTrue(bad["error"])
 
     def test_setup_registers_provider_panel_and_api(self):
-        from cbp.plugins import PluginHost
-        from cbp.providers import ApiProvider
+        from gantry.plugins import PluginHost
+        from gantry.providers import ApiProvider
 
         host = PluginHost(ROOT, registry=None, providers={},
                           provider_factory=lambda name, cfg: ApiProvider(name, cfg))
@@ -86,7 +86,7 @@ class PluginLoadTests(unittest.TestCase):
             encoding="utf-8")
         manifest = json.loads((ROOT / "plugins" / "deepseek-web" / "plugin.json")
                               .read_text(encoding="utf-8"))
-        manifest["cbp"]["config"]["base_url"] = f"http://127.0.0.1:{self.port}/v1"
+        manifest["gantry"]["config"]["base_url"] = f"http://127.0.0.1:{self.port}/v1"
         (plug_dir / "plugin.json").write_text(json.dumps(manifest, ensure_ascii=False),
                                               encoding="utf-8")
         host.plugin_root = self.tmp
@@ -111,8 +111,8 @@ class PluginLoadTests(unittest.TestCase):
 
     def test_setup_with_dead_proxy_registers_no_models(self):
         """反代没起：提供商仍注册（便于面板诊断），但**不列出模型**。"""
-        from cbp.plugins import PluginHost
-        from cbp.providers import ApiProvider
+        from gantry.plugins import PluginHost
+        from gantry.providers import ApiProvider
 
         host = PluginHost(ROOT, registry=None, providers={},
                           provider_factory=lambda name, cfg: ApiProvider(name, cfg))
@@ -123,7 +123,7 @@ class PluginLoadTests(unittest.TestCase):
             encoding="utf-8")
         manifest = json.loads((ROOT / "plugins" / "deepseek-web" / "plugin.json")
                               .read_text(encoding="utf-8"))
-        manifest["cbp"]["config"]["base_url"] = "http://127.0.0.1:9/v1"   # 必然连不上
+        manifest["gantry"]["config"]["base_url"] = "http://127.0.0.1:9/v1"   # 必然连不上
         (plug_dir / "plugin.json").write_text(json.dumps(manifest, ensure_ascii=False),
                                               encoding="utf-8")
         host.plugin_root = self.tmp

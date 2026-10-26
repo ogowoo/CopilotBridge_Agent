@@ -8,7 +8,7 @@
     python scripts/bump_version.py preview --commit --tag --push
 
 做四件事（幂等）：
-1. 写 `cbp/version.py` 的 VERSION；
+1. 写 `gantry/version.py` 的 VERSION；
 2. 同步 `pyproject.toml` 的 version；
 3. 在 `CHANGELOG.md` 顶部生成新版本小节（把 `## [Unreleased]` 下的内容搬过去）；
 4. 可选：git add/commit + tag v<version> + push（含 tags）。
@@ -25,9 +25,9 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp.version import VERSION, next_version, parse, tag_name  # noqa: E402
+from gantry.version import VERSION, next_version, parse, tag_name  # noqa: E402
 
-VERSION_FILE = BASE / "cbp" / "version.py"
+VERSION_FILE = BASE / "gantry" / "version.py"
 PYPROJECT = BASE / "pyproject.toml"
 CHANGELOG = BASE / "CHANGELOG.md"
 README = BASE / "README.md"

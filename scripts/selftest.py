@@ -4,11 +4,14 @@
 不写入用户已有会话：所有动作都在一个临时会话里做，结束后删除。
 """
 import json
+import os
 import time
 import urllib.error
 import urllib.request
 
 BASE = "http://127.0.0.1:8765"
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WORKSPACE = os.path.join(REPO, "workspace", "wgime")
 SID = "diag-selftest-1"
 results = []
 
@@ -56,7 +59,7 @@ check("GET /openapi.json", st == 200 and isinstance(up, dict), f"{st}")
 # ② 文件直读（走 run_agent 入口拦截，不调 Copilot）
 st, res = call("/v1/agent/completions",
                {"model": "copilot-auto", "session_id": SID,
-                "workspace": "C:\\Tools\\Test4All\\CopilotBridge_Agent\\workspace\\wgime",
+                "workspace": str(WORKSPACE),
                 "messages": [{"role": "user", "content": "给我看下 docs/wgime_todo_roadmap.md"}]},
                "POST", 300)
 content = ""
@@ -71,7 +74,7 @@ check("文件直读不进 Agent 循环", steps == 0, f"步骤 {steps}")
 # ③ 真实 Copilot 回合
 st, res2 = call("/v1/agent/completions",
                 {"model": "copilot-quick-response", "session_id": SID + "-chat",
-                 "workspace": "C:\\Tools\\Test4All\\CopilotBridge_Agent\\workspace\\wgime",
+                 "workspace": str(WORKSPACE),
                  "messages": [{"role": "user", "content": "只回一个词：ping"}]},
                 "POST", 420)
 txt = ""

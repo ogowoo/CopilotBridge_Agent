@@ -20,9 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from cbp import bridge as b
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 # 1x1 红色 PNG
 PNG_1PX = base64.b64encode(bytes.fromhex(
@@ -76,7 +76,7 @@ class MessageAttachmentStoreTests(unittest.TestCase):
         self.assertEqual(msgs[0]["attachments"], [])
 
     def test_upload_endpoint_serves_and_rejects_traversal(self):
-        from cbp.api import app
+        from gantry.api import app
         paths = b.save_image_attachments([f"data:image/png;base64,{PNG_1PX}"])
         self.assertTrue(paths)
         c = TestClient(app)

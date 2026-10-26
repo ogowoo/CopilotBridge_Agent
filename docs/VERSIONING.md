@@ -18,7 +18,7 @@ MAJOR.MINOR.PATCH[-channel.N]        # SemVer 2.0 子集
 
 - **预发布序号只增不减**；切换通道（preview → beta）序号从 1 重新开始。
 - 发布到正式版：去掉后缀（`10.3.0-preview.3` → `10.3.0`），此后只允许补 PATCH。
-- 版本号**只在 `cbp/version.py` 里写一次**，其它位置一律引用（`pyproject.toml`、README
+- 版本号**只在 `gantry/version.py` 里写一次**，其它位置一律引用（`pyproject.toml`、README
   由 `scripts/bump_version.py` 同步；`GET /` 与 FastAPI 的 version 也读它）。
 
 ## 2. 每次改动的落地清单
@@ -62,7 +62,7 @@ python scripts/bump_version.py preview --commit --tag --push
   若发现整文件"全变红"，先 `git add --renormalize .` 再看 diff。
 - **每次开始前先同步**：`git pull --rebase`（避免 merge 提交污染历史）。
 - **同一个功能不要在两台机器并行改**；跨机器切分支前先 commit 或 stash。
-- 版本号冲突时**以 `cbp/version.py` 为准**，冲突解决后跑一次
+- 版本号冲突时**以 `gantry/version.py` 为准**，冲突解决后跑一次
   `python scripts/bump_version.py --to <最新号> --set` 让 `pyproject.toml` 对齐。
 - 发布前必须有一台机器跑完整测试套件；标签只在干净工作区打。
 - `.venv/`、`data/`、`workspace/`、`node_modules/` 不入库（见 `.gitignore`）；

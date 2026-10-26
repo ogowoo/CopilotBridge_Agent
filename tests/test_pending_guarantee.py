@@ -13,8 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-QUEUE = (ROOT / "cbp" / "queue.py").read_text(encoding="utf-8")
-AGENT = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+QUEUE = (ROOT / "gantry" / "queue.py").read_text(encoding="utf-8")
+AGENT = (ROOT / "gantry" / "agent.py").read_text(encoding="utf-8")
 
 
 class PendingGuaranteeTests(unittest.TestCase):
@@ -41,7 +41,7 @@ class PendingWrittenOnFollowupTests(unittest.TestCase):
 
     def test_pending_block_not_inside_except(self):
         """`pending.append(task)` 必须和 `except` 同级（12 空格缩进），不能在 except 块里。"""
-        src = (ROOT / "cbp" / "agentrun.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "agentrun.py").read_text(encoding="utf-8")
         lines = src.splitlines()
         idx = next(n for n, l in enumerate(lines) if l.strip().startswith("pending = list(existing.get"))
         line = lines[idx]

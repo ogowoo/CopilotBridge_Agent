@@ -9,9 +9,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from cbp import bridge as b
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 
 class SessionTagTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class SessionTagTests(unittest.TestCase):
         b.SNAPSHOTS = SnapshotStore(self.tmp / "snaps")
         b.AGENT_TOOLS.set_root(self.ws, False)
         b.AGENT_SESSIONS.create("s1", "甲", str(self.ws), "copilot-auto")
-        from cbp.api import app
+        from gantry.api import app
         self.c = TestClient(app)
 
     def tearDown(self):

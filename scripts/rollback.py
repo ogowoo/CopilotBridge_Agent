@@ -12,7 +12,7 @@
 
 自我升级把代码改坏（导入报错、服务起不来）时，WebUI 往往也打不开，
 这是不依赖服务的最后一道回滚通道。--scope self 回滚的是服务安装目录
-（cbp/、webui/、scripts/ 等）自身的代码。
+（gantry/、webui/、scripts/ 等）自身的代码。
 """
 import argparse
 import json
@@ -22,7 +22,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp.snapshots import SnapshotStore  # noqa: E402
+from gantry.snapshots import SnapshotStore  # noqa: E402
 
 SELF_PREFIX = "_self_"
 

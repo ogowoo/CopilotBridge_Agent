@@ -14,9 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from cbp import bridge as b
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 
 def make_stub(record: list, gate: "asyncio.Event | None" = None):
@@ -99,7 +99,7 @@ class MessageQueueTests(unittest.TestCase):
             await b.enqueue_session_message("s1", "b", "copilot-auto", False, None)
             await asyncio.sleep(0.05)   # 让 worker 抓走第一条
         asyncio.run(main())
-        from cbp.api import app
+        from gantry.api import app
         c = TestClient(app)
         r = c.get("/v1/agent/sessions/s1/runtime").json()
         self.assertEqual(r.get("queue_pending"), 1)   # 一条在处理、一条在等
@@ -110,7 +110,7 @@ class MessageQueueTests(unittest.TestCase):
         gate = asyncio.Event()
         b._process_queued_message = make_stub([], gate)
         b.AGENT_SESSIONS.patch("s1", state="paused")
-        from cbp.api import app
+        from gantry.api import app
         c = TestClient(app)
         r = c.post("/v1/agent/sessions/s1/messages",
                    json={"content": "帮我继续", "agent_mode": False})
@@ -159,7 +159,7 @@ class QueueEditDeleteTests(unittest.TestCase):
     def test_list_queue(self):
         self._enqueue("第一条")
         self._enqueue("第二条")
-        from cbp.api import app
+        from gantry.api import app
         c = TestClient(app)
         d = c.get("/v1/agent/sessions/s1/queue").json()
         self.assertEqual(d["depth"], 2)
@@ -170,7 +170,7 @@ class QueueEditDeleteTests(unittest.TestCase):
     def test_delete_queue_item_syncs_message(self):
         r1 = self._enqueue("要删的")
         self._enqueue("保留的")
-        from cbp.api import app
+        from gantry.api import app
         c = TestClient(app)
         res = c.delete(f"/v1/agent/sessions/s1/queue/{r1['id']}")
         self.assertEqual(res.status_code, 200)
@@ -182,7 +182,7 @@ class QueueEditDeleteTests(unittest.TestCase):
 
     def test_edit_queue_item_syncs_message(self):
         r1 = self._enqueue("原文")
-        from cbp.api import app
+        from gantry.api import app
         c = TestClient(app)
         res = c.post(f"/v1/agent/sessions/s1/queue/{r1['id']}", json={"content": "改后"})
         self.assertEqual(res.status_code, 200)
@@ -193,7 +193,7 @@ class QueueEditDeleteTests(unittest.TestCase):
         self.assertTrue(any(m["content"] == "改后" for m in msgs))
 
     def test_delete_missing_item_404(self):
-        from cbp.api import app
+        from gantry.api import app
         c = TestClient(app)
         self.assertEqual(c.delete("/v1/agent/sessions/s1/queue/nonexistent").status_code, 404)
         self.assertEqual(c.post("/v1/agent/sessions/s1/queue/nonexistent",

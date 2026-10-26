@@ -14,9 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from cbp import bridge as b
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 
 class InitialPromptTests(unittest.TestCase):
@@ -56,7 +56,7 @@ class InitialPromptTests(unittest.TestCase):
         self.assertIn("完整系统提示词", b.AGENT_SESSIONS.get("s1")["initial_prompt"])
 
     def test_endpoint_returns_initial_and_rebuilds_when_missing(self):
-        from cbp.api import app
+        from gantry.api import app
         c = TestClient(app)
         # 未落库 → 走近似重建
         d = c.get("/v1/agent/sessions/s1/prompt").json()
@@ -77,7 +77,7 @@ class InitialPromptTests(unittest.TestCase):
         self.assertEqual(b.AGENT_TOOLS.root, before)
 
     def test_endpoint_404(self):
-        from cbp.api import app
+        from gantry.api import app
         c = TestClient(app)
         self.assertEqual(c.get("/v1/agent/sessions/nope/prompt").status_code, 404)
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""`cbp/todo_sync.py`：把工作区 TODO 文件同步成会话待办。"""
+"""`gantry/todo_sync.py`：把工作区 TODO 文件同步成会话待办。"""
 import sys
 import tempfile
 import time
@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import todo_sync as ts  # noqa: E402
-from cbp.session_store import SessionStore  # noqa: E402
+from gantry import todo_sync as ts  # noqa: E402
+from gantry.session_store import SessionStore  # noqa: E402
 
 DOC = """# pyshot 治理清单
 

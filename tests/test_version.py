@@ -2,7 +2,7 @@
 """版本相关的回归测试：保证"单一来源"不被破坏。
 
 跨机器协作最容易出的问题：
-- 有人从别的机器合过来，`pyproject.toml` 和 `cbp/version.py` 不一致；
+- 有人从别的机器合过来，`pyproject.toml` 和 `gantry/version.py` 不一致；
 - 有人又在别处硬编码了版本号；
 - CHANGELOG 里没有当前版本的段落（发了版却没记录）。
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from cbp.version import VERSION, base_version, next_version, parse, tag_name  # noqa: E402
+from gantry.version import VERSION, base_version, next_version, parse, tag_name  # noqa: E402
 
 
 class VersionFormatTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class SingleSourceTests(unittest.TestCase):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         i = text.index('version = "')
         pyver = text[i + len('version = "'):].split('"', 1)[0]
-        self.assertEqual(pyver, VERSION, "pyproject.toml 与 cbp/version.py 不一致")
+        self.assertEqual(pyver, VERSION, "pyproject.toml 与 gantry/version.py 不一致")
 
     def test_no_hardcoded_version_elsewhere(self):
         """除 version.py / CHANGELOG / docs 外，不允许出现当前版本字面量。"""
@@ -55,7 +55,7 @@ class SingleSourceTests(unittest.TestCase):
                  "bump_version.py", "README.md", "pyproject.toml"}
         offenders = []
         for pat in ("*.py", "*.js", "*.html", "*.json"):
-            for f in list(ROOT.glob(pat)) + list((ROOT / "cbp").glob(pat)) + list((ROOT / "webui").glob(pat)):
+            for f in list(ROOT.glob(pat)) + list((ROOT / "gantry").glob(pat)) + list((ROOT / "webui").glob(pat)):
                 if f.name in allow:
                     continue
                 try:
@@ -66,9 +66,9 @@ class SingleSourceTests(unittest.TestCase):
         self.assertEqual(offenders, [], f"这些文件硬编码了版本号：{offenders}")
 
     def test_api_reports_version(self):
-        src = (ROOT / "cbp" / "api.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "api.py").read_text(encoding="utf-8")
         self.assertIn("from .version import VERSION", src)
-        core = (ROOT / "cbp" / "routes_core.py").read_text(encoding="utf-8")
+        core = (ROOT / "gantry" / "routes_core.py").read_text(encoding="utf-8")
         self.assertIn('"version": _APP_VERSION', core, "GET / 应该返回版本号")
 
     def test_changelog_has_current_version(self):

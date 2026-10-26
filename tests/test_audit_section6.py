@@ -10,15 +10,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import cbp.agent as A  # noqa: E402
-import cbp.prompt as P  # noqa: E402
-from cbp.tools import ToolRegistry  # noqa: E402
-from cbp.tools_extra import similar_task_hint  # noqa: E402
+import gantry.agent as A  # noqa: E402
+import gantry.prompt as P  # noqa: E402
+from gantry.tools import ToolRegistry  # noqa: E402
+from gantry.tools_extra import similar_task_hint  # noqa: E402
 
 
 class TurnBudgetTests(unittest.TestCase):
     def test_nudge_wired_and_configurable(self):
-        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "agent.py").read_text(encoding="utf-8")
         self.assertIn("【收尾判断】", src, "连续空转回合要催收尾判断")
         self.assertIn('turn_budget_nudge', src)
         self.assertIn("_dry_turns", src)
@@ -94,7 +94,7 @@ class SubagentReuseTests(unittest.TestCase):
         self.assertEqual(similar_task_hint("修复 4K 屏下截图热键的 DPI 问题", sibs), "")
 
     def test_wired_into_subagent_many(self):
-        src = (ROOT / "cbp" / "tools_extra.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "tools_extra.py").read_text(encoding="utf-8")
         self.assertIn("similar_task_hint", src)
         self.assertIn("_sib_hint", src)
         self.assertIn('_out["hint"] = _sib_hint', src)

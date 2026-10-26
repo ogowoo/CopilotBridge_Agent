@@ -439,8 +439,8 @@ Object.assign(I18N_EN, {
  "（{e}）": " ({e})",
   "HTTP 响应为空": "Empty HTTP response",
   "Token/步数/手动触发自动创建新 Copilot 会话": "Token/step count/manual trigger created a new Copilot conversation",
-  "URL 对应会话不属于当前 Session，拒绝删除；需要前缀: [CBP-AGENT][task-demo01]":
-    "The conversation for this URL does not belong to the current session; deletion refused. Expected prefix: [CBP-AGENT][task-demo01]",
+  "URL 对应会话不属于当前 Session，拒绝删除；需要前缀: [GANTRY-AGENT][task-demo01]":
+    "The conversation for this URL does not belong to the current session; deletion refused. Expected prefix: [GANTRY-AGENT][task-demo01]",
   "⏳ API 服务限流/不可用，预计恢复": "⏳ API service rate-limited/unavailable, recovery expected",
   "⏳ Copilot 限流/不可用，预计恢复": "⏳ Copilot rate-limited/unavailable, recovery expected",
   "　提供商模型不受影响，可直接使用。": " Provider models are unaffected and can be used directly.",
@@ -463,7 +463,7 @@ Object.assign(I18N_EN, {
   "修改排队消息": "Edit queued message",
   "关键词检索…（回车）": "Keyword search… (Enter)",
   "写入修复后的 agent.py": "Write the fixed agent.py",
-  "分析 cbp 项目并生成 TODO": "Analyze the cbp project and generate a TODO",
+  "分析 gantry 项目并生成 TODO": "Analyze the gantry project and generate a TODO",
   "切换模型失败: ": "Switching model failed: ",
   "初始提示词（本会话未保存，以下为按当前工作区近似重建）":
     "Initial prompt (not stored for this session; approximately rebuilt from the current workspace)",
@@ -843,7 +843,7 @@ Object.assign(I18N_EN, {
  "未同步": "Not synced",
  "任务已结束，但待办状态没有同步（模型收尾时没有更新 todo）。": "The task has ended, but the todo list was not synced (the model did not update it while finishing).",
  "删除任务（自动含 Copilot 记录）": "Delete task (includes its Copilot records)",
- "，并删除该任务关联的 {n} 个 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）": ", plus the {n} Copilot conversation(s) this task created (their titles may no longer carry the [CBP-AGENT] marker; ownership is verified against the conversation body)",
+ "，并删除该任务关联的 {n} 个 Copilot 网页会话（标题里可能已没有 [GANTRY-AGENT] 标记，删除时会用会话正文核对归属）": ", plus the {n} Copilot conversation(s) this task created (their titles may no longer carry the [GANTRY-AGENT] marker; ownership is verified against the conversation body)",
  "这个任务用过 Copilot，将同时删除远端对话记录。\n\n  ID: {id}\n  标题: {title}\n\n本地 Session{extra}。此操作不可撤销，确定继续？": "This task used Copilot, so its remote conversation records will be deleted too.\n\n  ID: {id}\n  Title: {title}\n\nLocal session{extra}. This cannot be undone — continue?",
  "即将删除的会话：\n\n  ID: {id}\n  标题: {title}\n\n仅删除本地 Session（这个任务没有用过 Copilot 网页会话）。此操作不可撤销，确定继续？": "About to delete this session:\n\n  ID: {id}\n  Title: {title}\n\nLocal session only (this task never used a Copilot web conversation). This cannot be undone — continue?",
  "该任务正在运行，先停止再删除": "This task is running; stop it before deleting",
@@ -905,8 +905,8 @@ Object.assign(I18N_EN, {
    "No matching memories. The agent records them as tasks finish; you can also just ask it to \"remember this\".",
 
   "，下一回合生效": ", takes effect next turn",
-  "，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）":
-    ", plus all Copilot web conversations tied to this task (titles may no longer carry the [CBP-AGENT] marker; ownership is verified against the conversation body)",
+  "，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [GANTRY-AGENT] 标记，删除时会用会话正文核对归属）":
+    ", plus all Copilot web conversations tied to this task (titles may no longer carry the [GANTRY-AGENT] marker; ownership is verified against the conversation body)",
 });
 
 /* 动态渲染出来的**属性**在 DOM 层翻译（title / placeholder / aria-label）。
@@ -1104,14 +1104,14 @@ const I18N_ORDER = ["zh", "tw", "en"];
 
 function currentLang() {
   try {
-    const v = localStorage.getItem("cbp-lang");
+    const v = localStorage.getItem("gantry-lang");
     if (v && I18N[v]) return v;
   } catch (e) {}
   return "zh";
 }
 function setLang(lang) {
   if (!I18N[lang]) return;
-  try { localStorage.setItem("cbp-lang", lang); } catch (e) {}
+  try { localStorage.setItem("gantry-lang", lang); } catch (e) {}
   applyI18n(document);
   // JS 拼出来的文案（聊天栏那句）applyI18n 管不到，切语言后要主动重绘
   try { if (typeof refreshChatBarMeta === 'function') refreshChatBarMeta(); } catch (e) {}

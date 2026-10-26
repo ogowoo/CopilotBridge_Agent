@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """按行读 / 按行替换：把"模型被迫用 PowerShell 改文件"的推力去掉。
 
-来自真实时间线（`for debug/cbp-task-mveq9t5g-timeline-*.json`,PyShot 克隆任务）:
+来自真实时间线（`for debug/gantry-task-mveq9t5g-timeline-*.json`,PyShot 克隆任务）:
 37 次有效 pwsh 调用里 **31 次是文件操作**，其中——
 - step 138 用 `(Get-Content main.py)[514]` 读第 514 行（因为 read_text 的 offset 是
   **字符**偏移，表达不了"第几行"）；
@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.tools import ToolError, ToolRegistry
+from gantry.tools import ToolError, ToolRegistry
 
 
 class LineReadTests(unittest.TestCase):
@@ -107,7 +107,7 @@ class ReplaceLinesTests(unittest.TestCase):
 
 class NoShellForLinesRuleTests(unittest.TestCase):
     def test_rule_points_at_line_tools(self):
-        from cbp.prompt import FILE_OPS_RULE
+        from gantry.prompt import FILE_OPS_RULE
         self.assertIn("replace_lines", FILE_OPS_RULE)
         self.assertIn("line_start", FILE_OPS_RULE)
         self.assertIn("Get-Content", FILE_OPS_RULE)

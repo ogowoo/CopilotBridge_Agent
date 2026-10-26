@@ -2,7 +2,7 @@
   "name": "deepseek-web",
   "version": "0.1.0",
   "description": "把 DeepSeek 网页版（chat.deepseek.com）的反代服务当成一个 OpenAI 兼容提供商接进来：模型 ID 形如 dsweb/deepseek-reasoner。反代自己起（Docker 或 python），本插件负责注册提供商、探测模型、显示健康状态。",
-  "cbp": {
+  "gantry": {
     "entry": "plugin.py",
     "permissions": [
       "providers",

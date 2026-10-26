@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import bridge as b
+from gantry import bridge as b
 
 
 class SubagentMaxStepsTests(unittest.TestCase):
@@ -27,8 +27,8 @@ class SubagentMaxStepsTests(unittest.TestCase):
         self.saved = (b.AGENT_SESSIONS, b.SNAPSHOTS, b.AGENT_TOOLS.root)
         b.AGENT_CFG = dict(b.AGENT_CFG)
         tmp = Path(tempfile.mkdtemp(prefix="cbp_steps_"))
-        from cbp.session_store import SessionStore
-        from cbp.snapshots import SnapshotStore
+        from gantry.session_store import SessionStore
+        from gantry.snapshots import SnapshotStore
         b.AGENT_SESSIONS = SessionStore(tmp / "agent.db")
         b.SNAPSHOTS = SnapshotStore(tmp / "snaps")
         ws = tmp / "ws"; ws.mkdir()
@@ -55,7 +55,7 @@ class SubagentMaxStepsTests(unittest.TestCase):
         self.assertEqual(b.subagent_max_steps(), 80, "非法值回落默认")
 
     def test_tool_default_uses_config(self):
-        from cbp.tools_extra import register_extra_tools
+        from gantry.tools_extra import register_extra_tools
         b.AGENT_CFG["subagent_max_steps"] = 120
         got = {}
 
@@ -70,7 +70,7 @@ class SubagentMaxStepsTests(unittest.TestCase):
         self.assertEqual(got["steps"], 120, "不传时应取配置值，而不是硬编码 40")
 
     def test_explicit_value_wins(self):
-        from cbp.tools_extra import register_extra_tools
+        from gantry.tools_extra import register_extra_tools
         b.AGENT_CFG["subagent_max_steps"] = 120
         got = {}
 
@@ -86,8 +86,8 @@ class SubagentMaxStepsTests(unittest.TestCase):
 
     def test_step_limit_message_is_actionable(self):
         """步数用尽的消息要给出路，不能只说"已停止"。"""
-        from cbp.agent import AgentRunner
-        from cbp.tools import ToolRegistry
+        from gantry.agent import AgentRunner
+        from gantry.tools import ToolRegistry
         tmp = Path(tempfile.mkdtemp(prefix="cbp_steps2_"))
         ws = tmp / "ws"; ws.mkdir()
         b.AGENT_TOOLS.set_root(ws, False)

@@ -11,8 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import bridge as b
-from cbp import copilot_delete as cd
+from gantry import bridge as b
+from gantry import copilot_delete as cd
 
 
 class EnsurePageTests(unittest.TestCase):

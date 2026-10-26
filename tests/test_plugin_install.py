@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.plugins import PluginHost, PluginError
-from cbp.tools import ToolRegistry
+from gantry.plugins import PluginHost, PluginError
+from gantry.tools import ToolRegistry
 
 
 def _mk_plugin(root: Path, name: str, version: str, tool: str = "") -> Path:
@@ -19,7 +19,7 @@ def _mk_plugin(root: Path, name: str, version: str, tool: str = "") -> Path:
     d.mkdir(parents=True, exist_ok=True)
     (d / "plugin.json").write_text(json.dumps({
         "name": name, "version": version, "description": f"{name} {version}",
-        "cbp": {"entry": "plugin.py", "permissions": ["tools"],
+        "gantry": {"entry": "plugin.py", "permissions": ["tools"],
                 "contributes": {"tools": [tool or f"{name}_tool"]}},
     }, ensure_ascii=False), encoding="utf-8")
     (d / "plugin.py").write_text(

@@ -51,7 +51,7 @@ class ParseMixin:
 
     @staticmethod
     def _parse_skill_md(dirname: str, text: str) -> tuple[str, str]:
-        """兼容入口：SKILL.md 元数据解析已统一到 cbp.tools.parse_skill_md。"""
+        """兼容入口：SKILL.md 元数据解析已统一到 gantry.tools.parse_skill_md。"""
         from .tools import parse_skill_md
         return parse_skill_md(dirname, text)
 

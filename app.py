@@ -1,6 +1,6 @@
 """应用组装入口。
 
-包结构：cbp/api.py 路由层，cbp/bridge.py 能力层；
+包结构：gantry/api.py 路由层，gantry/bridge.py 能力层；
 本文件仅对外暴露 app，供 `uvicorn app:app`（start.py）加载。
 
 导入失败时的 failback：Agent 的自我升级把代码改坏（语法错误、导入错误）
@@ -11,7 +11,7 @@ import sys
 import traceback
 
 try:
-    from cbp.api import app
+    from gantry.api import app
 except Exception:  # noqa: BLE001 — 任何导入期异常都要给出可操作的回滚指引
     traceback.print_exc()
     print("\n" + "=" * 64, file=sys.stderr)

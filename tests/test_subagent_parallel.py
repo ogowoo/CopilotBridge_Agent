@@ -21,10 +21,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import bridge as b
-from cbp import fanout as fanout_mod
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry import fanout as fanout_mod
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 
 def _setup(tmp: Path):
@@ -135,7 +135,7 @@ class SubagentManyToolTests(unittest.TestCase):
         return run()
 
     def _call(self, model):
-        from cbp.tools_extra import register_extra_tools
+        from gantry.tools_extra import register_extra_tools
         b.AGENT_CFG["subagent_parallel"] = 4
         b._SESSION_CTX.set("p1")          # 父会话（模型取不到 model 时用它兜底）
         # 走真实注册路径：subagent_fn 由 register_extra_tools 注入
@@ -161,7 +161,7 @@ class SubagentManyToolTests(unittest.TestCase):
                 raise RuntimeError("失败：" + task)
             return run()
 
-        from cbp.tools_extra import register_extra_tools
+        from gantry.tools_extra import register_extra_tools
         b.AGENT_CFG["subagent_parallel"] = 4
         b._SESSION_CTX.set("p1")
         impl = register_extra_tools(b.AGENT_TOOLS, {}, subagent_fn=boom)
@@ -193,7 +193,7 @@ class SubagentManyToolTests(unittest.TestCase):
                 return {"agent_id": "sub-" + task, "steps": 1, "content": "ok"}
             return run()
 
-        from cbp.tools_extra import register_extra_tools
+        from gantry.tools_extra import register_extra_tools
         b.AGENT_CFG["subagent_parallel"] = 4
         b._SESSION_CTX.set("p1")
         parent_page = object()

@@ -1,7 +1,7 @@
 """服务入口：启动 uvicorn，并支持 WebUI 的「终止服务 / 重启服务」。
 
 重启语义：先走 uvicorn 优雅停机（关连接、lifespan 收尾、落库），随后
-`cbp.lifecycle.exec_restart()` 用同一解释器重新执行本脚本。放在 `server.run()`
+`gantry.lifecycle.exec_restart()` 用同一解释器重新执行本脚本。放在 `server.run()`
 返回**之后**做，是为了让监听端口先释放——重启不是"再起一个进程去抢端口"。
 
 Windows 注意：`os.execv` 是"新建进程再退旧的"，新进程有**新 PID**（POSIX 才是
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import uvicorn
 
-from cbp import lifecycle
+from gantry import lifecycle
 
 BASE = Path(__file__).resolve().parent
 CFG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))

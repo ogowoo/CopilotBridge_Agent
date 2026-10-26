@@ -62,7 +62,7 @@ class RailFooterTests(unittest.TestCase):
 
 class SettingsI18nTests(unittest.TestCase):
     def test_all_schema_labels_translated(self):
-        from cbp.api import CONFIG_SCHEMA
+        from gantry.api import CONFIG_SCHEMA
         i18n = (ROOT / "webui" / "i18n.js").read_text(encoding="utf-8")
         missing = [spec["label"] for spec in CONFIG_SCHEMA.values()
                    if spec.get("label") and json.dumps(spec["label"], ensure_ascii=False) not in i18n]

@@ -12,8 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import AgentRunner
-from cbp.tools import TOOL_GROUPS, ToolRegistry, tool_group
+from gantry.agent import AgentRunner
+from gantry.tools import TOOL_GROUPS, ToolRegistry, tool_group
 
 
 class ToolVisibilityTests(unittest.TestCase):

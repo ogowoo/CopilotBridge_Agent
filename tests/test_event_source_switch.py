@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import bridge as B
-from cbp.session_store import SessionStore
+from gantry import bridge as B
+from gantry.session_store import SessionStore
 
 
 class EventSourceTests(unittest.TestCase):

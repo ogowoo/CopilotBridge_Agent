@@ -16,8 +16,8 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp import bridge as b
-from cbp.session_store import SessionStore
+from gantry import bridge as b
+from gantry.session_store import SessionStore
 
 
 def run(coro):
@@ -172,7 +172,7 @@ class AuditApiTests(unittest.TestCase):
         b.AGENT_SESSIONS = SessionStore(self.tmp / "a.db")
         b.AGENT_TOOLS.set_root(self.ws, False)
         from fastapi.testclient import TestClient
-        from cbp import api as api_mod
+        from gantry import api as api_mod
         self.client = TestClient(api_mod.app)
 
     def tearDown(self):

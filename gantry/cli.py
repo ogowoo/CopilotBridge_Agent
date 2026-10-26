@@ -5,10 +5,10 @@
 拖进每次调用，且与服务里的会话状态不一致），而是走 HTTP 调同一个服务——
 和 WebUI 看到的是同一份事实。
 
-    cbp run "把 docs 里的死链列出来" --model kimi-coding/k3
-    cbp run "重构 X" --plan          # 计划模式（只读，产出方案后停）
-    cbp serve --port 8765
-    cbp sessions / cbp tools / cbp plugins list / cbp mcp list / cbp sandbox
+    gantry run "把 docs 里的死链列出来" --model kimi-coding/k3
+    gantry run "重构 X" --plan          # 计划模式（只读，产出方案后停）
+    gantry serve --port 8765
+    gantry sessions / gantry tools / gantry plugins list / gantry mcp list / gantry sandbox
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def _client(args) -> httpx.Client:
 
 
 def _fail(msg: str, code: int = 1) -> int:
-    print(f"cbp: {msg}", file=sys.stderr)
+    print(f"gantry: {msg}", file=sys.stderr)
     return code
 
 
@@ -68,7 +68,7 @@ def cmd_run(args) -> int:
         try:
             r = c.post("/v1/agent/completions", json=body)
         except httpx.ConnectError:
-            return _fail(f"连不上服务 {args.url or DEFAULT_URL}（先运行 cbp serve）")
+            return _fail(f"连不上服务 {args.url or DEFAULT_URL}（先运行 gantry serve）")
         if r.status_code >= 400:
             return _fail(f"HTTP {r.status_code}: {r.text[:300]}")
         data = r.json()
@@ -206,7 +206,7 @@ def cmd_plugins(args) -> int:
             return 0
         name = args.name
         if not name:
-            return _fail("需要插件名，例如 cbp plugins enable web-search")
+            return _fail("需要插件名，例如 gantry plugins enable web-search")
         r = c.post(f"/v1/plugins/{name}/{args.action}")
         if r.status_code >= 400:
             return _fail(r.text[:300])
@@ -247,7 +247,7 @@ def cmd_mcp(args) -> int:
 # ────────────────────────── 解析入口 ──────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="cbp", description="CopilotBridge Agent 命令行（headless）")
+    ap = argparse.ArgumentParser(prog="gantry", description="CopilotBridge Agent 命令行（headless）")
     ap.add_argument("--url", default=DEFAULT_URL, help=f"服务地址（默认 {DEFAULT_URL}）")
     ap.add_argument("--token", default="", help="api_token（也可用环境变量 CBP_TOKEN）")
     ap.add_argument("--timeout", type=float, default=900.0, help="HTTP 超时秒数")
@@ -322,7 +322,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(args.func(args) or 0)
     except httpx.ConnectError:
-        return _fail(f"连不上服务 {getattr(args, 'url', DEFAULT_URL)}（先运行 cbp serve）")
+        return _fail(f"连不上服务 {getattr(args, 'url', DEFAULT_URL)}（先运行 gantry serve）")
     except httpx.HTTPError as exc:
         return _fail(f"HTTP 错误: {exc}")
     except KeyboardInterrupt:

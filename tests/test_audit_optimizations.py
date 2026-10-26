@@ -13,8 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import cbp.agent as A  # noqa: E402
-from cbp.tools import ToolRegistry  # noqa: E402
+import gantry.agent as A  # noqa: E402
+from gantry.tools import ToolRegistry  # noqa: E402
 
 
 def make_ws():
@@ -88,14 +88,14 @@ class ReadonlyRepeatTests(unittest.TestCase):
 
 class SourceGuards(unittest.TestCase):
     def test_service_unavailable_marked_transient(self):
-        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "agent.py").read_text(encoding="utf-8")
         i = src.find('"status": "service_unavailable"')
         self.assertGreater(i, 0)
         self.assertIn('"transient": True', src[i - 200:i + 300],
                       "限流/超时记录要标 transient，前端才能折叠")
 
     def test_parse_failure_hint_is_actionable(self):
-        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "agent.py").read_text(encoding="utf-8")
         i = src.find("【如何纠正】")
         self.assertGreater(i, 0, "解析失败要给可操作提示")
         seg = src[i:i + 800]
@@ -108,7 +108,7 @@ class WorkLedgerTests(unittest.TestCase):
 
     def test_ledger_is_built_and_injected(self):
         import tempfile
-        from cbp.tools import ToolRegistry
+        from gantry.tools import ToolRegistry
 
         ws = Path(tempfile.mkdtemp(prefix="cbp_ledger_"))
         tools = ToolRegistry(ws, {})
@@ -149,18 +149,18 @@ class RateLimitWindowTests(unittest.TestCase):
     """
 
     def test_failure_budget_resets_after_window(self):
-        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "agent.py").read_text(encoding="utf-8")
         self.assertIn("_window_passed", src,
                       "窗口过后失败计数要归零，否则一次长限流就把 30 次预算吃满、任务被硬停")
         self.assertIn("retry_note", src, "只有网页固定窗口才归零计数")
 
     def test_event_noise_reduced(self):
-        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "agent.py").read_text(encoding="utf-8")
         self.assertIn("service_failures % 5 == 0", src, "限流事件要降噪（105 条 → 十几条）")
         self.assertIn('"transient": True', src)
 
     def test_no_giant_sleep_branch(self):
-        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "agent.py").read_text(encoding="utf-8")
         self.assertNotIn("睡到窗口结束", src,
                          "不要整段睡到窗口结束（拖慢测试、暂停/取消变迟钝）")
 
@@ -168,13 +168,13 @@ class RateLimitWindowTests(unittest.TestCase):
 class UnknownToolHintTests(unittest.TestCase):
     """模型换会话后常编出工具名（run_tests/check_syntax/read_file…）。
 
-    审计依据：`cbp/agent.py` 的注释里记过"模型瞎编 run_tests / check_syntax，
+    审计依据：`gantry/agent.py` 的注释里记过"模型瞎编 run_tests / check_syntax，
     怎么都过不了验证门，几小时的成果被判 failed"。
     """
 
     def test_alias_and_near_miss_suggestions(self):
         import tempfile
-        from cbp.tools import ToolRegistry
+        from gantry.tools import ToolRegistry
 
         reg = ToolRegistry(Path(tempfile.mkdtemp(prefix="cbp_hint_")), {})
         cases = {
@@ -193,7 +193,7 @@ class UnknownToolHintTests(unittest.TestCase):
 
     def test_unknown_garbage_still_lists_tools(self):
         import tempfile
-        from cbp.tools import ToolRegistry
+        from gantry.tools import ToolRegistry
 
         reg = ToolRegistry(Path(tempfile.mkdtemp(prefix="cbp_hint2_")), {})
         hint = reg._unknown_tool_hint("zzz_not_a_tool")
@@ -203,7 +203,7 @@ class UnknownToolHintTests(unittest.TestCase):
     def test_execute_raises_hint_not_plain_error(self):
         import asyncio
         import tempfile
-        from cbp.tools import ToolRegistry, ToolError
+        from gantry.tools import ToolRegistry, ToolError
 
         reg = ToolRegistry(Path(tempfile.mkdtemp(prefix="cbp_hint3_")), {})
         with self.assertRaises(ToolError) as ctx:
@@ -214,7 +214,7 @@ class UnknownToolHintTests(unittest.TestCase):
 
 class ToolErrorMessageTests(unittest.TestCase):
     def test_tool_errors_get_next_step(self):
-        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "agent.py").read_text(encoding="utf-8")
         self.assertIn("下一步：核对", src,
                       "工具报错要补一句下一步（审计：116 条报错里 102 条没有引导）")
 

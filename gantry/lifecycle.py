@@ -18,7 +18,7 @@ import signal
 import threading
 import time
 
-log = logging.getLogger("cbp.lifecycle")
+log = logging.getLogger("gantry.lifecycle")
 
 _hook = None                 # 由入口注入：设置 uvicorn Server.should_exit
 _force_seconds = 8.0         # 优雅停机的宽限时间，超时硬退出
@@ -181,7 +181,7 @@ def _force_exit_later(seconds: float) -> None:
             return
         log.warning("优雅停机超过 %.1fs 仍未退出，执行硬退出", seconds)
         os._exit(0)
-    threading.Thread(target=killer, name="cbp-force-exit", daemon=True).start()
+    threading.Thread(target=killer, name="gantry-force-exit", daemon=True).start()
 
 
 def request_shutdown(force_after: float | None = None) -> str:

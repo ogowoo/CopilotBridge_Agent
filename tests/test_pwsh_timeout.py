@@ -9,8 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.tools import ToolError, ToolRegistry
-from cbp.tools_extra import register_extra_tools
+from gantry.tools import ToolError, ToolRegistry
+from gantry.tools_extra import register_extra_tools
 
 
 class PwshTimeoutTests(unittest.TestCase):

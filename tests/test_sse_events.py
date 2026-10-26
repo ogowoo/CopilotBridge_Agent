@@ -16,9 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import bridge as b
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 
 class EventBusTests(unittest.TestCase):
@@ -103,7 +103,7 @@ class EventsEndpointTests(unittest.TestCase):
         b.AGENT_SESSIONS.create("s1", "任务", str(self.ws), "fakeprov/m1")
         b.RUNTIME["s1"] = {"phase": "api_streaming", "answer_preview": "首帧内容",
                            "detail": "正在流式返回", "updated": 1.0}
-        from cbp.api import app
+        from gantry.api import app
         self.app = app
 
     def tearDown(self):

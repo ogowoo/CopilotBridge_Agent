@@ -23,7 +23,7 @@ description: 让 Agent 修改服务自身代码（allow_self_upgrade）时的任
 
 ```
 【自升级任务】
-文件：cbp/bridge.py（安装目录相对路径，不要写绝对路径）
+文件：gantry/bridge.py（安装目录相对路径，不要写绝对路径）
 现状：<这里写你观察到的行为，例如 resume 时提示只拼原任务>
 要改：<越具体越好，能贴字段名/函数名/代码片段就贴>
 边界：只改上面这个文件/这段逻辑，其它不要动
@@ -34,13 +34,13 @@ description: 让 Agent 修改服务自身代码（allow_self_upgrade）时的任
 已有的几个短句写法也认（效果一样，只是少了"边界"那行）：
 
 - 「把 `webui/style.css` 里侧栏默认宽度 318px 改成 300px，改完跑 self_validate 和 self_unittest」
-- 「看 `cbp/api.py` 的 `/v1/shutdown`，把优雅停机超时从 8 秒改成 15 秒，其他别动」
+- 「看 `gantry/api.py` 的 `/v1/shutdown`，把优雅停机超时从 8 秒改成 15 秒，其他别动」
 
 ## 硬约束（Agent 会遵守，你也该知道）
 
 | 项 | 内容 |
 |---|---|
-| 可改（白名单） | `cbp/` `webui/` `scripts/` `docs/` `tests/` `skills/` `app.py` `start.py` `install.py` `requirements.txt` `AGENT.md` `README.md` `config.example.json` |
+| 可改（白名单） | `gantry/` `webui/` `scripts/` `docs/` `tests/` `skills/` `app.py` `start.py` `install.py` `requirements.txt` `AGENT.md` `README.md` `config.example.json` |
 | **禁止改** | `config.json`、`data/`、`EdgeProfile/`、`for debug/`、`.git/`、`__pycache__/` → **配置自己改**，它碰不到 |
 | 验证门 | 写完必须 `self_validate` + `self_unittest` 都 passed，否则不能宣称完成（系统会拦下 final） |
 | 快照 | 每次写/替换在 `data/snapshots/_self_<sid>/` 存旧版本，可按任务整体回滚 |

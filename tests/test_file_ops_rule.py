@@ -9,7 +9,7 @@
 用它改 UTF-8 源码会把中文写成 "é¦–è½®æ…" 这类乱码（本仓库开发过程中真实踩过，
 只能整篇重写）。所以本文件钉住两件事：
 
-1. `cbp/tools.py` 里不许出现 PowerShell 调用（文件工具必须保持纯 Python）；
+1. `gantry/tools.py` 里不许出现 PowerShell 调用（文件工具必须保持纯 Python）；
 2. 只有**工具面里真的有 pwsh** 时才往提示词里注入"禁止用 pwsh 改文件"的纪律，
    否则不许提这个工具名（提了模型会照着调，实测踩过 copilot_* 的同类坑）。
 """
@@ -30,12 +30,12 @@ class FileToolsArePurePythonTests(unittest.TestCase):
     SPAWN_ATTRS = {"create_subprocess_exec", "create_subprocess_shell", "run", "Popen",
                    "call", "check_output", "system", "popen"}
 
-    # 文件工具已拆到 cbp/tools_files.py（tools.py 第四批解耦），两处都要查
+    # 文件工具已拆到 gantry/tools_files.py（tools.py 第四批解耦），两处都要查
     SOURCES = ("tools.py", "tools_files.py")
 
     def _tree(self):
         import ast
-        return [ast.parse((BASE / "cbp" / name).read_text(encoding="utf-8"))
+        return [ast.parse((BASE / "gantry" / name).read_text(encoding="utf-8"))
                 for name in self.SOURCES]
 
     def test_file_tools_never_spawn_a_process(self):
@@ -80,7 +80,7 @@ class FileToolsArePurePythonTests(unittest.TestCase):
         self.assertEqual(bad, [], f"有子进程调用 PowerShell: {bad}")
 
     def test_file_tools_use_pathlib_with_explicit_utf8(self):
-        src = "".join((BASE / "cbp" / name).read_text(encoding="utf-8")
+        src = "".join((BASE / "gantry" / name).read_text(encoding="utf-8")
                       for name in self.SOURCES)
         # 写/读必须显式指定编码，否则中文在 GBK 机器上会乱码
         self.assertIn('encoding="utf-8"', src)
@@ -90,7 +90,7 @@ class FileToolsArePurePythonTests(unittest.TestCase):
 
 class FileOpsRuleInjectionTests(unittest.TestCase):
     def setUp(self):
-        from cbp.tools import ToolRegistry
+        from gantry.tools import ToolRegistry
         self.tmp = Path(tempfile.mkdtemp(prefix="cbp_rule_"))
         self.ws = self.tmp / "ws"
         self.ws.mkdir()
@@ -98,8 +98,8 @@ class FileOpsRuleInjectionTests(unittest.TestCase):
         self.ToolRegistry = ToolRegistry
 
     def _prompt(self, allow_shell: bool) -> str:
-        from cbp.agent import AgentRunner
-        from cbp.tools_extra import register_extra_tools
+        from gantry.agent import AgentRunner
+        from gantry.tools_extra import register_extra_tools
         reg = self.ToolRegistry(self.ws, {"allow_shell": allow_shell})
         register_extra_tools(reg, {"allow_shell": allow_shell,
                                    "tools_extra": {"shell": allow_shell}})

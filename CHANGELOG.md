@@ -6,10 +6,33 @@
 ## [Unreleased]
 
 ### Added
+- 
+
+### Changed
+- 
+
+### Fixed
+- 
+
+## [11.0.0-preview.1] - 2026-10-26
+
+### Added
+
+- **项目更名为 Gantry**（原 CopilotBridge Agent）：包名 `cbp/` → `gantry/`，
+  界面/文档/启动日志统一品牌；`GET /` 返回 `name=Gantry`。
+- 兼容层 `gantry/brand.py`：新名字优先、旧名字仍可用——
+  - Copilot 会话标记新写 `[GANTRY-AGENT][sid][Cnnn]` / `[GANTRY-TURN:…]`，
+    **读**时同时认旧的 `[CBP-AGENT]` / `[CBP-TURN]`（否则旧会话删不掉、对不上账）；
+  - 环境变量 `GANTRY_*` 优先，回落 `CBP_*`；
+  - 请求头接受 `X-Gantry-Lang/Token`，同时兼容 `X-CBP-Lang/Token`；
+  - 前端 localStorage 用 `gantry-*`，读不到时回落旧键 `cbp-*`。
 
 ### Changed
 
-### Fixed
+- **BREAKING**：Python 包名从 `cbp` 改为 `gantry`。外部脚本若 `import cbp`、
+  或写死了 `cbp/api.py` 之类的路径，需要改成 `gantry`。
+  由环境变量/请求头/标记驱动的调用不受影响（上面的兼容层）。
+- `pyproject.toml` 的包名仍为 `copilotbridge-agent`（安装名），CLI 入口 `gantry`。
 
 ## [10.3.0-preview.3] - 2026-10-26
 
@@ -20,7 +43,7 @@
   也支持「原文 / 这个文件 / 刚才那个」指代上次展示过的文件。
 - **回合流**：调用记录按回合展示「发送 → 回答 → 工具调用」，提示词正文落库
   （`turn_results.prompt`），新增 `GET /v1/agent/sessions/{sid}/turns`。
-- **版本管理**：版本号单一来源 `cbp/version.py`、`scripts/bump_version.py`、
+- **版本管理**：版本号单一来源 `gantry/version.py`、`scripts/bump_version.py`、
   本 CHANGELOG、`docs/VERSIONING.md`、`.gitattributes`（统一 LF）。
 
 ### Changed
@@ -38,7 +61,7 @@
   导致追加指令不生效、模型一直在旧任务上打转（会话 task-mvn6jjrt 实录）。
 - **把上一次的最终答复当成新回答**：去掉 `generation_seen` 后门，并用
   `[CBP-TURN:…]` 标记切分，只取本回合文本。
-- **`cbp.bridge` 缺 `_focus_box`** 导致任务起不来；输入框聚焦加三级兜底
+- **`gantry.bridge` 缺 `_focus_box`** 导致任务起不来；输入框聚焦加三级兜底
   （短超时点击 → 关浮层再点 → `el.focus()`）。
 - **「重试远程并强制清理本地记录」按钮无反应**：本地已删后 `current` 为空，
   按钮静默返回；现在记住 `_sid/_urls`，并支持本地不存在时仅重试远端删除。

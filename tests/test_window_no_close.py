@@ -8,11 +8,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-POOL = (ROOT / "cbp" / "window_pool.py").read_text(encoding="utf-8")
-# 浏览器/窗口池层已拆到 cbp/browser.py（bridge.py 第三批解耦），源码断言两处一起读
-BRIDGE = ((ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
-          + (ROOT / "cbp" / "browser.py").read_text(encoding="utf-8"))
-API = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
+POOL = (ROOT / "gantry" / "window_pool.py").read_text(encoding="utf-8")
+# 浏览器/窗口池层已拆到 gantry/browser.py（bridge.py 第三批解耦），源码断言两处一起读
+BRIDGE = ((ROOT / "gantry" / "bridge.py").read_text(encoding="utf-8")
+          + (ROOT / "gantry" / "browser.py").read_text(encoding="utf-8"))
+API = ((ROOT / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 
 
 class FakePage:
@@ -33,7 +33,7 @@ class ReleaseNeverClosesTests(unittest.TestCase):
         self.assertIn("_free.put_nowait(win)", body)
 
     def test_release_puts_window_back(self):
-        from cbp.window_pool import Window, WindowPool
+        from gantry.window_pool import Window, WindowPool
 
         async def main():
             made = []

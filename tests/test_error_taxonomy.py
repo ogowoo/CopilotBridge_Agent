@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import (AgentRunner, CopilotRateLimited, CopilotSendFailed,
+from gantry.agent import (AgentRunner, CopilotRateLimited, CopilotSendFailed,
                        CopilotServiceUnavailable)
-from cbp.tools import ToolRegistry
+from gantry.tools import ToolRegistry
 
 
 class ErrorTaxonomyTests(unittest.TestCase):

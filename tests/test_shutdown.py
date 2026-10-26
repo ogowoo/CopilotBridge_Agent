@@ -19,10 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from cbp import bridge as b
-from cbp import lifecycle
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry import lifecycle
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 
 class LifecycleTests(unittest.TestCase):
@@ -107,7 +107,7 @@ class ShutdownEndpointTests(unittest.TestCase):
         lifecycle._hook = lambda: self.calls.append("hook")
         lifecycle._shutting_down = False
         lifecycle._force_seconds = 30
-        from cbp.api import app
+        from gantry.api import app
         self.c = TestClient(app)
 
     def tearDown(self):

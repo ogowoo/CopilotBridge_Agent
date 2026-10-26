@@ -729,13 +729,13 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
                               **{"gen_ai.request.model": model,
                                  "gen_ai.provider.name": ("copilot-web" if "/" not in str(model)
                                                           else str(model).split("/", 1)[0]),
-                                 "cbp.session_id": str(getattr(self, "_session_id", "") or ""),
-                                 "cbp.step": total,
-                                 "cbp.prompt_chars": len(prompt or "")})
+                                 "gantry.session_id": str(getattr(self, "_session_id", "") or ""),
+                                 "gantry.step": total,
+                                 "gantry.prompt_chars": len(prompt or "")})
             try:
                 with _turn_span:
                     raw = await self.chat(prompt, model, force_new)
-                    _turn_span.set(**{"cbp.answer_chars": len(raw or "")})
+                    _turn_span.set(**{"gantry.answer_chars": len(raw or "")})
                 chat_active = True
                 chat_active = True
             except CopilotConversationFull as exc:
@@ -865,7 +865,7 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
                         last_error=(
                             f"Copilot 网页限流，已挂起：预计 {time.strftime('%H:%M', time.localtime(_end))} "
                             "后可自动继续；如果你配了其它提供商模型，也可以现在换模型继续（挂起卡片里选）。"))
-                    b_log = getattr(__import__("cbp.bridge", fromlist=["x"]), "log", None)
+                    b_log = getattr(__import__("gantry.bridge", fromlist=["x"]), "log", None)
                     if callable(b_log):
                         try:
                             b_log(f"会话因 Copilot 限流挂起，预计 {time.strftime('%H:%M', time.localtime(_end))} 恢复")
@@ -1079,7 +1079,7 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
                 # list_directory 被拦 92 次、每次白花一个 81 秒的回合）。这里直接回放
                 # 缓存结果，让模型拿到数据继续干活，同时**不进**无进展判定。
                 _ro_name = str(tool) in tuple(
-                    getattr(__import__("cbp.tools", fromlist=["x"]), "READ_ONLY_TOOLS", ()))
+                    getattr(__import__("gantry.tools", fromlist=["x"]), "READ_ONLY_TOOLS", ()))
                 # 与后面执行分支同一个 hash 算法（此处还不能用 _dispatch_hash，它后面才算）
                 _sig_hash = hashlib.sha1(json.dumps(arguments, ensure_ascii=False,
                                                    sort_keys=True).encode("utf-8")).hexdigest()[:16]
@@ -1155,7 +1155,7 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
                         # 定位（pyshot 实测：list_directory 被拦 92 次，每次都白花一个
                         # Copilot 回合，平均 81 秒/回合）。缓存还在就直接回放上次结果。
                         _ro_cache = getattr(self, "_ro_results", None) or {}
-                        _ro_tools = tuple(getattr(__import__("cbp.tools", fromlist=["x"]),
+                        _ro_tools = tuple(getattr(__import__("gantry.tools", fromlist=["x"]),
                                                   "READ_ONLY_TOOLS", ()))
                         if _rep_n > _REPEAT_LIMIT and str(tool) in _ro_tools:
                             _cached = _ro_cache.get(_rep_key)
@@ -1214,14 +1214,14 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
                         _tspan = span("tool." + str(tool), "execute_tool",
                                       **{"gen_ai.tool.name": str(tool),
                                          "gen_ai.tool.call.id": f"{getattr(self, '_session_id', '') or 's'}-{total + 1}",
-                                         "cbp.session_id": str(getattr(self, "_session_id", "") or ""),
-                                         "cbp.step": total + 1,
-                                         "cbp.args_chars": len(json.dumps(arguments, ensure_ascii=False))})
+                                         "gantry.session_id": str(getattr(self, "_session_id", "") or ""),
+                                         "gantry.step": total + 1,
+                                         "gantry.args_chars": len(json.dumps(arguments, ensure_ascii=False))})
                         try:
                             with _tspan:
                                 result = await self.tools.execute(tool, arguments)
                                 try:
-                                    _tspan.set(**{"cbp.result_chars": len(json.dumps(result, ensure_ascii=False))})
+                                    _tspan.set(**{"gantry.result_chars": len(json.dumps(result, ensure_ascii=False))})
                                 except Exception:
                                     pass
                         except Exception as _exc:
@@ -1247,7 +1247,7 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
                         step.update({"status": "ok", "result": result})
                         # 只读结果留一份缓存，供"重复调用"时回放（见上面的 repeat 分流）
                         try:
-                            if str(tool) in tuple(getattr(__import__("cbp.tools", fromlist=["x"]),
+                            if str(tool) in tuple(getattr(__import__("gantry.tools", fromlist=["x"]),
                                                          "READ_ONLY_TOOLS", ())):
                                 if not hasattr(self, "_ro_results"):
                                     self._ro_results = {}

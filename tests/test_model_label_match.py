@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.bridge import MODELS, label_matches, normalize_label  # noqa: E402
+from gantry.bridge import MODELS, label_matches, normalize_label  # noqa: E402
 
 
 class NormalizeTests(unittest.TestCase):

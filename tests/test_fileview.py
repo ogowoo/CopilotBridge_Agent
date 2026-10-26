@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from cbp.fileview import maybe_file_view, render_message  # noqa: E402
+from gantry.fileview import maybe_file_view, render_message  # noqa: E402
 
 
 class FileViewTests(unittest.TestCase):
@@ -107,7 +107,7 @@ class NoopGuardScopeTests(unittest.TestCase):
     """noop_guard 的"需要动手"要按**最新指令**判断，不能只看 original_task。"""
 
     def test_needs_action_uses_latest_instruction(self):
-        src = (ROOT / "cbp" / "agent.py").read_text(encoding="utf-8")
+        src = (ROOT / "gantry" / "agent.py").read_text(encoding="utf-8")
         i = src.index("_needs_action =")
         seg = src[max(0, i - 900):i + 200]
         self.assertIn("_latest_ins", seg, "要按最新指令（pending/追加任务）判断")

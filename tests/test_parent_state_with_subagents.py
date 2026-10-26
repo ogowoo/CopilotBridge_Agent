@@ -34,11 +34,11 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-STORE = (BASE / "cbp" / "session_store.py").read_text(encoding="utf-8")
-API = ((BASE / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
+STORE = (BASE / "gantry" / "session_store.py").read_text(encoding="utf-8")
+API = ((BASE / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
 
-from cbp.session_store import SessionStore  # noqa: E402
+from gantry.session_store import SessionStore  # noqa: E402
 
 
 def _setup(tmp: Path, states=("running", "completed")):

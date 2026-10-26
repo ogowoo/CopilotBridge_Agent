@@ -8,12 +8,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.tools import ToolError, ToolRegistry, parse_skill_md
+from gantry.tools import ToolError, ToolRegistry, parse_skill_md
 
 
 class SkillCreateTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="cbp-skill-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="gantry-skill-"))
         self.ws = self.tmp / "ws"
         self.ws.mkdir()
         self.install = self.tmp / "install"

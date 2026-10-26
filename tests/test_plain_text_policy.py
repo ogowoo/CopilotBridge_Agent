@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """明文写入策略：文档可明文，代码必须 b64 分块。
 
-来自真实时间线（`for debug/cbp-task-mveq9t5g-timeline-*.json`）:模型用 PowerShell
+来自真实时间线（`for debug/gantry-task-mveq9t5g-timeline-*.json`）:模型用 PowerShell
 heredoc 写了 5 次 20KB 级的 Markdown（step 60–62、70–78），原因之一是提示词要求
 "代码/JSON/HTML/Markdown 一律 b64"——让模型为一份报告产 27KB Base64，太贵，
 于是它绕道 shell，最后被 PowerShell 的编码坑咬（step 144 → 149 整文件乱码）。
@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.tools import ToolError, ToolRegistry
+from gantry.tools import ToolError, ToolRegistry
 
 
 class PlainTextPolicyTests(unittest.TestCase):
@@ -92,7 +92,7 @@ class PlainTextPolicyTests(unittest.TestCase):
 
 class PromptPolicyWordingTests(unittest.TestCase):
     def test_prompt_mentions_docs_exemption(self):
-        from cbp.prompt import AGENT_PROTOCOL
+        from gantry.prompt import AGENT_PROTOCOL
         self.assertIn("文档类", AGENT_PROTOCOL)
         self.assertIn(".md", AGENT_PROTOCOL)
         self.assertIn("4000", AGENT_PROTOCOL, "文档明文的单次上限要写出来")

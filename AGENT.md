@@ -1,4 +1,4 @@
-# CopilotBridge Agent 项目约定（全局级）
+# Gantry 项目约定（全局级）
 
 本文件位于**服务安装目录**，属于**全局 AGENT.md**：对所有工作区生效。
 工作区根目录若也有 `AGENT.md`，两份会合并注入，**项目级优先**。
@@ -14,7 +14,7 @@
 
 ```
 app.py / start.py / install.py   入口(根目录只留入口)
-cbp/                             库代码包
+gantry/                             库代码包
                                  api.py / routes_*.py   FastAPI 应用与路由
                                  bridge.py            运行态 facade 与工具装配
                                  agent.py             Agent 核心循环、状态治理、验证门
@@ -52,9 +52,9 @@ python start.py                        # 启动服务(默认 127.0.0.1:8765)
 1. **改代码后必须闭环**：`.py/.json/.html` 被修改后，validate_python + run_unittest 双 passed 前不得宣称完成(系统提示层有同样的门)。
 2. **写文件用 b64 分块**：`write_text_b64`/`append_text_b64`，每块 ≤3000 字符；写完再验证，禁止边写边验。
 3. **WebUI 是三文件结构**：结构改 `index.html`、样式改 `style.css`、逻辑改 `app.js`；改完用演示模式(断 API 直连 file://)或 Playwright 验证，且 `/ui/{asset}` 白名单只放行这两个文件名。
-4. **系统提示词在 `cbp/agent_prompt.py` 的 `PromptMixin._system_prompt()`**：改 Agent 行为优先改这里；其中有对抗 Copilot 输出上限/截断的成熟条款，删除前读注释。
-5. **Outlook COM 必须走 `_ComWorker`**(cbp/tools.py)：专用消息泵线程，勿改回 asyncio.to_thread——后台线程无消息泵会导致 0x80004004 E_ABORT。
-6. **正则容错解析在 `cbp/agent_parse.py` 的 `ParseMixin._parse()`**：新增容错路径必须同步在 tests/test_agent_parse.py 加回归用例。
+4. **系统提示词在 `gantry/agent_prompt.py` 的 `PromptMixin._system_prompt()`**：改 Agent 行为优先改这里；其中有对抗 Copilot 输出上限/截断的成熟条款，删除前读注释。
+5. **Outlook COM 必须走 `_ComWorker`**(gantry/tools.py)：专用消息泵线程，勿改回 asyncio.to_thread——后台线程无消息泵会导致 0x80004004 E_ABORT。
+6. **正则容错解析在 `gantry/agent_parse.py` 的 `ParseMixin._parse()`**：新增容错路径必须同步在 tests/test_agent_parse.py 加回归用例。
 
 ## 自我升级与回滚（改这个项目自身时必读）
 
@@ -68,7 +68,7 @@ python start.py                        # 启动服务(默认 127.0.0.1:8765)
 | `self_validate` / `self_unittest` | 全安装目录语法检查 / 服务自身单测（**自升级的硬门**） |
 | `self_rollback` | 回滚本次任务对服务代码的改动 |
 
-白名单：`cbp/`、`webui/`、`scripts/`、`docs/`、`tests/`、`app.py`、`start.py`、`install.py`、`requirements.txt`、`AGENT.md`、`README.md`、`config.example.json`。
+白名单：`gantry/`、`webui/`、`scripts/`、`docs/`、`tests/`、`app.py`、`start.py`、`install.py`、`requirements.txt`、`AGENT.md`、`README.md`、`config.example.json`。
 **禁止触碰**：`config.json`、`data/`、`EdgeProfile/`、`.git/`、`for debug/`。
 
 硬性规则：

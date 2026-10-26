@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.tools import ToolError, ToolRegistry
+from gantry.tools import ToolError, ToolRegistry
 
 
 class SandboxErrorTests(unittest.TestCase):

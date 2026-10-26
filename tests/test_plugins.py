@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""插件系统（cbp/plugins.py）：清单解析、权限、加载/卸载、启停、路由分发。
+"""插件系统（gantry/plugins.py）：清单解析、权限、加载/卸载、启停、路由分发。
 
-与 DSH 插件语义兼容：同形清单（package.json 的 `cbp` 字段，对齐 DSH 的 `dsh`）、
+与 DSH 插件语义兼容：同形清单（package.json 的 `gantry` 字段，对齐 DSH 的 `dsh`）、
 同一套贡献点（tools/providers/api/events）、同样的加载→apply→卸载生命周期。
 """
 import asyncio
@@ -14,8 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.plugins import PluginError, PluginHost
-from cbp.tools import ToolRegistry
+from gantry.plugins import PluginError, PluginHost
+from gantry.tools import ToolRegistry
 
 
 def _write_plugin(root: Path, name: str, manifest: dict, code: str) -> Path:
@@ -40,7 +40,7 @@ class PluginTests(unittest.TestCase):
 
     def test_discover_and_load_registers_tool(self):
         _write_plugin(self.tmp, "demo", {
-            "name": "demo", "cbp": {"entry": "plugin.py", "permissions": ["tools"],
+            "name": "demo", "gantry": {"entry": "plugin.py", "permissions": ["tools"],
                                      "contributes": {"tools": ["demo_tool"]}},
         }, "def setup(ctx):\n    ctx.register_tool('demo_tool', lambda x: x, '演示工具', {})\n")
         assert self.host.list()[0]["name"] == "demo"
@@ -52,14 +52,14 @@ class PluginTests(unittest.TestCase):
 
     def test_permission_is_enforced(self):
         _write_plugin(self.tmp, "bad", {
-            "name": "bad", "cbp": {"permissions": [], "contributes": {}},
+            "name": "bad", "gantry": {"permissions": [], "contributes": {}},
         }, "def setup(ctx):\n    ctx.register_tool('x', lambda: 1, 'x', {})\n")
         with self.assertRaises(PluginError):
             self.host.load("bad")
 
     def test_unknown_permission_rejected(self):
         _write_plugin(self.tmp, "weird", {
-            "name": "weird", "cbp": {"permissions": ["root-shell"]},
+            "name": "weird", "gantry": {"permissions": ["root-shell"]},
         }, "def setup(ctx): pass\n")
         # 发现阶段：坏清单被跳过（不能因为一个坏插件拖垮整个服务）
         self.assertEqual(self.host.discover(), [])
@@ -80,7 +80,7 @@ class PluginTests(unittest.TestCase):
 
     def test_enable_disable_persisted(self):
         _write_plugin(self.tmp, "p1", {
-            "name": "p1", "cbp": {"permissions": ["tools"], "contributes": {"tools": ["t1"]}},
+            "name": "p1", "gantry": {"permissions": ["tools"], "contributes": {"tools": ["t1"]}},
         }, "def setup(ctx):\n    ctx.register_tool('t1', lambda: 1, 't', {})\n")
         self.host.load("p1")
         self.host.disable("p1")
@@ -93,7 +93,7 @@ class PluginTests(unittest.TestCase):
 
     def test_api_route_dispatch(self):
         _write_plugin(self.tmp, "apiplug", {
-            "name": "apiplug", "cbp": {"permissions": ["api"],
+            "name": "apiplug", "gantry": {"permissions": ["api"],
                                         "contributes": {"api": ["GET api/ping"]}},
         }, "def setup(ctx):\n    ctx.register_api('GET','api/ping', lambda request: {'pong': True})\n")
         self.host.load("apiplug")
@@ -110,7 +110,7 @@ class PluginTests(unittest.TestCase):
     def test_api_route_zero_arg_handler(self):
         """handler 可以不带参数（按签名调用，而不是靠捕获 TypeError 试错）。"""
         _write_plugin(self.tmp, "noarg", {
-            "name": "noarg", "cbp": {"permissions": ["api"],
+            "name": "noarg", "gantry": {"permissions": ["api"],
                                      "contributes": {"api": ["GET api/now"]}},
         }, "def setup(ctx):\n    ctx.register_api('GET','api/now', lambda: {'ok': 1})\n")
         self.host.load("noarg")
@@ -124,7 +124,7 @@ class PluginTests(unittest.TestCase):
     def test_api_handler_typeerror_is_not_retried(self):
         """handler 内部的 TypeError 必须冒出来，不能被误当成"参数不匹配"重跑一次。"""
         _write_plugin(self.tmp, "boom", {
-            "name": "boom", "cbp": {"permissions": ["api"],
+            "name": "boom", "gantry": {"permissions": ["api"],
                                     "contributes": {"api": ["GET api/boom"]}},
         }, "def bad(request):\n    return 1 + 'x'\n"
            "def setup(ctx):\n    ctx.register_api('GET','api/boom', bad)\n")
@@ -137,7 +137,7 @@ class PluginTests(unittest.TestCase):
             asyncio.run(self.host.dispatch_api("boom", "GET", "boom", Req()))
 
     def test_panel_requires_ui_permission(self):
-        _write_plugin(self.tmp, "noui", {"name": "noui", "cbp": {"permissions": ["tools"]}},
+        _write_plugin(self.tmp, "noui", {"name": "noui", "gantry": {"permissions": ["tools"]}},
                       "def setup(ctx):\n    ctx.register_panel({'id':'x','title':'X',"
                       "'view':'kv','api':{'path':'api/x'}})\n")
         with self.assertRaises(Exception):
@@ -145,7 +145,7 @@ class PluginTests(unittest.TestCase):
 
     def test_panel_registered_and_removed_on_unload(self):
         _write_plugin(self.tmp, "uip", {
-            "name": "uip", "cbp": {"permissions": ["ui"],
+            "name": "uip", "gantry": {"permissions": ["ui"],
                                    "contributes": {"panels": ["stats"]}},
         }, "def setup(ctx):\n    ctx.register_panel({'id':'stats','title':'统计',"
            "'view':'table','api':{'method':'GET','path':'api/stats'}})\n")
@@ -159,7 +159,7 @@ class PluginTests(unittest.TestCase):
 
     def test_panel_rejects_html_ish_view(self):
         _write_plugin(self.tmp, "badview", {
-            "name": "badview", "cbp": {"permissions": ["ui"]},
+            "name": "badview", "gantry": {"permissions": ["ui"]},
         }, "def setup(ctx):\n    ctx.register_panel({'id':'x','view':'html',"
            "'api':{'path':'api/x'}})\n")
         with self.assertRaises(Exception):
@@ -168,7 +168,7 @@ class PluginTests(unittest.TestCase):
     def test_events_and_state(self):
         seen = []
         _write_plugin(self.tmp, "ev", {
-            "name": "ev", "cbp": {"permissions": ["events", "storage"]},
+            "name": "ev", "gantry": {"permissions": ["events", "storage"]},
         }, "def setup(ctx):\n"
            "    ctx.on('step_done', lambda **kw: ctx.save_state(last=kw.get('tool')))\n")
         self.host.load("ev")
@@ -181,7 +181,7 @@ class PluginTests(unittest.TestCase):
         (d / "package.json").write_text(json.dumps({
             "name": "pkg", "version": "1.2.3",
             "dsh": {"bundle": {"patch": "./cordis.patch.yml"}},
-            "cbp": {"entry": "plugin.py", "permissions": ["tools"]},
+            "gantry": {"entry": "plugin.py", "permissions": ["tools"]},
         }), encoding="utf-8")
         (d / "plugin.py").write_text("def setup(ctx):\n    pass\n", encoding="utf-8")
         m = self.host.discover()[0]

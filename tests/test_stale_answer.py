@@ -12,9 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-AGENTRUN = (ROOT / "cbp" / "agentrun.py").read_text(encoding="utf-8")
-PAGE = (ROOT / "cbp" / "page.py").read_text(encoding="utf-8")
-BRIDGE = (ROOT / "cbp" / "bridge.py").read_text(encoding="utf-8")
+AGENTRUN = (ROOT / "gantry" / "agentrun.py").read_text(encoding="utf-8")
+PAGE = (ROOT / "gantry" / "page.py").read_text(encoding="utf-8")
+BRIDGE = (ROOT / "gantry" / "bridge.py").read_text(encoding="utf-8")
 
 
 class StaleAnswerTests(unittest.TestCase):

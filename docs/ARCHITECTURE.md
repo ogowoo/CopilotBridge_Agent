@@ -1,21 +1,21 @@
-# CopilotBridge Agent 架构基线
+# Gantry 架构基线
 
 > 状态：现行架构基线  
-> 适用仓库：CopilotBridge_Agent
+> 适用仓库：Gantry
 
 ## 1. 系统定位
 
-CopilotBridge Agent 是本地 Agent 自动化平台。系统通过 FastAPI 提供 OpenAI 兼容接口，以 Playwright 驱动本机 Edge 中的 M365 Copilot 网页版，同时支持 OpenAI 兼容 API Provider。平台还集成长任务 Agent、工具执行、审批、SQLite 会话持久化、快照回滚、自升级和 WebUI。
+Gantry 是本地 Agent 自动化平台。系统通过 FastAPI 提供 OpenAI 兼容接口，以 Playwright 驱动本机 Edge 中的 M365 Copilot 网页版，同时支持 OpenAI 兼容 API Provider。平台还集成长任务 Agent、工具执行、审批、SQLite 会话持久化、快照回滚、自升级和 WebUI。
 
 主要代码证据：
 
 - 服务入口：app.py、start.py、install.py
-- API：cbp/api.py、cbp/routes_*.py
-- 运行态：cbp/bridge.py、cbp/lifecycle.py
-- Agent：cbp/agent.py、cbp/agentrun.py、cbp/agent_prompt.py、cbp/agent_parse.py、cbp/agent_text.py
-- 工具：cbp/tools.py、cbp/tools_*.py
-- 持久化：cbp/session_store.py
-- 浏览器与 Provider：cbp/browser.py、cbp/page.py、cbp/provider.py、cbp/providers.py
+- API：gantry/api.py、gantry/routes_*.py
+- 运行态：gantry/bridge.py、gantry/lifecycle.py
+- Agent：gantry/agent.py、gantry/agentrun.py、gantry/agent_prompt.py、gantry/agent_parse.py、gantry/agent_text.py
+- 工具：gantry/tools.py、gantry/tools_*.py
+- 持久化：gantry/session_store.py
+- 浏览器与 Provider：gantry/browser.py、gantry/page.py、gantry/provider.py、gantry/providers.py
 - 管理界面：webui/
 
 ## 2. 架构目标
@@ -53,38 +53,38 @@ flowchart TB
 
 - install.py 负责安装准备和依赖引导。
 - start.py 读取配置并启动 Uvicorn。
-- app.py 保持根目录入口轻量，主要实现下沉到 cbp/。
+- app.py 保持根目录入口轻量，主要实现下沉到 gantry/。
 - pyproject.toml 和 requirements.txt 定义项目及运行依赖。
 
 ### 4.2 API 层
 
-- cbp/api.py 创建 FastAPI 应用并装配中间件、生命周期和路由。
-- cbp/routes_core.py 处理健康检查、模型和聊天等核心接口。
-- cbp/routes_agents.py 处理 Agent 创建与执行。
-- cbp/routes_sessions.py 管理会话、消息、步骤和运行状态。
-- cbp/routes_config.py 管理配置读取、校验和更新。
+- gantry/api.py 创建 FastAPI 应用并装配中间件、生命周期和路由。
+- gantry/routes_core.py 处理健康检查、模型和聊天等核心接口。
+- gantry/routes_agents.py 处理 Agent 创建与执行。
+- gantry/routes_sessions.py 管理会话、消息、步骤和运行状态。
+- gantry/routes_config.py 管理配置读取、校验和更新。
 
 ### 4.3 运行态与通道层
 
-- cbp/bridge.py 连接 API、浏览器、Provider、Agent、工具和存储。
-- cbp/lifecycle.py 管理启动和关闭阶段的资源。
-- cbp/browser.py、cbp/page.py、cbp/provider.py 实现 Edge 与 M365 Copilot 网页通道。
-- cbp/providers.py 实现 OpenAI 兼容 API Provider。
+- gantry/bridge.py 连接 API、浏览器、Provider、Agent、工具和存储。
+- gantry/lifecycle.py 管理启动和关闭阶段的资源。
+- gantry/browser.py、gantry/page.py、gantry/provider.py 实现 Edge 与 M365 Copilot 网页通道。
+- gantry/providers.py 实现 OpenAI 兼容 API Provider。
 
 ### 4.4 Agent 与工具层
 
-- cbp/agentrun.py 推进任务轮次并处理终止状态。
-- cbp/agent_prompt.py 装配提示词、项目约定和工具定义。
-- cbp/agent_parse.py 解析 JSON 动作并执行受控容错。
-- cbp/agent_text.py 负责 token 估算、压缩和长上下文治理。
-- cbp/tools.py 通过多个 mixin 统一组装 ToolRegistry。
+- gantry/agentrun.py 推进任务轮次并处理终止状态。
+- gantry/agent_prompt.py 装配提示词、项目约定和工具定义。
+- gantry/agent_parse.py 解析 JSON 动作并执行受控容错。
+- gantry/agent_text.py 负责 token 估算、压缩和长上下文治理。
+- gantry/tools.py 通过多个 mixin 统一组装 ToolRegistry。
 
 ## 5. 启动链路
 
 1. 用户执行 python start.py。
 2. 启动入口读取配置并准备运行环境。
-3. cbp/api.py 创建 FastAPI 应用并注册中间件与路由。
-4. cbp/lifecycle.py 初始化会话库、Bridge、Provider、浏览器和后台任务。
+3. gantry/api.py 创建 FastAPI 应用并注册中间件与路由。
+4. gantry/lifecycle.py 初始化会话库、Bridge、Provider、浏览器和后台任务。
 5. 服务默认监听本机回环地址，并向客户端提供 WebUI 与兼容 API。
 6. 关闭时释放后台任务、浏览器资源和数据库连接。
 
@@ -111,15 +111,15 @@ sequenceDiagram
     A-->>C: JSON or SSE
 
 
-浏览器通道复用本机登录态，但依赖外部 DOM、页面时序和窗口状态。API Provider 通道由 cbp/providers.py 处理，需要治理 Token、超时、重试、速率限制和供应商差异。
+浏览器通道复用本机登录态，但依赖外部 DOM、页面时序和窗口状态。API Provider 通道由 gantry/providers.py 处理，需要治理 Token、超时、重试、速率限制和供应商差异。
 
 ## 7. Agent JSON 工具循环
 
-1. cbp/routes_agents.py 接收任务并创建或恢复会话。
-2. cbp/agentrun.py 读取状态并推进轮次。
-3. cbp/agent_prompt.py 合并系统规则、项目约定、历史和工具 Schema。
+1. gantry/routes_agents.py 接收任务并创建或恢复会话。
+2. gantry/agentrun.py 读取状态并推进轮次。
+3. gantry/agent_prompt.py 合并系统规则、项目约定、历史和工具 Schema。
 4. 模型返回单个 JSON 动作或批量动作。
-5. cbp/agent_parse.py 解析动作并对轻微格式偏差执行受控容错。
+5. gantry/agent_parse.py 解析动作并对轻微格式偏差执行受控容错。
 6. ToolRegistry 校验工具名、参数、能力开关和审批状态。
 7. 工具结果写入步骤时间线和 SQLite。
 8. Agent 判断继续、等待审批、暂停、失败或完成。
@@ -155,15 +155,15 @@ sequenceDiagram
 
 ## 8. Provider 与浏览器双通道
 
-- 浏览器通道由 cbp/browser.py、cbp/page.py 和 cbp/provider.py 实现。
-- API Provider 通道由 cbp/providers.py 实现。
+- 浏览器通道由 gantry/browser.py、gantry/page.py 和 gantry/provider.py 实现。
+- API Provider 通道由 gantry/providers.py 实现。
 - 两条通道应转换为统一的内部 completion、错误和流式语义。
 - 日志不得泄露 API Token、Cookie、浏览器登录态或敏感提示内容。
 - M365 Copilot 页面 DOM 变化是浏览器通道的固有外部风险，应通过诊断快照和选择器冒烟测试治理。
 
 ## 9. SQLite 持久化与数据流
 
-cbp/session_store.py 保存会话、消息、步骤和运行状态，是任务恢复的持久化基线。运行期间还存在内存状态、SSE 事件、浏览器状态和 WebUI 状态，应使用统一状态定义。
+gantry/session_store.py 保存会话、消息、步骤和运行状态，是任务恢复的持久化基线。运行期间还存在内存状态、SSE 事件、浏览器状态和 WebUI 状态，应使用统一状态定义。
 
 mermaid
 flowchart LR
@@ -183,7 +183,7 @@ SQLite 应具备清晰的连接所有权、显式关闭、Schema 版本、迁移
 
 ## 10. 工具注册与权限裁剪
 
-cbp/tools.py 和 cbp/tools_*.py 统一注册文件、进程、Office、Outlook、技能、记忆及自升级能力。工具按任务上下文裁剪后提供给模型，以减少提示词体积。
+gantry/tools.py 和 gantry/tools_*.py 统一注册文件、进程、Office、Outlook、技能、记忆及自升级能力。工具按任务上下文裁剪后提供给模型，以减少提示词体积。
 
 每项工具应明确参数 Schema、风险等级、副作用、审批要求、配置开关、工作区边界、快照策略和验证要求。关键词裁剪存在表达变化导致必要工具缺席的风险，建议增加按需工具发现兜底。
 
@@ -204,7 +204,7 @@ cbp/tools.py 和 cbp/tools_*.py 统一注册文件、进程、Office、Outlook�
 
 ## 13. 快照与回滚
 
-- cbp/snapshots.py 保存工作区文件发生副作用前的原始状态。
+- gantry/snapshots.py 保存工作区文件发生副作用前的原始状态。
 - 工作区修改和服务自升级使用独立快照作用域。
 - WebUI、API 和 scripts/rollback.py 提供在线与离线恢复入口。
 - 回滚应覆盖新增、修改、移动和删除。
@@ -213,7 +213,7 @@ cbp/tools.py 和 cbp/tools_*.py 统一注册文件、进程、Office、Outlook�
 
 ## 14. 自升级
 
-自升级由 cbp/tools_self.py 管理并默认关闭。完整流程包括能力开关、安装目录白名单、拒绝路径、修改前快照、服务级语法检查、单元测试、待重启标记和回滚通道。
+自升级由 gantry/tools_self.py 管理并默认关闭。完整流程包括能力开关、安装目录白名单、拒绝路径、修改前快照、服务级语法检查、单元测试、待重启标记和回滚通道。
 
 导入失败、服务无法启动或验证不通过时应优先回滚，避免在损坏状态继续叠加修补。配置、数据、浏览器登录态与 Git 内部目录不应成为自升级目标。
 
@@ -231,7 +231,7 @@ WebUI 展示会话、步骤时间线、审批、工具结果、配置和回滚�
 
 网页通道并发受 Edge 窗口池和登录态资源限制，API Provider 并发受外部服务速率和本机资源限制。
 
-cbp/browser.py、cbp/routes_config.py 与 cbp/window_pool.py 对窗口数量上限的定义存在不一致，应统一实现、配置校验、config.example.json 和 docs/MULTI-WINDOW.md，并补充边界测试。
+gantry/browser.py、gantry/routes_config.py 与 gantry/window_pool.py 对窗口数量上限的定义存在不一致，应统一实现、配置校验、config.example.json 和 docs/MULTI-WINDOW.md，并补充边界测试。
 
 窗口池需明确空闲、占用、异常、回收和超时状态；任务取消时应释放窗口、Provider 流、后台任务和子进程。
 

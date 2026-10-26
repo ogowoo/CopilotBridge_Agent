@@ -58,7 +58,7 @@
 
 ### 4.1 无进展检测和重复守卫都**先于执行**，对只读工具同样生效
 
-`cbp/agent.py` 里两条守卫的顺序是：
+`gantry/agent.py` 里两条守卫的顺序是：
 
 1. `no_progress`（最近 12 步内同签名 ≥3 次 → 警告，第 4 次直接**判任务失败**）
 2. `repeat_guard`（同签名超过 `repeat_guard_limit=3` → 拦下 + 消耗一步）
@@ -85,14 +85,14 @@
 
 | # | 改动 | 位置 | 依据 |
 |---|---|---|---|
-| 1 | **只读工具重复 → 回放缓存结果**，不再拦、不再判无进展 | `cbp/agent.py`（`_ro_results` + 两处判定） | 92 次无谓拦截 × 81 秒 ≈ **2 小时** |
-| 2 | **无进展检测只对写/副作用动作生效**；只读重复不进 `_seen` 计数 | `cbp/agent.py` | 同上；避免"最后 100 步在列目录"时把任务判失败 |
-| 3 | `service_unavailable` 标 `transient=True`，前端把连续多条**折叠成一行** | `cbp/agent.py` + `webui/app.js`（`collapseTransient`） | 105 条噪音 → 1 行 |
-| 4 | `invalid_action` 提示补"只回一个 JSON + 最小示例 + 常用工具名" | `cbp/agent.py` | 37 次解析失败，提示越含糊越容易再犯 |
-| 5 | 提示词新增两条：**不反复重看**已看过的目录/文件、**及时收尾** | `cbp/prompt.py`（`AGENT_PROTOCOL`） | 直接针对 92 次重复与 11 小时长尾 |
-| 6 | **换会话时注入「已看过/已改过」清单**（`already_looked_at`：已读文件、已列目录、已改文件、待办进度、上次错误） | `cbp/agent.py`（`_work_ledger` + `_continuation_prompt`） | 4 次 rollover × 重新探索；92 次重复列目录 |
-| 7 | **限流兜底**：窗口过去后失败计数归零（一次长限流不再吃满 30 次预算把任务硬停） | `cbp/agent.py`（`_window_passed`） | 105 次限流；任务曾被判"服务持续不可用" |
-| 8 | 限流事件**降噪**（只记第 1/5/10… 次） | `cbp/agent.py` | 时间线可读性 |
+| 1 | **只读工具重复 → 回放缓存结果**，不再拦、不再判无进展 | `gantry/agent.py`（`_ro_results` + 两处判定） | 92 次无谓拦截 × 81 秒 ≈ **2 小时** |
+| 2 | **无进展检测只对写/副作用动作生效**；只读重复不进 `_seen` 计数 | `gantry/agent.py` | 同上；避免"最后 100 步在列目录"时把任务判失败 |
+| 3 | `service_unavailable` 标 `transient=True`，前端把连续多条**折叠成一行** | `gantry/agent.py` + `webui/app.js`（`collapseTransient`） | 105 条噪音 → 1 行 |
+| 4 | `invalid_action` 提示补"只回一个 JSON + 最小示例 + 常用工具名" | `gantry/agent.py` | 37 次解析失败，提示越含糊越容易再犯 |
+| 5 | 提示词新增两条：**不反复重看**已看过的目录/文件、**及时收尾** | `gantry/prompt.py`（`AGENT_PROTOCOL`） | 直接针对 92 次重复与 11 小时长尾 |
+| 6 | **换会话时注入「已看过/已改过」清单**（`already_looked_at`：已读文件、已列目录、已改文件、待办进度、上次错误） | `gantry/agent.py`（`_work_ledger` + `_continuation_prompt`） | 4 次 rollover × 重新探索；92 次重复列目录 |
+| 7 | **限流兜底**：窗口过去后失败计数归零（一次长限流不再吃满 30 次预算把任务硬停） | `gantry/agent.py`（`_window_passed`） | 105 次限流；任务曾被判"服务持续不可用" |
+| 8 | 限流事件**降噪**（只记第 1/5/10… 次） | `gantry/agent.py` | 时间线可读性 |
 
 实测（`tests/test_audit_optimizations.py`，真实 `ToolRegistry` + 假 chat）：
 同一 `list_directory` 连发 6 次 → **真执行 1 次、缓存回放 5 次、0 次拦截、0 次无进展失败**；
@@ -147,7 +147,7 @@
 
 ### 9.1 工具报错大多"只说不该怎样，不说该怎样"
 
-扫描 `cbp/tools.py` + `cbp/tools_extra.py` 的 `raise ToolError(...)`：
+扫描 `gantry/tools.py` + `gantry/tools_extra.py` 的 `raise ToolError(...)`：
 
 | 指标 | 数量 |
 |---|---|

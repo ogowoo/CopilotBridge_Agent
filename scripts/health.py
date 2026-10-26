@@ -23,7 +23,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp.projection import compare_with_columns, project  # noqa: E402
+from gantry.projection import compare_with_columns, project  # noqa: E402
 
 
 def load_sessions(con: sqlite3.Connection, limit: int, only: str | None) -> list[str]:

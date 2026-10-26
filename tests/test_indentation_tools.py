@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.tools import ToolRegistry
+from gantry.tools import ToolRegistry
 
 BASE = Path(__file__).resolve().parent.parent
 
@@ -124,7 +124,7 @@ class AnswerUnfoldTests(unittest.TestCase):
     """渲染文本折叠空白时，改用 textContent 版本（根因修复）。"""
 
     def test_prefers_unfolded_when_collapsed(self):
-        from cbp import bridge as b
+        from gantry import bridge as b
         collapsed = '{"type":"tool","tool":"replace_text","arguments":{"old":" a","new":" a"}}'
         unfolded = '{"type":"tool","tool":"replace_text","arguments":{"old":" a","new":"        a"}}'
         async def fake_inner():
@@ -143,13 +143,13 @@ class AnswerUnfoldTests(unittest.TestCase):
         self.assertIn("        a", got, "应改用保留空白的版本")
 
     def test_keeps_text_when_no_json(self):
-        from cbp import bridge as b
+        from gantry import bridge as b
         self.assertEqual(asyncio.run(b._prefer_unfolded("普通回答")), "普通回答")
 
 
 class RepeatGuardWiringTests(unittest.TestCase):
     def test_guard_exists_and_can_be_tuned(self):
-        src = (BASE / "cbp" / "agent.py").read_text(encoding="utf-8")
+        src = (BASE / "gantry" / "agent.py").read_text(encoding="utf-8")
         self.assertIn("repeat_guard", src)
         self.assertIn("repeat_guard_limit", src, "阈值应可配")
         self.assertIn("convert_indentation", src, "拦截提示里要指向专用工具")

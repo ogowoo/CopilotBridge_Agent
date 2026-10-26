@@ -10,10 +10,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import AgentRunner
-from cbp.projection import compare_with_columns, project
-from cbp.session_store import SessionStore
-from cbp.tools import ToolRegistry
+from gantry.agent import AgentRunner
+from gantry.projection import compare_with_columns, project
+from gantry.session_store import SessionStore
+from gantry.tools import ToolRegistry
 
 
 class ProjectionUnitTests(unittest.TestCase):

@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import bridge as b
+from gantry import bridge as b
 
 
 def data_url(content: bytes, ext: str = "png") -> str:

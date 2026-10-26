@@ -23,7 +23,7 @@ from .snapshots import SnapshotStore
 from .spans import SpanRecorder, set_recorder
 from .tools import SANDBOX_MODES, ToolError, ToolRegistry
 
-BASE = Path(__file__).resolve().parent.parent  # 包在 cbp/ 内，项目根目录再上一层
+BASE = Path(__file__).resolve().parent.parent  # 包在 gantry/ 内，项目根目录再上一层
 CFG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
 validate_token_budget(CFG.get("agent", {}))
 PROFILE = BASE / "EdgeProfile"
@@ -546,7 +546,7 @@ AGENT_TOOLS = ToolRegistry(AGENT_WORKSPACE, AGENT_CFG)
 # 全局作用域：服务安装目录的 AGENT.md / skills 对所有工作区生效
 AGENT_TOOLS.set_global_root(BASE)
 
-# ── 扩展工具（解耦模块 cbp/tools_extra.py）：搜索/网页/命令/任务清单/图片/提问 ──
+# ── 扩展工具（解耦模块 gantry/tools_extra.py）：搜索/网页/命令/任务清单/图片/提问 ──
 # 视觉与提问需要桥接层注入回调；没有 Copilot 网页时会优雅降级。
 EXTRA_ANSWERS: dict[str, "asyncio.Future[str]"] = {}
 
@@ -624,7 +624,7 @@ AGENT_TOOLS.state_saver = lambda **kw: AGENT_SESSIONS.patch(current_session(), *
 AGENT_TOOLS.session_id_fn = current_session
 AGENT_TOOLS.web_copilot_allowed_fn = web_copilot_allowed
 
-# ── 插件系统（cbp/plugins.py，与 DSH 插件语义兼容）────────────────────
+# ── 插件系统（gantry/plugins.py，与 DSH 插件语义兼容）────────────────────
 # 贡献点：Agent 工具（AGENT_TOOLS）、模型提供商（PROVIDERS）、HTTP 路由、会话事件。
 # 启停记录在 data/plugins.json；load_all() 在服务启动时由 api.py 的 lifespan 调用。
 PLUGINS = PluginHost(BASE, registry=AGENT_TOOLS, providers=PROVIDERS,
@@ -644,9 +644,9 @@ SESSION_DB = Path(AGENT_CFG.get("session_store", "data/agent.db"))
 if not SESSION_DB.is_absolute(): SESSION_DB = BASE / SESSION_DB
 AGENT_SESSIONS = SessionStore(SESSION_DB)
 # 注意：**不要**在这里调用 recover_interrupted()。
-# 模块级副作用会污染任何 import cbp.bridge 的进程（单元测试、检查脚本、CLI）——
+# 模块级副作用会污染任何 import gantry.bridge 的进程（单元测试、检查脚本、CLI）——
 # 它们会把正在跑的会话全部标成 paused（"服务中断，可从检查点恢复"），
-# 实测用户任务被反复打断就是这个原因。恢复只在服务启动时做（见 cbp/api.py lifespan）。
+# 实测用户任务被反复打断就是这个原因。恢复只在服务启动时做（见 gantry/api.py lifespan）。
 
 # ── 工作区快照：写操作前记录原像，支持"回滚整个任务的改动" ──────────
 SNAPSHOT_DIR = BASE / "data" / "snapshots"
@@ -832,7 +832,7 @@ def self_upgrade_status() -> dict:
 
 # 注意：归档"待重启"标记必须由服务真正启动时执行（api.lifespan 调用
 # mark_self_upgrade_applied()），不能在模块导入时执行——测试、脚本、
-# 任何 import cbp.bridge 的进程都会因此误清掉"服务需重启"的标记。
+# 任何 import gantry.bridge 的进程都会因此误清掉"服务需重启"的标记。
 
 
 # ── Outlook 网页版（OWA）自动化后端 ─────────────────────────────

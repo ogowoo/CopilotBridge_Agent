@@ -1,7 +1,7 @@
 """deepseek-web 插件：把 DeepSeek 网页版的反代接成 CBP 的一个提供商。
 
 **为什么要插件而不是改核心**
-CBP 已经有"OpenAI 兼容提供商"这层抽象（`cbp/providers.py`），DeepSeek 网页版反代
+CBP 已经有"OpenAI 兼容提供商"这层抽象（`gantry/providers.py`），DeepSeek 网页版反代
 （[deepseek-free-api](https://github.com/Fly143/deepseek-free-api)、
 [ds2api](https://github.com/CJackHwang/ds2api) 之类）对外正好也是 OpenAI 协议，
 所以**不需要碰 Copilot 那套浏览器桥接**，只要：
@@ -15,7 +15,7 @@ DeepSeek 网页端要 PoW（`DeepSeekHashV1`，官方 WASM 求解）+ 浏览器 
 （curl_cffi）+ token 24h 刷新；这些已有成熟实现，重复做没有收益，而且**封号风险**
 由反代自己承担（实测惩罚会从 1 天 → 3 天 → 8 天 → 永久）。
 
-**配置**（plugin.json 的 `cbp.config`，也可在插件管理的配置里改）
+**配置**（plugin.json 的 `gantry.config`，也可在插件管理的配置里改）
 - `base_url`：反代地址（默认 `http://127.0.0.1:8000/v1`）
 - `api_key`：反代的客户端 Key（多数反代随便填，或用它面板里创建的那个）
 - `provider`：模型前缀（默认 `dsweb`）

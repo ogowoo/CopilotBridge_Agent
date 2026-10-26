@@ -22,7 +22,7 @@ class FakePage:
 
 class PoolTests(unittest.TestCase):
     def pool(self, max_windows=2):
-        from cbp.window_pool import WindowPool
+        from gantry.window_pool import WindowPool
         made = []
 
         async def factory(index):
@@ -84,7 +84,7 @@ class PoolTests(unittest.TestCase):
         self.assertTrue(run(main()))
 
     def test_queue_limit(self):
-        from cbp.window_pool import WindowBusy
+        from gantry.window_pool import WindowBusy
         async def main():
             p, _ = self.pool(1)
             w = await p.acquire("a")
@@ -112,7 +112,7 @@ class PoolTests(unittest.TestCase):
                 await asyncio.sleep(0.02)     # 模拟 new_page + 等 SSO
                 return FakePage(index)
 
-            from cbp.window_pool import WindowPool
+            from gantry.window_pool import WindowPool
             p = WindowPool(slow_factory, max_windows=2)
             started.set()
             tasks = [asyncio.create_task(p.acquire(f"s{i}", wait_timeout=2.0))

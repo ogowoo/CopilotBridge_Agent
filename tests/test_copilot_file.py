@@ -2,7 +2,7 @@
 """copilot_file：让 Copilot 生成文件并下载到工作区的回归测试。
 
 用本地 HTML 复刻回答区里的三种下载入口（blob: 链接 / data: 链接 /
-下载按钮），直接驱动 cbp.bridge 的候选识别与落盘逻辑，断言：
+下载按钮），直接驱动 gantry.bridge 的候选识别与落盘逻辑，断言：
   - blob: / data: 链接能被认出来并写成正确字节
   - 文件名匹配优先（多个入口时选中目标文件）
   - 关闭开关时工具不可用；工作区外的路径被沙箱拒绝
@@ -67,7 +67,7 @@ class CopilotFileTests(unittest.TestCase):
         return asyncio.run(runner())
 
     def test_data_link_downloaded_to_workspace(self):
-        from cbp import bridge as b
+        from gantry import bridge as b
 
         payload = "print('hello from copilot')\n".encode("utf-8")
 
@@ -103,7 +103,7 @@ class CopilotFileTests(unittest.TestCase):
         self.assertEqual(size, len(payload))
 
     def test_blob_link_downloaded(self):
-        from cbp import bridge as b
+        from gantry import bridge as b
 
         payload = b"blob-content-12345"
 
@@ -134,8 +134,8 @@ class CopilotFileTests(unittest.TestCase):
         self.assertEqual(self._run(scenario), b"blob-content")
 
     def test_disabled_flag_and_sandbox(self):
-        from cbp import bridge as b
-        from cbp.tools import ToolError
+        from gantry import bridge as b
+        from gantry.tools import ToolError
         saved = b.AGENT_CFG.get("allow_copilot_file")
         try:
             b.AGENT_CFG["allow_copilot_file"] = False

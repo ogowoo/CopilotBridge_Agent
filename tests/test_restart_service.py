@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import lifecycle
+from gantry import lifecycle
 
 
 class LifecycleRestartTests(unittest.TestCase):
@@ -206,7 +206,7 @@ class RestartApiTests(unittest.TestCase):
         lifecycle.disarm()
         lifecycle.set_force_exit(False)
         from fastapi.testclient import TestClient
-        from cbp.api import app
+        from gantry.api import app
         self.c = TestClient(app)
 
     def tearDown(self):

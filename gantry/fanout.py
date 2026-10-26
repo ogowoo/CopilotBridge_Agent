@@ -6,7 +6,7 @@
 服务就把它们各自丢给一个子代理，跑完汇总到同一个父会话里——不依赖模型是否愿意拆。
 
     POST /v1/agent/fanout {"tasks": ["...", "..."], "model": "kimi-coding/k3"}
-    cbp fanout --task "..." --task "..."
+    gantry fanout --task "..." --task "..."
 
 与 subagent_many 的区别：那个是**模型**调用的工具；这里是**用户/CLI**调用的入口，
 同样顺序执行（浏览器通道只有一个页面），每个子任务仍是独立会话，可单独查看。

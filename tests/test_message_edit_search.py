@@ -14,9 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from cbp import bridge as b
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 
 class MessageEditTests(unittest.TestCase):
@@ -31,7 +31,7 @@ class MessageEditTests(unittest.TestCase):
         b._PROVIDER_AGENT_HISTORY.clear()
         b.AGENT_SESSIONS.create("s1", "会话", str(self.ws), "copilot-auto")
         self.mid = b.AGENT_SESSIONS.add_message("s1", "user", "原始内容", 0)
-        from cbp.api import app
+        from gantry.api import app
         self.c = TestClient(app)
 
     def tearDown(self):
@@ -113,7 +113,7 @@ class CrossSessionSearchTests(unittest.TestCase):
         b.AGENT_SESSIONS.add_message("s1", "user", "把进度改成 100% 完成", 0)
         b.AGENT_SESSIONS.add_message("s2", "user", "SQLite 的 LIKE 要转义下划线 _ 吗", 0)
         b.AGENT_SESSIONS.add_message("s3", "user", "这条在归档会话里 100% 不该出现", 0)
-        from cbp.api import app
+        from gantry.api import app
         self.c = TestClient(app)
 
     def tearDown(self):

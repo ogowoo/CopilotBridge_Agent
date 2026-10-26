@@ -9,8 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.plugins import PluginHost, _read_manifest
-from cbp.tools import ToolRegistry
+from gantry.plugins import PluginHost, _read_manifest
+from gantry.tools import ToolRegistry
 
 
 def _write(root: Path, name: str, i18n: dict) -> Path:
@@ -18,7 +18,7 @@ def _write(root: Path, name: str, i18n: dict) -> Path:
     d.mkdir(parents=True, exist_ok=True)
     (d / "plugin.json").write_text(json.dumps({
         "name": name, "version": "0.1.0", "description": name,
-        "cbp": {"entry": "plugin.py", "permissions": ["tools"],
+        "gantry": {"entry": "plugin.py", "permissions": ["tools"],
                 "i18n": i18n},
     }, ensure_ascii=False), encoding="utf-8")
     (d / "plugin.py").write_text(

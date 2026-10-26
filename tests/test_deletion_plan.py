@@ -9,9 +9,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from cbp import bridge as b
-from cbp import copilot_delete as cd
-from cbp.session_store import SessionStore
+from gantry import bridge as b
+from gantry import copilot_delete as cd
+from gantry.session_store import SessionStore
 
 
 class DeletionPlanTests(unittest.TestCase):
@@ -33,7 +33,7 @@ class DeletionPlanTests(unittest.TestCase):
         cd.finalize_session_remote_deletion = keep_results
         b.AGENT_SESSIONS = SessionStore(self.tmp / "a.db")
         b.AGENT_TOOLS.set_root(self.ws, False)
-        from cbp import api as api_mod
+        from gantry import api as api_mod
         self.client = TestClient(api_mod.app)
         # 用过 Copilot 的会话
         b.AGENT_SESSIONS.create("used", "分析项目", str(self.ws), "copilot-auto")

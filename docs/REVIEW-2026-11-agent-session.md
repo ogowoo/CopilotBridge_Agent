@@ -1,10 +1,10 @@
 # CopilotBridge Agent 代码审查报告（真实缺陷清单）
 
-审查对象：`cbp/agent.py`（1063 行）、`cbp/session_store.py`（235 行）
-交叉核实：`cbp/tools.py`、`cbp/bridge.py`、`cbp/api.py`、`cbp/snapshots.py`、`tests/`
+审查对象：`gantry/agent.py`（1063 行）、`gantry/session_store.py`（235 行）
+交叉核实：`gantry/tools.py`、`gantry/bridge.py`、`gantry/api.py`、`gantry/snapshots.py`、`tests/`
 方法：逐行审读 + 用临时探针脚本在真实 `AgentRunner`/`SessionStore` 上复现（探针已删除，未改动任何项目文件）
 
-行号均以当前文件版本为准：`cbp/agent.py` 共 1063 行（SHA256 `BCD699F5…A45FB7`，非任务描述里的 994 行）、`cbp/session_store.py` 共 235 行。审查期间观察到有并发进程在改仓库（`bridge.py`、`api.py`、`config.json`、`session_store.py` 的 `delete()`），本报告已按复查后的 `session_store.py` 235 行版本重新核对行号；`agent.py` 在审查全程未变动。
+行号均以当前文件版本为准：`gantry/agent.py` 共 1063 行（SHA256 `BCD699F5…A45FB7`，非任务描述里的 994 行）、`gantry/session_store.py` 共 235 行。审查期间观察到有并发进程在改仓库（`bridge.py`、`api.py`、`config.json`、`session_store.py` 的 `delete()`），本报告已按复查后的 `session_store.py` 235 行版本重新核对行号；`agent.py` 在审查全程未变动。
 
 ---
 
@@ -12,7 +12,7 @@
 
 ### C1. 验证闭环的三面旗帜全是进程内局部变量，跨暂停/重启即失效 → 语法错误的代码可以直接宣告"治理完成"
 
-- 位置：`cbp/agent.py:742-744`（初始化）、`:1004-1031`（置位）、`:963`（判门）、`:1051-1054`（落库不含这三项）
+- 位置：`gantry/agent.py:742-744`（初始化）、`:1004-1031`（置位）、`:963`（判门）、`:1051-1054`（落库不含这三项）
 - 问题：`validation_required` / `syntax_validated` / `tests_passed` 是 `run()` 的局部变量。`session_store` 的 `sessions` 表没有任何对应列（`session_store.py:30-42`），`state_saver` 也从不写它们。`run()` 一旦因暂停/取消/服务不可用返回（`bridge.py:1952-1961`、`bridge.py:1535`、`bridge.py:1563` 会把 state 置回 `ready` 并新建 `AgentRunner`），或服务重启，下一个 runner 三个标志全为 `False`，`validation_required` 也是 `False`，于是 `:963` 的门形同不存在。
 - 触发场景：① 第 1 回合写坏 `bad.py` → 用户暂停 → 点"继续"（`api.py:489-492` → `resume_session_task`）→ 模型直接返回 `final`，状态变 `completed`；② 服务在写坏代码后崩溃/重启，`auto_resume=true`（`config.json` 默认开）自动拉起。两种路径都不会再校验一次。
 - 实测复现：run1 写入 `def f(:` 后取消；新建 runner 只把一个 `final` 给它 → `state == "completed"`、`AgentRunner` 从未执行 `validate_python`/`run_unittest`。
@@ -20,7 +20,7 @@
 
 ### C2. 批量动作里含 `final` 时被静默丢弃：既不执行完成，也不再经过验证门
 
-- 位置：`_build_batch` `cbp/agent.py:297-303`（`kind != 'tool'` 直接 `continue`）、`:314-324`（`_batch_has_final` 只是标记）、`:956-977`（门只在 `todo` 中出现 `type == "final"` 时生效）
+- 位置：`_build_batch` `gantry/agent.py:297-303`（`kind != 'tool'` 直接 `continue`）、`:314-324`（`_batch_has_final` 只是标记）、`:956-977`（门只在 `todo` 中出现 `type == "final"` 时生效）
 - 问题：系统提示 `:102` 明写"数组里只能是工具动作（不能含 final）"，`_build_batch` 的设计意图是"避免边写边宣布完成绕过验证闭环"。但实现是**丢弃** final，只在 batch 字典上挂一个 `_batch_has_final`，而这个字段在 `run()` 里从未被使用。
 - 触发场景：模型返回 `{"type":"actions","actions":[工具动作,{"type":"final",...}]}`（或两个顶层对象 `tool`+`final`，`:461-464` 会走同一入口，`:444-453` 会产生两个 unique 候选）。结果：工具动作照常执行，final 无声消失，本轮既不完成也不产生 `validation_gate` 事件；若这些工具动作是写 `.py/.json/.html`，验证门这一轮**根本没有被评估的机会**。
 - 实测复现：`_parse` 返回 `{'type':'actions','batch_size':1,'_batch_has_final':True,'actions':[write_text]}`。
@@ -32,7 +32,7 @@
 
 ### H1. 幂等保护只比对 `history[-1]`：中间隔了任何一个成功步骤，同一非幂等动作就会被重放
 
-- 位置：`cbp/agent.py:988-996`
+- 位置：`gantry/agent.py:988-996`
 - 问题：`duplicate` 只看紧邻的上一条历史。只要原动作之后有一个**不同**的成功动作，保护就失效；而"模型重放上一动作"正是换会话/重发/摘要误导时的典型行为（`:985-987` 的注释自己就承认这个前提）。
 - 触发场景：本回合批量 `[append_text(log.txt,"CHUNK1"), read_text(note.txt)]` → 下一回合模型重放 `append_text(log.txt,"CHUNK1")` → 第二次 append 真实执行。
 - 实测复现：`log.txt == 'CHUNK1CHUNK1'`，第 3 步 `status=ok` 且没有 `skipped_duplicate`。
@@ -41,14 +41,14 @@
 
 ### H2. 压缩先于换会话判定执行，会把同一轮的换会话压力清零 → 换会话固定延迟一回合
 
-- 位置：`cbp/agent.py:786-794`（压缩并写回 `estimated_*`）→ `:797-802`（用**压缩后**的 `conv_t`/`conv_c` 与压缩后重置的字符计数判 `automatic_pressure`）
+- 位置：`gantry/agent.py:786-794`（压缩并写回 `estimated_*`）→ `:797-802`（用**压缩后**的 `conv_t`/`conv_c` 与压缩后重置的字符计数判 `automatic_pressure`）
 - 问题：`conv_tokens`/`conv_chars` 在压缩分支里没有被清零（`:789-791` 只写 `estimated_*`），所以这两个条件能存活；但 `conv_steps` 与 `max_context_chars` 对 `estimated_chars` 的依赖、以及 `tokens >= compact_at` 与 `conv_t >= rollover_at` 同时越线的正常情形下，本回合判定读到的已经是压缩后的值。实测 S1：`conv_tokens=55400`（阈值 55000）本应在本轮换会话，实际 `session_rollover` 发生在下一轮第 26 步。
 - 影响：远端对话已经触顶，却要多发一个回合；配合 `CopilotConversationFull` 就是多一次失败/重发。
 - 建议修法：在压缩**之前**用当时的 `conv_t`/`conv_c`/`conv_steps` 算出 `automatic_pressure` 并保存，压缩后再决定 `need_rollover = force or manual or pressure`。
 
 ### H3. 换会话时无条件清空 `pending`，用户追加的指令可能被静默丢失
 
-- 位置：`cbp/agent.py:811-825`（尤其 `:820-825` 的 `pending=[]`）
+- 位置：`gantry/agent.py:811-825`（尤其 `:820-825` 的 `pending=[]`）
 - 问题：注释声称"pending 已随 continuation 摘要带入新会话"。但 `_deterministic_summary`（`:679-688`）只把 pending 放进 `goal`，没有独立字段；而 `summary` 只在 `not summary or pending_carry` 时才重算（`:811-815`）——若 `state["summary"]` 已是压缩时生成的旧摘要，pending 正文不会进入新会话的任何位置。
 - 触发场景：用户在某个长回合进行中通过 API 追加指令（`bridge.py:1874-1881` 写 `pending`）；该回合内又恰好触发了换会话。指令要么只出现在旧会话里，要么在摘要里只剩 `goal`，新会话拿不到可执行正文。
 - 实测复现：`pending_carry` 非空时由于走"重算摘要"路径，正文会出现在新会话首提示（实测 S2/S3）；但 S3 同时确认换会话时 `pending` 被清成 `[]`，而实测 R3 显示 `pending` 被消费路径（`:924-926`）清空后，正文只存在于历史步骤里。冲突点在于：**摘要里的 `goal` 不是指令的可靠载体**，而 `pending=[]` 让"重算摘要"这一保护不可靠。
@@ -68,19 +68,19 @@
 
 ### M1. 用户主动 `waiting`（服务持续不可用）在重启后被改写成 `paused` + 覆盖错误原因
 
-- 位置：`cbp/session_store.py:195-197`（`state IN ('running','waiting')` 一律改 paused 并覆写 `last_error`）、`:199-204`（`interrupted_sessions` 用 `last_error` 字符串精确匹配）、`bridge.py:1156` 启动即调用
+- 位置：`gantry/session_store.py:195-197`（`state IN ('running','waiting')` 一律改 paused 并覆写 `last_error`）、`:199-204`（`interrupted_sessions` 用 `last_error` 字符串精确匹配）、`bridge.py:1156` 启动即调用
 - 问题：用 `last_error` 文本当"中断标记"是脆的：`agent.py:909-910` 写入"服务持续不可用…请点击继续"，重启后会被 `recover_interrupted` 覆盖成"服务中断，可从检查点恢复"，于是 `auto_resume`（config 默认 true）会**自动**拉起一个用户明确停下的会话。实测 R8：`waiting` 会话重启后变 `paused`，`interrupted_sessions()` 立即返回它。
 - 建议修法：加独立的 `interrupted INTEGER` 列或独立状态，不靠错误文案判等；`recover_interrupted` 只标记中断、不覆写既有 `last_error`。
 
 ### M2. `messages()` / `steps()` 的 `limit` 取的是**最旧**记录
 
-- 位置：`cbp/session_store.py:138`、`:157`（`ORDER BY id LIMIT ?`）
+- 位置：`gantry/session_store.py:138`、`:157`（`ORDER BY id LIMIT ?`）
 - 问题：超过上限后返回最旧的 N 条；调用方（如 `api.py` 的消息历史、`bridge` 的步骤回放）拿到的是"会话开头"，不是最近状态。长会话（steps 上限 5000、messages 上限 500）里最新记录永远看不到。实测 R9：`messages(limit=2)` 返回 `['m0','m1']`。
 - 建议修法：`ORDER BY id DESC LIMIT ?` 后 `reverse()`；或另加 `since_id` 增量接口。
 
 ### M3. `validate_token_budget` 与 `AgentRunner.__init__` 的默认阈值不一致，校验会漏
 
-- 位置：`cbp/agent.py:35-44`（默认 `76000/104000/128000`）vs `:646-648`（默认 `18000/22000/24000`）；`bridge.py:22` 是唯一的调用点
+- 位置：`gantry/agent.py:35-44`（默认 `76000/104000/128000`）vs `:646-648`（默认 `18000/22000/24000`）；`bridge.py:22` 是唯一的调用点
 - 问题：校验器用自己的一套默认值。若配置只给 `context_token_budget`（如 80000）而两项阈值缺省，校验器按 `76000 < 104000 <= 128000` 通过，但真正生效的是 `compact_at=18000 / rollover_at=22000`，实际 `context_token_budget=80000` —— 阈值关系在真实参数上从未被检查；反过来，若用户只想调大 `context_token_budget`，校验器还可能因 104000 的假默认值误报。
 - 建议修法：让 `__init__` 用同一套常量（或把预算校验移入 `__init__`，对最终生效的三个值再验一次 `0 < compact < rollover <= budget`）。
 
@@ -114,7 +114,7 @@
 
 ## 低（Low）
 
-- **L1** `_deterministic_summary` 的 `verified` 字段是死逻辑：`cbp/agent.py:676` `"verified": tool == "read_text"`，而该分支的 `tool` 只可能来自那份写操作集合，永远为 `False`。应改为按 `status` 或后续是否出现匹配的 `validate_python` 结果判定。（这条是提问点"token 估算偏差"之外的附带发现，属真实逻辑错误而非风格问题。）
+- **L1** `_deterministic_summary` 的 `verified` 字段是死逻辑：`gantry/agent.py:676` `"verified": tool == "read_text"`，而该分支的 `tool` 只可能来自那份写操作集合，永远为 `False`。应改为按 `status` 或后续是否出现匹配的 `validate_python` 结果判定。（这条是提问点"token 估算偏差"之外的附带发现，属真实逻辑错误而非风格问题。）
 - **L2** `recover_interrupted` + `run_maintenance` 的组合让 `paused` 会话既不过期也不受 `max_sessions` 约束（`session_store.py:215` 只处理 `ready/waiting`，`:226-227` 只统计终态）。实测 R7：6 个 10 天未活动的 `paused` 会话，`run_maintenance(86400, 1, 2)` 一条都没回收。长期运行会无界增长（每个会话还带快照目录）。
 - **L3** `_recover_partial_batch` 走 `_build_batch` 时用的是 `MAX_BATCH_ACTIONS=4`（类常量），而正常路径在 `:957` 用 `self.max_actions_per_turn`（配置可小到 1）。配置 `max_actions_per_turn=1` 时，恢复路径仍会一次执行最多 4 个动作，违背"输出越长越容易被截断"的保守取向。
 - **L4** 批量被上限截断（`:317-321`）时只挂 `_batch_truncated`，该标记既不写入任何步骤，也不进入下一回合提示词，模型不知道有动作被丢弃。

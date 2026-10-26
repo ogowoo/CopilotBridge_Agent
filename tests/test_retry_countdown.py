@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.session_store import SessionStore
+from gantry.session_store import SessionStore
 
 
 class RetryCountdownStateTests(unittest.TestCase):
@@ -46,13 +46,13 @@ class RetryWindowAnchorTests(unittest.TestCase):
     """倒计时终点 = rate_limited_since + window，与退避次数无关。"""
 
     def test_window_anchor(self):
-        from cbp.agent import AgentRunner
+        from gantry.agent import AgentRunner
         r = AgentRunner(None, None, {"service_retry_window_seconds": 3660}, None, None, None, None)
         since = 1_700_000_000.0
         self.assertEqual(since + 3660, since + r.service_retry_window_seconds)
 
     def test_window_defaults_to_one_hour_plus_one_minute(self):
-        from cbp.agent import AgentRunner
+        from gantry.agent import AgentRunner
         r = AgentRunner(None, None, {}, None, None, None, None)
         self.assertEqual(r.service_retry_window_seconds, 3660)
 

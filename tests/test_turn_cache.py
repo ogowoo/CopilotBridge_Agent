@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.bridge import turn_cache_decision
-from cbp.session_store import SessionStore
+from gantry.bridge import turn_cache_decision
+from gantry.session_store import SessionStore
 
 
 class TurnCacheTests(unittest.TestCase):

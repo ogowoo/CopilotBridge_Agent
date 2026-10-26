@@ -13,7 +13,7 @@ description: 修改 WebUI 时的结构与验证规范——三文件职责划分
 
 ## 服务端配套
 
-`cbp/api.py` 里 `/ui` 307 到 `/ui/`，`/ui/{asset}` 白名单只放行 `style.css`/`app.js`。
+`gantry/api.py` 里 `/ui` 307 到 `/ui/`，`/ui/{asset}` 白名单只放行 `style.css`/`app.js`。
 新增静态资源要同时改白名单集合。
 
 ## 验证清单(改完必做)

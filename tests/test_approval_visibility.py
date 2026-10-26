@@ -26,11 +26,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from cbp import bridge as b
-from cbp.agent import AgentRunner
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
-from cbp.tools import ToolRegistry
+from gantry import bridge as b
+from gantry.agent import AgentRunner
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
+from gantry.tools import ToolRegistry
 
 
 class ResumeHintTests(unittest.TestCase):
@@ -93,7 +93,7 @@ class ApprovalVisibilityTests(unittest.TestCase):
         b.AGENT_SESSIONS.create("s1", "任务", str(self.ws), "copilot-auto")
         b.AGENT_SESSIONS.patch("s1", approval_pending={"tool": "delete_path", "args_hash": "abc123"})
         b._RESUME_HINTS.clear()
-        from cbp.api import app
+        from gantry.api import app
         self.c = TestClient(app)
 
     def tearDown(self):

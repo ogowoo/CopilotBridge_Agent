@@ -9,9 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import AgentRunner
-from cbp.session_store import SessionStore
-from cbp.tools import ToolRegistry
+from gantry.agent import AgentRunner
+from gantry.session_store import SessionStore
+from gantry.tools import ToolRegistry
 
 
 class StepQueueRunnerTests(unittest.TestCase):

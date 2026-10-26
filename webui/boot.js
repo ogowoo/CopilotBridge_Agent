@@ -5,7 +5,7 @@
 try {
   // 主题取值：null/auto = 跟随系统；"" / "dark" = 深色；其余为主题 id
   const KNOWN = ["amber", "jade", "light", "solarized", "mint"];
-  let t = localStorage.getItem("cbp-theme");
+  let t = localStorage.getItem("gantry-theme");
   if (t === null || t === "" || t === "auto") {
     // 跟随系统：系统偏好浅色就用浅色，否则用默认深色
     t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "";
@@ -15,5 +15,5 @@ try {
     t = "";   // 旧主题（nord/dracula/roufen）已移除，回到默认而不是留个空属性
   }
   if (t) document.documentElement.dataset.theme = t;
-  if (localStorage.getItem("cbp-rail") === "closed") document.documentElement.dataset.rail = "closed";
+  if (localStorage.getItem("gantry-rail") === "closed") document.documentElement.dataset.rail = "closed";
 } catch (e) { /* 隐私模式下 localStorage 可能抛异常，忽略即可 */ }

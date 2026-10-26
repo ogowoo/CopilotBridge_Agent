@@ -2,7 +2,7 @@
 # CBP 只读取它做展示/迁移参考，不执行 JS。
 - insert:
     - id: web-search
-      name: '@cbp-plugin/web-search'
+      name: '@gantry-plugin/web-search'
       config:
         backend: auto
         max_results: 6

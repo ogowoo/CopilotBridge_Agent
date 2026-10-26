@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi.testclient import TestClient
 from starlette.testclient import TestClient as _TC  # noqa: F401
 
-from cbp import api as A
+from gantry import api as A
 
 PROBE = "/v1/agent/__hardening_probe__"     # 不存在的路径：只验证中间件是否放行/拦截
 

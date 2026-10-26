@@ -39,7 +39,7 @@ jobs:
           from pathlib import Path
 
           entries = [Path("app.py"), Path("start.py"), Path("install.py")]
-          roots = [Path("cbp"), Path("scripts"), Path("tests")]
+          roots = [Path("gantry"), Path("scripts"), Path("tests")]
           missing = [str(path) for path in entries if not path.is_file()]
           missing += [str(path) for path in roots if not path.is_dir()]
           if missing:

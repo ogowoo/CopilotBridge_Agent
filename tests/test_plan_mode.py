@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import AgentRunner
-from cbp.tools import ToolError, ToolRegistry
+from gantry.agent import AgentRunner
+from gantry.tools import ToolError, ToolRegistry
 
 
 class PlanModeTests(unittest.TestCase):

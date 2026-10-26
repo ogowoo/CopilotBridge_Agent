@@ -16,9 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from cbp import bridge as b
-from cbp.session_store import SessionStore
-from cbp.snapshots import SnapshotStore
+from gantry import bridge as b
+from gantry.session_store import SessionStore
+from gantry.snapshots import SnapshotStore
 
 
 class InjectEndpointTests(unittest.TestCase):
@@ -36,7 +36,7 @@ class InjectEndpointTests(unittest.TestCase):
             await asyncio.sleep(3600)
             return None, req.session_id
         b.run_agent = _fake_run
-        from cbp.api import app
+        from gantry.api import app
         self.c = TestClient(app)
 
     def tearDown(self):
@@ -47,7 +47,7 @@ class InjectEndpointTests(unittest.TestCase):
 
     def test_running_session_goes_to_pending_not_queue(self):
         """运行中插入：写进 pending（下回合生效），不走队列。"""
-        from cbp.window_pool import Window
+        from gantry.window_pool import Window
 
         # 模拟"该会话正占着一个自动化窗口"（多窗口下 runner 的活跃标记就在窗口池里）
         win = Window(1, object())
@@ -108,7 +108,7 @@ class InjectedPendingReachesNextTurnTests(unittest.TestCase):
     """核心机制：运行中写入 pending，Agent 下一回合的提示里必须带上它。"""
 
     def test_pending_is_read_on_next_turn_and_cleared(self):
-        from cbp.agent import AgentRunner
+        from gantry.agent import AgentRunner
 
         ws = Path(tempfile.mkdtemp(prefix="cbp_inject_agent_"))
         (ws / "a.txt").write_text("hi", encoding="utf-8")

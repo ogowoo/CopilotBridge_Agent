@@ -1020,7 +1020,7 @@ async def answer_markdown(plain: str = "") -> str:
         first, last = "", ""
         if plain:
             lines_ = [l.strip() for l in plain.splitlines()
-                      if l.strip() and not l.strip().startswith(("CBP-", "[CBP"))]
+                      if l.strip() and not l.strip().startswith(("CBP-", "[CBP", "GANTRY-", "[GANTRY"))]
             if lines_:
                 first = lines_[0][:50]
                 last = lines_[-1][-50:] if len(lines_) > 1 else first
@@ -1233,7 +1233,7 @@ async def _wait_turn_marker(marker: str, timeout: float = 30) -> bool:
 
 
 async def sent_successfully(box, before_count, prompt):
-    marker_match = re.search(r"\[CBP-TURN:[0-9a-f]{12}\]", prompt)
+    marker_match = re.search(r"\[(?:GANTRY|CBP)-TURN:[0-9a-f]{12}\]", prompt)
     marker = marker_match.group(0) if marker_match else ""
     for _ in range(20):
         await asyncio.sleep(.25)

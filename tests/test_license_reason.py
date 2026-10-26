@@ -7,7 +7,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp.bridge import license_reason  # noqa: E402
+from gantry.bridge import license_reason  # noqa: E402
 
 
 class LicenseReasonTests(unittest.TestCase):

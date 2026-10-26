@@ -201,9 +201,9 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
     try:
         await _ensure_page_for_delete()
         page = _b.page
-        marker_match = re.match(r"^(\[CBP-AGENT\]\[[^\]]+\])\[C\d+\]$", expected_title)
+        marker_match = re.match(r"^(\[(?:GANTRY|CBP)-AGENT\]\[[^\]]+\])\[C\d+\]$", expected_title)
         if not marker_match:
-            raise RuntimeError("拒绝删除：目标没有合法 CBP-AGENT 标识")
+            raise RuntimeError("拒绝删除：目标没有合法 GANTRY/CBP-AGENT 标识")
         session_prefix = marker_match.group(1)
 
         # 删除成功/已被删除后 Copilot 常弹 "This chat is no longer available"

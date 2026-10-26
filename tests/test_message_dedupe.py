@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.session_store import SessionStore  # noqa: E402
+from gantry.session_store import SessionStore  # noqa: E402
 
 ANSWER = "已重新从 GitHub 拉取并重置项目：pyshot 当前位于 origin/main 提交 6779109。"
 

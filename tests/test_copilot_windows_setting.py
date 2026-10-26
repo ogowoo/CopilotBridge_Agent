@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 class WindowsSettingTests(unittest.TestCase):
     def test_schema_has_copilot_windows(self):
-        from cbp.api import CONFIG_SCHEMA
+        from gantry.api import CONFIG_SCHEMA
         spec = CONFIG_SCHEMA.get("agent.copilot_windows")
         self.assertIsNotNone(spec, "设置页需要这个键")
         self.assertEqual(spec["kind"], "int")
@@ -18,19 +18,19 @@ class WindowsSettingTests(unittest.TestCase):
         self.assertEqual(spec["group"], "exec")
 
     def test_post_config_applies_to_pool(self):
-        src = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
+        src = ((ROOT / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
         self.assertIn("agent.copilot_windows", src)
         self.assertIn("WINDOWS.set_max", src, "保存后必须立刻生效")
 
     def test_runtime_exposes_windows(self):
-        src = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
+        src = ((ROOT / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
         self.assertIn('"windows": b.WINDOWS.stats()', src)
         # 会话是否在跑要看"窗口池 + 逻辑槽"（提供商任务不占窗口，只看 WINDOWS 会漏判）
         self.assertIn("b.session_running(sid)", src)
 
     def test_web_parallel_follows_windows(self):
         """网页通道的扇出上限 = 窗口数；提供商通道不受窗口数影响。"""
-        import cbp.bridge as b
+        import gantry.bridge as b
         old = b.WINDOWS._max
         try:
             b.WINDOWS._max = 3
@@ -44,7 +44,7 @@ class WindowsSettingTests(unittest.TestCase):
 
     def test_pool_set_max_is_clamped(self):
         import asyncio
-        import cbp.bridge as b
+        import gantry.bridge as b
 
         async def main():
             out = await b.WINDOWS.set_max(99)
@@ -60,7 +60,7 @@ class WindowIsolationTests(unittest.TestCase):
     def test_task_contextvars_are_isolated(self):
         import asyncio
         import contextvars
-        import cbp.bridge as b
+        import gantry.bridge as b
 
         a = contextvars.ContextVar("a", default=None)
 
@@ -77,8 +77,8 @@ class WindowIsolationTests(unittest.TestCase):
         self.assertEqual(asyncio.new_event_loop().run_until_complete(main()), ["w1", "w2"])
 
     def test_page_proxy_resolves_task_page(self):
-        import cbp.bridge as b
-        from cbp.window_pool import Window
+        import gantry.bridge as b
+        from gantry.window_pool import Window
 
         class FakePage:
             url = "https://example/x"
@@ -102,7 +102,7 @@ class WindowIsolationTests(unittest.TestCase):
             b.set_shared_page(saved)
 
     def test_registry_clone_is_independent(self):
-        import cbp.bridge as b
+        import gantry.bridge as b
         clone = b.AGENT_TOOLS.clone()
         clone.sandbox_mode = "read-only"
         clone.plan_mode = True

@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import AgentRunner  # noqa: E402
+from gantry.agent import AgentRunner  # noqa: E402
 
 REAL = (
     '{"step":17,"tool":"grep","arguments":{"pattern":"setShortcut|shortcutChanged|'

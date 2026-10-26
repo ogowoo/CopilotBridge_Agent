@@ -81,7 +81,7 @@
     "agent_md_total_max_chars": 16000,
     "allow_self_upgrade": false,
     "self_upgrade_paths": [
-      "cbp/",
+      "gantry/",
       "webui/",
       "scripts/",
       "docs/",

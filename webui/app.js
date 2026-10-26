@@ -5,7 +5,7 @@ let DEMO=false;
 
 /* ── 演示模式：API 不可达时展示界面（仅预览用，正式环境不会触发） ── */
 const DEMO_SESSIONS=[
- {id:'task-demo01',title:'分析 cbp 项目并生成 TODO',state:'running',model:'copilot-think-deeper',total_steps:47,conversation_steps:12,conversation_index:1,estimated_tokens:18320,workspace:'C:\\CopilotBridge\\workspace'},
+ {id:'task-demo01',title:'分析 gantry 项目并生成 TODO',state:'running',model:'copilot-think-deeper',total_steps:47,conversation_steps:12,conversation_index:1,estimated_tokens:18320,workspace:'C:\\CopilotBridge\\workspace'},
  {id:'task-demo02',title:'整理 Outlook 未读邮件',state:'paused',total_steps:23,conversation_steps:23,conversation_index:0,estimated_tokens:9640,workspace:'C:\\CopilotBridge\\workspace'},
  {id:'task-demo03',title:'对比两个目录差异',state:'failed',total_steps:101,conversation_steps:4,conversation_index:3,estimated_tokens:23110,workspace:'C:\\CopilotBridge\\workspace'},
  {id:'task-demo04',title:'深圳英文旅游手册',state:'completed',total_steps:15,conversation_steps:15,conversation_index:0,estimated_tokens:7420,workspace:'C:\\CopilotBridge\\workspace'}];
@@ -21,18 +21,18 @@ const DEMO_MSG=[
  {role:'assistant',content:'已完成 3 个 P0 项：会话切换风暴、暂停状态覆盖、限流识别。剩余 1 项进行中。'}];
 function demoApi(u,o={}){
  if(u==='/v1/agent/sessions')return{sessions:DEMO_SESSIONS};
- if(u.endsWith('/runtime'))return{phase:'waiting',detail:'Agent 回合 a1b2c3d4e5f6 已确认，等待 Copilot 回答',session_state:'running',total_steps:47,conversation_steps:12,estimated_tokens:18320,conversation_index:1,current_url:'https://m365.cloud.microsoft/chat/demo',busy:true,updated:Date.now()/1000,answer_preview:'{"type":"tool","tool":"run_unittest","arguments":{"path":"tests"},"reason":"验证修复闭环"}',prompt_preview:'[CBP-AGENT][task-demo01][C001]\n你是本地任务 Agent，可以通过工具处理当前工作目录中的文件。\n…\n当前总步骤 48/1000。只返回下一个 JSON 动作。'};
+ if(u.endsWith('/runtime'))return{phase:'waiting',detail:'Agent 回合 a1b2c3d4e5f6 已确认，等待 Copilot 回答',session_state:'running',total_steps:47,conversation_steps:12,estimated_tokens:18320,conversation_index:1,current_url:'https://m365.cloud.microsoft/chat/demo',busy:true,updated:Date.now()/1000,answer_preview:'{"type":"tool","tool":"run_unittest","arguments":{"path":"tests"},"reason":"验证修复闭环"}',prompt_preview:'[GANTRY-AGENT][task-demo01][C001]\n你是本地任务 Agent，可以通过工具处理当前工作目录中的文件。\n…\n当前总步骤 48/1000。只返回下一个 JSON 动作。'};
  let m=u.match(/\/sessions\/([^/?]+)$/);
  if(m)return{session:DEMO_SESSIONS[0],steps:DEMO_STEPS,files:[],messages:DEMO_MSG};
  if(u.includes('/messages'))return{content:'（演示模式）此处为 Copilot 回复',url:null};
  if(o.method==='DELETE'&&u.includes('delete_remote=true'))return{deleted:false,local_deleted:false,message:'部分 Copilot 会话删除失败，本地 Session 已保留。可检查后使用下方按钮重试，或仅清理本地记录。',remote_results:[
-  {url:'https://m365.cloud.microsoft/chat?es=SSR',expected_title:'[CBP-AGENT][task-demo01][C000]',deleted:false,error:'URL 对应会话不属于当前 Session，拒绝删除；需要前缀: [CBP-AGENT][task-demo01]',method:'url-plus-session-marker'},
-  {url:'https://m365.cloud.microsoft/chat/conversation/8ae00748-77f1-4e5b-979e-8ff7d26d9791?es=SSR',expected_title:'[CBP-AGENT][task-demo01][C001]',deleted:true,error:null,method:'url-plus-session-marker'},
-  {url:'https://m365.cloud.microsoft/chat/conversation/f3b21c90-5a4d-4c2e-8b71-1d2e3f4a5b6c?es=SSR',expected_title:'[CBP-AGENT][task-demo01][C002]',deleted:false,error:'点击删除后，目标 URL 仍存在于 Chats 列表',method:'url-plus-session-marker'}]};
+  {url:'https://m365.cloud.microsoft/chat?es=SSR',expected_title:'[GANTRY-AGENT][task-demo01][C000]',deleted:false,error:'URL 对应会话不属于当前 Session，拒绝删除；需要前缀: [GANTRY-AGENT][task-demo01]',method:'url-plus-session-marker'},
+  {url:'https://m365.cloud.microsoft/chat/conversation/8ae00748-77f1-4e5b-979e-8ff7d26d9791?es=SSR',expected_title:'[GANTRY-AGENT][task-demo01][C001]',deleted:true,error:null,method:'url-plus-session-marker'},
+  {url:'https://m365.cloud.microsoft/chat/conversation/f3b21c90-5a4d-4c2e-8b71-1d2e3f4a5b6c?es=SSR',expected_title:'[GANTRY-AGENT][task-demo01][C002]',deleted:false,error:'点击删除后，目标 URL 仍存在于 Chats 列表',method:'url-plus-session-marker'}]};
  return{deleted:true,local_deleted:true,remote_results:[],session_id:'task-demo01'};
 }
 
-function apiToken(){try{return localStorage.getItem('cbp-token')||''}catch(e){return ''}}
+function apiToken(){try{return localStorage.getItem('gantry-token')||''}catch(e){return ''}}
 /* 页签标题里的版本**不再硬编码**：曾经写死一个预览号，版本一升标题就对不上
    （用户实测）。现在由 loadVersion() 用 GET / 的真实版本拼，见 applyTitleVersion。 */
 let lastMessages=[];        // 最近一次渲染的消息（对话搜索基于它重渲染；曾漏声明导致搜索抛异常）
@@ -247,7 +247,7 @@ function cardOf(kind){
  return null;
 }
 function applyCardCollapsed(){
- [['subagents','cbp.subagentsCollapsed'],['live','cbp.liveCollapsed']].forEach(([kind,key])=>{
+ [['subagents','gantry.subagentsCollapsed'],['live','gantry.liveCollapsed']].forEach(([kind,key])=>{
   const card=cardOf(kind);if(!card)return;
   let collapsed=false;
   try{collapsed=localStorage.getItem(key)==='1'}catch(e){}
@@ -259,7 +259,7 @@ function toggleCard(kind){
  if(!card)return;
  const collapsed=!card.classList.contains('collapsed');
  card.classList.toggle('collapsed',collapsed);
- try{localStorage.setItem(kind==='subagents'?'cbp.subagentsCollapsed':'cbp.liveCollapsed',
+ try{localStorage.setItem(kind==='subagents'?'gantry.subagentsCollapsed':'gantry.liveCollapsed',
                           collapsed?'1':'0')}catch(e){}
 }
 /* 点标题行 = 切换；但点到标签/按钮/输入框时不动 */
@@ -289,7 +289,7 @@ function applyTopbarCollapsed(){
  const head=document.querySelector('header.topbar');
  if(!head)return;
  let collapsed=false;
- try{collapsed=localStorage.getItem('cbp.topbarCollapsed')==='1'}catch(e){}
+ try{collapsed=localStorage.getItem('gantry.topbarCollapsed')==='1'}catch(e){}
  head.classList.toggle('collapsed',collapsed);
  const btn=document.getElementById('topbarChev');
  if(btn)btn.setAttribute('aria-expanded',collapsed?'false':'true');
@@ -301,7 +301,7 @@ function toggleTopbar(){
  head.classList.toggle('collapsed',collapsed);
  const btn=document.getElementById('topbarChev');
  if(btn)btn.setAttribute('aria-expanded',collapsed?'false':'true');
- try{localStorage.setItem('cbp.topbarCollapsed',collapsed?'1':'0')}catch(e){}
+ try{localStorage.setItem('gantry.topbarCollapsed',collapsed?'1':'0')}catch(e){}
 }
 /* 点标题行的任意空白处也能收起/展开（用户要求"点上面那部分就能折叠"）。
    里面的控件各自有活（模型下拉、刷新、任务 ID 点击复制、箭头、标题的 data-act），
@@ -374,7 +374,7 @@ function renderSubagents(list){
    // 就再也没被显示回来，于是点进子代理后整块面板消失（用户实测）。
 }
 
-/* ── 插件管理（对应 cbp/plugins.py 的贡献点与启停）──────────────────── */
+/* ── 插件管理（对应 gantry/plugins.py 的贡献点与启停）──────────────────── */
 /* ── 插件面板（声明式）：插件给数据，前端按 view 渲染 ──────────────
    view: kv / list / table / json / markdown。插件不注入 HTML，避免 XSS。 */
 let panelCache=[];
@@ -653,7 +653,7 @@ function slashKey(e){
 }
 
 /* 插件自带的译文：拉一次并合并进字典，让 tr() 能覆盖插件文案。
-   平台不知道第三方插件写了哪些中文，由插件清单声明（cbp.i18n）最不失真。 */
+   平台不知道第三方插件写了哪些中文，由插件清单声明（gantry.i18n）最不失真。 */
 async function mergePluginI18n(quiet){
  try{
   const d=await api('/v1/plugins/i18n');
@@ -732,13 +732,13 @@ async function deepResearchNow(query){
 let wsCurrent='';
 let planModeOnce=false;   // /plan 触发：本轮请求带 plan_mode，后端强制只读
 /* 工作区分组折叠状态（localStorage，跨刷新保留） */
-function wsCollapsedList(){try{return JSON.parse(localStorage.getItem('cbp-ws-collapsed')||'[]')||[]}catch(e){return []}}
+function wsCollapsedList(){try{return JSON.parse(localStorage.getItem('gantry-ws-collapsed')||'[]')||[]}catch(e){return []}}
 function wsIsCollapsed(k){return wsCollapsedList().indexOf(k)>=0}
 function wsToggleCollapse(k){
  let arr=wsCollapsedList();
  const i=arr.indexOf(k);
  if(i>=0)arr.splice(i,1);else arr.push(k);
- try{localStorage.setItem('cbp-ws-collapsed',JSON.stringify(arr))}catch(e){}
+ try{localStorage.setItem('gantry-ws-collapsed',JSON.stringify(arr))}catch(e){}
  sessSig='';   // 强制重绘
  drawSessions();
 }
@@ -809,9 +809,9 @@ function closeWs(){closeMask('wsMask')}
 async function api(u,o={}){
   if(DEMO)return demoApi(u,o);
   const call=tk=>{const opt=Object.assign({},o);opt.headers=Object.assign({},o.headers||{});
-    if(tk)opt.headers['X-CBP-Token']=tk;
+    if(tk)opt.headers['X-Gantry-Token']=tk;
     // 语言头：后端据此翻译错误 detail（展示层；协议/日志仍是中文）
-    try{opt.headers['X-CBP-Lang']=currentLang()}catch(e){}
+    try{opt.headers['X-Gantry-Lang']=currentLang()}catch(e){}
     return fetch(u,opt)};
   let r=await call(apiToken());
   if(r.status===401){
@@ -822,7 +822,7 @@ async function api(u,o={}){
       tokenPrompting=(async()=>{
         try{
           const tk=await dlgPrompt(tr('本服务启用了 api_token，请输入访问令牌（只保存在本机浏览器）'),apiToken(),'','需要访问令牌');
-          if(tk){try{localStorage.setItem('cbp-token',tk);tokenPromptCancelled=false}catch(e){}}
+          if(tk){try{localStorage.setItem('gantry-token',tk);tokenPromptCancelled=false}catch(e){}}
           else{tokenPromptCancelled=true;showConnBanner(tr('未授权：已取消令牌输入（点此重新输入）'),true)}
           return tk;
         }finally{tokenPrompting=null}
@@ -1037,13 +1037,13 @@ let showSubagents=false;   // 默认折叠子代理会话（它们挂在父会�
 let subagentCount=0;
 /* 子代理会话归集到父会话下：默认折叠，点 ▸ 展开（状态存 localStorage） */
 const expandedSess=new Set();
-try{JSON.parse(localStorage.getItem('cbp-expanded-sess')||'[]').forEach(x=>expandedSess.add(x))}catch(e){}
+try{JSON.parse(localStorage.getItem('gantry-expanded-sess')||'[]').forEach(x=>expandedSess.add(x))}catch(e){}
 function toggleSessExpand(sid){
  if(expandedSess.has(sid))expandedSess.delete(sid);else expandedSess.add(sid);
- try{localStorage.setItem('cbp-expanded-sess',JSON.stringify([...expandedSess]))}catch(e){}
+ try{localStorage.setItem('gantry-expanded-sess',JSON.stringify([...expandedSess]))}catch(e){}
  sessSig='';drawSessions();
 }
-try{showSubagents=localStorage.getItem('cbp-show-subagents')==='1'}catch(e){}
+try{showSubagents=localStorage.getItem('gantry-show-subagents')==='1'}catch(e){}
 async function refreshSessions(){
  if(serviceStopped)return;
  try{
@@ -1061,7 +1061,7 @@ function toggleSubagents(){
  const anyCollapsed=[...parents].some(p=>!expandedSess.has(p));
  if(anyCollapsed)parents.forEach(p=>expandedSess.add(p));
  else parents.clear && parents.forEach(p=>expandedSess.delete(p));
- try{localStorage.setItem('cbp-expanded-sess',JSON.stringify([...expandedSess]))}catch(e){}
+ try{localStorage.setItem('gantry-expanded-sess',JSON.stringify([...expandedSess]))}catch(e){}
  sessSig='';drawSessions();
  toast(tr(anyCollapsed?'已展开 {n} 个子代理会话':'已折叠 {n} 个子代理会话',
             {n: parents.size}),'ok');
@@ -1687,7 +1687,7 @@ function toggleToolLog(){
  if(wrap)wrap.classList.toggle('open',open);
  if(row)row.classList.toggle('open',open);
  if(chev)chev.textContent=open?'▾':'▸';
- try{localStorage.setItem('cbp.toolLogOpen',open?'1':'0')}catch(e){}
+ try{localStorage.setItem('gantry.toolLogOpen',open?'1':'0')}catch(e){}
  if(open){
   try{renderToolLog(toolLogSteps,{force:true})}catch(e){}
   body.scrollTop=body.scrollHeight;          // 展开后停在最新一步
@@ -2014,7 +2014,7 @@ document.addEventListener('error',e=>{
 /* 代码块"…"菜单：复制 / 下载 / 行号 / 换行 / 折叠。
    CSP 下无内联事件；浮层挂到 body 并固定定位，避免被滚动容器裁掉。
    注意：菜单项的 data-act 必须写成**字面量**（不能 `${变量}` 拼），
-   否则 cbp/invariants.py 的"data-act 与 ACTIONS 一一对应"静态核对看不见它，
+   否则 gantry/invariants.py 的"data-act 与 ACTIONS 一一对应"静态核对看不见它，
    会把 mCopy 等当成未引用的死代码。 */
 const CODE_EXT={python:'py',js:'js',typescript:'ts',json:'json',bash:'sh',
                 powershell:'ps1',sql:'sql',yaml:'yml',html:'html',css:'css'};
@@ -2052,8 +2052,8 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCodeMenu();imgZoomClose()}});
 /* 行号/换行偏好（记住；默认都开，对齐 Copilot 观感） */
 function codePref(key,def){
- try{const v=localStorage.getItem('cbp-code-'+key);return v===null?def:v==='1'}catch(e){return def}}
-function setCodePref(key,val){try{localStorage.setItem('cbp-code-'+key,val?'1':'0')}catch(e){}}
+ try{const v=localStorage.getItem('gantry-code-'+key);return v===null?def:v==='1'}catch(e){return def}}
+function setCodePref(key,val){try{localStorage.setItem('gantry-code-'+key,val?'1':'0')}catch(e){}}
 function applyCodePrefs(scope){
  const noWrap=!codePref('wrap',true);
  const noLines=!codePref('lines',true);
@@ -2114,7 +2114,7 @@ function applyFind(){
   const frag=document.createDocumentFragment();let last=0;
   while(idx>=0){
    frag.appendChild(document.createTextNode(text.slice(last,idx)));
-   const mk=document.createElement('mark');mk.className='cbp-hit';mk.textContent=text.substr(idx,findQuery.length);
+   const mk=document.createElement('mark');mk.className='gantry-hit';mk.textContent=text.substr(idx,findQuery.length);
    frag.appendChild(mk);findHits.push(mk);
    last=idx+findQuery.length;idx=low.indexOf(q,last)}
   frag.appendChild(document.createTextNode(text.slice(last)));
@@ -2458,7 +2458,7 @@ async function exportTimeline(){
                session:d.session||{},steps:_steps,messages:_msgs,files:_files};
   let blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
   let a=document.createElement('a');a.href=URL.createObjectURL(blob);
-  a.download='cbp-'+current+'-timeline-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.json';
+  a.download='gantry-'+current+'-timeline-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.json';
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),3000);
   toast(tr('时间线已导出（')+((payload.steps||[]).length)+' 步）','ok')}catch(e){toast(tr('导出失败: ')+e,'err')}}
@@ -2530,7 +2530,7 @@ const dlgPrompt=(msg,def='',okText='',title='输入')=>gmShow({title,msg,input:d
 /* 带"插入方式"选择的输入框（强行插入用）：返回 {text,mode} 或 null */
 const dlgInjectPrompt=(msg,def,title,defaultMode)=>{
  const modes=document.getElementById('gmModes');
- const lastMode=(()=>{try{return localStorage.getItem('cbp-inject-mode')||defaultMode||'step'}catch(e){return defaultMode||'step'}})();
+ const lastMode=(()=>{try{return localStorage.getItem('gantry-inject-mode')||defaultMode||'step'}catch(e){return defaultMode||'step'}})();
  return gmShow({title,msg,input:def,okText:tr('插入'),modes:{default:lastMode}})};
 
 /* ── 跟进消息模式切换（卡片头部按钮，不再占用输入区） ── */
@@ -2645,10 +2645,10 @@ async function runtime(){
    **不是 {done}** —— 以前按 `x.done` 计数，永远算出 0/N（用户看到的"0/5"
    一直不涨就是这个原因）。 */
 let todosOpen=false;
-try{todosOpen=localStorage.getItem('cbp-todos-open')==='1'}catch(e){}
+try{todosOpen=localStorage.getItem('gantry-todos-open')==='1'}catch(e){}
 function toggleTodos(){
  todosOpen=!todosOpen;
- try{localStorage.setItem('cbp-todos-open',todosOpen?'1':'0')}catch(e){}
+ try{localStorage.setItem('gantry-todos-open',todosOpen?'1':'0')}catch(e){}
  renderGoalBar(lastRuntime);
 }
 const TODO_ICON={completed:'✓',in_progress:'◐',pending:'○'};
@@ -2669,7 +2669,7 @@ function refreshChatBarMeta(){
    tr('强行插入指令（运行中即时生效）');
 }
 
-/* 后端 status detail 是中文（cbp 里 28 处 detail=），英文界面会露中文。
+/* 后端 status detail 是中文（gantry 里 28 处 detail=），英文界面会露中文。
    这里做一张"详情翻译表"（正则 → 英文模板 $1..$9），只在英文模式生效。 */
 const DETAIL_EN=[
  [/^正在提交 Agent 回合 (\S+)$/,'Submitting agent turn $1'],
@@ -2703,7 +2703,7 @@ const DETAIL_EN=[
 function trDetail(text){
  const s=String(text==null?'':text);
  if(!s)return s;
- // 语言状态由 i18n.js 的 currentLang() 决定（localStorage: cbp-lang）
+ // 语言状态由 i18n.js 的 currentLang() 决定（localStorage: gantry-lang）
  let _lg='zh';
  try{_lg=(typeof currentLang==='function')?currentLang():'zh'}catch(e){_lg='zh'}
  if(String(_lg).toLowerCase()!=='en')return s;
@@ -3169,7 +3169,7 @@ function startEvents(sid){
  stopEvents();
  if(!sid||!window.EventSource)return;
  let url=`/v1/agent/sessions/${encodeURIComponent(sid)}/events`;
- const _tk=apiToken();if(_tk)url+=`?token=${encodeURIComponent(_tk)}`;   // token 在 localStorage(cbp-token)，API_TOKEN 是服务端变量
+ const _tk=apiToken();if(_tk)url+=`?token=${encodeURIComponent(_tk)}`;   // token 在 localStorage(gantry-token)，API_TOKEN 是服务端变量
  try{evtSrc=new EventSource(url)}catch(e){evtSrc=null;return}
  evtSid=sid;
  evtSrc.onopen=()=>{evtFails=0};
@@ -3211,7 +3211,7 @@ async function removeSession(auto){
  if(plan&&plan.running){toast(tr('该任务正在运行，先停止再删除'),'err');return}
  const remote=plan? !!plan.suggest_delete_remote : !!auto;
  const extra=remote
-   ?tr('，并删除该任务关联的 {n} 个 Copilot 网页会话（标题里可能已没有 [CBP-AGENT] 标记，删除时会用会话正文核对归属）',{n:(plan&&plan.remote_count)||1})
+   ?tr('，并删除该任务关联的 {n} 个 Copilot 网页会话（标题里可能已没有 [GANTRY-AGENT] 标记，删除时会用会话正文核对归属）',{n:(plan&&plan.remote_count)||1})
    :'';
  const msg=(remote
    ?tr('这个任务用过 Copilot，将同时删除远端对话记录。\n\n  ID: {id}\n  标题: {title}\n\n本地 Session{extra}。此操作不可撤销，确定继续？',
@@ -3588,7 +3588,7 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <h3>服务自升级（默认关闭）</h3>
 <ol>
 <li>在 <code>config.json</code> 的 agent 段设 <code>"allow_self_upgrade": true</code> 并重启；
-随后注册 <code>self_*</code> 工具（白名单：<code>cbp/ webui/ scripts/ docs/ tests/ skills/</code> 等；
+随后注册 <code>self_*</code> 工具（白名单：<code>gantry/ webui/ scripts/ docs/ tests/ skills/</code> 等；
 <code>config.json</code>、<code>data/</code>、<code>EdgeProfile/</code> 永远禁碰）。</li>
 <li>让任务"用自升级工具"改代码：self_read_text → self_replace_text →
 <b>self_validate</b>（全量语法检查）→ <b>self_unittest</b>（跑服务自身单测），两项通过才能 final。</li>
@@ -3600,7 +3600,7 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <p>先说结论：<b>不是"描述你想要什么"就够，而是"指文件 + 说清改什么 + 给验收标准"</b>。
 新开一个会话（上下文干净），照下面这个模板说：</p>
 <pre>【自升级任务】
-文件：cbp/bridge.py（安装目录相对路径，不要写绝对路径）
+文件：gantry/bridge.py（安装目录相对路径，不要写绝对路径）
 现状：&lt;你观察到的行为，例如 resume 时提示只拼原任务&gt;
 要改：&lt;越具体越好，能贴函数名/字段名/代码片段就贴&gt;
 边界：只改上面这个文件或这段逻辑，其它不要动
@@ -3609,7 +3609,7 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <p>也可以直接说短句，效果一样：</p>
 <ul>
 <li>「把 <code>webui/style.css</code> 里侧栏默认宽度 318px 改成 300px，改完跑 self_validate 和 self_unittest」</li>
-<li>「看 <code>cbp/api.py</code> 的 <code>/v1/shutdown</code>，把优雅停机超时从 8 秒改成 15 秒，其他别动」</li>
+<li>「看 <code>gantry/api.py</code> 的 <code>/v1/shutdown</code>，把优雅停机超时从 8 秒改成 15 秒，其他别动」</li>
 </ul>
 <p>先确认开关真的生效：问它一句「你有哪些 self_ 开头的工具」，应该能列出
 <code>self_read_text</code> / <code>self_write_text_b64</code> / <code>self_append_text_b64</code> /
@@ -3617,7 +3617,7 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <code>self_rollback</code> 共 7 个；关着的时候是 0 个。</p>
 <h4>它会遵守的硬约束</h4>
 <ul>
-<li><b>只能改白名单</b>：<code>cbp/</code> <code>webui/</code> <code>scripts/</code> <code>docs/</code>
+<li><b>只能改白名单</b>：<code>gantry/</code> <code>webui/</code> <code>scripts/</code> <code>docs/</code>
 <code>tests/</code> <code>skills/</code> 以及 <code>app.py</code> <code>start.py</code>
 <code>install.py</code> <code>requirements.txt</code> <code>AGENT.md</code>
 <code>README.md</code> <code>config.example.json</code>。</li>
@@ -3801,7 +3801,7 @@ sent content / follow-up) is tabbed — <b>⤢ Expand</b> shows the full text.</
 <h3>Service self-upgrade (off by default)</h3>
 <ol>
 <li>Set <code>"allow_self_upgrade": true</code> in the agent section of <code>config.json</code> and restart; the
-<code>self_*</code> tools are then registered (allowlist: <code>cbp/ webui/ scripts/ docs/ tests/ skills/</code> etc.;
+<code>self_*</code> tools are then registered (allowlist: <code>gantry/ webui/ scripts/ docs/ tests/ skills/</code> etc.;
 <code>config.json</code>, <code>data/</code> and <code>EdgeProfile/</code> are always off-limits).</li>
 <li>Have a task "use the self-upgrade tools" to change code: self_read_text → self_replace_text →
 <b>self_validate</b> (full syntax check) → <b>self_unittest</b> (run the service's own tests); both must pass before
@@ -3816,7 +3816,7 @@ otherwise ordinary file tools could edit the service code and bypass the permiss
 <p>Bottom line: <b>"describe what you want" is not enough — name the file, say exactly what to change, and
 give the acceptance criteria</b>. Open a fresh session (clean context) and use this template:</p>
 <pre>[Self-upgrade task]
-File: cbp/bridge.py (install-dir relative path, never an absolute path)
+File: gantry/bridge.py (install-dir relative path, never an absolute path)
 Current: &lt;the behaviour you observed, e.g. resume only re-sends the original task&gt;
 Change: &lt;be specific; paste function/field names or a code snippet if you can&gt;
 Scope: only the file or logic above — touch nothing else
@@ -3826,7 +3826,7 @@ Deliver: which lines changed, verification result, restart needed, and the rollb
 <ul>
 <li>"Change the default sidebar width in <code>webui/style.css</code> from 318px to 300px, then run
 self_validate and self_unittest"</li>
-<li>"Look at <code>/v1/shutdown</code> in <code>cbp/api.py</code> and raise the graceful-shutdown timeout
+<li>"Look at <code>/v1/shutdown</code> in <code>gantry/api.py</code> and raise the graceful-shutdown timeout
 from 8s to 15s; change nothing else"</li>
 </ul>
 <p>First confirm the switch really took effect: ask "which tools do you have that start with self_?" —
@@ -3835,7 +3835,7 @@ you should get 7: <code>self_read_text</code>, <code>self_write_text_b64</code>,
 <code>self_unittest</code>, <code>self_rollback</code>. With the flag off there are zero.</p>
 <h4>Hard limits it must respect</h4>
 <ul>
-<li><b>Allowlisted paths only</b>: <code>cbp/</code> <code>webui/</code> <code>scripts/</code>
+<li><b>Allowlisted paths only</b>: <code>gantry/</code> <code>webui/</code> <code>scripts/</code>
 <code>docs/</code> <code>tests/</code> <code>skills/</code> plus <code>app.py</code>
 <code>start.py</code> <code>install.py</code> <code>requirements.txt</code>
 <code>AGENT.md</code> <code>README.md</code> <code>config.example.json</code>.</li>
@@ -4232,7 +4232,7 @@ function exportChatMarkdown(){
   const blob=new Blob([out],{type:'text/markdown;charset=utf-8'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download='cbp-'+current+'-chat-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.md';
+  a.download='gantry-'+current+'-chat-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.md';
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   toast(tr('已导出 Markdown（')+msgs.length+' 条消息）','ok');
@@ -4327,7 +4327,7 @@ async function injectMessage(){
  let content=String(pick.text||'').trim();
  if(!content)return;
  let queue=(pick.mode==='turn')?'turn':'step';
- try{localStorage.setItem('cbp-inject-mode',queue)}catch(e){}
+ try{localStorage.setItem('gantry-inject-mode',queue)}catch(e){}
  try{
   let d=await api(`/v1/agent/sessions/${encodeURIComponent(current)}/inject`,
                   {method:'POST',headers:{'Content-Type':'application/json'},
@@ -4373,7 +4373,7 @@ async function runTask(){
  setPill('running');
  document.getElementById('activity').textContent=(taskMode==='agent'?'正在建立 Agent 任务 ':'正在发送普通对话 ')+current+'...';
  if(DEMO){await refreshSessions();return}
-  // 走 api()：裸 fetch 不带 X-CBP-Token，配置 api_token 时「启动任务」必然 401
+  // 走 api()：裸 fetch 不带 X-Gantry-Token，配置 api_token 时「启动任务」必然 401
   api('/v1/agent/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})
    .then(async d=>{
     if(!d)throw Error('HTTP 响应为空');
@@ -4413,7 +4413,7 @@ const THEMES=[["auto","跟随系统"],["","深色"],["amber","琥珀"],["jade","
 const THEME_IDS=THEMES.map(x=>x[0]);
 function themeChoice(){
  try{
-  const t=localStorage.getItem('cbp-theme');
+  const t=localStorage.getItem('gantry-theme');
   if(t===null||t===''||t==='auto')return 'auto';
   if(t==='dark')return '';
   return THEME_IDS.indexOf(t)>=0?t:'auto';
@@ -4427,7 +4427,7 @@ function applyTheme(c,persist){
  const r=resolveTheme(c);
  if(r){document.documentElement.dataset.theme=r}else{document.documentElement.removeAttribute('data-theme')}
  document.documentElement.dataset.themeChoice=c;
- if(persist){try{localStorage.setItem('cbp-theme',c===''?'dark':c)}catch(e){}}
+ if(persist){try{localStorage.setItem('gantry-theme',c===''?'dark':c)}catch(e){}}
  const btn=document.getElementById('themeBtn');
  if(btn){
   // 名称与括号都必须过 tr()：标题是**拼出来的**，i18n 的 DOM 直译只会按整串精确匹配，
@@ -4465,7 +4465,7 @@ function toggleRail(){let r=document.documentElement;
  // 图标：窄屏收起态用 ☰（"打开会话列表"比一个小尖括号好认），展开态用 ‹ 收起
  const btn=document.getElementById('railBtn');
  if(btn)btn.textContent = narrow ? (c?'‹':'☰') : (c?'‹':'›');
- try{localStorage.setItem('cbp-rail',narrow?(c?'open':'closed'):(c?'':'closed'))}catch(e){}}
+ try{localStorage.setItem('gantry-rail',narrow?(c?'open':'closed'):(c?'':'closed'))}catch(e){}}
 try{const _r=document.documentElement,_b=document.getElementById("railBtn");
  if(_b){const _narrow=matchMedia("(max-width:860px)").matches;
   const _open=_narrow?(_r.dataset.rail==="open"):(_r.dataset.rail!=="closed");
@@ -4927,7 +4927,7 @@ async function renderSettings(){
  try{translateAttrs(box);translateAttrs(nav)}catch(e){}
 }
 function _settingsTheme(){
- try{const t=localStorage.getItem('cbp-theme');return (!t||t==='auto')?'auto':t}catch(e){return 'auto'}
+ try{const t=localStorage.getItem('gantry-theme');return (!t||t==='auto')?'auto':t}catch(e){return 'auto'}
 }
 function setSettingsTab(id){
  const known=SETTINGS_GROUPS.map(g=>g[0]);
@@ -4957,7 +4957,7 @@ function collectSettings(){
 async function saveSettings(){
  const themeSel=document.getElementById('setTheme');
  const langSel=document.getElementById('setLang');
- if(themeSel&&themeSel.value!==themeChoice()){try{localStorage.setItem('cbp-theme',themeSel.value)}catch(e){};applyTheme(themeSel.value,false);applyLangButton()}
+ if(themeSel&&themeSel.value!==themeChoice()){try{localStorage.setItem('gantry-theme',themeSel.value)}catch(e){};applyTheme(themeSel.value,false);applyLangButton()}
  if(langSel&&langSel.value!==currentLang()){setLang(langSel.value)}
  // 只提交**改动过**的字段：整表提交时，空的文本/枚举控件会被后端校验拒掉
  // （实测 ``default_model: ""`` 让整批保存 400），也会把没动过的键来回写文件。
@@ -4995,7 +4995,7 @@ const ACTIONS={
  // 窄屏抽屉的遮罩：点一下收起（只有窄屏才有意义，宽屏没有遮罩）
  closeRail:()=>{const r=document.documentElement;
   if(matchMedia('(max-width:860px)').matches){r.dataset.rail='closed';
-   try{localStorage.setItem('cbp-rail','closed')}catch(e){}}},
+   try{localStorage.setItem('gantry-rail','closed')}catch(e){}}},
  openTask:()=>openTask(),
  openManual:()=>openManual(),
  toggleBrowser:()=>toggleBrowser(),

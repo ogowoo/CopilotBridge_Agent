@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import i18n
+from gantry import i18n
 
 
 class TranslateTests(unittest.TestCase):
@@ -40,7 +40,7 @@ class HandlerTests(unittest.TestCase):
     def test_http_error_translated_by_header(self):
         from fastapi.testclient import TestClient
 
-        from cbp import api as api_mod
+        from gantry import api as api_mod
 
         client = TestClient(api_mod.app)
         zh = client.get("/v1/agent/sessions/__nope__")

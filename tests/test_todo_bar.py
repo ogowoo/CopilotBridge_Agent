@@ -38,7 +38,7 @@ class TodoBarTests(unittest.TestCase):
     def test_list_is_expandable(self):
         self.assertIn("toggleTodos", APP)
         self.assertIn('data-act="toggleTodos"', APP, "展开按钮要走 data-act 委托（CSP 无内联）")
-        self.assertIn("cbp-todos-open", APP, "展开状态要持久化")
+        self.assertIn("gantry-todos-open", APP, "展开状态要持久化")
         self.assertIn("toggleTodos:()=>toggleTodos()", APP, "ACTIONS 未注册")
 
     def test_status_icons_and_texts(self):
@@ -64,7 +64,7 @@ class TodoWriteShapeTests(unittest.TestCase):
     """后端写入的结构要与前端读取的口径一致（防止以后又漂移）。"""
 
     def test_backend_writes_content_and_status(self):
-        src = (BASE / "cbp" / "tools_extra.py").read_text(encoding="utf-8")
+        src = (BASE / "gantry" / "tools_extra.py").read_text(encoding="utf-8")
         seg = src[src.index("async def todo_write"):src.index("async def todo_write") + 1200]
         self.assertIn('"content"', seg)
         self.assertIn('"status"', seg)

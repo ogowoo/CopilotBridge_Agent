@@ -11,7 +11,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp import bridge as b
+from gantry import bridge as b
 
 
 class TraditionalChineseMarkersTests(unittest.TestCase):

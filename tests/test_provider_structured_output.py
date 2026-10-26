@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import AGENT_ACTION_SCHEMA
-from cbp.providers import ApiProvider, JSON_MODE_BY_PROVIDER, build_providers
+from gantry.agent import AGENT_ACTION_SCHEMA
+from gantry.providers import ApiProvider, JSON_MODE_BY_PROVIDER, build_providers
 
 
 def mk(name="deepseek", **cfg):

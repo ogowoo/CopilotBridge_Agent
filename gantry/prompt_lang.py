@@ -13,9 +13,9 @@
    就捕获了语言，后台 worker 处理时仍然是对的。
 
 ## 三个语言分别怎么得到
-- `zh`: 直接用 `cbp/prompt.py` 里的中文原文（唯一真源，改规则只改那一份）;
+- `zh`: 直接用 `gantry/prompt.py` 里的中文原文（唯一真源，改规则只改那一份）;
 - `en`: 本文件里的英文译本（与中文原文逐条对应）;
-- `tw`: 由中文原文**按字转换**过来，用 `cbp/s2t_data.py`（由 `webui/i18n.js` 的
+- `tw`: 由中文原文**按字转换**过来，用 `gantry/s2t_data.py`（由 `webui/i18n.js` 的
   `S2T_CHARS` 生成）——和界面用同一张表，避免同一个词两边写法不一致。
 """
 from __future__ import annotations
@@ -88,7 +88,7 @@ def to_tw(text: str) -> str:
     return "".join(S2T.get(ch) or _S2T_EXTRA.get(ch) or ch for ch in text)
 
 
-# ── 英文译本（与 cbp/prompt.py 的中文原文逐条对应）─────────────────────
+# ── 英文译本（与 gantry/prompt.py 的中文原文逐条对应）─────────────────────
 EN: dict[str, str] = {
     "protocol": """\
 You are a local task agent. You work on files in the current working directory through tools.

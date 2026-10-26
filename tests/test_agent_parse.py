@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import AgentRunner
+from gantry.agent import AgentRunner
 
 
 class ParseTests(unittest.TestCase):
@@ -66,7 +66,7 @@ class ParseTests(unittest.TestCase):
 class EscapeDecodeTests(unittest.TestCase):
     def test_decode_fragment_literal_backslash_n(self):
         # 源文本含字面量 \\n（反斜杠+n），不应被解成换行
-        from cbp.agent import AgentRunner  # noqa
+        from gantry.agent import AgentRunner  # noqa
         # 通过 write 恢复路径触发 decode：构造未转义 write_text
         raw = '{"type":"tool","tool":"write_text","arguments":{"path":"a.txt","content":"第一行\\\\n第二行"},"reason":"x"}'
         a = AgentRunner._parse(raw)
@@ -123,7 +123,7 @@ class TruncatedWriteRecoveryTests(unittest.TestCase):
             AgentRunner._parse('{"type":"tool","tool":"read_text","arguments":{"path":"a')
 
     def test_invalid_action_keeps_raw_tail(self):
-        from cbp.agent import AgentRunner as AR
+        from gantry.agent import AgentRunner as AR
         step = {"step": 3, "status": "invalid_action",
                 "error": "x", "raw_tail": '{"tool":"write_text","content_b64":"abc'}
         kept = AR.compact_value(step, 6000)
@@ -136,7 +136,7 @@ class WorkspaceContextTests(unittest.TestCase):
     def _runner(self, ws):
         import tempfile
         from pathlib import Path
-        from cbp.tools import ToolRegistry
+        from gantry.tools import ToolRegistry
         root = Path(ws or tempfile.mkdtemp(prefix="cbp_ctx_"))
         tools = ToolRegistry(root, {})
         return AgentRunner(tools, None, {},
@@ -214,7 +214,7 @@ class InstructionPathTests(unittest.TestCase):
     """自我指令文件识别：AGENT.md 与 skills/*.md 改动需在时间线里可见。"""
 
     def test_recognizes_instruction_files(self):
-        from cbp.agent import AgentRunner as AR
+        from gantry.agent import AgentRunner as AR
         self.assertTrue(AR._is_instruction_path("AGENT.md"))
         self.assertTrue(AR._is_instruction_path("agent.md"))
         self.assertTrue(AR._is_instruction_path(r"AGENT.md"))
@@ -222,8 +222,8 @@ class InstructionPathTests(unittest.TestCase):
         self.assertTrue(AR._is_instruction_path(r"skills\debug\SKILL.md"))
 
     def test_ignores_other_files(self):
-        from cbp.agent import AgentRunner as AR
-        self.assertFalse(AR._is_instruction_path("cbp/agent.py"))
+        from gantry.agent import AgentRunner as AR
+        self.assertFalse(AR._is_instruction_path("gantry/agent.py"))
         self.assertFalse(AR._is_instruction_path("README.md"))
         self.assertFalse(AR._is_instruction_path("docs/AGENT.md"))
         self.assertFalse(AR._is_instruction_path(""))

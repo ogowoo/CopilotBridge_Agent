@@ -7,7 +7,7 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "cbp": {
+  "gantry": {
     "entry": "plugin.py",
     "permissions": [
       "tools",

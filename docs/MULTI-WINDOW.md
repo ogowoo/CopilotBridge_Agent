@@ -19,8 +19,8 @@
 
 | 位置 | 做法 |
 |---|---|
-| `cbp/window_pool.py` | `WindowPool`：懒创建窗口、每窗口一把 `asyncio.Lock`、`acquire/release`、排队上限、`set_max()` 动态增减 |
-| `cbp/bridge.py` `page` | 由全局变量改成 `_PageProxy`：`page.xxx` 按**任务上下文**解析到该任务的窗口页（57 处调用点零改动） |
+| `gantry/window_pool.py` | `WindowPool`：懒创建窗口、每窗口一把 `asyncio.Lock`、`acquire/release`、排队上限、`set_max()` 动态增减 |
+| `gantry/bridge.py` `page` | 由全局变量改成 `_PageProxy`：`page.xxx` 按**任务上下文**解析到该任务的窗口页（57 处调用点零改动） |
 | `_window(sid)` | 任务级上下文管理器：取窗口 → 绑 `_PAGE_CTX`/`_SESSION_CTX` → 克隆工具注册表 → 结束后归还 |
 | `run_agent` | `async with lock:` → `async with _window(sid, need_page=...)`：网页模型取真实窗口，API 提供商模型取无页面的逻辑槽（`SLOTS`，真并行） |
 | 普通对话 `continue_session_message` | 同样走 `_window`，所以聊天和 Agent 任务可以同时在不同窗口里跑 |

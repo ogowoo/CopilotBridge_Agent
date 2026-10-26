@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.spans import SpanRecorder, Span
+from gantry.spans import SpanRecorder, Span
 
 
 class SpanTests(unittest.TestCase):
@@ -23,19 +23,19 @@ class SpanTests(unittest.TestCase):
     def test_otel_field_names(self):
         with Span(self.rec, "tool.read_text", "execute_tool",
                   **{"gen_ai.tool.name": "read_text", "gen_ai.tool.call.id": "s1-3",
-                     "gen_ai.request.model": "copilot-auto", "cbp.session_id": "s1",
-                     "cbp.step": 3}) as sp:
-            sp.set(**{"cbp.result_chars": 42})
+                     "gen_ai.request.model": "copilot-auto", "gantry.session_id": "s1",
+                     "gantry.step": 3}) as sp:
+            sp.set(**{"gantry.result_chars": 42})
         rec = self.rec.tail(1)[0]
         attrs = rec["attributes"]
         self.assertEqual(attrs["gen_ai.operation.name"], "execute_tool")
         self.assertEqual(attrs["gen_ai.tool.name"], "read_text")
-        self.assertEqual(attrs["cbp.result_chars"], 42)
+        self.assertEqual(attrs["gantry.result_chars"], 42)
         self.assertEqual(rec["status"], "ok")
         for key in ("trace_id", "span_id", "start_time", "end_time", "duration_ms"):
             self.assertIn(key, rec)
         # 会话 id 不能拿 trace_id 冒充
-        self.assertNotEqual(attrs["cbp.session_id"], rec["trace_id"])
+        self.assertNotEqual(attrs["gantry.session_id"], rec["trace_id"])
 
     def test_error_captured_not_raised(self):
         try:
@@ -52,7 +52,7 @@ class SpanTests(unittest.TestCase):
             async with Span(self.rec, "agent.turn", "invoke_agent",
                             **{"gen_ai.request.model": "deepseek/deepseek-chat"}) as sp:
                 await asyncio.sleep(0.01)
-                sp.set(**{"cbp.answer_chars": 10})
+                sp.set(**{"gantry.answer_chars": 10})
         asyncio.run(run())
         rec = self.rec.tail(1)[0]
         self.assertEqual(rec["attributes"]["gen_ai.operation.name"], "invoke_agent")
@@ -61,10 +61,10 @@ class SpanTests(unittest.TestCase):
     def test_rotation_keeps_recent(self):
         for i in range(150):
             with Span(self.rec, f"op{i}", "execute_tool") as sp:
-                sp.set(**{"cbp.step": i})
+                sp.set(**{"gantry.step": i})
         recs = self.rec.tail(500)
         self.assertLessEqual(len(recs), 120, "超过上限应轮转")
-        self.assertEqual(recs[-1]["attributes"]["cbp.step"], 149, "应保留最近的")
+        self.assertEqual(recs[-1]["attributes"]["gantry.step"], 149, "应保留最近的")
 
     def test_disabled_recorder_writes_nothing(self):
         rec = SpanRecorder(self.tmp / "off.jsonl", enabled=False)

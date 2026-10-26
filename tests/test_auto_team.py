@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""`cbp/auto_team.py`：按 todo 自动派子代理的**决策**部分（默认关闭）。"""
+"""`gantry/auto_team.py`：按 todo 自动派子代理的**决策**部分（默认关闭）。"""
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import auto_team as at  # noqa: E402
+from gantry import auto_team as at  # noqa: E402
 
 
 def T(content, status="pending", **kw):

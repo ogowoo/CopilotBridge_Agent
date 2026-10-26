@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""从 webui/i18n.js 的 S2T_CHARS 生成 cbp/s2t_data.py（简→繁对照）。
+"""从 webui/i18n.js 的 S2T_CHARS 生成 gantry/s2t_data.py（简→繁对照）。
 
 后端生成提示词的繁体版本时要用同一张表，否则同一个词在界面与提示词里写法不一致。
 """
@@ -10,7 +10,7 @@ import re
 
 BASE = pathlib.Path(__file__).resolve().parent.parent
 JS = BASE / "webui" / "i18n.js"
-OUT = BASE / "cbp" / "s2t_data.py"
+OUT = BASE / "gantry" / "s2t_data.py"
 
 
 def main() -> int:

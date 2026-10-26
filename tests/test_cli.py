@@ -12,7 +12,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp import cli
+from gantry import cli
 
 
 class Stub(BaseHTTPRequestHandler):
@@ -108,7 +108,7 @@ class CliTests(unittest.TestCase):
 
     def test_pyproject_declares_entry_point(self):
         data = tomllib.loads((BASE / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(data["project"]["scripts"]["cbp"], "cbp.cli:main")
+        self.assertEqual(data["project"]["scripts"]["gantry"], "gantry.cli:main")
         self.assertIn("httpx", " ".join(data["project"]["dependencies"]))
 
 

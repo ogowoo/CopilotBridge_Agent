@@ -8,12 +8,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.tools import ToolRegistry
+from gantry.tools import ToolRegistry
 
 
 class SyncToolExecutionTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="cbp-synctool-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="gantry-synctool-"))
         self.ws = self.tmp / "ws"
         self.ws.mkdir()
         self.install = self.tmp / "install"

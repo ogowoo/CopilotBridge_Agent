@@ -13,6 +13,7 @@ from typing import Literal
 from fastapi import HTTPException
 
 from . import bridge as b
+from .brand import MARKER_AGENT, MARKER_TURN
 
 
 async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_check=None,
@@ -169,7 +170,7 @@ async def agent_chat_once(prompt: str, model_id: str, make_new: bool = False, pa
     """
     previous = "" if make_new else (await b.current_answer()).strip()
     turn_id = uuid.uuid4().hex[:12]
-    marker = f"[CBP-TURN:{turn_id}]"
+    marker = f"{MARKER_TURN}{turn_id}]"
     tagged_prompt = prompt.rstrip() + "\n\n" + marker
     b.runtime_update(phase="sending", prompt_preview=tagged_prompt[-12000:], answer_preview="",
                    detail=f"正在提交 Agent 回合 {turn_id}", make_new=make_new)
@@ -604,7 +605,7 @@ async def run_agent(req: b.AgentRequest, attach_paths: list | None = None):
 
 def _agent_chat_marker(session_id: str, conversation_index: int) -> str:
     safe = re.sub(r"[^0-9A-Za-z._-]+", "-", str(session_id)).strip("-") or "session"
-    return f"[CBP-AGENT][{safe[:36]}][C{int(conversation_index):03d}]"
+    return f"{MARKER_AGENT}[{safe[:36]}][C{int(conversation_index):03d}]"
 
 
 CONVERSATION_URL_RE = re.compile(r"/chat/conversation/[0-9A-Za-z-]{8,}")
@@ -876,7 +877,7 @@ async def plain_chat_turn(sid: str, content: str, model_id: str, attach_paths: l
             send_content = (marker + "\n" + content) if make_new else content
             # 追加唯一回合标记：虚拟化列表里"You said"计数不可靠，
             # sent_successfully 用标记确认送达，避免误判重发。
-            turn_marker = f"[CBP-TURN:{uuid.uuid4().hex[:12]}]"
+            turn_marker = f"{MARKER_TURN}{uuid.uuid4().hex[:12]}]"
             send_content = send_content.rstrip() + "\n\n" + turn_marker
             await b.send(send_content, make_new, model_id)
             answer = (await wait_agent_answer(previous, sent=content,

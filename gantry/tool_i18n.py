@@ -5,7 +5,7 @@
 它虽然属于结构化内容，但模型是**读这些描述**来决定用哪个工具的，语言不一致会
 增加误用概率，所以一起翻。
 
-- `DESC_EN`: 25 个工具的英文描述（与 `cbp/tools.py`、`cbp/tools_extra.py` 的中文
+- `DESC_EN`: 25 个工具的英文描述（与 `gantry/tools.py`、`gantry/tools_extra.py` 的中文
   原文逐条对应；工具名、参数名、文件后缀一律保持原样）;
 - `ARG_EN`: 参数提示，键为 `工具名.参数名`;
 - `localize_items(items, lang)`: `zh` 原样返回；`en` 换译本；`tw` 按字转换

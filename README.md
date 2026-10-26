@@ -1,4 +1,8 @@
-# CopilotBridge Agent
+# Gantry
+
+> **改名说明**：本项目原名 **CopilotBridge Agent**，自 11.0.0 起更名为 **Gantry**。
+> Python 包 `cbp` → `gantry`；环境变量 `CBP_*`、请求头 `X-CBP-*`、Copilot 会话标记
+> `[CBP-AGENT]` 仍然兼容（新写 `[GANTRY-*]`，读的时候两套都认），旧会话与旧脚本不受影响。
 
 > **无 Copilot 也能用**：浏览器按需启动——服务启动不碰浏览器，WebUI 与提供商模型（DeepSeek/Kimi/OpenAI 等）立即可用；只有用到 Copilot 时才拉起它，界面顶部会显示状态并提供「重试浏览器」。**注意**：lazy 模式下，重启后的第一个 Copilot 任务要等浏览器拉起与 SSO （企业租户可达数分钟），这段时间不算任务超时；提供商模型不受影响。
 
@@ -30,7 +34,7 @@
 - **15+ 个工作区工具**：目录/文件读写（Base64 写入防 JSON 转义损坏）、精确替换、复制/移动/删除、`validate_python`、`run_unittest`、`run_python`，全部限制在工作区根目录内。
 - **Copilot 直接生成文件（`copilot_file`）**：让 Copilot 把结果生成为**可下载文件**，桥接再把文件下载进工作区——内容**不经过聊天消息**，因此完全绕开 Copilot 单条输出上限，一个大文件一个回合就能拿到，不再需要 b64 分块。支持 `blob:`/`data:` 链接与"下载"按钮（点击并用浏览器下载事件接住），落盘前照样存原像（可回滚）、写 `.py/.json/.html` 仍进验证闭环。开关：`agent.allow_copilot_file`（默认开）。找不到下载入口时会保存 `last_answer.html` 供排查，并提示改回分块写入。
 - **两级项目上下文（全局 + 项目）**：`AGENT.md` 与 `skills/` 都有两个作用域——**全局**放在服务安装目录（对所有工作区生效），**项目**放在工作区根目录；两份合并注入，同名技能/约定项目级优先，同一文件自动去重。全局技能位于工作区之外，用 `skill_read` 工具读取（`skill_list` 列清单）。`AGENT.md` 单份默认 8000 字符截断（`agent_md_max_chars`），SKILL.md 支持 YAML frontmatter（`name`/`description`），缺省回退"首个一级标题 + 首个段落"。本仓库自身即带全局 [AGENT.md](AGENT.md) 与示例技能。
-- **服务自升级（可选，默认关闭）**：`agent.allow_self_upgrade: true` 后，Agent 可用 `self_read_text`/`self_write_text_b64`/`self_append_text_b64`/`self_replace_text` 直接修改**服务自身代码**（即使工作区是别的项目），白名单限定 `cbp/`、`webui/`、`scripts/`、`docs/`、`tests/` 与若干顶层文件，`config.json`/`data/`/`EdgeProfile/` 禁止触碰；写完必须 `self_validate` + `self_unittest` 双通过（提前 final 会被 `validation_gate` 拦下），并提供 `self_rollback` 工具回滚本次自升级。
+- **服务自升级（可选，默认关闭）**：`agent.allow_self_upgrade: true` 后，Agent 可用 `self_read_text`/`self_write_text_b64`/`self_append_text_b64`/`self_replace_text` 直接修改**服务自身代码**（即使工作区是别的项目），白名单限定 `gantry/`、`webui/`、`scripts/`、`docs/`、`tests/` 与若干顶层文件，`config.json`/`data/`/`EdgeProfile/` 禁止触碰；写完必须 `self_validate` + `self_unittest` 双通过（提前 final 会被 `validation_gate` 拦下），并提供 `self_rollback` 工具回滚本次自升级。
 - **改动快照与两级回滚（自我升级 failback）**：写操作**执行前**把目标原像存入 `data/snapshots/<sid>/`（工作区）与 `data/snapshots/_self_<sid>/`（服务代码），同一路径保留最早状态**并按 Copilot 回合计版本（一次 complete = 一个版本）**，因此可整任务回滚到"任务开始前"，也可按回合回滚。入口：WebUI「更多 ▾ → 回滚任务改动…／回滚服务自升级…」、`POST /v1/agent/sessions/{sid}/rollback`（可带 `{version}`）、`POST /v1/agent/self/rollback?last=true`，以及**服务/WebUI 起不来时的离线通道** `python scripts/rollback.py [--scope self] --last --yes [--rev N]`（`app.py` 导入失败会自动打印指引）。自升级写盘会落 `data/.self_upgrade_pending` 标记，服务重启后自动归档。
 - **M365 文件与软件集成**：
   - **Office 文档工具**：`read_excel`/`write_excel`（openpyxl）、`read_docx`/`write_docx`（python-docx）、`read_pptx`（python-pptx）、`read_pdf`（pypdf）——Agent 可直接分析/修改 xlsx、docx、pptx、pdf；
@@ -236,25 +240,25 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 ## 命令行（headless）
 
 ```bash
-pip install -e .                    # 之后可用 cbp 命令（也可以 python -m cbp.cli）
+pip install -e .                    # 之后可用 gantry 命令（也可以 python -m gantry.cli）
 
-cbp serve --port 8765               # 启动服务（等价 python start.py）
-cbp status                          # 健康检查
-cbp run "把 docs 里的死链列出来" --model kimi-coding/k3
-cbp run "重构 X" --plan             # 计划模式：只读探索 → 产出方案后停
-cbp run "分析这个仓库" --sandbox read-only --workspace C:/proj
-cbp sessions --limit 10             # 会话列表
-cbp tools                           # 62 个工具
-cbp plugins list|enable|disable|reload [name]
-cbp mcp list                        # MCP server 状态
-cbp mcp add --name fs --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg C:/data
-cbp sandbox read-only --persist     # 切沙箱档位并写回 config.json
+gantry serve --port 8765               # 启动服务（等价 python start.py）
+gantry status                          # 健康检查
+gantry run "把 docs 里的死链列出来" --model kimi-coding/k3
+gantry run "重构 X" --plan             # 计划模式：只读探索 → 产出方案后停
+gantry run "分析这个仓库" --sandbox read-only --workspace C:/proj
+gantry sessions --limit 10             # 会话列表
+gantry tools                           # 62 个工具
+gantry plugins list|enable|disable|reload [name]
+gantry mcp list                        # MCP server 状态
+gantry mcp add --name fs --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg C:/data
+gantry sandbox read-only --persist     # 切沙箱档位并写回 config.json
 ```
 
 - 统一参数：`--url`（默认 `http://127.0.0.1:8765`，或 `CBP_URL`）、`--token`（或 `CBP_TOKEN`）
 - CLI **不在进程内启动浏览器**：它调同一个服务的 HTTP 接口，和 WebUI 看到同一份事实
 - `--json` 输出原始响应，方便脚本消费；`--quiet` 不打印步骤摘要
-- 连不上服务时返回非零退出码并说明先 `cbp serve`
+- 连不上服务时返回非零退出码并说明先 `gantry serve`
 
 ## API 一览
 
@@ -328,7 +332,7 @@ cbp sandbox read-only --persist     # 切沙箱档位并写回 config.json
 | 时间线筛选 | 时间线头部两个下拉：**按工具**（选项自动来自当前步骤里出现过的工具）与**按状态**（仅成功 / 仅失败与被拦 / 仅事件），计数显示为 `m/n 条（筛选）`。默认无筛选时仍是增量渲染（展开状态不丢），筛选变化才整表重建 |
 | 对话区流式气泡 | 提供商流式输出除了「当前回答」面板，**对话区也会显示一个「正在生成」临时气泡**（虚线边框 + 临时标签，来源就是 `answer_preview` 的 SSE 推送），正式消息落库后自动被真实消息替换。刻意与正式消息样式区分，避免把流到一半的 JSON 动作误当成最终答复 |
 | ⬇ 导出对话 Markdown | 聊天栏「导出 MD」把当前对话导出为 `.md`（会话 ID、模型、导出时间、消息数头部 + 按角色分段 + 时间 + 附件引用），便于粘贴到别处或归档 |
-| 工具结果双视图 | 时间线每步的「查看结果」提供 **渲染 / JSON** 两个视图：渲染视图把短标量排成键值行、长文本与对象用**和对话完全同一套代码块**渲染（语言按参数里的文件扩展名或工具名推断，如 `cbp/demo.py` → Python；`validate_python` → Python），因此同样有语言标签、语法高亮、行号、折叠、复制与「…」菜单；JSON 视图保留原有的结构化浏览 |
+| 工具结果双视图 | 时间线每步的「查看结果」提供 **渲染 / JSON** 两个视图：渲染视图把短标量排成键值行、长文本与对象用**和对话完全同一套代码块**渲染（语言按参数里的文件扩展名或工具名推断，如 `gantry/demo.py` → Python；`validate_python` → Python），因此同样有语言标签、语法高亮、行号、折叠、复制与「…」菜单；JSON 视图保留原有的结构化浏览 |
 | 🌐 多语言（简 / 繁 / 英） | 侧栏语言按钮循环切换（`简 → 繁 → EN`），选择记在 localStorage，刷新后保持；切换即重画会话列表、对话、时间线与各面板。**覆盖范围**：全部静态界面 + 全部动态文案（toast、对话框、面板、记忆/技能、回滚与删除明细、演示数据、代码块与时间线标签）。**实现取舍**：以中文原文当 key（`tr('取消任务')`），缺翻译回落原文——不会出现 key 对不上导致界面空白；英文手写，**繁体由简繁短语表 + 字符表自动转换**并叠加台湾用语覆盖表（記憶體/檔案/設定/匯出/停機/強行/手冊…）。只翻译展示文案，**判定逻辑里的字符串一律不翻**；**JS 生成的 HTML 属性走 DOM 层翻译**（`translateAttrs()`,不改源码——把模板/拼接串里的属性包成 `tr()` 极易写坏，实测踩过三次）。后端与 Agent 协议文案保持中文，主要 API 的 note 带 `note_code`,前端据此本地化 |
 | ⚡ 子代理并行扇出 | **API 提供商模型真并行**：`subagent_many` / `POST /v1/agent/fanout` 会把 2~6 个互不依赖的子任务按并发上限（`agent.subagent_parallel`，默认 4）同时跑，结果保序汇总、单项失败不影响其余；**网页 Copilot 通道按自动化窗口数并行**（`agent.copilot_windows`，1–4）：每个子代理独占一个标签页，父任务自己占一个，所以并发上限是「窗口数 − 1」；窗口数 = 1 时仍是顺序执行（与以前一致）。并行的前提是把「当前会话 / 是否允许网页工具 / 子代理递归深度 / 页面」从全局变量改成**任务级上下文**（contextvars），否则并发子代理会互相覆盖 |
 | 对话阅读体验 | 消息卡片（头像/角色名/时间戳/悬停复制）；助手消息按内容形态**可视化**：JSON 动作 → **工具卡**（工具名 + 原因 + 参数 JSON 视图，`content_b64` 显示为"[Base64 内容，共 N 字符]"）、批量动作 → 一卡多工具、`{"type":"final"}` → 正文按 **Markdown** 渲染并标「最终答复」、其它 JSON → JSON 视图、```json 代码块也用 JSON 视图；解析不了的 JSON 明确标「JSON 解析失败（原文）」而不是装作没事 |
@@ -417,11 +421,11 @@ python scripts/rollback.py --scope self --last --yes   # 回滚最近一次「�
 curl http://127.0.0.1:8765/v1/agent/self/status
 ```
 
-给 Agent 的任务示例：「读 cbp/tools.py，把 outlook_search 的 max_count 上限从 100 提到 200，然后自升级验证并跑单测」。
+给 Agent 的任务示例：「读 gantry/tools.py，把 outlook_search 的 max_count 上限从 100 提到 200，然后自升级验证并跑单测」。
 
 内置护栏：
 
-1. **白名单**：`cbp/`、`webui/`、`scripts/`、`docs/`、`tests/` + 若干顶层文件；`config.json`、`data/`、`EdgeProfile/`、`.git/` 一律拒绝
+1. **白名单**：`gantry/`、`webui/`、`scripts/`、`docs/`、`tests/` + 若干顶层文件；`config.json`、`data/`、`EdgeProfile/`、`.git/` 一律拒绝
 2. **验证门**：写完必须 `self_validate`（全安装目录语法检查）+ `self_unittest`（服务自身单测）双通过，提前返回 final 会被 `validation_gate` 拦下
 3. **独立快照**：自升级改动存 `data/snapshots/_self_<会话>/`，与工作区改动分开回滚
 4. **重启标记**：写盘落 `data/.self_upgrade_pending`，你重启服务后标记自动归档，启动日志会打印「已加载上一轮自升级改动」
@@ -458,7 +462,7 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 
 ### 6. 扩展工具（参考 DSH 的工具面，独立模块）
 
-`cbp/tools_extra.py` 是**解耦的扩展工具模块**（删掉文件 + 取消 bridge 里一行调用即可整体下线），
+`gantry/tools_extra.py` 是**解耦的扩展工具模块**（删掉文件 + 取消 bridge 里一行调用即可整体下线），
 按组合并提供逐组开关（`agent.tools_extra`）：
 
 | 组 | 工具 | 说明 |
@@ -493,11 +497,11 @@ curl http://127.0.0.1:8765/v1/agent/self/status
 ### 5.6.2 插件安装 / 升级 / 卸载（版本化）
 
 ```bash
-cbp plugins install ./my-plugin           # 本地目录
-cbp plugins install ./pkg.zip             # zip（拒绝 ../ 越界条目，防 zip-slip）
-cbp plugins install https://x/y.git       # git clone --depth 1
-cbp plugins registry                      # 已安装版本/来源/备份
-cbp plugins uninstall my-plugin           # 卸载（默认留备份）
+gantry plugins install ./my-plugin           # 本地目录
+gantry plugins install ./pkg.zip             # zip（拒绝 ../ 越界条目，防 zip-slip）
+gantry plugins install https://x/y.git       # git clone --depth 1
+gantry plugins registry                      # 已安装版本/来源/备份
+gantry plugins uninstall my-plugin           # 卸载（默认留备份）
 ```
 
 HTTP 等价：`POST /v1/plugins/install {source, name?, force?}`、`POST /v1/plugins/uninstall`、
@@ -548,7 +552,7 @@ CBP 的插件是"**语义兼容** DSH"而不是"直接跑 DSH 插件"：DSH 插�
 同一套贡献点、同样的加载→apply→卸载生命周期、同样的 `id + disabled + config` 启停语义。
 （要直跑 JS 插件需要内嵌 Node，不在本系统目标内。）
 
-**清单**（`plugins/<name>/plugin.json`，也接受 `package.json` 里放 `"cbp"` 字段，
+**清单**（`plugins/<name>/plugin.json`，也接受 `package.json` 里放 `"gantry"` 字段，
 `"dsh"` 字段原样透传供迁移参考）：
 
 ```json
@@ -557,7 +561,7 @@ CBP 的插件是"**语义兼容** DSH"而不是"直接跑 DSH 插件"：DSH 插�
   "version": "0.1.0",
   "description": "联网搜索",
   "dsh":   {"bundle": {"patch": "./cordis.patch.yml"}},
-  "cbp": {
+  "gantry": {
     "entry": "plugin.py",
     "permissions": ["tools", "api"],
     "contributes": {"tools": ["web_search"], "api": ["GET api/search"]},
@@ -659,14 +663,14 @@ curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C
 用户实测痛点（pyshot 整改）：说"按 todo 完成整改"之后，**面板清单一直 0/5**，
 而子代理面板里那 4 个还是上一阶段的遗留，"像摆设"。
 
-**① TODO 文件自动同步**（`cbp/todo_sync.py`）
+**① TODO 文件自动同步**（`gantry/todo_sync.py`）
 - 每步开始时按 **mtime** 检查工作区里的 `*todo*.md`（也认 `.txt`），解析 `- [ ] / - [x]`
   复选框（没有方框时退化成 `- 项` 列表），写进会话 `todos`；
 - **不覆盖进度**：同一项已是 `completed` 不会被文件里的 `[ ]` 拉回；文件里删掉的
   已完成项会保留；文件消失时**不清空**现有清单；
 - 之前 CBP 完全不看 `pyshot_todo.md`（23KB 的计划文件），面板只认 `todo_write`。
 
-**② 按清单自动派子代理**（`cbp/auto_team.py`，**默认关闭**）
+**② 按清单自动派子代理**（`gantry/auto_team.py`，**默认关闭**）
 - 条件：`agent.auto_team_enabled=true`、存在 **≥2 个** `pending` 且**作用域不重叠**
   （按文件路径/标识符判断互不依赖）、当前没有子代理在跑；
 - 动作：把这几项转成自足的任务文本（目标、验收、汇报格式）交给 `fanout`，
@@ -728,7 +732,7 @@ python scripts/reap_browsers.py --kill     # 回收
 ### 5.4.0 显式扇出（不依赖模型判断）
 
 ```bash
-cbp fanout --task "审计 workspace/core" --task "审计 workspace/webui" --model kimi-coding/k3
+gantry fanout --task "审计 workspace/core" --task "审计 workspace/webui" --model kimi-coding/k3
 ```
 或在输入框里：`/fanout 任务1 | 任务2 | 任务3`
 
@@ -823,25 +827,25 @@ python scripts/rollback.py --list            # 查看可回滚的任务与自升
    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`。
    **`script-src` 不含 `'unsafe-inline'`，这是硬约束**：
    - 页面里**不允许**再写内联事件处理器（`onclick="..."`）：一律用 `data-act="名称"`（输入类用 `data-act-input`，键盘类用 `data-act-key`），并在 `webui/app.js` 的 `ACTIONS` 表里注册实现——分发器会按 `data-act` 调用。写错名字不会报错、只是"点了没反应"，所以有第 14 条不变量**双向核对** `data-act` ↔ `ACTIONS`（缺实现 / 有死条目都会失败）。
-   - 也**不允许**内联 `<script>`：首屏主题初始化已外置为 `webui/boot.js`；新增静态资源必须加进 `cbp/api.py` 里 `/ui/{asset}` 的白名单（目前是 `style.css` / `app.js` / `boot.js` / `i18n.js`）。第 15 条不变量会核对"页面引用 ⊂ 白名单"，漏加会立刻失败。
+   - 也**不允许**内联 `<script>`：首屏主题初始化已外置为 `webui/boot.js`；新增静态资源必须加进 `gantry/api.py` 里 `/ui/{asset}` 的白名单（目前是 `style.css` / `app.js` / `boot.js` / `i18n.js`）。第 15 条不变量会核对"页面引用 ⊂ 白名单"，漏加会立刻失败。
    - `style-src` 仍保留 `'unsafe-inline'`：页面大量使用 `style="..."` 属性与动态注入的 `<style>`，影响面小于脚本，暂不收紧。
 
 ## 界面多语言（简 / 繁 / EN）
 
-侧栏工具栏的「简 / 繁 / EN」按钮循环切换，选择存在 `localStorage.cbp-lang`。实现要点与**约束**：
+侧栏工具栏的「简 / 繁 / EN」按钮循环切换，选择存在 `localStorage.gantry-lang`。实现要点与**约束**：
 
 - **以中文原文当 key**：`tr('取消任务')` 查 `webui/i18n.js` 的 `I18N_EN` 表；缺翻译时**回落中文**，不会出现空白或 `key.not.found`。繁体由「短语覆盖表 + 字形转换表」自动生成。
 - **静态界面**：给元素加 `data-i18n` / `data-i18n-title` / `data-i18n-ph` / `data-i18n-aria`；此外还有一遍“DOM 直译”（叶子节点文本与 `title/placeholder/aria-label` 按字典替换）。
 - **动态内容必须自己调 `tr()`**：对话、时间线、回答、日志等容器在 `I18N_SKIP_IDS` 里被排除（其中可能有模型输出或用户输入，恰好等于某个 key 就会被误翻）；切语言后由 `rerenderForLang()` 重画动态区域。
-- **禁止把 `tr(...)` 写成字符串字面量**：`'tr(重试浏览器)'` 会让界面直接显示 `tr(重试浏览器)`。这类错误**语法合法、单测也覆盖不到**，因此加了第 16 条不变量静态拦截（`cbp/invariants.py`）。
+- **禁止把 `tr(...)` 写成字符串字面量**：`'tr(重试浏览器)'` 会让界面直接显示 `tr(重试浏览器)`。这类错误**语法合法、单测也覆盖不到**，因此加了第 16 条不变量静态拦截（`gantry/invariants.py`）。
 - **覆盖率审计**：`python scripts/ui_i18n_audit.py` 三语言逐面扫描界面外壳（按钮/标签/页签/表头/提示/弹窗/占位符），报告三类问题：英文模式仍含中文、`tr(`/`data-i18n` 等原始 key 泄漏、**繁化漏字**（用独立维护的简繁对照表检测，不依赖 i18n.js 自己的表——真实事故里「浏」不在表内，用表自身当检测集完全看不出来）。
 - **覆盖审计**：`python scripts/i18n_coverage.py` 在英文模式下逐个打开 12 个界面状态
   （首页/新任务/手册/插件/面板/工作区/全局搜索/更多/记忆/会话更多/填充态/模型）并采集**可见**中文，
   当前 **0 处**；`ui_i18n_audit.py` 只扫静态外壳，两者互补（实测前者多抓出 30 处：记忆面板 28 + 主题标题 + 工作区选择）。
-- **后端错误文案**：`HTTPException` 的 detail 由全局处理器按 `X-CBP-Lang` 翻译（`cbp/i18n.py` 精确表 + 模式表，
+- **后端错误文案**：`HTTPException` 的 detail 由全局处理器按 `X-CBP-Lang` 翻译（`gantry/i18n.py` 精确表 + 模式表，
   未知文案回落中文）；不变量「后端错误文案都有英文翻译」守着新增的 raise。
 - **使用手册**：中英**两套完整模板**（`MANUAL_HTML` / `MANUAL_HTML_EN`，各 18 节），按界面语言整篇切换，含自动目录与低频章节折叠（折叠章节名也随语言走）；不变量「手册中英两版章节一致」防只改一边。
-- **插件自带译文**：插件在 `plugin.json` 声明 `cbp.i18n: {en: {...}, tw: {...}}`，
+- **插件自带译文**：插件在 `plugin.json` 声明 `gantry.i18n: {en: {...}, tw: {...}}`，
   `GET /v1/plugins/i18n` 汇总**已加载**插件，前端启动/启停插件时合并进字典 → 第三方插件的中文也能翻
 - **繁体术语表**：`I18N_TW_OVERRIDE` 按词修正（文件→檔案、数据→資料、插件→外掛、服务器→伺服器…），
   应用时**按词长降序**，否则"服务"会吃掉"服务器"（实测踩到）
@@ -868,10 +872,10 @@ python scripts/rollback.py --list            # 查看可回滚的任务与自升
 ## 项目结构
 
 ```
-app.py            组装入口（shim：from cbp.api import app，uvicorn 加载点）
+app.py            组装入口（shim：from gantry.api import app，uvicorn 加载点）
 start.py          服务入口
 install.py        依赖安装
-cbp/              核心包
+gantry/              核心包
   api.py            FastAPI 应用与中间件/启动装配（端点已拆成 routes_*）
   routes_core.py    系统与入口端点（health/models/chat/UI/关停重启）
   routes_config.py  设置端点（配置/沙箱/插件/浏览器/工作区）

@@ -22,12 +22,12 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp import bridge as b
-from cbp import page as p
+from gantry import bridge as b
+from gantry import page as p
 
-# 页面自动化层已拆到 cbp/page.py（bridge.py 第三批解耦），源码断言两处一起读
-BRIDGE = ((BASE / "cbp" / "bridge.py").read_text(encoding="utf-8")
-          + (BASE / "cbp" / "page.py").read_text(encoding="utf-8"))
+# 页面自动化层已拆到 gantry/page.py（bridge.py 第三批解耦），源码断言两处一起读
+BRIDGE = ((BASE / "gantry" / "bridge.py").read_text(encoding="utf-8")
+          + (BASE / "gantry" / "page.py").read_text(encoding="utf-8"))
 
 
 class JapaneseMarkersTests(unittest.TestCase):

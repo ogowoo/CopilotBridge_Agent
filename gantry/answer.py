@@ -228,8 +228,8 @@ def _clean_answer(text: str) -> str:
     t = str(text or "")
     # 标记是 `[CBP-AGENT][sid][C000]`（连续多个方括号），要把整串都去掉，
     # 只去第一个会留下 `[sid][C000]` 混进正文。
-    t = re.sub(r"\[CBP-(?:AGENT|TURN)\](?:\[[^\]\n]*\])*", "", t)
-    t = re.sub(r"\[CBP-TURN:[^\]]*\]\s*", "", t)
+    t = re.sub(r"\[(?:GANTRY|CBP)-(?:AGENT|TURN)\](?:\[[^\]\n]*\])*", "", t)
+    t = re.sub(r"\[(?:GANTRY|CBP)-TURN:[^\]]*\]\s*", "", t)
     for junk in _ANSWER_NOISE:
         t = t.replace(junk, "")
     t = _strip_thinking(t)

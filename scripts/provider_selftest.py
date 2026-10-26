@@ -28,7 +28,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp import providers as P  # noqa: E402
+from gantry import providers as P  # noqa: E402
 
 
 def mask(value: str) -> str:

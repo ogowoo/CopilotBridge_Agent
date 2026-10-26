@@ -17,7 +17,7 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.providers import ApiProvider, ProviderError, ProviderUnavailable  # noqa: E402
+from gantry.providers import ApiProvider, ProviderError, ProviderUnavailable  # noqa: E402
 
 
 def _provider_with(handler) -> ApiProvider:

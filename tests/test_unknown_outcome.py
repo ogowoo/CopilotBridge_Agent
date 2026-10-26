@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import tools as T
-from cbp.tools import ToolError, ToolRegistry
+from gantry import tools as T
+from gantry.tools import ToolError, ToolRegistry
 
 
 class UnknownOutcomeGateTests(unittest.TestCase):

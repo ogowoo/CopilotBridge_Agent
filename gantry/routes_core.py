@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request as HttpRequest
 
 from .version import VERSION as _APP_VERSION
+from .brand import APP_NAME as _APP_NAME
 from fastapi.responses import (StreamingResponse, FileResponse, RedirectResponse,
                                JSONResponse)
 from pydantic import BaseModel, Field
@@ -156,7 +157,7 @@ async def shutdown_service():
 
     先返回响应、再延迟触发停机：直接在这里停会让前端拿到"连接被重置"，看起来
     像操作失败。正在运行的任务会被中断——状态都在 SQLite 里，重启后可恢复。
-    优雅停机拿不到 uvicorn server 时由 cbp/lifecycle.py 退回信号，并始终有
+    优雅停机拿不到 uvicorn server 时由 gantry/lifecycle.py 退回信号，并始终有
     "宽限期后硬退出"兜底（按钮必须真的能停掉服务）。
     """
     if a.lifecycle.shutdown_pending():
@@ -359,7 +360,7 @@ async def list_spans(limit: int = 200, session_id: str | None = None):
     items = b.SPANS.tail(limit=limit)
     if session_id:
         items = [x for x in items
-                 if (x.get("attributes") or {}).get("cbp.session_id") == session_id]
+                 if (x.get("attributes") or {}).get("gantry.session_id") == session_id]
     return {"count": len(items), "enabled": b.SPANS.enabled, "path": str(b.SPANS.path),
             "items": items}
 

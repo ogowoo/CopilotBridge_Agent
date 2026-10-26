@@ -20,7 +20,7 @@ BASE = Path(__file__).resolve().parent.parent
 ABS_WIN = re.compile(r"""[A-Za-z]:[\\/](?!/)[^\s"'<>|)]{2,}""")
 # 自己机器/作者机器的常见根目录特征，命中即视为泄漏
 SUSPECT = ("Tools", "Test4All", "CopilotBridge_Agent\\", "CopilotBridge_PythonOnly")
-SCAN_DIRS = ("cbp", "scripts", "webui")
+SCAN_DIRS = ("gantry", "scripts", "webui")
 EXTS = (".py", ".json", ".js", ".html")
 
 

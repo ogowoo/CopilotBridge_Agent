@@ -24,7 +24,7 @@
 - **任务级快照**：写操作前记录原像，支持"回滚整个任务的改动"（修改还原、新建删除）。
 - **自升级**：白名单 + 双验证门 + 待重启标记 + 在线/离线回滚（默认关闭）。
 - **项目上下文**：两级 `AGENT.md` + 两级 `skills/`（渐进式披露），Agent 可用 `skill_create` 自行沉淀技能。
-- **长期记忆**：跨会话累积事实/偏好/结论（`cbp/memory.py`），按相关性检索注入（关键词 + 中文二元组，零依赖）。
+- **长期记忆**：跨会话累积事实/偏好/结论（`gantry/memory.py`），按相关性检索注入（关键词 + 中文二元组，零依赖）。
 - **M365 集成**：浏览器登录态访问 Copilot；Outlook 默认走 OWA 网页自动化，经典 COM 仅作兜底。
 - **管理界面**：零构建单页 WebUI（`index.html + app.js + style.css`）。
 
@@ -41,68 +41,68 @@
 OpenAI 客户端 / WebUI
         │
         ▼
-FastAPI 路由层  app.py(shim) → cbp/api.py
+FastAPI 路由层  app.py(shim) → gantry/api.py
         │
-        ├─ 普通对话 ─────────► cbp/bridge.py ─► Playwright ─► Edge 持久化 Profile ─► M365 Copilot
+        ├─ 普通对话 ─────────► gantry/bridge.py ─► Playwright ─► Edge 持久化 Profile ─► M365 Copilot
         │                          │  ├─ 模型菜单扫描 / 会话内模型锚定
         │                          │  ├─ CBP-TURN 回合标记、CBP-AGENT 会话身份标记
-        │                          │  ├─ 任务快照（cbp/snapshots.py）
-        │                          │  └─ OWA 后端（cbp/owa.py）
+        │                          │  ├─ 任务快照（gantry/snapshots.py）
+        │                          │  └─ OWA 后端（gantry/owa.py）
         │
-        ├─ Agent 任务 ───────► cbp/agent.py（主循环/状态治理/验证门）
+        ├─ Agent 任务 ───────► gantry/agent.py（主循环/状态治理/验证门）
         │                          │
-        │                          ├─ cbp/agent_prompt.py（系统提示词装配 / AGENT.md / skills / 工具面裁剪）
-        │                          ├─ cbp/agent_parse.py（JSON 动作协议 / 容错解析 / 批量恢复）
-        │                          ├─ cbp/agent_text.py（token 估算 / spill / 保头保尾压缩）
+        │                          ├─ gantry/agent_prompt.py（系统提示词装配 / AGENT.md / skills / 工具面裁剪）
+        │                          ├─ gantry/agent_parse.py（JSON 动作协议 / 容错解析 / 批量恢复）
+        │                          ├─ gantry/agent_text.py（token 估算 / spill / 保头保尾压缩）
         │                          ▼
-        │                      cbp/tools.py（工具注册表/分派、路径沙箱/权限门、计划模式）
+        │                      gantry/tools.py（工具注册表/分派、路径沙箱/权限门、计划模式）
         │                          ▼
-        │                      cbp/session_store.py（SQLite：sessions/steps/messages/file_events/conv_stats）
+        │                      gantry/session_store.py（SQLite：sessions/steps/messages/file_events/conv_stats）
         │
-        ├─ 外部提供商 ───────► cbp/providers.py（OpenAI 兼容 HTTP）
-        └─ 会话删除 ─────────► cbp/copilot_delete.py（URL 身份 + 标记同属校验 + 对账 + URL 级终判）
+        ├─ 外部提供商 ───────► gantry/providers.py（OpenAI 兼容 HTTP）
+        └─ 会话删除 ─────────► gantry/copilot_delete.py（URL 身份 + 标记同属校验 + 对账 + URL 级终判）
 ```
 
 ### 3.1 模块职责
 
 | 文件 | 行数* | 职责 |
 |---|---|---|
-| `app.py` | 21 | 组装 shim：`from cbp.api import app`（uvicorn 加载点） |
-| `cbp/api.py` | ~520 | FastAPI 应用、鉴权/CSRF/语言中间件、启动与 lifespan、异常本地化、路由装配 |
-| `cbp/routes_core.py` | ~400 | 系统与入口端点：health、models、chat/completions、静态 UI、关停/重启 |
-| `cbp/routes_config.py` | ~420 | 设置端点：配置读写、沙箱档位、插件、浏览器模式、工作区 |
-| `cbp/routes_agents.py` | ~200 | 子代理/深研/扇出/对抗式审计/记忆/自升级端点 |
-| `cbp/routes_sessions.py` | ~770 | 会话端点：列表/详情/消息/继续/插话/队列/事件/审批/删除 |
-| `cbp/bridge.py` | ~1100 | 配置与运行态、Agent 工具装配、快照/记忆/自升级接线、facade 重导出 |
-| `cbp/agentrun.py` | ~870 | 回合编排：`run_agent` 主流程、等回答、回合标记与缓存、待办同步、纯对话回合 |
-| `cbp/downloads.py` | ~300 | 回答区下载：候选链接解析、href 落盘、`copilot_file` |
-| `cbp/workspace_files.py` | ~130 | 工作区写文件/建目录/系统目录对话框 |
-| `cbp/research.py` | ~130 | 深研任务、插件任务、确定性扇出 |
-| `cbp/page.py` | ~1220 | 页面自动化：新对话、模型菜单识别与锚定、发消息、取回答/Markdown、流式更新 |
-| `cbp/browser.py` | ~260 | 浏览器生命周期（启动/复用/无头回退）、窗口池与提供商逻辑槽调度 |
-| `cbp/answer.py` | ~240 | 回答解析：回合标记定位、噪声/思考占位剔除、服务不可用与满对话识别 |
-| `cbp/provider.py` | ~270 | 外部提供商通道（HTTP 回合、历史裁剪与修复） |
-| `cbp/interrupts.py` | ~70 | 插入指令/中断信号 |
-| `cbp/queue.py` | ~190 | 会话消息队列（排队、取消、插入） |
-| `cbp/orchestration.py` | ~290 | ralph / workflow / 对抗式审计 |
-| `cbp/subagents.py` | ~300 | 子代理（派发/驱动/续跑/fork/列表） |
-| `cbp/agent.py` | ~1270 | Agent 核心：主循环、状态治理、批量动作调度、验证门旗持久化、换会话/压缩 |
-| `cbp/agent_prompt.py` | ~230 | `PromptMixin`：系统提示词分段装配、工具面裁剪、两级 AGENT.md / skills 加载 |
-| `cbp/agent_parse.py` | ~450 | `ParseMixin`：JSON 动作协议、容错解析、批量成组、截断恢复、非法转义修复 |
-| `cbp/agent_text.py` | ~75 | `TextMixin`：token 估算、结果 spill、保头保尾 `retain_text`、`compact_value` |
-| `cbp/tools.py` | ~760 | 工具注册表与分派、路径沙箱/权限门、计划模式、工具分组（核心 mixin） |
-| `cbp/tools_files.py` | ~660 | 文件读写/替换/补丁/缩进/目录操作 |
-| `cbp/tools_exec.py` | ~95 | validate_python / run_unittest / run_code / run_python |
-| `cbp/tools_office.py` | ~200 | Excel / Word / PPT / PDF |
-| `cbp/tools_outlook.py` | ~250 | Outlook（COM + OWA 双后端） |
-| `cbp/tools_skills.py` | ~150 | 技能库 list/read/create |
-| `cbp/tools_memory.py` | ~80 | 长期记忆写入/检索/遗忘 |
-| `cbp/tools_self.py` | ~180 | 自升级读写/校验/单测/回滚 |
-| `cbp/session_store.py` | ~240 | SQLite 持久化、列迁移、状态机、统计与清理 |
-| `cbp/snapshots.py` | ~250 | 任务级快照：捕获原像、按根维度回滚、原子还原、保留策略 |
-| `cbp/copilot_delete.py` | ~600 | 侧栏会话删除：定位、同属校验、确认、对账补删、URL 级复核 |
-| `cbp/owa.py` | ~200 | Outlook 网页自动化（搜索/阅读/发送） |
-| `cbp/providers.py` | ~160 | 外部 OpenAI 兼容提供商与模型路由 |
+| `app.py` | 21 | 组装 shim：`from gantry.api import app`（uvicorn 加载点） |
+| `gantry/api.py` | ~520 | FastAPI 应用、鉴权/CSRF/语言中间件、启动与 lifespan、异常本地化、路由装配 |
+| `gantry/routes_core.py` | ~400 | 系统与入口端点：health、models、chat/completions、静态 UI、关停/重启 |
+| `gantry/routes_config.py` | ~420 | 设置端点：配置读写、沙箱档位、插件、浏览器模式、工作区 |
+| `gantry/routes_agents.py` | ~200 | 子代理/深研/扇出/对抗式审计/记忆/自升级端点 |
+| `gantry/routes_sessions.py` | ~770 | 会话端点：列表/详情/消息/继续/插话/队列/事件/审批/删除 |
+| `gantry/bridge.py` | ~1100 | 配置与运行态、Agent 工具装配、快照/记忆/自升级接线、facade 重导出 |
+| `gantry/agentrun.py` | ~870 | 回合编排：`run_agent` 主流程、等回答、回合标记与缓存、待办同步、纯对话回合 |
+| `gantry/downloads.py` | ~300 | 回答区下载：候选链接解析、href 落盘、`copilot_file` |
+| `gantry/workspace_files.py` | ~130 | 工作区写文件/建目录/系统目录对话框 |
+| `gantry/research.py` | ~130 | 深研任务、插件任务、确定性扇出 |
+| `gantry/page.py` | ~1220 | 页面自动化：新对话、模型菜单识别与锚定、发消息、取回答/Markdown、流式更新 |
+| `gantry/browser.py` | ~260 | 浏览器生命周期（启动/复用/无头回退）、窗口池与提供商逻辑槽调度 |
+| `gantry/answer.py` | ~240 | 回答解析：回合标记定位、噪声/思考占位剔除、服务不可用与满对话识别 |
+| `gantry/provider.py` | ~270 | 外部提供商通道（HTTP 回合、历史裁剪与修复） |
+| `gantry/interrupts.py` | ~70 | 插入指令/中断信号 |
+| `gantry/queue.py` | ~190 | 会话消息队列（排队、取消、插入） |
+| `gantry/orchestration.py` | ~290 | ralph / workflow / 对抗式审计 |
+| `gantry/subagents.py` | ~300 | 子代理（派发/驱动/续跑/fork/列表） |
+| `gantry/agent.py` | ~1270 | Agent 核心：主循环、状态治理、批量动作调度、验证门旗持久化、换会话/压缩 |
+| `gantry/agent_prompt.py` | ~230 | `PromptMixin`：系统提示词分段装配、工具面裁剪、两级 AGENT.md / skills 加载 |
+| `gantry/agent_parse.py` | ~450 | `ParseMixin`：JSON 动作协议、容错解析、批量成组、截断恢复、非法转义修复 |
+| `gantry/agent_text.py` | ~75 | `TextMixin`：token 估算、结果 spill、保头保尾 `retain_text`、`compact_value` |
+| `gantry/tools.py` | ~760 | 工具注册表与分派、路径沙箱/权限门、计划模式、工具分组（核心 mixin） |
+| `gantry/tools_files.py` | ~660 | 文件读写/替换/补丁/缩进/目录操作 |
+| `gantry/tools_exec.py` | ~95 | validate_python / run_unittest / run_code / run_python |
+| `gantry/tools_office.py` | ~200 | Excel / Word / PPT / PDF |
+| `gantry/tools_outlook.py` | ~250 | Outlook（COM + OWA 双后端） |
+| `gantry/tools_skills.py` | ~150 | 技能库 list/read/create |
+| `gantry/tools_memory.py` | ~80 | 长期记忆写入/检索/遗忘 |
+| `gantry/tools_self.py` | ~180 | 自升级读写/校验/单测/回滚 |
+| `gantry/session_store.py` | ~240 | SQLite 持久化、列迁移、状态机、统计与清理 |
+| `gantry/snapshots.py` | ~250 | 任务级快照：捕获原像、按根维度回滚、原子还原、保留策略 |
+| `gantry/copilot_delete.py` | ~600 | 侧栏会话删除：定位、同属校验、确认、对账补删、URL 级复核 |
+| `gantry/owa.py` | ~200 | Outlook 网页自动化（搜索/阅读/发送） |
+| `gantry/providers.py` | ~160 | 外部 OpenAI 兼容提供商与模型路由 |
 | `scripts/login.py` | 61 | 登录向导（`--reset` 重置登录态） |
 | `scripts/calibrate.py` | 92 | 用 `conv_stats` 实测样本反推压缩/换会话阈值 |
 | `scripts/rollback.py` | 120 | 离线自升级回滚（服务起不来时使用） |
@@ -116,14 +116,14 @@ FastAPI 路由层  app.py(shim) → cbp/api.py
 
 为了把单个超大文件维护下去，核心代码按**职责 + mixin** 两层拆分：
 
-- `cbp/bridge.py` 作为 **facade**，把运行态（`AGENT_SESSIONS`、`AGENT_TOOLS` 等）和子模块的公共 helper 重导出给 WebUI / CLI / 测试使用；子模块通过模块内局部别名（`b = cbp.bridge`）访问可变状态，避免循环依赖。
-- `cbp/agent.py` 保留唯一对外类 `AgentRunner`，但把内部方法拆成三个纯行为 mixin：
+- `gantry/bridge.py` 作为 **facade**，把运行态（`AGENT_SESSIONS`、`AGENT_TOOLS` 等）和子模块的公共 helper 重导出给 WebUI / CLI / 测试使用；子模块通过模块内局部别名（`b = gantry.bridge`）访问可变状态，避免循环依赖。
+- `gantry/agent.py` 保留唯一对外类 `AgentRunner`，但把内部方法拆成三个纯行为 mixin：
   - `PromptMixin`：只负责“把这轮要说什么拼出来”；
   - `ParseMixin`：只负责“把模型返回解析成可执行动作”；
   - `TextMixin`：只负责“文本/结果太长时怎么压缩”。
   新增行为时先判断属于哪一类，优先放进对应 mixin；跨 mixin 的调用通过继承后的 `self` 完成。
-- `cbp/tools.py` 同样被拆成 `tools_files.py`、`tools_exec.py`、`tools_office.py`、`tools_outlook.py`、`tools_skills.py`、`tools_memory.py`、`tools_self.py` 七个 mixin，`ToolRegistry` 继承全部 mixin 后统一注册。
-- `cbp/api.py` 把端点按域拆成 `routes_core.py`、`routes_config.py`、`routes_agents.py`、`routes_sessions.py`；`api.py` 只做应用组装与中间件。
+- `gantry/tools.py` 同样被拆成 `tools_files.py`、`tools_exec.py`、`tools_office.py`、`tools_outlook.py`、`tools_skills.py`、`tools_memory.py`、`tools_self.py` 七个 mixin，`ToolRegistry` 继承全部 mixin 后统一注册。
+- `gantry/api.py` 把端点按域拆成 `routes_core.py`、`routes_config.py`、`routes_agents.py`、`routes_sessions.py`；`api.py` 只做应用组装与中间件。
 
 拆分后单文件职责单一，黄金测试（如 `test_prompt_stability.py`、`test_agent_parse.py`）能更精准地锁定回归范围。
 
@@ -233,7 +233,7 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 - **工作区不得覆盖服务安装目录**：否则普通文件工具即可改服务代码/config.json，等于绕过自升级权限门；
   该配置现在被拒绝，除非显式开启 `allow_self_upgrade`。开启后敏感路径（`config.json`、`data/`、
   `EdgeProfile/`、`.git/`）仍按自升级黑名单拒绝访问。
-- **自升级路径**：白名单（`cbp/ webui/ scripts/ docs/ tests/ skills/ app.py start.py install.py
+- **自升级路径**：白名单（`gantry/ webui/ scripts/ docs/ tests/ skills/ app.py start.py install.py
   requirements.txt AGENT.md README.md config.example.json`）+ 黑名单（`config.json data/ EdgeProfile/ .git/`），
   先判黑名单；目录穿越、junction、大小写变形均在 `resolve()` 后拦截。
 - **快照沙箱**：作用域目录名强制以字母数字开头且必须是快照根的直接子目录（防 `.`/`..`）；
@@ -341,7 +341,7 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 5. 批内 `final` 被静默丢弃，验证门那一轮根本没被评估。现保留在工具动作之后交由验证门裁决。
 6. `SnapshotStore._dir` 未拒绝 `.`/`..`：`DELETE /sessions/%2E%2E` 可 `rmtree` 掉 `data/`（含 agent.db）。
    现已强制"以字母数字开头 + 必须是快照根的直接子目录"。
-7. **把工作区设为服务安装目录即可绕过整套自升级权限门**（写 `cbp/*`、`config.json`、全局技能）。
+7. **把工作区设为服务安装目录即可绕过整套自升级权限门**（写 `gantry/*`、`config.json`、全局技能）。
    该配置现被拒绝，除非显式开启 `allow_self_upgrade`；开启后敏感路径仍按自升级黑名单拒绝。
 8. 删除流程**假成功**两处：整页 `body_text()` 用含中文"已删除"的正则匹配（服务自己问过删除类问题即误判）、
    虚拟列表未渲染目标行时把"看不见"当"已删除"。现已：整页兜底只认英文强特征串；
@@ -421,8 +421,8 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 | **结果 spill** | 超大结果不再丢信息：摘要 + 可读全文 | `_spill_result()`、工作区 `.spill/` | `spill_threshold_chars`、`spill_max_bytes` |
 | **指令预算** | 超预算丢宽泛优先，并给可见提示；闭合标签转义 | `_load_agent_md()`、`escape_instruction_text()` | `agent_md_max_chars`、`agent_md_total_max_chars` |
 | **沙箱结构化拒绝** | 拒绝信息可行动（错误码/模式/原因/出路） | `_sandbox_denied()`、`FS_SANDBOX_*` | — |
-| **不变量注册表** | 把隐式契约变成可执行检查（10 条） | `cbp/invariants.py`、`scripts/invariants.py` | — |
-| **span 遥测 + 分析** | 用时序数据定位瓶颈（实测远端占 99%+） | `cbp/spans.py`、`scripts/spans.py`、`/v1/agent/spans` | `spans_enabled`、`spans_max_lines` |
+| **不变量注册表** | 把隐式契约变成可执行检查（10 条） | `gantry/invariants.py`、`scripts/invariants.py` | — |
+| **span 遥测 + 分析** | 用时序数据定位瓶颈（实测远端占 99%+） | `gantry/spans.py`、`scripts/spans.py`、`/v1/agent/spans` | `spans_enabled`、`spans_max_lines` |
 | **提示词稳定性契约** | 保证同一任务内系统提示词逐字一致（缓存友好） | `tests/test_prompt_stability.py` | — |
 
 ## 附录 B：当前风险评估（诚实版）

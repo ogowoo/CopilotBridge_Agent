@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.run_code import allowed_tools, run_code
-from cbp.tools import ToolError, ToolRegistry
+from gantry.run_code import allowed_tools, run_code
+from gantry.tools import ToolError, ToolRegistry
 
 
 class RunCodeTests(unittest.TestCase):
@@ -46,7 +46,7 @@ final({'files': sorted(names), 'chars': total})
     def test_write_attempt_is_denied(self):
         code = """
 try:
-    __import__('cbp')  # 环境里没有写入工具可用
+    __import__('gantry')  # 环境里没有写入工具可用
 except Exception:
     pass
 final({'ok': True})

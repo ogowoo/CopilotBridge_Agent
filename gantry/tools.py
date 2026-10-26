@@ -235,7 +235,7 @@ class ToolsCoreMixin:
         self.allow_outlook_send = bool(config.get("allow_outlook_send", False))
         # 技能写入：项目级技能默认允许（只影响当前工作区）；全局级需 allow_self_upgrade
         self.allow_skill_write = bool(config.get("allow_skill_write", True))
-        # 长期记忆：跨会话累积的事实/偏好/结论（cbp/memory.py）
+        # 长期记忆：跨会话累积的事实/偏好/结论（gantry/memory.py）
         self.allow_memory_write = bool(config.get("allow_memory_write", True))
         self.memory = None            # 由桥接层注入 MemoryStore
         self.memory_scope = "global"  # 当前工作区作用域名，由桥接层按 root 设定
@@ -263,7 +263,7 @@ class ToolsCoreMixin:
         self.global_root: Path | None = None
         self.allow_self_upgrade = bool(config.get("allow_self_upgrade", False))
         self.self_whitelist = tuple(config.get("self_upgrade_paths") or (
-            "cbp/", "webui/", "scripts/", "docs/", "tests/", "skills/",
+            "gantry/", "webui/", "scripts/", "docs/", "tests/", "skills/",
             "app.py", "start.py", "install.py", "requirements.txt",
             "AGENT.md", "README.md", "config.example.json",
         )) if self.allow_self_upgrade else ()
@@ -593,7 +593,7 @@ class ToolsCoreMixin:
             ]
         if self.allow_self_upgrade:
             items += [
-                {"name": "self_read_text", "description": "【自升级】读取服务自身代码（安装目录相对路径，白名单内）", "arguments": {"path": "如 cbp/agent.py", "offset": "字符偏移，默认0", "limit": "默认全文件"}},
+                {"name": "self_read_text", "description": "【自升级】读取服务自身代码（安装目录相对路径，白名单内）", "arguments": {"path": "如 gantry/agent.py", "offset": "字符偏移，默认0", "limit": "默认全文件"}},
                 {"name": "self_write_text_b64", "description": "【自升级】覆盖写入服务自身文件；代码必须 Base64 分块（每块≤3000字符），全部写完后用 self_validate + self_unittest 验证", "arguments": {"path": "安装目录相对路径", "content_b64": "Base64"}},
                 {"name": "self_append_text_b64", "description": "【自升级】追加写入服务自身文件（分块续写用）", "arguments": {"path": "安装目录相对路径", "content_b64": "Base64"}},
                 {"name": "self_replace_text", "description": "【自升级】修改服务自身代码时优先用精确替换", "arguments": {"path": "安装目录相对路径", "old": "原文本", "new": "新文本", "count": "默认1"}},

@@ -163,7 +163,7 @@ async def lifespan(app):
     # 按需启动（默认）：启动时不碰浏览器——没有 Copilot 也能用 WebUI 与提供商模型。
     # 需要热启动（例如常驻自用）就把 config.json 的 browser_startup 设为 "eager"。
     # 上次服务异常退出时留下的 running/waiting 会话，标记为可从检查点恢复。
-    # （以前这句写在 cbp/bridge.py 的模块级，导致任何 import 都会误伤在跑的任务。）
+    # （以前这句写在 gantry/bridge.py 的模块级，导致任何 import 都会误伤在跑的任务。）
     try:
         b.AGENT_SESSIONS.recover_interrupted()
     except Exception as exc:
@@ -242,12 +242,14 @@ async def periodic_suspend_resume():
 
 
 from .version import VERSION as _APP_VERSION
-app = FastAPI(title="Copilot Local Bridge Agent", version=_APP_VERSION, lifespan=lifespan)
+from .brand import APP_NAME as _APP_NAME, APP_TITLE as _APP_TITLE, env as _brand_env
+app = FastAPI(title=_APP_TITLE, version=_APP_VERSION, lifespan=lifespan)
 
 def _lang_of(request) -> str:
     """从 X-CBP-Lang 头取界面语言（缺省中文）。"""
     try:
-        raw = (request.headers.get(_LANG_HEADER) or "zh").lower()[:2]
+        raw = (request.headers.get(_LANG_HEADER)
+           or request.headers.get(_LANG_HEADER_LEGACY) or "zh").lower()[:2]
     except Exception:
         return "zh"
     return raw
@@ -255,16 +257,19 @@ def _lang_of(request) -> str:
 
 # ── 错误文案本地化：全局异常处理器按 X-CBP-Lang 翻译 detail ─────────────
 # 只改**展示**：日志、协议、模型看到的仍是中文原文（评测与协议绑定）。
-_LANG_HEADER = "X-CBP-Lang"
+_LANG_HEADER = "X-Gantry-Lang"
+_LANG_HEADER_LEGACY = "X-CBP-Lang"
 
 
 # ── 提示词语言：每个请求按 X-CBP-Lang 设一次 contextvar ──────────────────
-# 由它决定发给模型的提示词用简体/繁體/English（见 cbp/prompt_lang.py）。
+# 由它决定发给模型的提示词用简体/繁體/English（见 gantry/prompt_lang.py）。
 # 放在中间件里设，端点与它创建的后台任务（asyncio 任务继承 context）都能读到。
 @app.middleware("http")
 async def _prompt_lang_middleware(request: HttpRequest, call_next):
     try:
-        prompt_lang.set_request_lang(request.headers.get(_LANG_HEADER) or "zh")
+        _lang_raw = (request.headers.get(_LANG_HEADER)
+                     or request.headers.get(_LANG_HEADER_LEGACY) or "zh")
+        prompt_lang.set_request_lang(_lang_raw)
     except Exception:
         pass
     return await call_next(request)
@@ -272,7 +277,8 @@ async def _prompt_lang_middleware(request: HttpRequest, call_next):
 
 @app.exception_handler(StarletteHTTPException)
 async def _localized_http_error(request: HttpRequest, exc: StarletteHTTPException):
-    lang = (request.headers.get(_LANG_HEADER) or "zh").lower()[:2]
+    lang = (request.headers.get(_LANG_HEADER)
+            or request.headers.get(_LANG_HEADER_LEGACY) or "zh").lower()[:2]
     detail = exc.detail
     if isinstance(detail, str):
         detail = backend_i18n.translate(detail, lang)
@@ -350,7 +356,8 @@ async def token_auth(request, call_next):
     if API_TOKEN and request.url.path.startswith(guarded):
         from fastapi.responses import JSONResponse
         auth = request.headers.get("authorization", "")
-        header_token = request.headers.get("x-cbp-token", "")
+        header_token = (request.headers.get("x-gantry-token")
+                        or request.headers.get("x-cbp-token") or "")
         token = request.query_params.get("token", "")
         # 常量时间比较：避免用逐字符比较泄漏前缀长度（本机场景风险低，但成本几乎为零）
         ok = any(hmac.compare_digest(candidate, API_TOKEN)
@@ -381,7 +388,7 @@ class _RedactTokenFilter(logging.Filter):
 
 
 _redact = _RedactTokenFilter()
-for _name in ("uvicorn.access", "uvicorn.error", "cbp", ""):
+for _name in ("uvicorn.access", "uvicorn.error", "gantry", ""):
     try:
         logging.getLogger(_name).addFilter(_redact)
     except Exception:

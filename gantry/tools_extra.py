@@ -1,6 +1,6 @@
 """扩展工具集（解耦模块，便于独立升级/更新/移除）。
 
-**为什么单独成文件**：`cbp/tools.py` 是文件读写这类"核心工具"，改动风险高；
+**为什么单独成文件**：`gantry/tools.py` 是文件读写这类"核心工具"，改动风险高；
 本模块放"可选、可独立演进"的工具，通过 `register_extra_tools(registry, config)`
 挂到 ToolRegistry 上（与 bridge.py 注册 copilot_attach 的方式一致）。
 删掉本文件 + 取消 bridge 里的一行调用即可整体下线，不影响核心工具。
@@ -9,7 +9,7 @@
 （config.agent.tools_extra 下的布尔项）。
 
 **归属规则（新增工具时先看这里）**：
-- 文件读写/验证这类**核心工具** → `cbp/tools.py`（它们依赖快照、回滚、审批等核心设施）
+- 文件读写/验证这类**核心工具** → `gantry/tools.py`（它们依赖快照、回滚、审批等核心设施）
 - 其余**可选/实验性/需要额外依赖**的工具 → 本模块，用 `register(..., approval=...)` 声明审批
 - 本模块超过 3 组（search/web/shell/plan/vision/ask 已 6 组）就拆成 `tools_extra/` 子包，
   每组一个文件；拆之前保持单文件，避免过早复杂化。

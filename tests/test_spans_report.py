@@ -10,12 +10,12 @@ import spans as S  # noqa: E402  （scripts/spans.py）
 
 
 def rec(op, ms, tool=None, model=None, sid="s1", status="ok", chars=0):
-    a = {"gen_ai.operation.name": op, "cbp.session_id": sid}
+    a = {"gen_ai.operation.name": op, "gantry.session_id": sid}
     if tool:
         a["gen_ai.tool.name"] = tool
     if model:
         a["gen_ai.request.model"] = model
-    a["cbp.result_chars"] = chars
+    a["gantry.result_chars"] = chars
     return {"status": status, "duration_ms": ms, "attributes": a}
 
 

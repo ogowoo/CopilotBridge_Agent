@@ -34,9 +34,9 @@
 | **C. 原生接入 Copilot 桥接那套**（自己逆向 DeepSeek） | 几天 + 长期跟着上游改 | PoW/TLS/封号都要自己扛 | ❌ 不建议：纯粹是重复造轮子 |
 
 **为什么 B 不改核心**：CBP 早就有 "OpenAI 兼容提供商" 抽象
-（`cbp/providers.py` 的 `ApiProvider` + `PROVIDERS`），任何 OpenAI 协议的服务
+（`gantry/providers.py` 的 `ApiProvider` + `PROVIDERS`），任何 OpenAI 协议的服务
 都能直接变成 `提供商名/模型名`。而插件系统暴露了 `ctx.register_provider()`，
-所以"新增一个模型来源"天然属于插件层，不需要碰 `cbp/bridge.py` 的浏览器桥接。
+所以"新增一个模型来源"天然属于插件层，不需要碰 `gantry/bridge.py` 的浏览器桥接。
 
 ## 三、已实现：`plugins/deepseek-web`
 
@@ -103,7 +103,7 @@ docker run -d -p 8000:8000 -v ${PWD}/config.json:/app/config.json `
 
 真想做在进程内，需要补的东西（按我们现在的架构）：
 
-1. `cbp/web_deepseek.py`：PoW 求解（引入 WASM 或纯 Python SHA3 实现）+ token 刷新；
+1. `gantry/web_deepseek.py`：PoW 求解（引入 WASM 或纯 Python SHA3 实现）+ token 刷新；
 2. TLS 指纹（curl_cffi 或 Playwright `route` 改 header）——否则 WAF 拦；
 3. 把反代的 SSE 解析搬到我们自己的 `send()`/`wait_answer()` 生命周期里；
 4. 封号/限流要接进我们已有的 `suspended`（限流挂起）与 `transient` 事件模型。

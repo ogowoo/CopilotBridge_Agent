@@ -7,7 +7,7 @@ chevron 图标）。旧实现只认 "menu"，于是把 GPT 当叶子跳过、二
 "GPT-5.6 Sol Quick response / Think deeper" 永远扫不出来。
 
 本测试用本地 HTML 复刻该结构（父项无 aria-haspopup="menu"，悬停才飞出子菜单），
-直接驱动 cbp.bridge 的扫描逻辑，断言：
+直接驱动 gantry.bridge 的扫描逻辑，断言：
   - 二级菜单项被枚举进 labels；
   - 父项 "GPT" 不被当作可选模型（叶子集合里没有它）。
 """
@@ -66,7 +66,7 @@ class ModelMenuScanTests(unittest.TestCase):
         html.write_text(FIXTURE, encoding="utf-8")
 
         async def run():
-            from cbp import bridge as b
+            from gantry import bridge as b
             async with async_playwright() as p:
                 try:
                     browser = await p.chromium.launch(channel="msedge", headless=True)
@@ -122,7 +122,7 @@ class ModelAvailabilityTests(unittest.TestCase):
               "gpt-5.6 sol quick response", "gpt-5.6 sol think deeper"}
 
     def setUp(self):
-        from cbp import bridge as b
+        from gantry import bridge as b
         self.b = b
         self.saved = (b.DISCOVERED_LABELS, b.DISCOVERY_MATCHED)
 

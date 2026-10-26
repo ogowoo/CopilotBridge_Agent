@@ -10,9 +10,9 @@
 - gen_ai.request.model
 - gen_ai.usage.input_tokens / output_tokens / cache_read.input_tokens
 - gen_ai.tool.name / gen_ai.tool.call.id
-再加本项目私有属性（统一 cbp. 前缀）：cbp.session_id / cbp.step / cbp.conversation_index
+再加本项目私有属性（统一 gantry. 前缀）：gantry.session_id / gantry.step / gantry.conversation_index
 注意：**不要把 trace_id 当作会话 id**（OTel 明确禁止此误用）——会话 id 另放
-cbp.session_id，trace/span id 只用于链路追踪。
+gantry.session_id，trace/span id 只用于链路追踪。
 """
 
 from __future__ import annotations

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 APP = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
-ROUTES = (ROOT / "cbp" / "routes_sessions.py").read_text(encoding="utf-8")
+ROUTES = (ROOT / "gantry" / "routes_sessions.py").read_text(encoding="utf-8")
 
 
 class ForceDeleteRetryTests(unittest.TestCase):

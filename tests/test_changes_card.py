@@ -20,9 +20,9 @@ APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
 HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
 CSS = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
 I18N = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
-API = ((BASE / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
+API = ((BASE / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 
-from cbp.snapshots import SnapshotStore
+from gantry.snapshots import SnapshotStore
 
 
 class ChangesStatsTests(unittest.TestCase):
@@ -121,9 +121,9 @@ class ApiTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="cbp_chg_api_"))
         self.ws = self.tmp / "ws"
         self.ws.mkdir()
-        from cbp import bridge as b
-        from cbp.session_store import SessionStore
-        from cbp.snapshots import SnapshotStore
+        from gantry import bridge as b
+        from gantry.session_store import SessionStore
+        from gantry.snapshots import SnapshotStore
 
         self.b = b
         self.saved = (b.AGENT_SESSIONS, b.SNAPSHOTS, b.AGENT_TOOLS.root)
@@ -136,7 +136,7 @@ class ApiTests(unittest.TestCase):
         b.SNAPSHOTS.capture("s1", "a.txt", p, tool="write_text", root=self.ws)
         p.write_text("one\ntwo\n")
         from fastapi.testclient import TestClient
-        from cbp import api as api_mod
+        from gantry import api as api_mod
         self.client = TestClient(api_mod.app)
 
     def tearDown(self):

@@ -11,9 +11,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import AgentRunner
-from cbp.snapshots import SnapshotStore
-from cbp.tools import ToolError, ToolRegistry, parse_skill_md
+from gantry.agent import AgentRunner
+from gantry.snapshots import SnapshotStore
+from gantry.tools import ToolError, ToolRegistry, parse_skill_md
 
 
 def build_runner(tools, config=None):
@@ -104,10 +104,10 @@ class SelfUpgradeTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cbp_self_"))
         self.install = self.tmp / "install"
-        (self.install / "cbp").mkdir(parents=True)
+        (self.install / "gantry").mkdir(parents=True)
         (self.install / "data").mkdir()
         (self.install / "config.json").write_text('{"k":1}', encoding="utf-8")
-        self.target = self.install / "cbp" / "mod.py"
+        self.target = self.install / "gantry" / "mod.py"
         self.target.write_text("原始代码\n", encoding="utf-8")
         self.ws = self.tmp / "ws"
         self.ws.mkdir()
@@ -122,7 +122,7 @@ class SelfUpgradeTests(unittest.TestCase):
         tools.set_global_root(self.install)
         self.assertFalse(tools.allow_self_upgrade)
         with self.assertRaises(ToolError):
-            asyncio.run(tools.self_read_text("cbp/mod.py"))
+            asyncio.run(tools.self_read_text("gantry/mod.py"))
 
     def test_write_outside_whitelist_refused(self):
         with self.assertRaises(ToolError):
@@ -135,7 +135,7 @@ class SelfUpgradeTests(unittest.TestCase):
     def test_self_write_and_rollback(self):
         import base64
         payload = base64.b64encode("升级后的代码\n".encode()).decode()
-        r = asyncio.run(self.tools.self_write_text_b64("cbp/mod.py", payload))
+        r = asyncio.run(self.tools.self_write_text_b64("gantry/mod.py", payload))
         self.assertEqual(r["written_chars"], len("升级后的代码\n"))
         self.assertEqual(self.target.read_text(encoding="utf-8"), "升级后的代码\n")
         self.assertTrue((self.install / "data" / ".self_upgrade_pending").is_file())
@@ -146,8 +146,8 @@ class SelfUpgradeTests(unittest.TestCase):
 
     def test_self_replace_requires_existing_text(self):
         with self.assertRaises(ToolError):
-            asyncio.run(self.tools.self_replace_text("cbp/mod.py", "不存在的文本", "x"))
-        r = asyncio.run(self.tools.self_replace_text("cbp/mod.py", "原始", "改动"))
+            asyncio.run(self.tools.self_replace_text("gantry/mod.py", "不存在的文本", "x"))
+        r = asyncio.run(self.tools.self_replace_text("gantry/mod.py", "原始", "改动"))
         self.assertEqual(r["replaced"], 1)
         self.assertIn("改动", self.target.read_text(encoding="utf-8"))
 

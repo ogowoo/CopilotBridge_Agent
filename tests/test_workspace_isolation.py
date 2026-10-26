@@ -24,19 +24,19 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from cbp.tools import ToolRegistry
+from gantry.tools import ToolRegistry
 
 APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
-BRIDGE = (BASE / "cbp" / "bridge.py").read_text(encoding="utf-8")
-SUBAGENTS = (BASE / "cbp" / "subagents.py").read_text(encoding="utf-8")
-EXTRA = (BASE / "cbp" / "tools_extra.py").read_text(encoding="utf-8")
+BRIDGE = (BASE / "gantry" / "bridge.py").read_text(encoding="utf-8")
+SUBAGENTS = (BASE / "gantry" / "subagents.py").read_text(encoding="utf-8")
+EXTRA = (BASE / "gantry" / "tools_extra.py").read_text(encoding="utf-8")
 
 
 class WindowIntegrationTests(unittest.TestCase):
     """走 `_window` 的真实路径：run_agent 就是在这里 set_root 后调用工具的。"""
 
     def test_window_clone_applies_workspace_to_tools(self):
-        import cbp.bridge as b
+        import gantry.bridge as b
 
         tmp = Path(tempfile.mkdtemp(prefix="cbp_win_ws_"))
         ws = tmp / "chosen"
@@ -55,7 +55,7 @@ class WindowIntegrationTests(unittest.TestCase):
         self.assertEqual(Path(b.AGENT_TOOLS.root), global_root, "全局 root 不能被任务改掉")
 
     def test_extra_tools_in_window_follow_workspace(self):
-        import cbp.bridge as b
+        import gantry.bridge as b
 
         tmp = Path(tempfile.mkdtemp(prefix="cbp_win_extra_"))
         ws = tmp / "chosen"
@@ -111,8 +111,8 @@ class CloneRebindTests(unittest.TestCase):
 
 class ExtraToolsActiveRegTests(unittest.TestCase):
     def test_extra_tools_use_task_registry(self):
-        from cbp import bridge as b
-        from cbp.tools_extra import register_extra_tools
+        from gantry import bridge as b
+        from gantry.tools_extra import register_extra_tools
 
         tmp = Path(tempfile.mkdtemp(prefix="cbp_extra_ws_"))
         one, two = tmp / "one", tmp / "two"
@@ -132,7 +132,7 @@ class ExtraToolsActiveRegTests(unittest.TestCase):
 
 class SubagentRootTests(unittest.TestCase):
     def test_run_subagent_uses_task_root(self):
-        # 子代理代码在 cbp/subagents.py（bridge.py 解耦后）
+        # 子代理代码在 gantry/subagents.py（bridge.py 解耦后）
         i = SUBAGENTS.index("async def run_subagent")
         seg = SUBAGENTS[i:i + 1200]
         self.assertIn("b.task_tools().root", seg)

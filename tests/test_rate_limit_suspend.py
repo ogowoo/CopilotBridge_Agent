@@ -9,8 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import cbp.agent as A  # noqa: E402
-from cbp.tools import ToolRegistry  # noqa: E402
+import gantry.agent as A  # noqa: E402
+from gantry.tools import ToolRegistry  # noqa: E402
 
 
 class SuspendTests(unittest.TestCase):
@@ -63,11 +63,11 @@ class SuspendTests(unittest.TestCase):
 
 class SuspendWiringTests(unittest.TestCase):
     def test_state_registered_and_resume_allowed(self):
-        from cbp.session_store import SessionStore
+        from gantry.session_store import SessionStore
         self.assertIn("suspended", SessionStore.STATES, "状态白名单要包含 suspended")
 
     def test_api_accepts_suspended_resume_and_periodic_task(self):
-        api = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
+        api = ((ROOT / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
         self.assertIn('"suspended"', api, "resume 要接受 suspended")
         self.assertIn("periodic_suspend_resume", api, "要有窗口到点的自动继续巡检")
         self.assertIn("agent.rate_limit_suspend", api, "开关要进配置白名单")

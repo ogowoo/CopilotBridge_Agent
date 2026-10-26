@@ -8,14 +8,14 @@
 
 **清单格式（与 DSH 的 `package.json` → `"dsh"` 字段对齐）**：
 
-`plugins/<name>/plugin.json`（也接受 `package.json` 里放 `"cbp"` 字段）：
+`plugins/<name>/plugin.json`（也接受 `package.json` 里放 `"gantry"` 字段）：
 
     {
       "name": "web-search",
       "version": "0.1.0",
       "description": "联网搜索",
       "dsh": {"bundle": {"patch": "./cordis.patch.yml"}},   // 可选：DSH 元数据
-      "cbp": {
+      "gantry": {
         "entry": "plugin.py",
         "permissions": ["tools", "api"],
         "contributes": {"tools": ["web_search"], "api": ["GET /api/search"]},
@@ -107,7 +107,7 @@ class PluginManifest:
 
 
 def _read_manifest(plugin_dir: Path) -> PluginManifest | None:
-    """读插件清单：plugin.json 优先，其次 package.json 的 `cbp` 字段。"""
+    """读插件清单：plugin.json 优先，其次 package.json 的 `gantry` 字段。"""
     for fname in MANIFEST_NAMES:
         path = plugin_dir / fname
         if not path.is_file():
@@ -118,8 +118,8 @@ def _read_manifest(plugin_dir: Path) -> PluginManifest | None:
             raise PluginError(f"{plugin_dir.name}: 清单不是合法 JSON（{fname}）: {exc}") from exc
         if not isinstance(raw, dict):
             raise PluginError(f"{plugin_dir.name}: 清单必须是对象")
-        # package.json 用 "cbp" 字段（与 DSH 的 "dsh" 字段对齐）；plugin.json 允许平铺
-        block = raw.get("cbp")
+        # package.json 用 "gantry" 字段（与 DSH 的 "dsh" 字段对齐）；plugin.json 允许平铺
+        block = raw.get("gantry")
         if not isinstance(block, dict):
             block = raw if fname == "plugin.json" else None
         if block is None:
@@ -513,7 +513,7 @@ class PluginHost:
         if not src:
             raise PluginError("source 不能为空")
         self.plugin_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="cbp-install-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="gantry-install-") as tmp:
             tmpdir = Path(tmp)
             if re.match(r"^(https?://|git@)", src):
                 git = shutil.which("git")

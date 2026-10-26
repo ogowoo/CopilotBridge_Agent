@@ -7,8 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-API = ((ROOT / "cbp" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "cbp" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
-PROV = (ROOT / "cbp" / "providers.py").read_text(encoding="utf-8")
+API = ((ROOT / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((ROOT / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
+PROV = (ROOT / "gantry" / "providers.py").read_text(encoding="utf-8")
 
 
 class CancelledReviveTests(unittest.TestCase):
@@ -33,13 +33,13 @@ class CancelledReviveTests(unittest.TestCase):
 
 class CredentialHintTests(unittest.TestCase):
     def test_invalid_token_gets_actionable_hint(self):
-        from cbp.providers import _credential_hint
+        from gantry.providers import _credential_hint
         hint = _credential_hint('{"code":40003,"msg":"INVALID_TOKEN","data":null}')
         self.assertIn("凭据", hint)
         self.assertIn("重新", hint)
 
     def test_other_errors_untouched(self):
-        from cbp.providers import _credential_hint
+        from gantry.providers import _credential_hint
         self.assertEqual(_credential_hint('{"detail":"bad request"}'), "")
 
     def test_hint_wired_into_http_errors(self):

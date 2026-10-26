@@ -15,8 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import httpx
 
-from cbp import providers as P
-from cbp.agent import AgentRunner, CopilotRateLimited
+from gantry import providers as P
+from gantry.agent import AgentRunner, CopilotRateLimited
 
 
 class NetErrorTextTests(unittest.TestCase):

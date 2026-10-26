@@ -428,7 +428,7 @@ class SnapshotStore:
             else:
                 # 原子还原：先写临时文件再替换，避免失败留下被截断的文件。
                 target.parent.mkdir(parents=True, exist_ok=True)
-                tmp = target.with_name(target.name + ".cbp-restore-tmp")
+                tmp = target.with_name(target.name + ".gantry-restore-tmp")
                 shutil.copy2(src, tmp)
                 os.replace(tmp, target)
             return {"path": rel, "status": "restored", "bytes": entry.get("bytes", 0)}

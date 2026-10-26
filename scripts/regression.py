@@ -37,7 +37,7 @@ class Ctx:
         self.timeout = timeout
         self.results: list[tuple[str, bool, str]] = []
         self.created_sessions: list[str] = []
-        self.tmp = Path(tempfile.mkdtemp(prefix="cbp-reg-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="gantry-reg-"))
 
     # ── HTTP ──
     def req(self, method: str, path: str, body: dict | None = None, timeout: float = 0):
@@ -237,7 +237,7 @@ def step_plugin_install(c: Ctx) -> None:
     src.mkdir(parents=True, exist_ok=True)
     (src / "plugin.json").write_text(json.dumps({
         "name": "regplugin", "version": "0.1.0", "description": "回归测试插件",
-        "cbp": {"entry": "plugin.py", "permissions": ["tools"],
+        "gantry": {"entry": "plugin.py", "permissions": ["tools"],
                 "contributes": {"tools": ["regplugin_ping"]}},
     }, ensure_ascii=False), encoding="utf-8")
     (src / "plugin.py").write_text(
@@ -273,7 +273,7 @@ def step_cli(c: Ctx) -> None:
     ok = True
     detail = []
     for args, expect in cmds:
-        r = subprocess.run([py, "-m", "cbp.cli", "--url", c.url, *args],
+        r = subprocess.run([py, "-m", "gantry.cli", "--url", c.url, *args],
                            cwd=str(BASE), capture_output=True, text=True, timeout=180)
         good = r.returncode == 0 and (not expect or expect in (r.stdout or ""))
         ok = ok and good

@@ -26,8 +26,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp.agent import AgentRunner
-from cbp.tools import ToolRegistry
+from gantry.agent import AgentRunner
+from gantry.tools import ToolRegistry
 
 
 def _register_copilot_file(tools):
@@ -154,7 +154,7 @@ class OneShotProtocolTests(unittest.TestCase):
         self.assertIn("不可用", provider_prompt, "provider 提示里应明确说明 copilot 工具不可用")
 
     def test_protocol_requires_local_loop(self):
-        from cbp.prompt import AGENT_PROTOCOL
+        from gantry.prompt import AGENT_PROTOCOL
         self.assertIn("本地闭环", AGENT_PROTOCOL)
         self.assertIn("1~3 个回合", AGENT_PROTOCOL)
 

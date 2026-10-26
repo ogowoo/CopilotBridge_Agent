@@ -1,4 +1,4 @@
-# CopilotBridge Agent 代码与工程分析报告
+# Gantry 代码与工程分析报告
 
 ## 1. 管理层摘要
 
@@ -19,21 +19,21 @@
 | 路径 | 职责 |
 |---|---|
 | app.py、start.py、install.py | 应用入口、启动和安装 |
-| cbp/api.py、cbp/routes_*.py | FastAPI 与 OpenAI 兼容接口 |
-| cbp/bridge.py、cbp/lifecycle.py | 运行态装配和资源生命周期 |
-| cbp/browser.py、cbp/page.py、cbp/provider.py | Edge 与 M365 Copilot 网页通道 |
-| cbp/providers.py | OpenAI 兼容 API Provider |
-| cbp/agent*.py、cbp/agentrun.py | Agent 提示词、解析、文本治理和执行循环 |
-| cbp/tools.py、cbp/tools_*.py | 工具注册、权限、审批和执行 |
-| cbp/session_store.py | SQLite 会话、消息、步骤和状态 |
-| cbp/snapshots.py、cbp/tools_self.py | 快照、回滚和自升级 |
+| gantry/api.py、gantry/routes_*.py | FastAPI 与 OpenAI 兼容接口 |
+| gantry/bridge.py、gantry/lifecycle.py | 运行态装配和资源生命周期 |
+| gantry/browser.py、gantry/page.py、gantry/provider.py | Edge 与 M365 Copilot 网页通道 |
+| gantry/providers.py | OpenAI 兼容 API Provider |
+| gantry/agent*.py、gantry/agentrun.py | Agent 提示词、解析、文本治理和执行循环 |
+| gantry/tools.py、gantry/tools_*.py | 工具注册、权限、审批和执行 |
+| gantry/session_store.py | SQLite 会话、消息、步骤和状态 |
+| gantry/snapshots.py、gantry/tools_self.py | 快照、回滚和自升级 |
 | webui/、scripts/、tests/ | 管理台、运维脚本和测试 |
 
 ## 4. 核心调用链
 
-- 启动：start.py → cbp/api.py → cbp/lifecycle.py → Bridge、数据库、浏览器和后台任务。
-- 普通请求：路由 → cbp/bridge.py → 浏览器通道或 cbp/providers.py → 标准响应或 SSE。
-- Agent：cbp/routes_agents.py → cbp/agentrun.py → 提示词 → 模型 → cbp/agent_parse.py → ToolRegistry → SQLite。
+- 启动：start.py → gantry/api.py → gantry/lifecycle.py → Bridge、数据库、浏览器和后台任务。
+- 普通请求：路由 → gantry/bridge.py → 浏览器通道或 gantry/providers.py → 标准响应或 SSE。
+- Agent：gantry/routes_agents.py → gantry/agentrun.py → 提示词 → 模型 → gantry/agent_parse.py → ToolRegistry → SQLite。
 
 ## 5. 架构优点
 
@@ -46,12 +46,12 @@
 
 ### P0
 
-- 非 loopback 绑定若未强制 Token，可能远程暴露高权限 API。应在 start.py、cbp/api.py 和配置校验中 fail closed。
+- 非 loopback 绑定若未强制 Token，可能远程暴露高权限 API。应在 start.py、gantry/api.py 和配置校验中 fail closed。
 - Python 或 PowerShell 进程权限接近服务账户，路径沙箱无法隔离进程。应使用低权限 worker、资源限制和独立审批。
 
 ### P1
 
-- 宽泛异常捕获可能把根因表现为超时或状态漂移，重点涉及 cbp/agent.py、cbp/agentrun.py、cbp/api.py、cbp/bridge.py。
+- 宽泛异常捕获可能把根因表现为超时或状态漂移，重点涉及 gantry/agent.py、gantry/agentrun.py、gantry/api.py、gantry/bridge.py。
 - 浏览器通道依赖外部 DOM，应增加选择器冒烟测试、诊断快照和降级路径。
 
 ## 7. 状态与资源生命周期
@@ -85,7 +85,7 @@
 
 - 已有 README、快速入门、技术说明、多窗口、Provider 和版本文档。
 - 仍需完善 API、配置、安全、故障排查和运维手册。
-- cbp/browser.py、cbp/routes_config.py、cbp/window_pool.py 的窗口上限定义需要统一后再同步文档。
+- gantry/browser.py、gantry/routes_config.py、gantry/window_pool.py 的窗口上限定义需要统一后再同步文档。
 - 规范、教程、设计、评审和历史研究应分类管理。
 
 ## 12. 建议实施顺序

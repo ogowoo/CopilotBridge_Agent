@@ -45,7 +45,7 @@ def run(url: str, keep_open: bool) -> int:
         page.on("pageerror", lambda e: page_errors.append(str(e)))
 
         # 带 token 加载：验证 SSE 会把 token 附到 query（P1 缺陷的直接回归）
-        page.add_init_script("localStorage.setItem('cbp-token','SMOKE-TOKEN-123');")
+        page.add_init_script("localStorage.setItem('gantry-token','SMOKE-TOKEN-123');")
         bad_responses: list[str] = []
         page.on("response", lambda r: bad_responses.append(f"{r.status} {r.url}")
                 if r.status >= 400 else None)

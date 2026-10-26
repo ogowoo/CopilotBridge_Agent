@@ -124,6 +124,6 @@ async def run_plugin_task(task: str, model: str = "", workspace: str = "",
 
 async def fanout(tasks, model: str = "", workspace: str = "",
                  max_steps: int = 0, parent_title: str = "") -> dict:
-    """确定性扇出（实现在 cbp/fanout.py，延迟导入避免循环依赖）。"""
+    """确定性扇出（实现在 gantry/fanout.py，延迟导入避免循环依赖）。"""
     from .fanout import fanout as _fanout
     return await _fanout(tasks, model, workspace, max_steps, parent_title)

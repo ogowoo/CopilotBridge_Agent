@@ -13,8 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cbp import editmatch
-from cbp.tools import ToolError, ToolRegistry
+from gantry import editmatch
+from gantry.tools import ToolError, ToolRegistry
 
 
 class MatchTests(unittest.TestCase):

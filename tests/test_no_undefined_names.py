@@ -95,7 +95,7 @@ def audit(paths: list[Path]) -> list[str]:
 
 class UndefinedNameTests(unittest.TestCase):
     def test_package_has_no_undefined_names(self):
-        targets = sorted((ROOT / "cbp").glob("*.py"))
+        targets = sorted((ROOT / "gantry").glob("*.py"))
         targets += sorted(ROOT.glob("*.py"))
         targets += sorted((ROOT / "scripts").glob("*.py"))
         problems = audit(targets)
