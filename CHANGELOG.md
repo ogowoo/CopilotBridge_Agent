@@ -14,6 +14,46 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.2] - 2026-10-26
+
+改名收尾（多 agent 交叉审核发现的问题，逐条修）：
+
+### Fixed
+
+- **搜索高亮丢样式**（真实回归）：CSS 只定义 `mark.cbp-hit`，而 app.js 生成
+  `class="gantry-hit"` —— 改名时只扫了 `.py/.js/.html/.md`，漏了 `.css`。
+  现在类名/动画名统一为 `gantry-*`。
+- **旧 Copilot 会话删不掉**：删除时用新标记 `[GANTRY-AGENT][sid]` 做归属校验，
+  改名前的旧会话只有 `[CBP-AGENT][sid]` → 被判"不属于本会话"，必现误拒。
+  现在 `brand.marker_prefixes()` 同时给出两套前缀，归属校验与对账终验都认两套。
+- **旧请求头被覆盖**：`routes_sessions` / `routes_core` 只读新头 `X-Gantry-Lang`，
+  旧客户端带 `X-CBP-Lang` 时会被重新设成 zh；改用 `a._lang_of()`（两套都认）。
+- **`GANTRY_*` 环境变量此前是死代码**：`brand.env()` 无人调用。现已接入
+  `cli.py`（URL/TOKEN/PORT）、`agentrun.py`（EVENT_SOURCE）、插件与脚本；
+  `GANTRY_*` 优先、`CBP_*` 回落。`gantry serve --port` 现在同时写两个变量名。
+- **升级后丢 token / 语言 / 主题**：前端只读 `gantry-*`，没有旧键回落。
+  `boot.js` 增加一次性迁移（`cbp-*` → `gantry-*`，带 `gantry-migrated` 标记），
+  `apiToken()` 也回落 `cbp-token`。
+- **英文界面仍有中文**：19 个 `tr()` key 没有英文条目（`版本`/`调用`/`回答`/`已复制`…），
+  `等待模型回答…` 完全没走 `tr()`；已补齐。
+- **繁体漏字**：S2T 表缺 `实→實`、`东→東`（"实時流"、"不能改任何东西"），已补。
+- 界面残留旧名：页签标题兜底、导出 JSON 的 `app` 字段、`--help` 描述、包 docstring、
+  自升级提示词、出站 `User-Agent`、首页徽标（`CB` → `G`）。
+
+### Changed
+
+- 启动日志现在带品牌与版本：`Gantry v11.0.0-preview.2 已启动（…）`。
+- 文档/CI 元数据：README 版本行与克隆地址、`docs/TECHNICAL.md` 标题与标记名、
+  `PROVIDER-deepseek-web.md` 项目名、`MULTI-WINDOW.md` 过期版本头、
+  `release.yml` 产物/artifact/Release 名称；`requires-python` 与 CI 统一到 3.11。
+- `bump_version.py` 现在也能同步 README 里 `**x.y.z**` 形态的版本行
+  （此前只匹配全角括号，README 从没被同步过）。
+
+### Added
+
+- `tests/test_rename.py`（14 条）钉住上述回归：类名一致性、旧标记双认、
+  `brand.env` 优先/回落、localStorage 迁移、首页徽标、英文覆盖率、启动横幅。
+
 ## [11.0.0-preview.1] - 2026-10-26
 
 ### Added

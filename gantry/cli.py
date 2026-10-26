@@ -15,13 +15,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+
+from .brand import env
 import sys
 from typing import Any
 
 import httpx
 
-DEFAULT_URL = os.environ.get("CBP_URL", "http://127.0.0.1:8765")
-DEFAULT_TOKEN = os.environ.get("CBP_TOKEN", "")
+DEFAULT_URL = env("URL", "http://127.0.0.1:8765")
+DEFAULT_TOKEN = env("TOKEN", "")
 
 
 def _client(args) -> httpx.Client:
@@ -92,7 +94,8 @@ def cmd_serve(args) -> int:
         return _fail(f"找不到服务入口: {server}")
     argv = [sys.executable, server]
     if args.port:
-        os.environ["CBP_PORT"] = str(args.port)
+        os.environ["GANTRY_PORT"] = str(args.port)
+    os.environ["CBP_PORT"] = str(args.port)  # 兼容旧名
     try:
         import uvicorn  # noqa: F401
     except Exception:
@@ -247,9 +250,9 @@ def cmd_mcp(args) -> int:
 # ────────────────────────── 解析入口 ──────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="gantry", description="CopilotBridge Agent 命令行（headless）")
+    ap = argparse.ArgumentParser(prog="gantry", description="Gantry 命令行（headless）")
     ap.add_argument("--url", default=DEFAULT_URL, help=f"服务地址（默认 {DEFAULT_URL}）")
-    ap.add_argument("--token", default="", help="api_token（也可用环境变量 CBP_TOKEN）")
+    ap.add_argument("--token", default="", help="api_token（也可用环境变量 GANTRY_TOKEN，兼容旧名 CBP_TOKEN）")
     ap.add_argument("--timeout", type=float, default=900.0, help="HTTP 超时秒数")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

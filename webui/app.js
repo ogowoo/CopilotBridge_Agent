@@ -5,10 +5,10 @@ let DEMO=false;
 
 /* ── 演示模式：API 不可达时展示界面（仅预览用，正式环境不会触发） ── */
 const DEMO_SESSIONS=[
- {id:'task-demo01',title:'分析 gantry 项目并生成 TODO',state:'running',model:'copilot-think-deeper',total_steps:47,conversation_steps:12,conversation_index:1,estimated_tokens:18320,workspace:'C:\\CopilotBridge\\workspace'},
- {id:'task-demo02',title:'整理 Outlook 未读邮件',state:'paused',total_steps:23,conversation_steps:23,conversation_index:0,estimated_tokens:9640,workspace:'C:\\CopilotBridge\\workspace'},
- {id:'task-demo03',title:'对比两个目录差异',state:'failed',total_steps:101,conversation_steps:4,conversation_index:3,estimated_tokens:23110,workspace:'C:\\CopilotBridge\\workspace'},
- {id:'task-demo04',title:'深圳英文旅游手册',state:'completed',total_steps:15,conversation_steps:15,conversation_index:0,estimated_tokens:7420,workspace:'C:\\CopilotBridge\\workspace'}];
+ {id:'task-demo01',title:'分析 gantry 项目并生成 TODO',state:'running',model:'copilot-think-deeper',total_steps:47,conversation_steps:12,conversation_index:1,estimated_tokens:18320,workspace:'C:\\Gantry\\workspace'},
+ {id:'task-demo02',title:'整理 Outlook 未读邮件',state:'paused',total_steps:23,conversation_steps:23,conversation_index:0,estimated_tokens:9640,workspace:'C:\\Gantry\\workspace'},
+ {id:'task-demo03',title:'对比两个目录差异',state:'failed',total_steps:101,conversation_steps:4,conversation_index:3,estimated_tokens:23110,workspace:'C:\\Gantry\\workspace'},
+ {id:'task-demo04',title:'深圳英文旅游手册',state:'completed',total_steps:15,conversation_steps:15,conversation_index:0,estimated_tokens:7420,workspace:'C:\\Gantry\\workspace'}];
 const DEMO_STEPS=[
  {step:44,tool:'read_text',status:'ok',reason:'读取 agent.py 确认当前实现',result:{path:'agent.py',content:'import asyncio\nimport json\n\nclass AgentRunner:\n    async def run(self, task, model):\n        # 主循环：构造提示 → 等待回答 → 解析动作\n        while not done:\n            action = parse(await chat(prompt))\n',truncated:false}},
  {step:45,tool:'write_text_b64',status:'ok',reason:'写入修复后的 agent.py',result:{path:'agent.py',written_chars:7342,file_event:{tool:'write_text_b64',path:'agent.py',before_hash:'9f2c…',after_hash:'41ab…',result:'ok'}}},
@@ -32,7 +32,8 @@ function demoApi(u,o={}){
  return{deleted:true,local_deleted:true,remote_results:[],session_id:'task-demo01'};
 }
 
-function apiToken(){try{return localStorage.getItem('gantry-token')||''}catch(e){return ''}}
+function apiToken(){try{return localStorage.getItem('gantry-token')
+ || localStorage.getItem('cbp-token') || ''}catch(e){return ''}}
 /* 页签标题里的版本**不再硬编码**：曾经写死一个预览号，版本一升标题就对不上
    （用户实测）。现在由 loadVersion() 用 GET / 的真实版本拼，见 applyTitleVersion。 */
 let lastMessages=[];        // 最近一次渲染的消息（对话搜索基于它重渲染；曾漏声明导致搜索抛异常）
@@ -2442,7 +2443,7 @@ async function exportTimeline(){
   const _files=[...(d.files||[])].sort((a,b)=>(a.id??0)-(b.id??0));
   const _last=_steps.length?_steps[_steps.length-1]:null;
   const _lastMsg=_msgs.length?_msgs[_msgs.length-1]:null;
-  let payload={exported_at:new Date().toISOString(),app:'CopilotBridge Agent',
+  let payload={exported_at:new Date().toISOString(),app:'Gantry',
                api:'/v1/agent/sessions/'+encodeURIComponent(current),
                order:{steps:'ascending（旧→新，按 step 号）',
                       messages:'ascending（旧→新，按 id/时间）',
@@ -5133,7 +5134,7 @@ try{syncComposer()}catch(e){}
    数据来自 GET /（后端 app 的 version），拿不到就保持隐藏——不喧哗。 */
 /* 页签标题 = 基础名 + 真实版本；幂等（先把旧的 " - v…" 尾巴去掉再拼）。 */
 function applyTitleVersion(version, name){
- const base=String(name||'CopilotBridge Agent').trim()||'CopilotBridge Agent';
+ const base=String(name||'Gantry').trim()||'Gantry';
  const v=String(version||'').trim();
  const t=v?(base+' - v'+v):base;
  if(document.title!==t)document.title=t;
@@ -5149,7 +5150,7 @@ async function loadVersion(){
   const v=String(d.version||'').trim();
   if(!v)return;
   el.textContent='v'+v;
-  el.title=tr('版本')+'：'+v+'（'+(d.name||'Copilot Local Bridge Agent')+'）';
+  el.title=tr('版本')+'：'+v+'（'+(d.name||'Gantry')+'）';
   el.hidden=false;
   applyTitleVersion(v, d.name);
  }catch(e){/* 拿不到就不显示 */}

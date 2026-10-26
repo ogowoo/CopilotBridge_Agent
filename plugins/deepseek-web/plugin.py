@@ -143,11 +143,20 @@ def _refresh_loop(ctx: Any, interval: float = 20.0) -> None:
             continue
 
 
+try:  # 插件可独立加载：优先用 host 的 brand.env
+    from gantry.brand import env
+except Exception:  # pragma: no cover
+    import os as _os
+
+    def env(name, default=None):
+        return (_os.environ.get("GANTRY_" + name)
+                or _os.environ.get("CBP_" + name) or default)
+
+
 def _start_refresher(ctx: Any, interval: float) -> None:
-    import os
     import threading
 
-    if os.environ.get("CBP_PLUGIN_NO_TIMERS") == "1":
+    if env("PLUGIN_NO_TIMERS") == "1":
         return
     if interval <= 0:
         return

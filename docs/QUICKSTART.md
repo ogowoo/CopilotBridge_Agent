@@ -23,7 +23,7 @@
 ## 2. 安装（4 条命令）
 
 ```powershell
-git clone https://github.com/ogowoo/Gantry.git
+git clone https://github.com/ogowoo/gantry.git
 cd Gantry
 python install.py                                   # 装依赖 + Playwright 浏览器
 copy config.example.json config.json                 # 首次需要

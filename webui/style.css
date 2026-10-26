@@ -379,8 +379,8 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .msg:hover .msg-icon{opacity:1}
 .msg-icon:hover{color:var(--text);background:var(--menu-hover)}
 .msg-icon.del:hover{color:var(--danger-text);background:var(--danger-bg)}
-.msg.flash{animation:cbp-flash 2.2s ease-out}
-@keyframes cbp-flash{0%,30%{background:rgba(88,166,255,.20)}100%{background:transparent}}
+.msg.flash{animation:gantry-flash 2.2s ease-out}
+@keyframes gantry-flash{0%,30%{background:rgba(88,166,255,.20)}100%{background:transparent}}
 /* 跨会话搜索结果面板（侧栏内，占位不遮挡会话列表上方） */
 .gsearch{display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-top:1px solid var(--line);
   border-bottom:1px solid var(--line);background:var(--panel2);max-height:46vh;overflow:auto}
@@ -469,11 +469,11 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .findbar{display:flex;align-items:center;gap:6px;padding:6px 12px 0}
 .findbar input{flex:1;min-width:0}
 .findcount{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
-mark.cbp-hit{background:var(--amber);color:#1a1206;border-radius:3px;padding:0 1px}
-mark.cbp-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--accent2)}
+mark.gantry-hit{background:var(--amber);color:#1a1206;border-radius:3px;padding:0 1px}
+mark.gantry-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var(--accent2)}
 /* 新到达消息的渐显（流式观感） */
-@keyframes cbp-reveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.msg.reveal{animation:cbp-reveal .28s ease-out}
+@keyframes gantry-reveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.msg.reveal{animation:gantry-reveal .28s ease-out}
 @media (prefers-reduced-motion:reduce){.msg.reveal{animation:none}}
 .composer{display:flex;gap:9px;padding:12px 15px;border-top:1px solid var(--line);align-items:flex-end}
 .composer textarea{flex:1;min-height:44px;max-height:160px}

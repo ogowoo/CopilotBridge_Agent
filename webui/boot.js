@@ -1,3 +1,18 @@
+
+/* 一次性迁移：项目改名（CBP → Gantry）后，旧键 cbp-* 迁到新键 gantry-*。
+   否则升级后用户的 token / 语言 / 主题 / 侧栏偏好全部丢失（审核实测为真问题）。 */
+try{
+ if(!localStorage.getItem('gantry-migrated')){
+  for(let i=0;i<localStorage.length;i++){
+   const k=localStorage.key(i);
+   if(k&&k.indexOf('cbp-')===0){
+    const nk='gantry-'+k.slice(4);
+    if(localStorage.getItem(nk)===null)localStorage.setItem(nk,localStorage.getItem(k));
+   }
+  }
+  localStorage.setItem('gantry-migrated','1');
+ }
+}catch(e){}
 /* 首屏主题与侧栏状态初始化。
  * 之所以是**独立文件**而不是 <head> 里的内联 <script>：内联脚本会迫使 CSP 保留
  * script-src 'unsafe-inline'，而内联脚本/内联事件处理器正是 XSS 的主要放大器。

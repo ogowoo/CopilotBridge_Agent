@@ -11,6 +11,7 @@ import re
 import time
 
 from . import bridge as _b
+from .brand import marker_prefixes, marker_prefix_regex
 from .bridge import (visible, visible_locator, diagnostics, log, CONVERSATION_URL_RE,
                      _agent_chat_marker, wait_copilot_ready, body_text, CFG)
 
@@ -126,7 +127,7 @@ async def _chat_row_from_link(link):
     return link.locator('xpath=..')
 
 
-async def _conversation_belongs_to_session(url: str, session_prefix: str) -> bool:
+async def _conversation_belongs_to_session(url: str, session_prefixes) -> bool:
     """打开会话正文，确认标记仍在（标题可能已被 Copilot 自动改名）。
 
     发送新会话时标记 [CBP-AGENT][sid][Cnnn] 是写进首条消息体的，所以即使
@@ -142,7 +143,8 @@ async def _conversation_belongs_to_session(url: str, session_prefix: str) -> boo
         body = await body_text()
     except Exception:
         return False
-    return session_prefix in (body or "")
+    prefixes = [session_prefixes] if isinstance(session_prefixes, str) else list(session_prefixes)
+    return any(p in (body or "") for p in prefixes)
 
 
 async def _ensure_page_for_delete() -> None:
@@ -201,10 +203,14 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
     try:
         await _ensure_page_for_delete()
         page = _b.page
-        marker_match = re.match(r"^(\[(?:GANTRY|CBP)-AGENT\]\[[^\]]+\])\[C\d+\]$", expected_title)
+        marker_match = re.match(r"^(\[(?:GANTRY|CBP)-AGENT\])\[([^\]]+)\]\[C\d+\]$", expected_title)
         if not marker_match:
             raise RuntimeError("拒绝删除：目标没有合法 GANTRY/CBP-AGENT 标识")
-        session_prefix = marker_match.group(1)
+        # 归属校验认**两套**前缀：改名前的旧会话只有 [CBP-AGENT][sid]，
+        # 只认新标记会把它们判成"不属于本会话"，导致旧任务永远删不掉。
+        _sid_for_prefix = marker_match.group(2)
+        session_prefix = marker_match.group(1) + f"[{_sid_for_prefix}]"
+        session_prefixes = marker_prefixes(_sid_for_prefix)
 
         # 删除成功/已被删除后 Copilot 常弹 "This chat is no longer available"
         # 提示框。该弹窗常由 Fluent UI 渲染在 shadow DOM 里，body 的
@@ -295,12 +301,12 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
         row = await _chat_row_from_link(link)
         await row.scroll_into_view_if_needed(timeout=5000)
         row_text = (await row.inner_text()).strip()
-        if session_prefix not in row_text:
+        if not any(p in row_text for p in session_prefixes):
             # Copilot 现在会自动为会话生成标题（例如"OneDrive文件上传SharePoint工具"），
             # 我们写在首条消息里的 [CBP-AGENT][sid][Cnnn] 会被标题改写掉，标题不再
             # 可靠。改成打开会话正文确认标记仍在——标记是发送时写进消息体的，
             # 证据更强，也不会因为改名而误判。
-            if not await _conversation_belongs_to_session(url, session_prefix):
+            if not await _conversation_belongs_to_session(url, session_prefixes):
                 raise RuntimeError(
                     f"URL 对应会话不属于当前 Session（标题与正文均无标记），拒绝删除；"
                     f"需要前缀: {session_prefix}"
@@ -505,7 +511,9 @@ async def finalize_session_remote_deletion(sid: str, remote_results: list) -> li
     2. 刷新后清点残留，报失败但已不在侧栏的条目改判删除成功（verified-absent）。
     最终仍以侧栏实际残留为准，避免误识别双向出错（不会漏报，也不会误报成功）。
     """
-    prefix = _agent_chat_marker(sid, 0)[:-6]  # [CBP-AGENT][<sid>]，与侧栏标题前缀一致
+    prefixes = marker_prefixes(sid)   # [GANTRY-AGENT][sid] + 旧 [CBP-AGENT][sid]
+    prefix = prefixes[0]
+    prefix_re = marker_prefix_regex(sid)
 
     def _conv_id(url: str) -> str:
         m = CONVERSATION_URL_RE.search(url or "")
@@ -518,7 +526,7 @@ async def finalize_session_remote_deletion(sid: str, remote_results: list) -> li
     async def _rows_with_marker() -> dict:
         """侧栏中所有带本 Session 标记的会话：href -> conversation_index（未知为 None）。"""
         found: dict = {}
-        hits = page.get_by_text(re.compile(re.escape(prefix)))
+        hits = page.get_by_text(prefix_re)
         for i in range(min(await hits.count(), 60)):
             try:
                 hit = hits.nth(i)
@@ -526,7 +534,7 @@ async def finalize_session_remote_deletion(sid: str, remote_results: list) -> li
                     continue
                 row = await _chat_row_from_link(hit)
                 text = (await row.inner_text()).strip()
-                if prefix not in text:
+                if not any(p in text for p in prefixes):
                     continue
                 link = row.locator('a[href*="/conversation/"]').first
                 if not await link.count():

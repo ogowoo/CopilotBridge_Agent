@@ -30,10 +30,10 @@
 | 接法 | 工作量 | 风险/维护 | 结论 |
 |---|---|---|---|
 | **A. 只当外部提供商**（跑反代 → `config.json` 的 `providers` 加一条） | 5 分钟，**零代码** | 反代自己维护、自己承担封号 | 适合"我就想用一下" |
-| **B. 做成 CBP 插件**（本仓库已实现） | 已落地 | 同上，但模型发现/健康状态在界面里可见 | ✅ 推荐：既省事又不用改核心 |
+| **B. 做成 Gantry 插件**（本仓库已实现） | 已落地 | 同上，但模型发现/健康状态在界面里可见 | ✅ 推荐：既省事又不用改核心 |
 | **C. 原生接入 Copilot 桥接那套**（自己逆向 DeepSeek） | 几天 + 长期跟着上游改 | PoW/TLS/封号都要自己扛 | ❌ 不建议：纯粹是重复造轮子 |
 
-**为什么 B 不改核心**：CBP 早就有 "OpenAI 兼容提供商" 抽象
+**为什么 B 不改核心**：Gantry 早就有 "OpenAI 兼容提供商" 抽象
 （`gantry/providers.py` 的 `ApiProvider` + `PROVIDERS`），任何 OpenAI 协议的服务
 都能直接变成 `提供商名/模型名`。而插件系统暴露了 `ctx.register_provider()`，
 所以"新增一个模型来源"天然属于插件层，不需要碰 `gantry/bridge.py` 的浏览器桥接。
@@ -63,7 +63,7 @@ docker run -d -p 8000:8000 -v ${PWD}/config.json:/app/config.json `
   ghcr.io/fly143/deepseek-free-api:latest
 # 或：git clone 后 ./deploy.sh --bg（管理面板 http://localhost:8000/admin 里登录 DeepSeek 账号）
 
-# 2) 在 CBP 里启用插件（插件管理 → deepseek-web → 启用），必要时改 base_url / api_key
+# 2) 在 Gantry 里启用插件（插件管理 → deepseek-web → 启用），必要时改 base_url / api_key
 
 # 3) 选模型：dsweb/deepseek-reasoner（思考）/ dsweb/deepseek-default（直答）
 ```
@@ -92,10 +92,10 @@ docker run -d -p 8000:8000 -v ${PWD}/config.json:/app/config.json `
 - **封号**：反代 README 明写"不建议使用"；DeepSeek 的处罚会累计升级。别拿主账号试。
 - **延迟**：PoW 每次 1~3 秒；非流式要先等完整 SSE 再合并，长回答会更慢——
   这就是 `timeout_seconds` 默认给到 300 的原因。
-- **并发**：免费账号约 2 并发，多子代理并发跑会排队（CBP 的 `subagent_parallel` 会自动限）。
+- **并发**：免费账号约 2 并发，多子代理并发跑会排队（Gantry 的 `subagent_parallel` 会自动限）。
 - **上下文**：反代的多轮复用是"代理侧缓存"（靠 `X-Conversation-Id`/`user`），
-  与 CBP 的会话/rollover 不是一回事；长任务仍靠 CBP 自己的摘要+换会话。
-- **工具调用**：反代用 DSML 注入实现 function calling，但 **CBP 的 Agent 循环不需要它**——
+  与 Gantry 的会话/rollover 不是一回事；长任务仍靠 Gantry 自己的摘要+换会话。
+- **工具调用**：反代用 DSML 注入实现 function calling，但 **Gantry 的 Agent 循环不需要它**——
   我们把工具协议写在提示词里（`AGENT_PROTOCOL`），模型只要能输出 JSON 就能用工具，
   所以哪怕反代完全不支持 tools，Agent 模式照样能跑。
 
@@ -120,8 +120,8 @@ docker run -d -p 8000:8000 -v ${PWD}/config.json:/app/config.json `
 | 反代进程 | `.\.venv\Scripts\python.exe proxy.py`，监听 **http://127.0.0.1:8000** |
 | 管理面板 | **http://127.0.0.1:8000/admin**，Basic 认证默认 **admin / admin** |
 | 凭证文件 | `dsweb-proxy/config.json`（含 DeepSeek token，甚至明文密码——**别提交、别外传**） |
-| CBP 插件 | `plugins/deepseek-web`（已在运行中的服务里 enable 并 loaded） |
-| CBP 侧状态 | `GET /v1/plugins/deepseek-web/api/status` |
+| Gantry 插件 | `plugins/deepseek-web`（已在运行中的服务里 enable 并 loaded） |
+| Gantry 侧状态 | `GET /v1/plugins/deepseek-web/api/status` |
 
 当前实测状态（尚未登录 DeepSeek）：
 
@@ -130,7 +130,7 @@ docker run -d -p 8000:8000 -v ${PWD}/config.json:/app/config.json `
  "model_ids": [], "hint": "反代在线但没有可用模型：打开它的管理面板登录 DeepSeek 账号后刷新"}
 ```
 
-此时从 CBP 调 `dsweb/deepseek-default` 会拿到反代的明确报错（不是静默失败）：
+此时从 Gantry 调 `dsweb/deepseek-default` 会拿到反代的明确报错（不是静默失败）：
 
 ```
 503 没有可用账号，请先访问 /admin 添加并登录账号
@@ -141,7 +141,7 @@ docker run -d -p 8000:8000 -v ${PWD}/config.json:/app/config.json `
 1. 打开 http://127.0.0.1:8000/admin （Basic 认证 `admin` / `admin`）；
 2. 用**手机号或邮箱 + 密码**登录你的 DeepSeek 账号（登录后 token 自动写进 `config.json`）；
    - 若提示注册/登录被 WAF 拦（大陆 IP 常见），给反代配一个海外代理再试；
-3. 回到 CBP → 插件管理 → **deepseek-web** → 打开面板刷新（或调一次 `api/status`）；
+3. 回到 Gantry → 插件管理 → **deepseek-web** → 打开面板刷新（或调一次 `api/status`）；
    模型会出现：`dsweb/deepseek-reasoner`、`dsweb/deepseek-default`、`dsweb/deepseek-search`…
 4. 之后在"新任务/继续对话"的模型下拉里直接选 `dsweb/…` 即可跑。
 

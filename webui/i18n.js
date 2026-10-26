@@ -907,6 +907,24 @@ Object.assign(I18N_EN, {
   "，下一回合生效": ", takes effect next turn",
   "，以及该任务关联的所有 Copilot 网页会话（标题里可能已没有 [GANTRY-AGENT] 标记，删除时会用会话正文核对归属）":
     ", plus all Copilot web conversations tied to this task (titles may no longer carry the [GANTRY-AGENT] marker; ownership is verified against the conversation body)",
+  " · {r} 运行中": " · {r} running",
+  "回答": "Answer",
+  "复制失败": "Copy failed",
+  "已合并 {n} 条插件译文": "Merged {n} plugin translation entries",
+  "已复制": "Copied",
+  "已载入模板: ": "Template loaded: ",
+  "当前没有对话记录。下面发送的消息会发给该 Session 正在使用的模型。": "No messages yet. Anything you send below goes to the model this session is using.",
+  "批量 {n} 个动作": "Batch of {n} actions",
+  "模型提示": "Model notice",
+  "模板渲染失败: ": "Template render failed: ",
+  "正在做什么": "What it's doing",
+  "没有可清理的会话": "No session to clean up",
+  "没有改动": "No changes",
+  "用法：/": "Usage: /",
+  "该会话还没有 Agent 步骤": "This session has no agent steps yet",
+  "该提问已回答或已过期，已收起": "That question was answered or expired; collapsed",
+  "调用": "Calls",
+  "进行中（推断）": "In progress (inferred)",
 });
 
 /* 动态渲染出来的**属性**在 DOM 层翻译（title / placeholder / aria-label）。
@@ -938,7 +956,7 @@ const I18N_TW_OVERRIDE = {
   "内存": "記憶體", "网络": "網路", "加载": "載入", "刷新": "重新整理", "视频": "影片",
   "软件": "軟體", "硬件": "硬體", "打印": "列印", "默认": "預設", "支持": "支援",
   "信息": "資訊", "登录": "登入", "退出": "結束", "撤销": "復原", "回滚": "還原",
-  "搜索": "搜尋", "查找": "尋找", "粘贴": "貼上", "复制": "複製", "版本": "版本",
+  "搜索": "搜尋", "查找": "尋找", "粘贴": "貼上", "复制": "複製", "版本": "Version",
   "菜单": "選單", "选项": "選項", "标签": "標籤", "分组": "分組", "队列": "佇列",
   "授权": "授權", "权限": "權限", "验证": "驗證", "校验": "驗證", "质量": "品質",
   "视频": "影片", "连接": "連線", "断开": "中斷", "重试": "重試", "终止": "終止",
@@ -965,6 +983,8 @@ const I18N_TW_OVERRIDE = {
 /* 简→繁字符表（只收界面里会出现的常用字；短语表优先） */
 const S2T_CHARS = (() => {
   const pairs = [
+    ["实","實"],
+    ["东","東"],
     ["设","設"],["计","計"],["会","會"],["话","話"],["题","題"],["标","標"],["签","籤"],
     ["删","刪"],["除","除"],["复","複"],["制","製"],["时","時"],["间","間"],["务","務"],
     ["步","步"],["骤","驟"],["错","錯"],["误","誤"],["败","敗"],["试","試"],["验","驗"],

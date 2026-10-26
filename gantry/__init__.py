@@ -1,1 +1,1 @@
-"""CopilotBridge Agent 核心包。"""
+"""Gantry 核心包。"""

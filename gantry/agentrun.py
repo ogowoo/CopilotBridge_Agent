@@ -13,7 +13,7 @@ from typing import Literal
 from fastapi import HTTPException
 
 from . import bridge as b
-from .brand import MARKER_AGENT, MARKER_TURN
+from .brand import MARKER_AGENT, MARKER_TURN, env
 
 
 async def wait_agent_answer(previous: str = "", pause_check=None, interrupt_check=None,
@@ -687,7 +687,7 @@ def _conv_index(sid: str) -> int:
 def event_source() -> str:
     """读取路径来源（P2-10 第三期开关）：columns（默认，读数据库列）/ projection（读事件投影）。
 
-    优先级：config.json 的 agent.event_source → 环境变量 CBP_EVENT_SOURCE → columns。
+    优先级：config.json 的 agent.event_source → 环境变量 GANTRY_EVENT_SOURCE（兼容 CBP_）→ columns。
     默认必须是 columns：投影虽已被测试与巡检证明一致，但"切换读取路径"应当是显式动作，
     且任何时候都能一条命令回退（这也是分期推进第三期的前提）。
     """
@@ -696,7 +696,7 @@ def event_source() -> str:
     except Exception:
         val = ""
     if not val:
-        val = (os.environ.get("CBP_EVENT_SOURCE") or "").strip().lower()
+        val = (env("EVENT_SOURCE") or "").strip().lower()
     return val if val in ("columns", "projection") else "columns"
 
 

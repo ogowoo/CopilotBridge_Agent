@@ -173,9 +173,9 @@ async def lifespan(app):
     if mode == "eager":
         boot = asyncio.create_task(boot_browser())
         BOOT["task"] = boot
-        b.log("API 已启动（browser_startup=eager：浏览器在后台预热）")
+        b.log(f"{_APP_NAME} v{_APP_VERSION} 已启动（browser_startup=eager：浏览器在后台预热）")
     else:
-        b.log("API 已启动（browser_startup=lazy：首次使用 Copilot 时才启动浏览器）")
+        b.log(f"{_APP_NAME} v{_APP_VERSION} 已启动（browser_startup=lazy：首次使用 Copilot 时才启动浏览器）")
     cleanup_task = asyncio.create_task(b.periodic_session_cleanup())
     suspend_task = asyncio.create_task(periodic_suspend_resume())
     # 插件系统：启动时加载已启用的插件（data/plugins.json 记启停）
@@ -245,8 +245,13 @@ from .version import VERSION as _APP_VERSION
 from .brand import APP_NAME as _APP_NAME, APP_TITLE as _APP_TITLE, env as _brand_env
 app = FastAPI(title=_APP_TITLE, version=_APP_VERSION, lifespan=lifespan)
 
+# 语言头：新名优先，旧的 X-CBP-Lang 继续接受（旧客户端/旧脚本不坏）。
+_LANG_HEADER = "X-Gantry-Lang"
+_LANG_HEADER_LEGACY = "X-CBP-Lang"
+
+
 def _lang_of(request) -> str:
-    """从 X-CBP-Lang 头取界面语言（缺省中文）。"""
+    """从 X-Gantry-Lang（兼容 X-CBP-Lang）头取界面语言，缺省中文。"""
     try:
         raw = (request.headers.get(_LANG_HEADER)
            or request.headers.get(_LANG_HEADER_LEGACY) or "zh").lower()[:2]
@@ -255,13 +260,9 @@ def _lang_of(request) -> str:
     return raw
 
 
-# ── 错误文案本地化：全局异常处理器按 X-CBP-Lang 翻译 detail ─────────────
-# 只改**展示**：日志、协议、模型看到的仍是中文原文（评测与协议绑定）。
-_LANG_HEADER = "X-Gantry-Lang"
-_LANG_HEADER_LEGACY = "X-CBP-Lang"
 
 
-# ── 提示词语言：每个请求按 X-CBP-Lang 设一次 contextvar ──────────────────
+# ── 提示词语言：每个请求按语言头设一次 contextvar ────────────────────────
 # 由它决定发给模型的提示词用简体/繁體/English（见 gantry/prompt_lang.py）。
 # 放在中间件里设，端点与它创建的后台任务（asyncio 任务继承 context）都能读到。
 @app.middleware("http")

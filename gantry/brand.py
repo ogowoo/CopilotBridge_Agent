@@ -38,3 +38,19 @@ def header_names(suffix: str) -> tuple[str, ...]:
     """请求头名：新的在前后备旧的（服务端两者都收）。"""
     return (f"X-Gantry-{suffix}", f"X-CBP-{suffix}")
 
+
+def marker_prefixes(sid: str) -> list[str]:
+    """同一会话的**所有**合法标记前缀（新名在前）。
+
+    改名后新建的会话写 `[GANTRY-AGENT][sid]`，改名前的旧会话只有
+    `[CBP-AGENT][sid]`；删除时的归属校验必须两套都认，否则旧会话会被判成
+    "不属于当前 Session" 而永远删不掉（审核实测为必现）。
+    """
+    safe = str(sid or "")[:36]
+    return [f"{MARKER_AGENT}[{safe}]", f"{MARKER_AGENT_LEGACY}[{safe}]"]
+
+
+def marker_prefix_regex(sid: str) -> "re.Pattern[str]":
+    """匹配任意一套前缀的正则（用于侧栏文本搜索）。"""
+    alts = "|".join(re.escape(x) for x in marker_prefixes(sid))
+    return re.compile(f"(?:{alts})")

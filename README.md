@@ -6,7 +6,7 @@
 
 > **无 Copilot 也能用**：浏览器按需启动——服务启动不碰浏览器，WebUI 与提供商模型（DeepSeek/Kimi/OpenAI 等）立即可用；只有用到 Copilot 时才拉起它，界面顶部会显示状态并提供「重试浏览器」。**注意**：lazy 模式下，重启后的第一个 Copilot 任务要等浏览器拉起与 SSO （企业租户可达数分钟），这段时间不算任务超时；提供商模型不受影响。
 
-> **版本**：主线 `main` 当前是 **10.3.0-preview.3**（多窗口并行预览线已并入）。
+> **版本**：主线 `main` 当前是 **11.0.0-preview.2**（多窗口并行预览线已并入）。
 > 旧稳定线归档在 tag `v10.2.1-archive` / 分支 `archive/10.2.1-stable`。
 > 版本规则、发版流程与多机器协作约定见 [docs/VERSIONING.md](docs/VERSIONING.md)，
 > 每次发布的改动见 [CHANGELOG.md](CHANGELOG.md)。
@@ -41,7 +41,7 @@
   - **Copilot 文件上传**：`copilot_attach` 工具把工作区文件挂到 Copilot 网页版附件框并取回分析结果，用于图片/扫描件/复杂版式等本地无法解析的文件；
   - **Outlook 集成**：`outlook_unread`/`outlook_read`/`outlook_search`/`outlook_send`。**默认走 OWA 网页自动化**（复用桥接浏览器与 SSO 登录态；New Outlook 无 COM、EWS 2026 起被微软禁用、Graph 需管理员授权，网页版是当前唯一可行路径）；装了经典 Outlook 的机器自动保留 COM 兜底。读取默认开，发送由 `allow_outlook_send` 单独控制。OWA 模式下 `outlook_read` 的参数按主题关键词定位（没有 entry_id 概念）。
 - **长任务韧性**：
-  - 每个回合注入唯一标记 `[CBP-TURN:...]`，确认送达后才读取回答，杜绝读到上一回合的旧答案；
+  - 每个回合注入唯一标记 `[GANTRY-TURN:...]`，确认送达后才读取回答，杜绝读到上一回合的旧答案；
   - 严格区分三类失败——**限流**（原地指数退避重试）、**对话达到长度上限**（总结进度后切换新会话重发）、**回答格式错误**（容错解析 + 压缩上下文后原会话继续）；
   - **会话治理模型**：M365 Copilot 的对话长度上限不公开且动态变化，本地压缩只缩短后续提示、**不会缩短远端对话**，因此治理依赖组合拳——本地持续压缩 + 保守阈值主动换会话 + 页面上限检测被动兜底 + 检查点接力（摘要/修改文件/验证结果带入新会话）；
   - **幂等保护**：换会话接力或回合重发时，与上一成功动作完全相同的非幂等操作（append/move/copy）会被跳过，避免重复修改文件；
@@ -51,6 +51,13 @@
 - **Web 管理台**：`/ui` 提供任务发起（按钮＋弹窗）、实时进度（执行状态/当前回答/发送内容/继续对话 四选项卡）、全宽步骤时间线（可导出 JSON）、暂停/恢复/取消、会话归档与远程 Copilot 会话删除（带同 Session 标记防误删与对账终验）。详见[操作手册](#1-webui-怎么用)。
 
 ## 快速开始
+
+```bash
+git clone https://github.com/ogowoo/gantry.git
+cd gantry
+python install.py
+```
+
 
 环境要求：Windows + Microsoft Edge + Python 3.11+（其他平台将 `browser_channel` 改为 `chrome` 或去掉该配置使用内置 Chromium）。
 
@@ -547,8 +554,8 @@ ctx.register_panel({"id": "schedules", "title": "定时任务", "view": "table",
 
 ### 5.6 插件系统（与 DSH 插件语义兼容）
 
-CBP 的插件是"**语义兼容** DSH"而不是"直接跑 DSH 插件"：DSH 插件是 npm 包 + Cordis
-（JS `apply(ctx)`）在 Node 里跑；CBP 是 Python 服务。对齐的是**契约**——同形清单、
+Gantry 的插件是"**语义兼容** DSH"而不是"直接跑 DSH 插件"：DSH 插件是 npm 包 + Cordis
+（JS `apply(ctx)`）在 Node 里跑；Gantry 是 Python 服务。对齐的是**契约**——同形清单、
 同一套贡献点、同样的加载→apply→卸载生命周期、同样的 `id + disabled + config` 启停语义。
 （要直跑 JS 插件需要内嵌 Node，不在本系统目标内。）
 
@@ -611,7 +618,7 @@ def teardown(ctx): ...
 
 ### 5.8 MCP（Model Context Protocol）
 
-CBP 当 **MCP 客户端**：连上外部 MCP server，把它的工具与资源注册进 Agent，模型就能像用内置
+Gantry 当 **MCP 客户端**：连上外部 MCP server，把它的工具与资源注册进 Agent，模型就能像用内置
 工具一样调用。支持两种传输：
 
 | 传输 | 配置 | 说明 |
@@ -668,7 +675,7 @@ curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C
   复选框（没有方框时退化成 `- 项` 列表），写进会话 `todos`；
 - **不覆盖进度**：同一项已是 `completed` 不会被文件里的 `[ ]` 拉回；文件里删掉的
   已完成项会保留；文件消失时**不清空**现有清单；
-- 之前 CBP 完全不看 `pyshot_todo.md`（23KB 的计划文件），面板只认 `todo_write`。
+- 之前 Gantry 完全不看 `pyshot_todo.md`（23KB 的计划文件），面板只认 `todo_write`。
 
 **② 按清单自动派子代理**（`gantry/auto_team.py`，**默认关闭**）
 - 条件：`agent.auto_team_enabled=true`、存在 **≥2 个** `pending` 且**作用域不重叠**
@@ -842,14 +849,14 @@ python scripts/rollback.py --list            # 查看可回滚的任务与自升
 - **覆盖审计**：`python scripts/i18n_coverage.py` 在英文模式下逐个打开 12 个界面状态
   （首页/新任务/手册/插件/面板/工作区/全局搜索/更多/记忆/会话更多/填充态/模型）并采集**可见**中文，
   当前 **0 处**；`ui_i18n_audit.py` 只扫静态外壳，两者互补（实测前者多抓出 30 处：记忆面板 28 + 主题标题 + 工作区选择）。
-- **后端错误文案**：`HTTPException` 的 detail 由全局处理器按 `X-CBP-Lang` 翻译（`gantry/i18n.py` 精确表 + 模式表，
+- **后端错误文案**：`HTTPException` 的 detail 由全局处理器按 `X-Gantry-Lang` 翻译（`gantry/i18n.py` 精确表 + 模式表，
   未知文案回落中文）；不变量「后端错误文案都有英文翻译」守着新增的 raise。
 - **使用手册**：中英**两套完整模板**（`MANUAL_HTML` / `MANUAL_HTML_EN`，各 18 节），按界面语言整篇切换，含自动目录与低频章节折叠（折叠章节名也随语言走）；不变量「手册中英两版章节一致」防只改一边。
 - **插件自带译文**：插件在 `plugin.json` 声明 `gantry.i18n: {en: {...}, tw: {...}}`，
   `GET /v1/plugins/i18n` 汇总**已加载**插件，前端启动/启停插件时合并进字典 → 第三方插件的中文也能翻
 - **繁体术语表**：`I18N_TW_OVERRIDE` 按词修正（文件→檔案、数据→資料、插件→外掛、服务器→伺服器…），
   应用时**按词长降序**，否则"服务"会吃掉"服务器"（实测踩到）
-- **系统生成的标题**：深研会话标题按 `X-CBP-Lang` 生成（`[Research] …` / `[深研] …`）；cron 等无请求上下文的仍用中文
+- **系统生成的标题**：深研会话标题按 `X-Gantry-Lang` 生成（`[Research] …` / `[深研] …`）；cron 等无请求上下文的仍用中文
 - **静态属性**：不变量「静态属性文案都有英文键」静态核对 `index.html` 里含中文的
   `title/placeholder/aria-label/alt` 是否都有词条（实测补了 6 条：跟进消息、输入、收起、限流中…）
 - **已知取舍**：后端与 Agent 协议文案（系统提示词、工具描述、步骤 reason/错误原文）一律保持中文，它们与协议和评测绑定。繁体是**字形级**自动转换，专有名词可能不完美，需要精修时往 `I18N_TW_OVERRIDE` 短语表里加。

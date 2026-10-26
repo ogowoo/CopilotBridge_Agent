@@ -5,11 +5,14 @@
 """
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.request
 
 BASE = "http://127.0.0.1:8765"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from gantry.version import VERSION as EXPECTED_VERSION  # noqa: E402
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKSPACE = os.path.join(REPO, "workspace", "wgime")
 SID = "diag-selftest-1"
@@ -40,7 +43,7 @@ def check(name, ok, detail=""):
 
 # ① 只读端点
 st, root = call("/")
-check("GET / 返回版本", st == 200 and root.get("version") == "10.3.0-preview.3",
+check("GET / 返回版本", st == 200 and root.get("version") == EXPECTED_VERSION,
       f"{st} version={root.get('version') if isinstance(root, dict) else root}")
 
 st, h = call("/health")

@@ -1,4 +1,4 @@
-# CopilotBridge Agent 技术文档
+# Gantry 技术文档
 
 > 版本：2026-11（第二轮全面审查后）｜配套：使用向说明见 [README.md](../README.md)，
 > 本轮审查原始报告见 [REVIEW-2026-11-agent-session.md](REVIEW-2026-11-agent-session.md)
@@ -45,7 +45,7 @@ FastAPI 路由层  app.py(shim) → gantry/api.py
         │
         ├─ 普通对话 ─────────► gantry/bridge.py ─► Playwright ─► Edge 持久化 Profile ─► M365 Copilot
         │                          │  ├─ 模型菜单扫描 / 会话内模型锚定
-        │                          │  ├─ CBP-TURN 回合标记、CBP-AGENT 会话身份标记
+        │                          │  ├─ GANTRY-TURN 回合标记、GANTRY-AGENT 会话身份标记
         │                          │  ├─ 任务快照（gantry/snapshots.py）
         │                          │  └─ OWA 后端（gantry/owa.py）
         │
@@ -141,7 +141,7 @@ FastAPI 路由层  app.py(shim) → gantry/api.py
 ### 4.2 普通对话
 
 1. `/v1/chat/completions` → 按模型 ID 路由到 Copilot 网页或外部提供商。
-2. Copilot 路径复用持久化上下文：选中模型 → 注入唯一 `CBP-TURN` 标记 → 发送 → 等回答稳定。
+2. Copilot 路径复用持久化上下文：选中模型 → 注入唯一 `GANTRY-TURN` 标记 → 发送 → 等回答稳定。
 3. 标记确认送达（输入框清空 + 页面出现标记），缺失时回退到 user_turn 计数。
 4. 流式返回增量事件，非流式返回整段回答。
 
@@ -180,7 +180,7 @@ FastAPI 路由层  app.py(shim) → gantry/api.py
 ## 5. HTTP 接口
 
 鉴权：配置 `api_token` 后，**所有 `/v1/*` 请求**需带 `Authorization: Bearer <token>`、
-`X-CBP-Token: <token>` 或 `?token=`（便捷用法，注意会进入浏览器历史/Referer）。
+`X-Gantry-Token: <token>` 或 `?token=`（便捷用法，注意会进入浏览器历史/Referer）。
 token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 
 | 方法 | 路径 | 说明 |
@@ -238,7 +238,7 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
   先判黑名单；目录穿越、junction、大小写变形均在 `resolve()` 后拦截。
 - **快照沙箱**：作用域目录名强制以字母数字开头且必须是快照根的直接子目录（防 `.`/`..`）；
   回滚目标必须 `relative_to(root)`；原像路径必须 `relative_to(scope_dir)`。
-- **删除会话**：`[CBP-AGENT][sid]` 标记同属校验，无标记一律拒删；URL 为持久身份。
+- **删除会话**：`[GANTRY-AGENT][sid]` 标记同属校验，无标记一律拒删；URL 为持久身份。
 
 ## 7. 数据、状态与生命周期
 
@@ -364,8 +364,8 @@ token 比较使用 `hmac.compare_digest`；访问日志对 `token=` 做脱敏。
 16. 幂等保护只比对 `history[-1]`：中间夹一个成功动作即可重放 append/move。现回看最近 10 步。
 17. `outlook_send` 走 OWA 后端时跳过 `allow_outlook`（COM 路径会拦）。现统一走 `_owa_or_none()`。
 18. **配置 `api_token` 后 WebUI 全线 401**：前端不带令牌，启动探针 401 后直接 `return` → 界面永久空白；
-    "启动任务"也走裸 `fetch`。现统一走 `api()`（自动带 `X-CBP-Token`、401 时就地询问并记住、
-    并发 401 只弹一次），后端支持 `X-CBP-Token` 头 + 常量时间比较 + 访问日志脱敏。
+    "启动任务"也走裸 `fetch`。现统一走 `api()`（自动带 `X-Gantry-Token`、401 时就地询问并记住、
+    并发 401 只弹一次），后端支持 `X-Gantry-Token` 头 + 常量时间比较 + 访问日志脱敏。
 19. WebUI 轮询用 `steps.length` 与 `total_steps` 比较，而 rollover/限流事件不增 `total_steps`
     → 条件恒真，每秒额外全量拉会话详情。现用独立 `lastTotal`。
 20. WebUI `load()` 无迟到响应保护（快速切会话会把视图改回旧会话，而操作仍打在新会话上）。已加 `myId` 校验。

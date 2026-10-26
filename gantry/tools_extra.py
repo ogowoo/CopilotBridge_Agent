@@ -276,7 +276,7 @@ class _Extra:
             raise ExtraToolError(
                 "拒绝访问内网/本地地址（SSRF 防护）；如确需访问请设 agent.tools_extra.allow_private_web=true")
         cap = max(1000, min(int(max_chars or 20000), 60000))
-        headers = {"User-Agent": "CopilotBridgeAgent/1.0 (+local agent)"}
+        headers = {"User-Agent": "Gantry/1.0 (+local agent)"}
         try:
             if httpx is not None:
                 async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
