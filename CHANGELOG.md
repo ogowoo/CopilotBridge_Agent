@@ -14,6 +14,38 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.6] - 2026-10-26
+
+处理 GitHub issue #2 / #3 / #4：
+
+### Added
+
+- **issue #2 `power-automate` 技能**：新目录 `skills/power-automate/`
+  （`SKILL.md` + `templates/flow-definition.json` + `templates/connections.json`）。
+  教 Agent 生成 Power Automate 工程：同租户 automate 环境（make.powerautomate.com）、
+  `definition.json` 结构（triggers/actions/parameters/runAfter 状态机）、
+  同租户内置连接器引用（Office 365 Outlook / SharePoint / Teams / Dataverse）、
+  交付目录 `flows/<flow-name>/`，并要求生成后跑 `json.load` 校验。
+  明确禁止真实 API 调用（没有凭据）——技能只负责"产出正确工程"。
+- **issue #3 README 三语版**：默认 `README.md` 改为**英文**；新增 `README.zh-CN.md`
+  （简体）与 `README.zh-TW.md`（繁体，台湾惯用字），每份顶部有语言切换行。
+  翻译由 4 个子代理分段完成，规则：代码块/命令/API 路由/config 键名/路径/URL/表格
+  结构原样保留，只翻译散文与表格单元格。
+
+### Verified
+
+- **issue #4 Copilot 多任务并发检验**：临时把 `agent.copilot_windows` 开到 2，
+  并发发两个任务（"只回一个词：ALPHA/BETA"）：两条都成功、耗时几乎相同
+  （138.0s vs 138.8s，串行的话后者应 ~2×）、回答与各自提示词一致、`windows=2`，
+  收工后把窗口数收回 1 并清理诊断会话。结论：**并发正常**。
+
+### Added（测试）
+
+- `tests/test_readme_langs.py`（5 条）：三份 README 存在、互指、标题统一、围栏成对、
+  默认版前 30 行全英文。
+- `tests/test_skill_power_automate.py`（4 条）：技能可发现/可读、模板 JSON 可解析、
+  SKILL.md 覆盖同租户环境与交付目录。
+
 ## [11.0.0-preview.5] - 2026-10-26
 
 ### Fixed

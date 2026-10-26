@@ -1,56 +1,58 @@
 # Gantry
 
-> **改名说明**：本项目原名 **CopilotBridge Agent**，自 11.0.0 起更名为 **Gantry**。
-> Python 包 `cbp` → `gantry`；环境变量 `CBP_*`、请求头 `X-CBP-*`、Copilot 会话标记
-> `[CBP-AGENT]` 仍然兼容（新写 `[GANTRY-*]`，读的时候两套都认），旧会话与旧脚本不受影响。
+> **Language**: **English** · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md)
 
-> **无 Copilot 也能用**：浏览器按需启动——服务启动不碰浏览器，WebUI 与提供商模型（DeepSeek/Kimi/OpenAI 等）立即可用；只有用到 Copilot 时才拉起它，界面顶部会显示状态并提供「重试浏览器」。**注意**：lazy 模式下，重启后的第一个 Copilot 任务要等浏览器拉起与 SSO （企业租户可达数分钟），这段时间不算任务超时；提供商模型不受影响。
+> **Rename notice**: This project was formerly **CopilotBridge Agent** and has been renamed to **Gantry** since 11.0.0.
+> The Python package `cbp` → `gantry`; environment variables `CBP_*`, request headers `X-CBP-*`, and the Copilot session marker
+> `[CBP-AGENT]` remain compatible (write the new `[GANTRY-*]`, both sets are accepted on read), so old sessions and old scripts are unaffected.
 
-> **版本**：主线 `main` 当前是 **11.0.0-preview.5**（多窗口并行预览线已并入）。
-> 旧稳定线归档在 tag `v10.2.1-archive` / 分支 `archive/10.2.1-stable`。
-> 版本规则、发版流程与多机器协作约定见 [docs/VERSIONING.md](docs/VERSIONING.md)，
-> 每次发布的改动见 [CHANGELOG.md](CHANGELOG.md)。
+> **Works without Copilot**: the browser starts on demand — service startup never touches the browser, and the WebUI plus provider models (DeepSeek/Kimi/OpenAI, etc.) are usable immediately; the browser is only launched when Copilot is actually needed, and a status with a "Retry browser" button is shown at the top of the UI. **Note**: in lazy mode, the first Copilot task after a restart must wait for the browser to launch and for SSO (can take several minutes on enterprise tenants); that waiting time does not count toward the task timeout. Provider models are unaffected.
 
-把 **Microsoft 365 Copilot 网页版** 包装成本地服务的桥接器：对外提供 **OpenAI 兼容的 Chat API**，并内置一个能读写本地文件、执行验证闭环的 **长期任务 Agent**。模型调用不经过任何官方 API——由 Playwright 自动化你本机的 Edge 浏览器，直接使用你已登录的 Copilot 网页会话。
+> **Version**: the `main` branch is currently **11.0.0-preview.6** (the multi-window parallel preview line has been merged in).
+> The old stable line is archived at tag `v10.2.1-archive` / branch `archive/10.2.1-stable`.
+> For versioning rules, release process, and multi-machine collaboration conventions, see [docs/VERSIONING.md](docs/VERSIONING.md);
+> for changes in each release, see [CHANGELOG.md](CHANGELOG.md).
+
+A bridge that wraps the **Microsoft 365 Copilot web app** as a local service: it exposes an **OpenAI-compatible Chat API** and ships with a built-in **long-running task Agent** that can read and write local files and execute a validation loop. Model calls do not go through any official API — Playwright automates your local Edge browser and directly uses your already-logged-in Copilot web session.
 
 ```
-客户端 ──HTTP──> FastAPI (app.py) ──Playwright──> Edge 持久化 Profile ──> m365.cloud.microsoft/chat
+Client ──HTTP──> FastAPI (app.py) ──Playwright──> Edge persistent Profile ──> m365.cloud.microsoft/chat
                      │
-                     ├─ /v1/chat/completions      普通对话（OpenAI 协议，支持流式）
-                     ├─ /v1/agent/completions     Agent 模式（工具调用 + 长任务）
-                     ├─ /v1/agent/sessions/*      会话管理 / 暂停 / 恢复 / 删除
-                     └─ /ui                       内置 Web 管理台
+                     ├─ /v1/chat/completions      Normal chat (OpenAI protocol, streaming supported)
+                     ├─ /v1/agent/completions     Agent mode (tool calls + long tasks)
+                     ├─ /v1/agent/sessions/*      Session management / pause / resume / delete
+                     └─ /ui                       Built-in web console
 ```
 
-> **只想赶紧跑起来**：看 [一页版快速手册](docs/QUICKSTART.md)（安装 → 登录 → 启动 → 第一个任务），
-> 也可以直接存一张图：[简体](docs/quickstart-zh.png) ｜ [繁體](docs/quickstart-zh-TW.png) ｜ [English](docs/quickstart-en.png)（`python scripts/make_quickstart_card.py` 可重新生成）。
-> 细一步的：看下面 **快速开始**（4 条命令）→ **操作手册**（WebUI 怎么用、AGENT.md/skills 怎么写、怎么回滚、怎么自升级、故障排查）。
+> **Just want to get it running fast**: see the [one-page quickstart](docs/QUICKSTART.md) (install → login → start → first task),
+> or just save a card image: [简体](docs/quickstart-zh.png) ｜ [繁體](docs/quickstart-zh-TW.png) ｜ [English](docs/quickstart-en.png) (regenerate with `python scripts/make_quickstart_card.py`).
+> One step deeper: see **Quick Start** below (4 commands) → **Operations Manual** (how to use the WebUI, how to write AGENT.md/skills, how to roll back, how to self-upgrade, troubleshooting).
 
-## 功能特性
+## Features
 
-- **OpenAI 兼容**：`/v1/chat/completions` 支持 stream / non-stream，可接入任何 OpenAI SDK 客户端；`/v1/models` 列出可用模型。模型列表以内置表为基础（Auto / Quick response / Think deeper / GPT / GPT-5.6 / Sol / Think，可在配置中扩展），并**在启动时自动打开 Copilot 模型菜单枚举选项（含 GPT 等父项下的二级子菜单）**——菜单里新出现的模型会自动并入（ID 形如 `copilot-gpt-5-7`），选择模型时也会自动展开子菜单定位；也可用 `POST /v1/models/refresh` 随时重扫。
-- **API 提供商接入**：除 Copilot 网页自动化外，可直接接入任何 OpenAI 兼容 HTTP API（内置 OpenAI / DeepSeek / Kimi / Grok 预设，可自定义）。模型 ID 形如 `deepseek/deepseek-chat`，API Key 走环境变量；普通对话和 **Agent 模式（含工具循环）都可用**——JSON 动作协议是纯 prompt 驱动，与提供商无关。
-- **Agent 模式**：Copilot 每回合返回一个 JSON 动作（调用工具或最终答复），本地执行工具后把结果送回，循环直到任务完成。**支持批量动作**：一次回答可带多个工具动作（`{"type":"actions","actions":[...]}` 或直接给动作数组），按顺序执行、每步单独记账——写多个小文件/多处小替换不必一块一个回合，省下大量 Copilot 回合；批量里不允许 `final`（完成必须单独返回，验证闭环不被绕过），动作数上限由 `max_actions_per_turn` 控制，批量被输出上限截断时仍会执行已完整的前几个动作。
-- **15+ 个工作区工具**：目录/文件读写（Base64 写入防 JSON 转义损坏）、精确替换、复制/移动/删除、`validate_python`、`run_unittest`、`run_python`，全部限制在工作区根目录内。
-- **Copilot 直接生成文件（`copilot_file`）**：让 Copilot 把结果生成为**可下载文件**，桥接再把文件下载进工作区——内容**不经过聊天消息**，因此完全绕开 Copilot 单条输出上限，一个大文件一个回合就能拿到，不再需要 b64 分块。支持 `blob:`/`data:` 链接与"下载"按钮（点击并用浏览器下载事件接住），落盘前照样存原像（可回滚）、写 `.py/.json/.html` 仍进验证闭环。开关：`agent.allow_copilot_file`（默认开）。找不到下载入口时会保存 `last_answer.html` 供排查，并提示改回分块写入。
-- **两级项目上下文（全局 + 项目）**：`AGENT.md` 与 `skills/` 都有两个作用域——**全局**放在服务安装目录（对所有工作区生效），**项目**放在工作区根目录；两份合并注入，同名技能/约定项目级优先，同一文件自动去重。全局技能位于工作区之外，用 `skill_read` 工具读取（`skill_list` 列清单）。`AGENT.md` 单份默认 8000 字符截断（`agent_md_max_chars`），SKILL.md 支持 YAML frontmatter（`name`/`description`），缺省回退"首个一级标题 + 首个段落"。本仓库自身即带全局 [AGENT.md](AGENT.md) 与示例技能。
-- **服务自升级（可选，默认关闭）**：`agent.allow_self_upgrade: true` 后，Agent 可用 `self_read_text`/`self_write_text_b64`/`self_append_text_b64`/`self_replace_text` 直接修改**服务自身代码**（即使工作区是别的项目），白名单限定 `gantry/`、`webui/`、`scripts/`、`docs/`、`tests/` 与若干顶层文件，`config.json`/`data/`/`EdgeProfile/` 禁止触碰；写完必须 `self_validate` + `self_unittest` 双通过（提前 final 会被 `validation_gate` 拦下），并提供 `self_rollback` 工具回滚本次自升级。
-- **改动快照与两级回滚（自我升级 failback）**：写操作**执行前**把目标原像存入 `data/snapshots/<sid>/`（工作区）与 `data/snapshots/_self_<sid>/`（服务代码），同一路径保留最早状态**并按 Copilot 回合计版本（一次 complete = 一个版本）**，因此可整任务回滚到"任务开始前"，也可按回合回滚。入口：WebUI「更多 ▾ → 回滚任务改动…／回滚服务自升级…」、`POST /v1/agent/sessions/{sid}/rollback`（可带 `{version}`）、`POST /v1/agent/self/rollback?last=true`，以及**服务/WebUI 起不来时的离线通道** `python scripts/rollback.py [--scope self] --last --yes [--rev N]`（`app.py` 导入失败会自动打印指引）。自升级写盘会落 `data/.self_upgrade_pending` 标记，服务重启后自动归档。
-- **M365 文件与软件集成**：
-  - **Office 文档工具**：`read_excel`/`write_excel`（openpyxl）、`read_docx`/`write_docx`（python-docx）、`read_pptx`（python-pptx）、`read_pdf`（pypdf）——Agent 可直接分析/修改 xlsx、docx、pptx、pdf；
-  - **Copilot 文件上传**：`copilot_attach` 工具把工作区文件挂到 Copilot 网页版附件框并取回分析结果，用于图片/扫描件/复杂版式等本地无法解析的文件；
-  - **Outlook 集成**：`outlook_unread`/`outlook_read`/`outlook_search`/`outlook_send`。**默认走 OWA 网页自动化**（复用桥接浏览器与 SSO 登录态；New Outlook 无 COM、EWS 2026 起被微软禁用、Graph 需管理员授权，网页版是当前唯一可行路径）；装了经典 Outlook 的机器自动保留 COM 兜底。读取默认开，发送由 `allow_outlook_send` 单独控制。OWA 模式下 `outlook_read` 的参数按主题关键词定位（没有 entry_id 概念）。
-- **长任务韧性**：
-  - 每个回合注入唯一标记 `[GANTRY-TURN:...]`，确认送达后才读取回答，杜绝读到上一回合的旧答案；
-  - 严格区分三类失败——**限流**（原地指数退避重试）、**对话达到长度上限**（总结进度后切换新会话重发）、**回答格式错误**（容错解析 + 压缩上下文后原会话继续）；
-  - **会话治理模型**：M365 Copilot 的对话长度上限不公开且动态变化，本地压缩只缩短后续提示、**不会缩短远端对话**，因此治理依赖组合拳——本地持续压缩 + 保守阈值主动换会话 + 页面上限检测被动兜底 + 检查点接力（摘要/修改文件/验证结果带入新会话）；
-  - **幂等保护**：换会话接力或回合重发时，与上一成功动作完全相同的非幂等操作（append/move/copy）会被跳过，避免重复修改文件；
-  - **实测校准**：每个 Copilot 会话结束时记录实测数据（回合数/估算 Token/字符数/结束原因/模型/URL）存入 `conv_stats` 表，会话详情接口可查，用于持续校准本地阈值；
-  - 修改代码后强制验证闭环：`validate_python` 与 `run_unittest` 都通过才允许宣称完成。
-- **会话持久化**：SQLite（WAL）保存步骤时间线、文件变更哈希、对话消息；服务重启后可从检查点继续。
-- **Web 管理台**：`/ui` 提供任务发起（按钮＋弹窗）、实时进度（执行状态/当前回答/发送内容/继续对话 四选项卡）、全宽步骤时间线（可导出 JSON）、暂停/恢复/取消、会话归档与远程 Copilot 会话删除（带同 Session 标记防误删与对账终验）。详见[操作手册](#1-webui-怎么用)。
+- **OpenAI compatible**: `/v1/chat/completions` supports stream / non-stream and works with any OpenAI SDK client; `/v1/models` lists available models. The model list is based on a built-in table (Auto / Quick response / Think deeper / GPT / GPT-5.6 / Sol / Think, extensible via config), and **at startup it automatically opens the Copilot model menu to enumerate options (including second-level submenus under parent items like GPT)** — newly appearing models are merged in automatically (IDs like `copilot-gpt-5-7`), and submenus are also expanded automatically when selecting a model; you can also rescan anytime with `POST /v1/models/refresh`.
+- **API provider integration**: besides Copilot web automation, you can plug in any OpenAI-compatible HTTP API directly (built-in presets for OpenAI / DeepSeek / Kimi / Grok, customizable). Model IDs look like `deepseek/deepseek-chat`, API keys come from environment variables; usable for **both normal chat and Agent mode (including the tool loop)** — the JSON action protocol is purely prompt-driven and provider-agnostic.
+- **Agent mode**: each Copilot turn returns one JSON action (a tool call or the final answer); tools are executed locally and results are sent back, looping until the task is done. **Batch actions supported**: one reply can carry multiple tool actions (`{"type":"actions","actions":[...]}` or a bare action array), executed in order and billed step by step — writing several small files or making several small replacements no longer costs one Copilot turn per edit, saving many turns; `final` is not allowed inside a batch (completion must be returned separately so the validation loop cannot be bypassed), the action count cap is controlled by `max_actions_per_turn`, and if a batch is truncated by the output limit, the already-complete leading actions are still executed.
+- **15+ workspace tools**: directory/file read and write (Base64 writes to prevent JSON escaping corruption), exact replace, copy/move/delete, `validate_python`, `run_unittest`, `run_python` — all confined to the workspace root.
+- **Copilot generates files directly (`copilot_file`)**: have Copilot produce the result as a **downloadable file**, and the bridge downloads it into the workspace — the content **never goes through a chat message**, so it completely bypasses Copilot's per-message output limit: a large file arrives in a single turn, no more b64 chunking. Supports `blob:`/`data:` links and "Download" buttons (clicked and captured via the browser download event); before writing to disk the original image is still snapshotted (rollback-able), and `.py/.json/.html` writes still go through the validation loop. Toggle: `agent.allow_copilot_file` (default on). When no download entry is found, `last_answer.html` is saved for troubleshooting, with a hint to fall back to chunked writes.
+- **Two-level project context (global + project)**: both `AGENT.md` and `skills/` have two scopes — **global** lives in the service install directory (applies to all workspaces), **project** lives in the workspace root; the two are merged on injection, project-level wins for same-named skills/conventions, and identical files are auto-deduplicated. Global skills live outside the workspace and are read with the `skill_read` tool (`skill_list` lists them). Each `AGENT.md` is truncated at 8000 characters by default (`agent_md_max_chars`); SKILL.md supports YAML frontmatter (`name`/`description`), falling back to "first level-1 heading + first paragraph". This repo itself ships a global [AGENT.md](AGENT.md) and example skills.
+- **Service self-upgrade (optional, off by default)**: with `agent.allow_self_upgrade: true`, the Agent can use `self_read_text`/`self_write_text_b64`/`self_append_text_b64`/`self_replace_text` to modify the **service's own code** directly (even when the workspace is another project), with a whitelist limited to `gantry/`, `webui/`, `scripts/`, `docs/`, `tests/` and a few top-level files — `config.json`/`data/`/`EdgeProfile/` are forbidden; after writing, both `self_validate` + `self_unittest` must pass (an early final is blocked by the `validation_gate`), and a `self_rollback` tool is provided to roll back the self-upgrade.
+- **Change snapshots and two-level rollback (self-upgrade failback)**: **before** a write executes, the target's original image is stored in `data/snapshots/<sid>/` (workspace) and `data/snapshots/_self_<sid>/` (service code); the earliest state of each path is kept **and versions are counted per Copilot turn (one complete = one version)**, so you can roll a whole task back to "before the task started", or roll back per turn. Entry points: WebUI "More ▾ → Roll back task changes… / Roll back service self-upgrade…", `POST /v1/agent/sessions/{sid}/rollback` (optionally with `{version}`), `POST /v1/agent/self/rollback?last=true`, plus the **offline channel for when the service/WebUI won't start**: `python scripts/rollback.py [--scope self] --last --yes [--rev N]` (if the `app.py` import fails, guidance is printed automatically). Self-upgrade writes drop a `data/.self_upgrade_pending` marker that is archived automatically after a service restart.
+- **M365 file and software integration**:
+  - **Office document tools**: `read_excel`/`write_excel` (openpyxl), `read_docx`/`write_docx` (python-docx), `read_pptx` (python-pptx), `read_pdf` (pypdf) — the Agent can analyze/modify xlsx, docx, pptx, pdf directly;
+  - **Copilot file upload**: the `copilot_attach` tool attaches a workspace file to the Copilot web attachment box and retrieves the analysis result, for files that can't be parsed locally such as images/scans/complex layouts;
+  - **Outlook integration**: `outlook_unread`/`outlook_read`/`outlook_search`/`outlook_send`. **Defaults to OWA web automation** (reuses the bridge browser and SSO session; New Outlook has no COM, EWS is disabled by Microsoft from 2026, Graph needs admin consent — the web app is currently the only viable path); machines with classic Outlook installed automatically keep the COM fallback. Reading is on by default, sending is controlled separately by `allow_outlook_send`. In OWA mode, `outlook_read` locates messages by subject keywords (there is no entry_id concept).
+- **Long-task resilience**:
+  - A unique marker `[GANTRY-TURN:...]` is injected every turn; the answer is only read after delivery is confirmed, eliminating stale answers from the previous turn;
+  - Three failure classes are strictly distinguished — **rate limiting** (in-place exponential backoff retry), **conversation length limit reached** (summarize progress, switch to a new session and resend), **malformed answer** (tolerant parsing + continue in the same session after compacting context);
+  - **Session governance model**: M365 Copilot's conversation length limit is undisclosed and changes dynamically; local compaction only shortens future prompts, **it does not shorten the remote conversation**, so governance relies on a combined approach — continuous local compaction + conservative thresholds to proactively switch sessions + page-limit detection as a passive fallback + checkpoint handoff (summary/modified files/validation results carried into the new session);
+  - **Idempotency protection**: on session-switch handoff or turn resend, a non-idempotent operation (append/move/copy) identical to the last successful action is skipped, avoiding duplicate file modifications;
+  - **Measured calibration**: at the end of each Copilot session, measured data (turn count / estimated tokens / character count / end reason / model / URL) is recorded into the `conv_stats` table, queryable via the session detail API, for continuously calibrating local thresholds;
+  - Forced validation loop after code changes: completion may only be claimed when both `validate_python` and `run_unittest` pass.
+- **Session persistence**: SQLite (WAL) stores the step timeline, file-change hashes, and conversation messages; after a service restart, work can continue from a checkpoint.
+- **Web console**: `/ui` provides task launch (button + dialog), live progress (four tabs: execution status / current answer / sent content / continue conversation), a full-width step timeline (JSON exportable), pause/resume/cancel, session archiving, and remote Copilot session deletion (with same-session markers to prevent accidental deletion plus a reconciliation final check). See the [Operations Manual](#1-webui-怎么用).
 
-## 快速开始
+## Quick Start
 
 ```bash
 git clone https://github.com/ogowoo/gantry.git
@@ -59,33 +61,33 @@ python install.py
 ```
 
 
-环境要求：Windows + Microsoft Edge + Python 3.11+（其他平台将 `browser_channel` 改为 `chrome` 或去掉该配置使用内置 Chromium）。
+Requirements: Windows + Microsoft Edge + Python 3.11+ (on other platforms, change `browser_channel` to `chrome` or omit it to use the bundled Chromium).
 
 ```powershell
-# 1. 安装依赖（pip + Playwright 浏览器）
+# 1. Install dependencies (pip + Playwright browsers)
 python install.py
 
-# 2. 复制并按需修改配置
+# 2. Copy the config and edit as needed
 copy config.example.json config.json
 
-# 3. 登录 Copilot（会打开 Edge，登录完成后回车）
+# 3. Log in to Copilot (opens Edge; press Enter when login is complete)
 python scripts/login.py
 
-# 4. 启动服务（默认 http://127.0.0.1:8765）
+# 4. Start the service (default http://127.0.0.1:8765)
 python start.py
 ```
 
-启动后打开 `http://127.0.0.1:8765/ui` 使用管理台，或访问 `/docs` 查看 API 文档。
+After startup, open `http://127.0.0.1:8765/ui` to use the console, or visit `/docs` for the API documentation.
 
-### 多账号：换用有 M365 订阅的账号
+### Multiple accounts: switch to an account with an M365 subscription
 
-登录态保存在 `EdgeProfile/`，Windows 的账户选择器（WAM）常会**自动推荐系统当前登录的普通账号**，导致桥接用错账号。切换方法（任选其一）：
+The login state is saved in `EdgeProfile/`, and the Windows account picker (WAM) often **automatically suggests the personal account currently signed into the system**, causing the bridge to use the wrong account. Ways to switch (pick one):
 
-1. **直接在自动化窗口里换**（服务有窗口模式运行时）：在自动化 Edge 的 Copilot 页面右上角头像处「注销」，再用订阅账号登录——登录态自动保存，无需重启服务；
-2. **重新走登录向导**（先停服务）：`python scripts/login.py`，弹出账户选择器时务必点「使用其他账户 / Use another account」，输入订阅账号；
-3. **登录态已混乱时彻底重来**：`python scripts/login.py --reset` 删除 EdgeProfile 后全新登录。
+1. **Switch directly in the automation window** (when the service runs in windowed mode): in the automated Edge Copilot page, click the avatar at the top right and "Sign out", then sign in with the subscription account — the login state is saved automatically, no service restart needed;
+2. **Re-run the login wizard** (stop the service first): `python scripts/login.py`; when the account picker pops up, be sure to click "Use another account" and enter the subscription account;
+3. **Start fresh when the login state is messed up**: `python scripts/login.py --reset` deletes EdgeProfile and logs in from scratch.
 
-### 普通对话（OpenAI SDK）
+### Normal chat (OpenAI SDK)
 
 ```python
 from openai import OpenAI
@@ -97,17 +99,17 @@ resp = client.chat.completions.create(
 print(resp.choices[0].message.content)
 ```
 
-### API 提供商（DeepSeek / Kimi / OpenAI / Grok …）
+### API providers (DeepSeek / Kimi / OpenAI / Grok …)
 
-模型 ID 用 `提供商/模型` 格式，例如 `deepseek/deepseek-chat`、`kimi/kimi-k2-0905-preview`、`openai/gpt-4o`、`grok/grok-4`。**API Key 通过环境变量配置**（不写进配置文件、不进 git）：
+Model IDs use the `provider/model` format, e.g. `deepseek/deepseek-chat`, `kimi/kimi-k2-0905-preview`, `openai/gpt-4o`, `grok/grok-4`. **API keys are configured via environment variables** (not written into the config file, not committed to git):
 
 ```powershell
-$env:DEEPSEEK_API_KEY="sk-..."   # 或 MOONSHOT_API_KEY / OPENAI_API_KEY / XAI_API_KEY
+$env:DEEPSEEK_API_KEY="sk-..."   # or MOONSHOT_API_KEY / OPENAI_API_KEY / XAI_API_KEY
 ```
 
-未配置 Key 的模型在 `/v1/models` 里会标注"（未配置 API Key）"。
+Models without a configured key are marked "(API Key not configured)" in `/v1/models`.
 
-> 想把 **DeepSeek 网页版**也当模型用（免费/备用）：见 [三种接法与已落地的插件](docs/PROVIDER-deepseek-web.md)——起一个反代 + 启用 `deepseek-web` 插件即可，模型 ID 形如 `dsweb/deepseek-reasoner`。自定义任意 OpenAI 兼容提供商（含自建网关）：
+> Want to use the **DeepSeek web app** as a model too (free/fallback): see [three integration approaches and the shipped plugin](docs/PROVIDER-deepseek-web.md) — just run a reverse proxy and enable the `deepseek-web` plugin; model IDs look like `dsweb/deepseek-reasoner`. To define any custom OpenAI-compatible provider (including a self-hosted gateway):
 
 ```json
 "providers": {
@@ -120,25 +122,25 @@ $env:DEEPSEEK_API_KEY="sk-..."   # 或 MOONSHOT_API_KEY / OPENAI_API_KEY / XAI_A
 }
 ```
 
-提供商模型在所有入口都可用：OpenAI 兼容对话（流式透传）、WebUI 新任务（普通对话/Agent 执行）、Session 跟进。普通对话用 Session 的消息记录作上下文；Agent 模式复用同一套 JSON 动作协议与工具循环。提供商限流/5xx 会自动走与 Copilot 相同的指数退避重试。
+Provider models are available at every entry point: OpenAI-compatible chat (streaming pass-through), WebUI new tasks (normal chat / Agent execution), and session follow-ups. Normal chat uses the session's message history as context; Agent mode reuses the same JSON action protocol and tool loop. Provider rate-limiting/5xx automatically follows the same exponential-backoff retry as Copilot.
 
-**代理（重要）**：浏览器访问 API 走的是 **Windows 系统代理**，而 Python 的 httpx 默认只读 `HTTP_PROXY`/`HTTPS_PROXY` 环境变量、**不看系统代理**——这会造成"浏览器能打开、服务却报提供商不可用"的假故障。现在提供商请求默认**跟随系统代理**（读注册表），传输层失败且代理是自动探测来的，还会**直连重试一次**。可显式配置：
+**Proxy (important)**: browser access to APIs goes through the **Windows system proxy**, while Python's httpx by default only reads the `HTTP_PROXY`/`HTTPS_PROXY` environment variables and **ignores the system proxy** — this causes a fake failure where "the browser can open it but the service reports the provider unavailable". Provider requests now **follow the system proxy by default** (read from the registry), and if a transport-layer failure occurs and the proxy was auto-detected, it **retries once with a direct connection**. You can also configure explicitly:
 
 ```json
 "providers": {
-  "deepseek": { "proxy": "http://127.0.0.1:10809" },   // 显式代理
-  "kimi":     { "use_system_proxy": false }            // 强制直连（代理故障时用）
+  "deepseek": { "proxy": "http://127.0.0.1:10809" },   // explicit proxy
+  "kimi":     { "use_system_proxy": false }            // force direct connection (for proxy failures)
 }
 ```
 
-**一条命令自检连通性**（会分别打印"经代理/直连"两条路径的真实结果）：
+**One-command connectivity self-check** (prints the real results of both the "via proxy" and "direct" paths):
 
 ```powershell
-python scripts/provider_selftest.py                    # 全部已配置提供商
+python scripts/provider_selftest.py                    # all configured providers
 python scripts/provider_selftest.py --provider deepseek
 ```
 
-### Agent 任务
+### Agent tasks
 
 ```bash
 curl -X POST http://127.0.0.1:8765/v1/agent/completions \
@@ -150,30 +152,30 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
   }'
 ```
 
-## 配置说明（config.json）
+## Configuration (config.json)
 
-### 顶层
+### Top level
 
-| 字段 | 默认 | 说明 |
+| Field | Default | Description |
 |---|---|---|
-| `copilot_url` | `https://m365.cloud.microsoft/chat/` | Copilot 入口地址 |
-| `browser_channel` | `msedge` | Playwright 浏览器通道（`msedge` / `chrome` / 省略用内置 Chromium） |
-| `headless` | `false` | 无头模式；启动失败会自动回退有窗口模式 |
-| `reply_timeout_seconds` | `180` | **无进展**超时：回答连续这么久没有新文本才判超时 |
-| `reply_hard_timeout_seconds` | `1200` | 单回合硬上限（兜底，防止无限等待） |
-| `stable_seconds` | `3` | 回答文本稳定多久视为生成结束 |
-| `poll_interval_seconds` | `0.35` | 页面轮询间隔 |
-| `diagnostics` / `diagnostic_html` | `true` / `false` | 出错时保存 `last_page.txt`（/ `.html`）快照 |
-| `default_model` | `copilot-auto` | 默认模型 ID |
-| `server.host` / `server.port` | `127.0.0.1` / `8765` | 监听地址。**绑非回环地址且未设 api_token 时服务拒绝启动** |
-| `api_token` | 空 | 设置后所有 `/v1/*` 端点要求 `Authorization: Bearer <token>`（或 `?token=`） |
-| `models` | `{}` | 扩展模型：`{"copilot-custom": {"ui_names": ["Custom"], "description": "..."}}` |
-| `markers` | 见下 | Copilot 页面可访问性文本锚点，界面语言不同时在此追加文案 |
+| `copilot_url` | `https://m365.cloud.microsoft/chat/` | Copilot entry URL |
+| `browser_channel` | `msedge` | Playwright browser channel (`msedge` / `chrome` / omit for bundled Chromium) |
+| `headless` | `false` | Headless mode; automatically falls back to windowed mode if startup fails |
+| `reply_timeout_seconds` | `180` | **No-progress** timeout: a timeout is only declared when the reply has had no new text for this long |
+| `reply_hard_timeout_seconds` | `1200` | Hard per-turn cap (fallback to prevent waiting forever) |
+| `stable_seconds` | `3` | How long the reply text must stay stable to be considered finished |
+| `poll_interval_seconds` | `0.35` | Page polling interval |
+| `diagnostics` / `diagnostic_html` | `true` / `false` | Save a `last_page.txt` (or `.html`) snapshot on errors |
+| `default_model` | `copilot-auto` | Default model ID |
+| `server.host` / `server.port` | `127.0.0.1` / `8765` | Listen address. **Binding a non-loopback address without setting api_token makes the service refuse to start** |
+| `api_token` | empty | Once set, all `/v1/*` endpoints require `Authorization: Bearer <token>` (or `?token=`) |
+| `models` | `{}` | Extend models: `{"copilot-custom": {"ui_names": ["Custom"], "description": "..."}}` |
+| `markers` | see below | Copilot page accessibility-text anchors; append wording here for other UI languages |
 
-`markers` 的配置值会**并入**内置默认列表（不是覆盖），任一命中即生效。
-内置默认已含 **英文 + 中文 + 日文**（`Copilot said:` / `You said:` / `Sources` /
-`出典` / `あなたの発言:` / `Copilot の回答:` 等），另外按钮/浮层文案
-（`stop` / `new_chat` / `send_aria` / `dismiss`）也可在这里追加：
+`markers` values are **merged into** the built-in default list (not overriding it); any hit takes effect.
+The built-in defaults already cover **English + Chinese + Japanese** (`Copilot said:` / `You said:` / `Sources` /
+`出典` / `あなたの発言:` / `Copilot の回答:` etc.); button/overlay wording
+(`stop` / `new_chat` / `send_aria` / `dismiss`) can also be appended here:
 
 ```json
 "markers": {
@@ -189,259 +191,260 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
 }
 ```
 
-- `assistant_turn` / `user_turn`：回合分隔文本，用于定位最新回答与统计用户回合数——**界面非英文/中文导致读取超时时，优先在这里追加对应语言锚点**；
-- `answer_end`：回答正文的结束标记（来源区、输入提示等）；
-- `sources`：回答中出现即视为生成完成的区块标题；
-- `ignored_lines`：从回答中剔除的按钮残留文本；
-- `stop` / `new_chat` / `send_aria` / `dismiss`：停止生成、新建对话、发送按钮、弹窗关闭的文案锚点（日文系统实测"能发出去但收不到回信"就是这组锚点没命中）。
+- `assistant_turn` / `user_turn`: turn-delimiter text, used to locate the latest reply and count user turns — **when reading times out because the UI is in a language other than English/Chinese, append anchors for that language here first**;
+- `answer_end`: end markers of the reply body (sources section, input prompts, etc.);
+- `sources`: a section title whose appearance in the reply is treated as generation complete;
+- `ignored_lines`: leftover button text stripped from the reply;
+- `stop` / `new_chat` / `send_aria` / `dismiss`: wording anchors for stop-generating, new-chat, send button, and popup dismissal (on Japanese systems, the measured "can send but never receive a reply" issue is exactly this anchor group not matching).
 
-> 日文等其它语言的默认文案是**按常见写法内置**的，若测试租户用了不同措辞，
-> 直接用 `markers` 追加即可，不必改代码。
+> The default wording for other languages such as Japanese is **built in based on common phrasing**; if your test tenant uses different wording,
+> just append via `markers` — no code changes needed.
 
-### agent 段
+### agent section
 
-| 字段 | 默认 | 说明 |
+| Field | Default | Description |
 |---|---|---|
-| `enabled` | `true` | 关闭后 Agent 接口返回 503 |
-| `workspace` | `workspace` | 工具根目录（相对项目目录） |
-| `workspace_roots` | `[]` | 工作区允许根目录白名单（绝对路径数组）；非空时切换工作区只能切到白名单内，防止沙箱被整体搬移 |
-| `session_store` | `data/agent.db` | SQLite 会话库路径 |
-| `max_total_steps` | `1000` | 单任务总步数上限（硬顶 10000） |
-| `max_steps_per_conversation` | `80` | 单个 Copilot 会话内步数上限（触发换会话） |
-| `max_conversation_rollovers` | `25` | 最多切换多少个 Copilot 会话 |
-| `context_token_budget` | `80000` | 估算上下文预算（本地估算值，**不代表 M365 真实上限**） |
-| `compact_at_tokens` | `35000` | 达到即压缩历史为摘要 |
-| `rollover_at_tokens` | `55000` | 达到即换新会话（需 `auto_rollover`）；须满足 `0 < compact < rollover ≤ budget` |
-| `keep_recent_steps` | `8` | 压缩/换会话时保留的最近步数 |
-| `max_summary_tokens` | `5000` | 长期摘要估算上限 |
-| `max_context_chars` | `240000` | 字符数兜底阈值 |
-| `auto_rollover` | `true` | 建议开启：本地压缩不会缩短远端对话，保守阈值主动换会话是主要防线；页面上限检测做被动兜底 |
-| `min_steps_before_rollover` | `20` | 主动换会话的最小步数门槛 |
-| `auto_compact` | `true` | 达到阈值时自动压缩上下文；`false` 时仅保留手动压缩 |
-| `auto_resume` | `true` | 服务重启后自动恢复上次被中断（非用户暂停）的会话 |
-| `session_timeout_seconds` | `86400` | `ready`/`waiting` 会话超过该时长未活动则标记为 `expired` |
-| `completed_session_retention_days` | `30` | 已结束（完成/取消/失败/过期）会话超过该天数后自动归档 |
-| `max_sessions` | `100` | 未归档会话数量上限，超出时从最久未更新的开始归档 |
-| `max_parse_failures` | `5` | 连续解析失败多少次后强制压缩上下文 |
-| `max_actions_per_turn` | `4` | 一次回答里最多执行几个动作（批量协议，硬顶 12）；调大能省回合但更容易被 Copilot 输出上限截断 |
-| `allow_copilot_file` | `true` | 是否开放 `copilot_file`（让 Copilot 直接生成文件并下载进工作区，内容不走聊天消息、不受输出上限约束）。**注意**：`copilot_file` 与 `copilot_attach` 依赖 Copilot 网页会话，因此在使用 API 提供商模型（如 `deepseek/…`）的会话里**自动禁用**（既不注入也不执行，避免白烧回合） |
-| `copilot_file_model` | `""` | `copilot_file` 生成文件时用的具体模型。会话模型是 `Auto` 时，Auto 通常只聊天、不生成下载入口（实测），配置此项（如 `copilot-gpt-5-6-sol-think-deeper`）即可自动改用；留空则沿用会话模型并在失败时明确提示原因 || `max_service_unavailable` | `30` | 限流退避重试上限，超过后转入安全暂停 |
-| `service_retry_base_seconds` / `service_retry_max_seconds` | `30` / `600` | 限流指数退避的起始/上限 |
-| `service_retry_window_seconds` | `3660` | **Copilot 网页**的限流窗口：首次超限后到可再次使用大致要等这么久（实测约 1 小时，多加 1 分钟余量），**居中倒计时卡片**锚定"首次超限 + 该窗口"。**API 提供商不用这个窗口**（它们的 429/5xx/网络抖动通常几秒~几分钟就恢复，套 1 小时会误导），而是按本轮退避显示"下次重试"；卡片标题按当前模型通道分别显示"Copilot 限流/不可用"或"API 服务限流/不可用" |
-| `max_read_chars` / `max_write_chars` | `120000` / `200000` | 工具单次读写上限 |
-| `allow_delete` | `false` | 是否开放 `delete_path` 工具 |
-| `allow_python` | `false` | 是否开放 `run_python` 工具（**可执行任意代码，谨慎开启**） |
-| `allow_office` | `true` | 是否开放 Office 文档工具（Excel/Word/PPT/PDF） |
-| `allow_memory_write` | `true` | 是否允许 Agent 用 `memory_write` 沉淀**长期记忆**（跨会话事实/偏好/结论，自动按相关性检索注入；`memory_forget` 可删除） |
-| `browser_startup` | `lazy` | 浏览器启动策略：`lazy`=按需启动（没有 Copilot 也能用 WebUI 与提供商模型）；`eager`=服务启动即预热 |
-| `allow_skill_write` | `true` | 是否允许 `skill_create` 沉淀技能（项目级写入工作区 `skills/`；全局级还需 `allow_self_upgrade`） |
-| `allow_outlook` | `false` | 是否开放 Outlook 读取工具（未读/正文/搜索） |
-| `allow_outlook_send` | `false` | 是否开放 `outlook_send`（会真实发出邮件，**谨慎开启**） |
-| `outlook_url` | `https://outlook.office.com/mail/` | OWA 自动化入口（`allow_outlook` 时使用） |
-| `python_timeout_seconds` | `20` | `run_python` 超时 |
-| `snapshot_retention` | `50` | 保留多少个会话的改动快照，超出按最旧清理 |
-| `agent_md_max_chars` | `8000` | 单份 `AGENT.md` 注入上限（全局、项目各自计算） |
-| `allow_self_upgrade` | `false` | 是否允许 Agent 修改**服务自身代码**（`self_*` 工具，**高权限，理解风险后再开**） |
-| `self_upgrade_paths` | 见 `config.example.json` | 自升级可触达的路径白名单（安装目录相对路径） |
+| `enabled` | `true` | When disabled, the Agent endpoints return 503 |
+| `workspace` | `workspace` | Tool root directory (relative to the project directory) |
+| `workspace_roots` | `[]` | Workspace allowed-roots whitelist (array of absolute paths); when non-empty, switching workspaces is restricted to the whitelist, preventing the sandbox from being moved wholesale |
+| `session_store` | `data/agent.db` | SQLite session database path |
+| `max_total_steps` | `1000` | Total step cap per task (hard ceiling 10000) |
+| `max_steps_per_conversation` | `80` | Step cap within a single Copilot conversation (triggers a session switch) |
+| `max_conversation_rollovers` | `25` | Maximum number of Copilot session switches |
+| `context_token_budget` | `80000` | Estimated context budget (a local estimate; **does not represent the real M365 limit**) |
+| `compact_at_tokens` | `35000` | Compact history into a summary once reached |
+| `rollover_at_tokens` | `55000` | Switch to a new session once reached (requires `auto_rollover`); must satisfy `0 < compact < rollover ≤ budget` |
+| `keep_recent_steps` | `8` | Number of recent steps kept during compaction/session switch |
+| `max_summary_tokens` | `5000` | Estimated cap for the long-term summary |
+| `max_context_chars` | `240000` | Character-count fallback threshold |
+| `auto_rollover` | `true` | Recommended on: local compaction does not shorten the remote conversation, so proactive session switching at conservative thresholds is the main line of defense, with page-limit detection as a passive fallback |
+| `min_steps_before_rollover` | `20` | Minimum step threshold before a proactive session switch |
+| `auto_compact` | `true` | Automatically compact context when thresholds are reached; with `false`, only manual compaction remains |
+| `auto_resume` | `true` | Automatically resume sessions interrupted (not user-paused) by a service restart |
+| `session_timeout_seconds` | `86400` | `ready`/`waiting` sessions inactive longer than this are marked `expired` |
+| `completed_session_retention_days` | `30` | Finished (completed/cancelled/failed/expired) sessions are auto-archived after this many days |
+| `max_sessions` | `100` | Cap on unarchived sessions; beyond it, archiving starts from the least recently updated |
+| `max_parse_failures` | `5` | Force context compaction after this many consecutive parse failures |
+| `max_actions_per_turn` | `4` | Maximum actions executed per reply (batch protocol, hard ceiling 12); raising it saves turns but makes truncation by Copilot's output limit more likely |
+| `allow_copilot_file` | `true` | Whether to enable `copilot_file` (let Copilot generate files directly and download them into the workspace; content bypasses chat messages and the output limit). **Note**: `copilot_file` and `copilot_attach` depend on the Copilot web session, so they are **automatically disabled** in sessions using an API provider model (e.g. `deepseek/…`) — neither injected nor executed, avoiding wasted turns |
+| `copilot_file_model` | `""` | The specific model used when `copilot_file` generates files. When the session model is `Auto`, Auto usually only chats and never produces a download entry (measured); setting this (e.g. `copilot-gpt-5-6-sol-think-deeper`) switches automatically; leave empty to keep the session model and get an explicit reason on failure || `max_service_unavailable` | `30` | Cap on rate-limit backoff retries; beyond it, the task enters a safe pause |
+| `service_retry_base_seconds` / `service_retry_max_seconds` | `30` / `600` | Start/cap of the rate-limit exponential backoff |
+| `service_retry_window_seconds` | `3660` | **Copilot web** rate-limit window: roughly how long to wait from the first over-limit until usable again (measured ~1 hour, plus a 1-minute margin); the **centered countdown card** is anchored to "first over-limit + this window". **API providers do not use this window** (their 429/5xx/network glitches usually recover in seconds to minutes, so applying 1 hour would mislead); instead, "next retry" is shown per the current backoff; the card title shows "Copilot rate-limited/unavailable" or "API service rate-limited/unavailable" depending on the current model channel |
+| `max_read_chars` / `max_write_chars` | `120000` / `200000` | Per-call read/write caps for tools |
+| `allow_delete` | `false` | Whether to enable the `delete_path` tool |
+| `allow_python` | `false` | Whether to enable the `run_python` tool (**can execute arbitrary code — enable with caution**) |
+| `allow_office` | `true` | Whether to enable the Office document tools (Excel/Word/PPT/PDF) |
+| `allow_memory_write` | `true` | Whether to allow the Agent to deposit **long-term memory** with `memory_write` (cross-session facts/preferences/conclusions, automatically retrieved and injected by relevance; `memory_forget` deletes) |
+| `browser_startup` | `lazy` | Browser startup policy: `lazy`=start on demand (WebUI and provider models work without Copilot); `eager`=warm up at service startup |
+| `allow_skill_write` | `true` | Whether to allow `skill_create` to deposit skills (project-level writes to the workspace `skills/`; global-level additionally requires `allow_self_upgrade`) |
+| `allow_outlook` | `false` | Whether to enable Outlook read tools (unread/body/search) |
+| `allow_outlook_send` | `false` | Whether to enable `outlook_send` (sends real emails — **enable with caution**) |
+| `outlook_url` | `https://outlook.office.com/mail/` | OWA automation entry (used when `allow_outlook` is on) |
+| `python_timeout_seconds` | `20` | `run_python` timeout |
+| `snapshot_retention` | `50` | How many sessions' change snapshots to keep; the oldest are cleaned up beyond this |
+| `agent_md_max_chars` | `8000` | Injection cap per `AGENT.md` (global and project counted separately) |
+| `allow_self_upgrade` | `false` | Whether to allow the Agent to modify the **service's own code** (`self_*` tools — **high privilege; understand the risks before enabling**) |
+| `self_upgrade_paths` | see `config.example.json` | Path whitelist reachable by self-upgrade (relative to the install directory) |
 
-## 命令行（headless）
+## Command Line (headless)
 
 ```bash
-pip install -e .                    # 之后可用 gantry 命令（也可以 python -m gantry.cli）
+pip install -e .                    # afterwards the gantry command is available (or python -m gantry.cli)
 
-gantry serve --port 8765               # 启动服务（等价 python start.py）
-gantry status                          # 健康检查
-gantry run "把 docs 里的死链列出来" --model kimi-coding/k3
-gantry run "重构 X" --plan             # 计划模式：只读探索 → 产出方案后停
-gantry run "分析这个仓库" --sandbox read-only --workspace C:/proj
-gantry sessions --limit 10             # 会话列表
-gantry tools                           # 62 个工具
+gantry serve --port 8765               # start the service (equivalent to python start.py)
+gantry status                          # health check
+gantry run "List the dead links in docs" --model kimi-coding/k3
+gantry run "Refactor X" --plan             # plan mode: read-only exploration → stops after producing a plan
+gantry run "Analyze this repo" --sandbox read-only --workspace C:/proj
+gantry sessions --limit 10             # session list
+gantry tools                           # 62 tools
 gantry plugins list|enable|disable|reload [name]
-gantry mcp list                        # MCP server 状态
+gantry mcp list                        # MCP server status
 gantry mcp add --name fs --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg C:/data
-gantry sandbox read-only --persist     # 切沙箱档位并写回 config.json
+gantry sandbox read-only --persist     # switch the sandbox level and write it back to config.json
 ```
 
-- 统一参数：`--url`（默认 `http://127.0.0.1:8765`，或 `CBP_URL`）、`--token`（或 `CBP_TOKEN`）
-- CLI **不在进程内启动浏览器**：它调同一个服务的 HTTP 接口，和 WebUI 看到同一份事实
-- `--json` 输出原始响应，方便脚本消费；`--quiet` 不打印步骤摘要
-- 连不上服务时返回非零退出码并说明先 `gantry serve`
+- Shared parameters: `--url` (default `http://127.0.0.1:8765`, or `CBP_URL`), `--token` (or `CBP_TOKEN`)
+- The CLI **does not start a browser in-process**: it calls the HTTP interface of the same service and sees the same facts as the WebUI
+- `--json` prints the raw response for easy script consumption; `--quiet` suppresses the step summary
+- When the service is unreachable it returns a non-zero exit code and tells you to run `gantry serve` first
 
-## API 一览
+## API Overview
 
-| 方法 | 路径 | 说明 |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/health` | 健康检查（含忙碌状态） |
-| GET | `/v1/models` | 模型列表 |
-| POST | `/v1/models/refresh` | 重新枚举 Copilot 模型菜单，并入新模型 |
-| POST | `/v1/chat/completions` | OpenAI 兼容对话 |
-| POST | `/v1/agent/completions` | 发起/继续 Agent 任务 |
-| GET | `/v1/agent/sessions` | 会话列表 |
-| GET | `/v1/agent/sessions/{sid}` | 会话详情（步骤/文件事件/消息） |
-| GET | `/v1/agent/sessions/{sid}/runtime` | 实时运行状态（无 SSE 时的轮询接口） |
-| GET | `/v1/uploads/{name}` | 取"粘贴附件"图片（`data/uploads` 下的文件名；严格文件名校验，禁分隔符与 `..`；走 api_token 鉴权，前端 img 标签用 `?token=`） |
-| POST | `/v1/shutdown` | **终止服务**（WebUI 的 ⏻ 按钮）。先回响应再停机；优雅停机（uvicorn `should_exit`），拿不到 server 时退回 SIGINT，宽限期后硬退出兜底；幂等 |
-| GET | `/v1/agent/sessions/{sid}/events` | **SSE 实时推送**（`text/event-stream`）：先送一份 runtime 快照，随后推送 `runtime`/`queue`/`messages`/`session` 事件；15 秒无事件发心跳；客户端断开自动退订。`api_token` 可用 `?token=` |
-| POST | `/v1/agent/sessions/{sid}/messages` | 在会话中追加消息（Agent 或普通对话模式）；**入队即返回** `queued/position`，后台按序处理（要等当前这轮跑完才起新一轮） |
-| POST | `/v1/agent/sessions/{sid}/inject` | **强行插入指令**（DSH Ctrl+J 式）：写进 `pending` 并**立即中断当前回合**——提供商会话取消底层 HTTP 请求（无状态，取消即"这轮没发生"）；Copilot 网页会话**只在回答尚未开始生成时**中止等待（已开始生成就让它答完，避免丢回答/错位）。随后按新指令继续；会话空闲时自动转为排队跟进 |
-| GET | `/v1/agent/sessions/{sid}/queue` | 查看该会话队列（等待项 + 正在处理的一条，后者标 `processing`；界面只显示等待项） |
-| POST | `/v1/agent/sessions/{sid}/queue/{item_id}` | 修改排队中消息的内容 / 模型（与消息历史同步） |
-| DELETE | `/v1/agent/sessions/{sid}/queue/{item_id}` | 删除排队中消息（与消息历史同步） |
-| POST | `/v1/agent/sessions/{sid}/actions/{pause\|resume\|cancel\|compact\|rollover\|archive}` | 会话控制 |
-| POST | `/v1/agent/sessions/{sid}/activate` | 把自动化浏览器切到该会话页面 |
-| DELETE | `/v1/agent/sessions/{sid}?delete_remote=true&force_local=true` | 删除会话（可选连带删除 Copilot 网页会话） |
-| POST | `/v1/agent/sessions/{sid}/model` | 切换该会话使用的模型（落库，下一回合生效，服务重启后仍沿用） |
-| GET | `/v1/agent/sessions/{sid}/snapshots` | 任务改动快照清单（可回滚的路径/类型 + 回合版本列表 `versions`） |
-| GET | `/v1/agent/sessions/{sid}/prompt` | 查看该会话的提示词：`initial_prompt`（首回合完整内容，含系统提示词/工具清单/项目约定）与 `last_prompt`；旧会话未落库时按当前工作区近似重建并置 `rebuilt=true` |
-| POST | `/v1/agent/sessions/{sid}/rollback` | 回滚该任务的工作区改动；可选 body `{version:N}` 撤销第 N 回合之后的改动（运行中返回 409） |
-| GET | `/v1/agent/self/status` | 自升级状态（是否启用、白名单、待重启标记、快照作用域） |
-| GET | `/v1/agent/self/snapshots?sid=` | 自升级改动快照清单 |
-| POST | `/v1/agent/self/rollback?sid=&last=` | 回滚服务自身代码（`last=true` 取最近一次） |
-| GET/POST | `/v1/agent/workspace` | 查询/切换工具工作区 |
-| GET/POST | `/v1/agent/browser` | 查询/切换浏览器窗口显示（无头 ↔ 有窗口；带登录态重启浏览器上下文，`persist=true` 可写回 config.json） |
-| GET | `/v1/agent/browse?path=` | 一层目录列举（只列子目录），供工作目录选择器；不传 path 从当前工作区开始 |
-| POST | `/v1/agent/browse/mkdir` | 在选择器里新建子目录（只允许单层名，拒绝分隔符/`..`） |
-| POST | `/v1/agent/pick-directory` | 系统文件夹对话框（native）。**注**：由服务托管启动的进程若继承了非交互窗口站，对话框不可见——超时 15s 返回 400，WebUI 只用应用内浏览 |
-| POST | `/v1/agent/deep-research` | 一键深研：`{query, model, angles}` → 证据包 + 一次直连综合 → 带来源的报告（落成 `research-*` 会话 + 工作区 md） |
-| GET | `/v1/plugins` | 插件列表（已加载/启用状态、权限、贡献点） |
-| POST | `/v1/plugins/{name}/{action}` | 插件操作：`enable` / `disable` / `reload` |
-| ANY | `/v1/plugins/{plugin}/api/{path}` | 插件自定义接口（如 `web-search` 的 `api/search`） |
-| GET | `/ui` | Web 管理台 |
+| GET | `/health` | Health check (includes busy status) |
+| GET | `/v1/models` | Model list |
+| POST | `/v1/models/refresh` | Re-enumerate the Copilot model menu and merge in new models |
+| POST | `/v1/chat/completions` | OpenAI-compatible chat |
+| POST | `/v1/agent/completions` | Start/continue an Agent task |
+| GET | `/v1/agent/sessions` | Session list |
+| GET | `/v1/agent/sessions/{sid}` | Session details (steps / file events / messages) |
+| GET | `/v1/agent/sessions/{sid}/runtime` | Live runtime status (polling endpoint for when SSE is unavailable) |
+| GET | `/v1/uploads/{name}` | Serve "pasted attachment" images (filename under `data/uploads`; strict filename validation, separators and `..` rejected; protected by api_token, frontend img tags use `?token=`) |
+| POST | `/v1/shutdown` | **Terminate the service** (the WebUI ⏻ button). Responds before shutting down; graceful shutdown (uvicorn `should_exit`), falls back to SIGINT if the server object is unavailable, with a hard-exit backstop after a grace period; idempotent |
+| GET | `/v1/agent/sessions/{sid}/events` | **SSE real-time push** (`text/event-stream`): first sends a runtime snapshot, then pushes `runtime`/`queue`/`messages`/`session` events; sends a heartbeat after 15 s without events; auto-unsubscribes when the client disconnects. `api_token` may be passed via `?token=` |
+| POST | `/v1/agent/sessions/{sid}/messages` | Append a message to a session (Agent or plain chat mode); **returns immediately on enqueue** with `queued/position`, processed in order in the background (the next round starts only after the current one finishes) |
+| POST | `/v1/agent/sessions/{sid}/inject` | **Force-inject an instruction** (DSH Ctrl+J style): written into `pending` and **immediately interrupts the current turn** — provider sessions cancel the underlying HTTP request (stateless; cancelled means "this round never happened"); Copilot web sessions **only abort the wait if the answer has not started generating** (once generation has started, let it finish to avoid losing the answer / misalignment). Then continues per the new instruction; when the session is idle it automatically becomes a queued follow-up |
+| GET | `/v1/agent/sessions/{sid}/queue` | View the session's queue (waiting items + the one being processed, the latter marked `processing`; the UI only shows waiting items) |
+| POST | `/v1/agent/sessions/{sid}/queue/{item_id}` | Edit the content / model of a queued message (kept in sync with message history) |
+| DELETE | `/v1/agent/sessions/{sid}/queue/{item_id}` | Delete a queued message (kept in sync with message history) |
+| POST | `/v1/agent/sessions/{sid}/actions/{pause\|resume\|cancel\|compact\|rollover\|archive}` | Session control |
+| POST | `/v1/agent/sessions/{sid}/activate` | Switch the automation browser to that session's page |
+| DELETE | `/v1/agent/sessions/{sid}?delete_remote=true&force_local=true` | Delete a session (optionally also delete the Copilot web session) |
+| POST | `/v1/agent/sessions/{sid}/model` | Switch the model used by this session (persisted; takes effect on the next turn; still used after a service restart) |
+| GET | `/v1/agent/sessions/{sid}/snapshots` | Snapshot list of the task's changes (rollback-able paths/types + per-turn version list `versions`) |
+| GET | `/v1/agent/sessions/{sid}/prompt` | View the session's prompts: `initial_prompt` (full first-turn content, incl. system prompt / tool list / project conventions) and `last_prompt`; for old sessions where it was never persisted, approximately rebuilt from the current workspace with `rebuilt=true` |
+| POST | `/v1/agent/sessions/{sid}/rollback` | Roll back the workspace changes of this task; optional body `{version:N}` undoes the changes made after turn N (returns 409 while running) |
+| GET | `/v1/agent/self/status` | Self-upgrade status (enabled or not, whitelist, pending-restart flag, snapshot scope) |
+| GET | `/v1/agent/self/snapshots?sid=` | Snapshot list of self-upgrade changes |
+| POST | `/v1/agent/self/rollback?sid=&last=` | Roll back the service's own code (`last=true` takes the most recent one) |
+| GET/POST | `/v1/agent/workspace` | Query / switch the tool workspace |
+| GET/POST | `/v1/agent/browser` | Query / switch browser window display (headless ↔ windowed; restarts the browser context while keeping login state, `persist=true` writes back to config.json) |
+| GET | `/v1/agent/browse?path=` | One-level directory listing (subdirectories only), for the working-directory picker; without `path` it starts from the current workspace |
+| POST | `/v1/agent/browse/mkdir` | Create a subdirectory in the picker (single-level names only; separators / `..` rejected) |
+| POST | `/v1/agent/pick-directory` | System folder dialog (native). **Note**: a process spawned by the service may inherit a non-interactive window station, making the dialog invisible — times out with a 400 after 15 s; the WebUI only uses in-app browsing |
+| POST | `/v1/agent/deep-research` | One-click deep research: `{query, model, angles}` → evidence pack + one direct synthesis → report with sources (saved as a `research-*` session + a workspace md file) |
+| GET | `/v1/plugins` | Plugin list (loaded/enabled state, permissions, contribution points) |
+| POST | `/v1/plugins/{name}/{action}` | Plugin operations: `enable` / `disable` / `reload` |
+| ANY | `/v1/plugins/{plugin}/api/{path}` | Plugin custom endpoints (e.g. `web-search`'s `api/search`) |
+| GET | `/ui` | Web admin console |
 
-## 操作手册
+## Operation Manual
 
-- `sandbox_mode`：`read-only` / `workspace-write`（默认）/ `danger-full-access`。
-  `read-only` 下所有变更类工具（写文件/执行命令/office 写/发邮件…）在执行前就被拒绝；
-  `danger-full-access` 允许写到工作区之外，但**服务安装目录仍受保护**（除非开 `allow_self_upgrade`）。
-- 运行时可用 `GET/POST /v1/agent/sandbox` 查询/切换（`persist:true` 写回 config.json）。
+- `sandbox_mode`: `read-only` / `workspace-write` (default) / `danger-full-access`.
+  Under `read-only`, all mutating tools (file writes / command execution / office writes / sending email…) are rejected before execution;
+  `danger-full-access` allows writing outside the workspace, but the **service install directory stays protected** (unless `allow_self_upgrade` is enabled).
+- At runtime you can query / switch it via `GET/POST /v1/agent/sandbox` (`persist:true` writes back to config.json).
 
-### 1. WebUI 怎么用
+### 1. How to use the WebUI
 
-打开 `http://127.0.0.1:8765/ui`（建议强刷 `Ctrl+F5` 确保加载最新前端）。
+Open `http://127.0.0.1:8765/ui` (a hard refresh with `Ctrl+F5` is recommended to make sure the latest frontend is loaded).
 
-| 位置 | 操作 |
+| Location | Action |
 |---|---|
-| 侧栏顶部 **＋ 新任务** | **打开新会话编辑器**（不再是弹窗）：大输入框 + 模型 + 工作目录（📁 打开目录选择器，默认 workspace）+ **Agent 执行 / 普通对话** + 「开始」；`Enter` 发送、`Shift+Enter` 换行 |
-| 输入框里的 **`/` 命令** | 输入 `/` 弹出命令面板（↑↓ 选择、Tab/Enter 补全、Esc 关闭）：`/research 问题`（深研）、`/goal 目标`（目标模式）、`/plan 任务`（计划模式）、`/agent`（切 Agent 模式）、`/chat`（切普通对话）、`/help`（列出命令）。带参数直接回车即执行，不带参数则补全后等输入 |
-| 侧栏 **SESSIONS** 的工作区分组 | 会话按**工作区**分组（组头：折叠箭头 + 文件夹图标 + 名称 + 会话数）；点组头折叠/展开（状态存 localStorage）；组头右侧 **＋** = 在该工作区新建会话；工作区名字悬停看完整路径 |
-| 子代理会话的归集 | 子会话**折叠在父会话下**（父行左侧 `▸`，点开缩进显示，状态存 localStorage）；删除父会话会**级联删除**子代理，不留孤儿 |
-| 侧栏 **SESSIONS** | 会话列表（行首来源标记：⏱ 定时任务 / 🔎 深研 / 子 子代理；状态圆点：绿=运行、黄=等待/暂停、红=失败、蓝=完成）；`筛选…` 按标题/ID/**工作区**过滤；图标行：**＋新会话**、**📁新建工作区**、📖 使用手册、▣ 切换自动化浏览器窗口、◐ 轮换主题（**默认跟随系统**；循环：跟随系统 → 深色 → 琥珀 → 墨玉 → 浅色 → 护眼米 → 薄荷，3 暗 / 3 亮，选择刷新保持，系统主题变化时自动跟随） 等 |
-| 侧栏左缘细长拉手 | 收起/展开整个侧栏（会话列表占满宽度） |
-| 顶部操作条 | 暂停 / 恢复 / 压缩上下文 / **深研**（多角度搜索 + 抓正文 → 带来源报告，新会话）/ 继续执行 / 切换到页面（把自动化 Edge 跳到该会话）/ 打开会话（在你自己浏览器打开）/ 取消任务 / 更多 ▾（插件管理、归档、回滚任务改动、回滚服务自升级、删除记录、连同 Copilot 会话删除） |
-| 顶栏右侧**模型选择器** | 显示**当前会话自己的模型**，可直接切换；落库到该会话，**下一回合生效、服务重启后仍沿用**。选项来自 `/v1/models` 的可用模型；若会话原先的模型已不在菜单里，会标注"（菜单里未找到）" |
-| 顶栏 ID 芯片 | 显示当前会话 ID，点击复制（删除前对号用） |
-| KPI 条 | 状态、总步骤（含子代理）、当前会话步骤、会话（第几个 Copilot 对话，与侧栏同一口径）、TOKEN 估算（含子代理，带预算进度条） |
-| 目标 / 计划条 | 计划模式下显示方案状态；有目标时显示 `🎯 目标（第 r/max 轮 · 状态）`，有 todo 时显示 `☑ 计划 完成数/总数`；无目标/无计划时整条隐藏 |
-| 实时面板（四选项卡） | **当前执行状态**（阶段/等待详情/计数）、**当前回答**（模型最新回答，结构化动作自动转 JSON 视图、普通回答按 Markdown 渲染；提供商流式返回时**逐字增长**；有更新时页签出现绿点）、**最近发送的内容**（发给模型的原文尾部）、**继续对话**（见下）|
-| 消息编辑 / 删除 | 对话里每条已落库的消息悬停出现 ✎ / 🗑：编辑改内容、删除移除记录。**诚实语义**：只改本地历史，已发给网页 Copilot 的内容无法撤回；**提供商会话**会同步内存里的对话历史（`_PROVIDER_AGENT_HISTORY` 是增量累积而非每回合重建，不同步的话模型下一回合仍会看到旧文本），同步结果在提示里说明（`history_synced`），内存里已被裁剪找不到时如实告知而不是假装成功 |
-| 🔍 跨会话搜索 | 侧栏搜索图标打开面板（再点 / Esc / 跳转后自动收起），搜**所有会话的对话正文**（后端 `GET /v1/search`，LIKE 通配符已转义——搜 `100%`/`_` 是字面量），结果列出会话标题、角色、时间与命中片段；**点结果即跳转**到该会话并把那条消息滚到视野中间高亮一下。归档会话不参与搜索 |
-| 🏷 会话标签与分组 | 会话卡片悬停出现 🏷：设标签（留空取消）。侧栏列表**按标签分组**（有标签的在前、未打标签的收在最后一组），筛选框同时匹配标题/ID/状态/标签。标签是纯本地组织手段（`POST /v1/agent/sessions/{sid}/tag`），不参与 Agent 逻辑 |
-| 时间线筛选 | 时间线头部两个下拉：**按工具**（选项自动来自当前步骤里出现过的工具）与**按状态**（仅成功 / 仅失败与被拦 / 仅事件），计数显示为 `m/n 条（筛选）`。默认无筛选时仍是增量渲染（展开状态不丢），筛选变化才整表重建 |
-| 对话区流式气泡 | 提供商流式输出除了「当前回答」面板，**对话区也会显示一个「正在生成」临时气泡**（虚线边框 + 临时标签，来源就是 `answer_preview` 的 SSE 推送），正式消息落库后自动被真实消息替换。刻意与正式消息样式区分，避免把流到一半的 JSON 动作误当成最终答复 |
-| ⬇ 导出对话 Markdown | 聊天栏「导出 MD」把当前对话导出为 `.md`（会话 ID、模型、导出时间、消息数头部 + 按角色分段 + 时间 + 附件引用），便于粘贴到别处或归档 |
-| 工具结果双视图 | 时间线每步的「查看结果」提供 **渲染 / JSON** 两个视图：渲染视图把短标量排成键值行、长文本与对象用**和对话完全同一套代码块**渲染（语言按参数里的文件扩展名或工具名推断，如 `gantry/demo.py` → Python；`validate_python` → Python），因此同样有语言标签、语法高亮、行号、折叠、复制与「…」菜单；JSON 视图保留原有的结构化浏览 |
-| 🌐 多语言（简 / 繁 / 英） | 侧栏语言按钮循环切换（`简 → 繁 → EN`），选择记在 localStorage，刷新后保持；切换即重画会话列表、对话、时间线与各面板。**覆盖范围**：全部静态界面 + 全部动态文案（toast、对话框、面板、记忆/技能、回滚与删除明细、演示数据、代码块与时间线标签）。**实现取舍**：以中文原文当 key（`tr('取消任务')`），缺翻译回落原文——不会出现 key 对不上导致界面空白；英文手写，**繁体由简繁短语表 + 字符表自动转换**并叠加台湾用语覆盖表（記憶體/檔案/設定/匯出/停機/強行/手冊…）。只翻译展示文案，**判定逻辑里的字符串一律不翻**；**JS 生成的 HTML 属性走 DOM 层翻译**（`translateAttrs()`,不改源码——把模板/拼接串里的属性包成 `tr()` 极易写坏，实测踩过三次）。后端与 Agent 协议文案保持中文，主要 API 的 note 带 `note_code`,前端据此本地化 |
-| ⚡ 子代理并行扇出 | **API 提供商模型真并行**：`subagent_many` / `POST /v1/agent/fanout` 会把 2~6 个互不依赖的子任务按并发上限（`agent.subagent_parallel`，默认 4）同时跑，结果保序汇总、单项失败不影响其余；**网页 Copilot 通道按自动化窗口数并行**（`agent.copilot_windows`，1–4）：每个子代理独占一个标签页，父任务自己占一个，所以并发上限是「窗口数 − 1」；窗口数 = 1 时仍是顺序执行（与以前一致）。并行的前提是把「当前会话 / 是否允许网页工具 / 子代理递归深度 / 页面」从全局变量改成**任务级上下文**（contextvars），否则并发子代理会互相覆盖 |
-| 对话阅读体验 | 消息卡片（头像/角色名/时间戳/悬停复制）；助手消息按内容形态**可视化**：JSON 动作 → **工具卡**（工具名 + 原因 + 参数 JSON 视图，`content_b64` 显示为"[Base64 内容，共 N 字符]"）、批量动作 → 一卡多工具、`{"type":"final"}` → 正文按 **Markdown** 渲染并标「最终答复」、其它 JSON → JSON 视图、```json 代码块也用 JSON 视图；解析不了的 JSON 明确标「JSON 解析失败（原文）」而不是装作没事 |
-| Markdown 代码块 | 对齐 Copilot 观感：左侧**行号**（横向滚动时固定不跑）、**语言显示名**（PowerShell/Python/…）、**软换行**（默认折行，可在「…」里关掉）、复制图标与「**…**」菜单（复制代码 / **下载为文件**（按语言给扩展名）/ 行号开关 / 换行开关 / 折叠）。**点击行号选中整行**（可多行），代码条随即出现「**复制选中 N 行**」（复制文本不含行号）。**语法高亮 11 种语言**（python/js/ts/json/bash/powershell/sql/yaml/html/css + ```diff/patch：新增绿、删除红、@@ 块头蓝）；超 22 行折叠，偏好记住选择 |
-| 图片与附件 | Markdown 的 `![alt](url)` 渲染为图（**仅 https/http 与 data:image**,svg 与 `javascript:` 不放行）、点击放大，断链显示"图片加载失败"占位而不是破图图标；**粘贴的图片附件**在消息下方显示缩略图、点击放大（消息行记录文件名，经 `GET /v1/uploads/{name}` 供图，走统一鉴权），**会话列表**对带附件的会话显示 📎 角标 |
-| 其余阅读辅助 | 长回答超 1800 字折叠；**🔍 对话内搜索**（高亮命中、Enter/Shift+Enter 跳转；不会命中行号列）；新到达消息渐显（尊重 `prefers-reduced-motion`）。全部零依赖手写，不引任何 CDN（离线可用） |
-| ⏻ 终止服务 / 退出 | 侧栏右上电源图标（**任何状态下都可达**）与会话「更多」菜单里都有；点击弹**二次确认**（说明正在跑的任务会中断、状态已落库可恢复）。后端 `POST /v1/shutdown` **先回响应再停机**（否则前端看到连接重置像失败），走 uvicorn **优雅停机**（`should_exit`，退出码 0），拿不到 server 对象时退回 SIGINT，并始终有"宽限期 8 秒后硬退出"兜底——按钮必须真的能停掉服务。停机后页面停止一切轮询并显示"服务已终止"横幅 |
-| 提供商流式输出 | `stream_provider_agent`（默认 `true`）开启时，提供商回合走流式：增量边收边写 `answer_preview`,经 **SSE 实时推送**到界面（见下），是真的逐字增长。**流式仍带 `response_schema`**（结构化动作协议的解析率不牺牲）；只在**一个增量都没收到**时才退回非流式（已收到内容再重发会造成重复计费/两份回答） |
-| SSE 实时推送 | WebUI 用 `EventSource` 连 `GET /v1/agent/sessions/{sid}/events`,由服务端**推送** runtime 快照、队列变化、新消息、会话列表变化——正常情况下不再轮询。连接建立先送一份当前快照；15 秒无事件发一次心跳（`: ping`）防中间设备掐断；断开自动退订（不留内存）并**退回轮询**（保留 350ms 快速轮询 + 按退避重连）。`api_token` 走 `?token=`（EventSource 不能带自定义头，鉴权中间件已支持） |
-| 📄 初始提示词 | 面板头部按钮，查看该会话**首回合实际发给模型的完整提示词**（系统提示词 + 工具清单 + 项目约定 + 验证闭环规则 + 任务）——排查"Agent 为什么这么做"的第一现场。首回合内容会落库（`initial_prompt`），不再被后续回合覆盖；**旧会话**未落库时按当前工作区**近似重建**并在标题里标注 |
-| 🧾 任务完成卡片 | 任务跑完（completed/failed/cancelled）后，对话区底部出现「本次改动 N 个文件 +X −Y」：逐文件列出路径与行级增删（对齐 DSH 的 *Edited N files*），改动大的排前面；超过 6 个折叠为「全部 N 个文件」。点一行**看 unified diff**（复用查看浮层，可复制）；`present` 登记的交付物以 chip 列出。数据来自**写操作前的快照原像**（不依赖 git），二进制文件（xlsx/docx/图片）只列路径。接口：`GET /v1/agent/sessions/{sid}/changes`、`GET …/changes/diff?path=`（只允许快照里记录过的路径，杜绝任意读文件） |
-| 消息队列 | 继续对话发送的消息**入队即返回**，不阻塞界面；任务正在跑时再发消息会排队显示"已排队（前面还有 N 条）"，处理完自动把回复刷进聊天区。聊天页队列条只列**等待中**的消息（正在处理的那条不显示，进度看运行状态面板），可**逐条编辑/删除**（✎ / ×，与消息历史同步）。运行状态面板显示"队列: N 条待处理"。支持粘贴图片（截图）随消息一起发送 |
-| ⚡ 强行插入（**Ctrl+J**） | 任务跑着的时候，用 **Ctrl+J**（或聊天区「⚡ 强行插入」按钮）插入一条指令，并**立即中断当前回合**：提供商会话直接取消那次 HTTP 请求（无状态，取消即"这轮没发生"）；Copilot 网页会话**只在回答尚未开始生成时**停下等待（一旦已开始生成就让它答完，避免丢掉回答、以及"被放弃的回答"与新指令应答错位）。插入方式可选（记住上次选择）：**立即遵守**（`queue=step`:进 next-step 队列，追加到当前执行中，且**批量执行途中抢先放弃剩余动作**）/ **整轮重排**（`queue=turn`:当前回合作废、按新指令重新规划本回合）。插入会写进消息历史并在时间线留下 `user_inject`/`user_interrupt`/`step_preempted` 步骤；会话空闲时自动转为排队跟进 |
-| 新话题直接生成文件 | Copilot 网页通道的**首轮**会附一条建议：任务要产出新文件时，优先一次 `copilot_file(path, instruction)` 让 Copilot 生成并下载——文件内容不经过聊天消息，不受单条输出上限约束（大文件一个回合拿到，不必 `write_text_b64` 分块写、也不会截断）。只在首轮、且仅 Copilot 通道（provider 会话没这个工具，提示了只会白烧回合）；**不写进系统提示词**（那里要保持逐字稳定以命中 prompt cache）。另：`copilot_file` 已归入 core 写工具、**不参与关键字裁剪**——原先它在 copilot 组（关键字=图片/截图/附件），任何"生成文件"类任务都会把它裁掉，模型看不到该工具，等于把这条路堵死 |
-| 步骤时间线 | 每步带时间与状态；「查看结果」展开为**渲染 / JSON 双视图**（见上）；右上「⬇ 导出」下载完整时间线 JSON（排查问题首选） |
-| PATCH / DELETE | `/v1/agent/sessions/{sid}/messages/{mid}` | 编辑 / 删除一条消息（只改本地历史；提供商会话同步内存上下文，返回 `history_synced`） |
-| GET | `/v1/search?q=&limit=` | 跨会话搜索对话正文（LIKE 通配符已转义；排除归档会话；limit 上限 100） |
-| POST | `/v1/agent/sessions/{sid}/tag` | 设置会话标签（`{"tag": "..."}`,空串取消；列表按标签分组用） |
+| Sidebar top **＋ New task** | **Opens the new-session editor** (no longer a modal): large input box + model + working directory (📁 opens the directory picker, defaults to the workspace) + **Agent run / Plain chat** + "Start"; `Enter` sends, `Shift+Enter` inserts a newline |
+| **`/` commands** in the input box | Typing `/` opens the command palette (↑↓ to select, Tab/Enter to complete, Esc to close): `/research question` (deep research), `/goal goal` (goal mode), `/plan task` (plan mode), `/agent` (switch to Agent mode), `/chat` (switch to plain chat), `/help` (list commands). With arguments, Enter executes immediately; without arguments it completes and waits for input |
+| Workspace groups under **SESSIONS** in the sidebar | Sessions are grouped by **workspace** (group header: collapse arrow + folder icon + name + session count); click the header to collapse/expand (state stored in localStorage); the **＋** on the right of the header = create a session in that workspace; hover the workspace name to see the full path |
+| Grouping of sub-agent sessions | Child sessions are **collapsed under their parent session** (`▸` on the left of the parent row; expanding shows them indented, state stored in localStorage); deleting a parent session **cascades** to its sub-agents, leaving no orphans |
+| Sidebar **SESSIONS** | Session list (leading source marker: ⏱ scheduled task / 🔎 deep research / 子 sub-agent; status dot: green=running, yellow=waiting/paused, red=failed, blue=completed); `Filter…` filters by title/ID/**workspace**; icon row: **＋ New session**, **📁 New workspace**, 📖 user manual, ▣ toggle the automation browser window, ◐ cycle the theme (**follows the system by default**; cycle: system → dark → amber → jade → light → eye-care beige → mint, 3 dark / 3 light; the choice persists across refreshes and automatically follows system theme changes), etc. |
+| Slim handle on the sidebar's left edge | Collapse/expand the whole sidebar (the session list fills the width) |
+| Top action bar | Pause / Resume / Compact context / **Deep research** (multi-angle search + body fetching → report with sources, new session) / Continue / Switch to page (jumps the automation Edge to this session) / Open session (in your own browser) / Cancel task / More ▾ (plugin management, archive, roll back task changes, roll back service self-upgrade, delete record, delete together with the Copilot session) |
+| **Model selector** on the right of the top bar | Shows **the current session's own model** and can switch it directly; persisted to that session, **takes effect on the next turn and is kept after service restarts**. Options come from the available models of `/v1/models`; if the session's original model is no longer in the menu, it is marked "(not found in menu)" |
+| ID chip in the top bar | Shows the current session ID; click to copy (for verification before deletion) |
+| KPI bar | Status, total steps (incl. sub-agents), current session steps, sessions (which Copilot conversation, counted the same way as the sidebar), token estimate (incl. sub-agents, with a budget progress bar) |
+| Goal / Plan bar | In plan mode shows the plan status; with a goal shows `🎯 Goal (round r/max · status)`, with todos shows `☑ Plan done/total`; the whole bar is hidden when there is no goal/plan |
+| Live panel (four tabs) | **Current execution status** (phase / wait details / counters), **Current answer** (the model's latest answer; structured actions are auto-converted to a JSON view, plain answers are rendered as Markdown; **grows character by character** when the provider streams; a green dot appears on the tab when there are updates), **Recently sent content** (the tail of the raw text sent to the model), **Continue conversation** (see below) |
+| Message edit / delete | Hovering any persisted message in the conversation shows ✎ / 🗑: edit changes the content, delete removes the record. **Honest semantics**: only the local history is changed; content already sent to web Copilot cannot be recalled; **provider sessions** sync the in-memory conversation history (`_PROVIDER_AGENT_HISTORY` accumulates incrementally rather than being rebuilt each turn — without syncing, the model would still see the old text on the next turn), and the sync result is stated in the notice (`history_synced`); if the entry has already been pruned from memory it says so honestly instead of pretending success |
+| 🔍 Cross-session search | The sidebar search icon opens the panel (click again / Esc / auto-collapses after jumping); it searches **the conversation bodies of all sessions** (backend `GET /v1/search`; LIKE wildcards are escaped — searching `100%`/`_` is literal); results list session title, role, time and the matched snippet; **clicking a result jumps** to that session and scrolls that message into the middle of the view with a brief highlight. Archived sessions do not participate in search |
+| 🏷 Session tags & grouping | Hovering a session card shows 🏷: set a tag (leave empty to clear). The sidebar list **groups by tag** (tagged sessions first, untagged ones collected into a last group); the filter box matches title/ID/status/tag at the same time. Tags are a purely local organization device (`POST /v1/agent/sessions/{sid}/tag`) and do not participate in Agent logic |
+| Timeline filters | Two dropdowns in the timeline header: **by tool** (options are automatically collected from the tools that appear in the current steps) and **by status** (success only / failed & blocked only / events only); counts are shown as `m/n items (filtered)`. With no filter it still renders incrementally (expansion state is preserved); the whole table is rebuilt only when the filter changes |
+| Streaming bubble in the conversation area | Besides the "Current answer" panel, provider streaming output also **shows a temporary "generating" bubble in the conversation area** (dashed border + temporary label, sourced from the `answer_preview` SSE pushes), automatically replaced by the real message once the final message is persisted. It is deliberately styled differently from final messages to avoid mistaking a half-streamed JSON action for the final answer |
+| ⬇ Export conversation Markdown | "Export MD" in the chat bar exports the current conversation as `.md` (header with session ID, model, export time, message count + sections by role + timestamps + attachment references), handy for pasting elsewhere or archiving |
+| Tool result dual view | Each timeline step's "View result" offers **Rendered / JSON** views: the rendered view lays short scalars out as key-value rows, and renders long text and objects with **exactly the same code-block component as the conversation** (the language is inferred from the file extension in the arguments or from the tool name, e.g. `gantry/demo.py` → Python; `validate_python` → Python), so it has the same language label, syntax highlighting, line numbers, folding, copy and "…" menu; the JSON view keeps the original structured browsing |
+| 🌐 Multi-language (Simplified / Traditional / English) | The sidebar language button cycles (`简 → 繁 → EN`); the choice is stored in localStorage and persists across refreshes; switching immediately repaints the session list, conversation, timeline and all panels. **Coverage**: all static UI + all dynamic copy (toasts, dialogs, panels, memory/skills, rollback & delete details, demo data, code-block and timeline labels). **Implementation trade-offs**: the Chinese source text is used as the key (`tr('取消任务')`), and missing translations fall back to the source — the UI can never go blank because of a mismatched key; English is handwritten, while **Traditional Chinese is auto-converted via a simplified→traditional phrase + character table** overlaid with a Taiwan-usage override table (記憶體/檔案/設定/匯出/停機/強行/手冊…). Only display copy is translated — **strings inside decision logic are never translated**; **HTML attributes generated by JS are translated at the DOM layer** (`translateAttrs()`, without touching the source — wrapping attributes in template/concatenated strings with `tr()` is extremely error-prone and broke three times in practice). Backend and Agent-protocol copy stays in Chinese; the notes of major APIs carry a `note_code`, which the frontend localizes accordingly |
+| ⚡ Sub-agent parallel fan-out | **True parallelism for API provider models**: `subagent_many` / `POST /v1/agent/fanout` run 2–6 mutually independent subtasks concurrently under a cap (`agent.subagent_parallel`, default 4); results are merged in order, and a single failure does not affect the rest; **the web Copilot channel parallelizes by the number of automation windows** (`agent.copilot_windows`, 1–4): each sub-agent owns a tab and the parent task owns one, so the concurrency cap is "windows − 1"; with 1 window it stays sequential (same as before). The prerequisite for parallelism was turning "current session / whether web tools are allowed / sub-agent recursion depth / page" from global variables into **task-level context** (contextvars), otherwise concurrent sub-agents would overwrite each other |
+| Conversation reading experience | Message cards (avatar / role name / timestamp / hover-to-copy); assistant messages are **visualized** by content shape: JSON action → **tool card** (tool name + reason + argument JSON view; `content_b64` shown as "[Base64 content, N chars]"), batch actions → one card with multiple tools, `{"type":"final"}` → body rendered as **Markdown** and marked "Final answer", other JSON → JSON view, and ```json code blocks also use the JSON view; JSON that cannot be parsed is clearly marked "JSON parse failed (raw text)" instead of pretending nothing happened |
+| Markdown code blocks | Aligned with Copilot's look and feel: left-side **line numbers** (stay fixed during horizontal scrolling), **language display name** (PowerShell/Python/…), **soft wrap** (wraps by default, can be turned off in "…"), copy icon and the "**…**" menu (copy code / **download as file** (extension based on language) / line-number toggle / wrap toggle / fold). **Clicking a line number selects the whole line** (multiple lines possible), and the code bar then shows "**Copy selected N lines**" (the copied text excludes line numbers). **Syntax highlighting for 11 languages** (python/js/ts/json/bash/powershell/sql/yaml/html/css + ```diff/patch: additions in green, deletions in red, @@ hunk headers in blue); folds beyond 22 lines; the preference is remembered |
+| Images & attachments | Markdown `![alt](url)` renders as an image (**https/http and data:image only**; svg and `javascript:` are not allowed), click to zoom; broken links show an "image failed to load" placeholder instead of a broken-image icon; **pasted image attachments** show a thumbnail under the message, click to zoom (the message line records the filename; served via `GET /v1/uploads/{name}` under unified auth); the **session list** shows a 📎 badge for sessions with attachments |
+| Other reading aids | Long answers over 1800 characters are folded; **🔍 in-conversation search** (highlights matches, Enter/Shift+Enter to jump; never matches the line-number column); newly arrived messages fade in (respects `prefers-reduced-motion`). All hand-written with zero dependencies, no CDN (works offline) |
+| ⏻ Terminate service / exit | Available both at the power icon on the sidebar's top-right (**reachable in any state**) and in the session's "More" menu; clicking pops a **second confirmation** (explaining that running tasks will be interrupted and that state is persisted and resumable). The backend `POST /v1/shutdown` **responds before shutting down** (otherwise the frontend would see a connection reset that looks like a failure), uses uvicorn **graceful shutdown** (`should_exit`, exit code 0), falls back to SIGINT if the server object is unavailable, and always has an "8-second grace period then hard exit" backstop — the button must really be able to stop the service. After shutdown the page stops all polling and shows a "Service terminated" banner |
+| Provider streaming output | When `stream_provider_agent` (default `true`) is on, provider turns go streaming: increments are written into `answer_preview` as they arrive and **pushed to the UI in real time via SSE** (see below) — genuinely character-by-character growth. **Streaming still carries `response_schema`** (the parse rate of the structured-action protocol is not sacrificed); it falls back to non-streaming only when **not a single increment was received** (resending after content was received would cause double billing / two answers) |
+| SSE real-time push | The WebUI connects `EventSource` to `GET /v1/agent/sessions/{sid}/events`, and the server **pushes** runtime snapshots, queue changes, new messages and session-list changes — normally no polling is needed. On connect it first sends a current snapshot; a heartbeat (`: ping`) every 15 idle seconds prevents middleboxes from cutting the connection; on disconnect it auto-unsubscribes (leaving no memory behind) and **falls back to polling** (keeps 350 ms fast polling + reconnect with backoff). `api_token` goes via `?token=` (EventSource cannot carry custom headers; the auth middleware already supports it) |
+| 📄 Initial prompt | A button in the panel header shows the **complete prompt actually sent to the model on the first turn** (system prompt + tool list + project conventions + verification-loop rules + task) — the first place to look when investigating "why did the Agent do that". The first-turn content is persisted (`initial_prompt`) and is no longer overwritten by later turns; for **old sessions** where it was never persisted, it is **approximately rebuilt** from the current workspace and marked in the title |
+| 🧾 Task completion card | After a task finishes (completed/failed/cancelled), the bottom of the conversation shows "N files changed this run +X −Y": per-file paths with line-level additions/deletions (aligned with DSH's *Edited N files*), larger changes first; more than 6 files are folded into "All N files". Clicking a row **shows the unified diff** (reuses the viewer overlay, copyable); deliverables registered via `present` are listed as chips. The data comes from **pre-write snapshot originals** (no git dependency); binary files (xlsx/docx/images) only have their paths listed. APIs: `GET /v1/agent/sessions/{sid}/changes`, `GET …/changes/diff?path=` (only paths recorded in snapshots are allowed — arbitrary file reads are prevented) |
+| Message queue | Messages sent in "Continue conversation" **return immediately on enqueue** without blocking the UI; sending a message while the task is running queues it and shows "Queued (N ahead)", and replies are flushed into the chat area automatically once processed. The chat page queue bar lists only **waiting** messages (the one being processed is not shown; watch the runtime status panel for progress), and allows **per-item edit/delete** (✎ / ×, kept in sync with message history). The runtime status panel shows "Queue: N pending". Pasting images (screenshots) to send along with a message is supported |
+| ⚡ Force-inject (**Ctrl+J**) | While a task is running, use **Ctrl+J** (or the "⚡ Force-inject" button in the chat area) to insert an instruction and **immediately interrupt the current turn**: provider sessions directly cancel that HTTP request (stateless; cancelled means "this round never happened"); Copilot web sessions **only stop waiting if the answer has not started generating** (once generation has started, let it finish to avoid losing the answer, and to avoid the "abandoned answer" being misaligned with the reply to the new instruction). The injection mode is selectable (remembers the last choice): **Obey immediately** (`queue=step`: enters the next-step queue, appends to the current execution, and **preemptively abandons the remaining actions mid-batch**) / **Replan the whole turn** (`queue=turn`: the current turn is voided and the turn is replanned per the new instruction). Injections are written into message history and leave `user_inject`/`user_interrupt`/`step_preempted` steps in the timeline; when the session is idle it automatically becomes a queued follow-up |
+| New topic generates files directly | On the **first turn** of the Copilot web channel a suggestion is attached: when a task needs to produce new files, prefer a single `copilot_file(path, instruction)` to have Copilot generate and download it — the file content never passes through chat messages and is not bound by the per-message output cap (a large file arrives in one turn; no `write_text_b64` chunking and no truncation). First turn only, and only on the Copilot channel (provider sessions do not have this tool; suggesting it would just burn turns); it is **not written into the system prompt** (that must stay byte-stable to hit the prompt cache). Also: `copilot_file` has been moved into the core write tools and is **exempt from keyword pruning** — it used to be in the copilot group (keywords = images/screenshots/attachments), so any "generate a file" task would prune it away, the model could not see the tool, and this path was effectively blocked |
+| Step timeline | Each step carries time and status; "View result" expands into the **Rendered / JSON dual view** (see above); "⬇ Export" at the top-right downloads the complete timeline JSON (the first choice for troubleshooting) |
+| PATCH / DELETE | `/v1/agent/sessions/{sid}/messages/{mid}` | Edit / delete a message (only changes the local history; provider sessions sync the in-memory context and return `history_synced`) |
+| GET | `/v1/search?q=&limit=` | Cross-session search of conversation bodies (LIKE wildcards escaped; archived sessions excluded; limit capped at 100) |
+| POST | `/v1/agent/sessions/{sid}/tag` | Set a session tag (`{"tag": "..."}`; empty string clears it; used for grouping the list by tag) |
 
-### 长期记忆（跨会话）
+### Long-term memory (cross-session)
 
-除了 AGENT.md 与 skills，Agent 还有一套**长期记忆**：把以往任务里验证过的零散事实
-累积下来，后续相关任务自动检索注入（关键词+中文二元组匹配，零依赖）。
+Besides AGENT.md and skills, the Agent also has a set of **long-term memory**: scattered facts
+verified in past tasks are accumulated and automatically retrieved and injected for later related
+tasks (keyword + Chinese bigram matching, zero dependencies).
 
-- 写入：Agent 在收尾时自行调用 `memory_write`；也可让它在任务中随时记。
-- 检索：`memory_search`；提示词里只注入**最相关的几条**（不是全量），冲突时以当前事实为准。
-- 删除：`memory_forget`，或在 WebUI/接口 `DELETE /v1/agent/memory/{id}`。
-- 作用域：`global`（所有任务）与 `project`（仅当前工作区），互不泄露。
-- 管理：`GET /v1/agent/memory?query=&scope=` 查看清单与统计；上限 500 条/作用域，
-  超出按 pinned → 使用次数 → 更新时间淘汰；重复写入自动合并。
-- 什么时候用记忆而不是 AGENT.md：需要**每回合全文遵守**的硬约定写 AGENT.md；
-  「做过什么、踩过什么坑」这类可检索经验写记忆。
+- Writing: the Agent calls `memory_write` itself when wrapping up; you can also ask it to record something anytime during a task.
+- Retrieval: `memory_search`; only the **most relevant few entries** are injected into the prompt (not the full set); on conflicts, the current facts win.
+- Deletion: `memory_forget`, or in the WebUI / via the API `DELETE /v1/agent/memory/{id}`.
+- Scope: `global` (all tasks) and `project` (current workspace only), with no leakage between them.
+- Management: `GET /v1/agent/memory?query=&scope=` to view the list and statistics; capped at 500 entries per scope,
+  beyond which entries are evicted by pinned → use count → update time; duplicate writes are merged automatically.
+- When to use memory instead of AGENT.md: hard conventions that must be followed **in full every turn** go in AGENT.md;
+  retrievable experience like "what was done, what pitfalls were hit" goes in memory.
 
-### 2. 写 AGENT.md 与 skills（两级作用域）
+### 2. Writing AGENT.md and skills (two scope levels)
 
-| 作用域 | 位置 | 生效范围 |
+| Scope | Location | Effective range |
 |---|---|---|
-| **全局** | 服务安装目录：`AGENT.md`、`skills/<名字>/SKILL.md` | 所有工作区、所有任务 |
-| **项目** | 工作区根目录：`AGENT.md`、`skills/<名字>/SKILL.md` | 仅该项目 |
+| **Global** | Service install directory: `AGENT.md`, `skills/<name>/SKILL.md` | All workspaces, all tasks |
+| **Project** | Workspace root: `AGENT.md`, `skills/<name>/SKILL.md` | This project only |
 
-- 两份 `AGENT.md` **合并注入**（各自 ≤8000 字符，可用 `agent_md_max_chars` 调整），同路径自动去重，**项目级优先**
-- 技能**渐进式披露**：提示里只放「名称 + 一行简介」，Agent 判断相关时用 `skill_read` 取全文；同名技能项目级覆盖全局
-- **Agent 可自行沉淀技能**：任务收尾时它会先 `skill_list` 查有没有相关技能，没有就用 `skill_create` 新建（默认写项目级 `工作区/skills/<名字>/SKILL.md`；要写全局 `skills/` 必须开启 `allow_self_upgrade`）。技能创建即时生效（下次任务上下文即出现），无需重启；关闭入口用 `allow_skill_write: false`
-- SKILL.md 支持 YAML frontmatter，缺省回退「首个一级标题 + 首个段落」：
+- The two `AGENT.md` files are **merged on injection** (each ≤8000 characters, adjustable via `agent_md_max_chars`), identical paths are auto-deduplicated, and the **project level takes precedence**
+- Skills use **progressive disclosure**: only "name + one-line summary" goes into the prompt; when the Agent judges one relevant it fetches the full text with `skill_read`; a project-level skill overrides a same-named global one
+- **The Agent can distill skills on its own**: when wrapping up a task it first checks with `skill_list` whether a related skill exists; if not, it creates one with `skill_create` (by default written to the project level at `workspace/skills/<name>/SKILL.md`; writing to the global `skills/` requires `allow_self_upgrade`). Skill creation takes effect immediately (it appears in the next task's context) with no restart needed; disable the entry point with `allow_skill_write: false`
+- SKILL.md supports YAML frontmatter, falling back to "first level-1 heading + first paragraph" by default:
 
 ```markdown
 ---
 name: webui-change
-description: 修改 WebUI 时的结构规范与验证清单
+description: Structure conventions and verification checklist for WebUI changes
 ---
 
 # WebUI 修改规范
 （正文：Agent 读到全文后照着执行）
 ```
 
-- Agent 也可以**自己更新**这两类文件（沉淀有效结论），这类改动会在时间线标记 `instruction_update`，且可通过回滚撤销
+- The Agent can also **update these two kinds of files itself** (to distill effective conclusions). Such changes are marked `instruction_update` on the timeline and can be undone via rollback.
 
-### 3. 回滚（改了东西想还原）
+### 3. Rollback (restore something you changed)
 
-写操作**执行前**会自动把目标文件原像存入 `data/snapshots/`。版本按 **Copilot 回合**计数——一次 complete 产生一个版本（同回合内的多次写算同一个版本），因此既能把整任务**回滚到开始前**，也能**回滚到某个回合**（撤销该回合之后的改动）。三个通道：
+Before any write operation **executes**, the target file's original image is automatically saved to `data/snapshots/`. Versions are counted by **Copilot round**—one complete produces one version (multiple writes within the same round count as the same version), so you can either roll the whole task **back to before it started**, or **roll back to a specific round** (undoing changes made after that round). Three channels:
 
 ```powershell
-# ① WebUI：会话「更多 ▾ → 回滚任务改动…」（有多个回合版本时会分组列出，
-#    输入 0/留空 = 整任务回滚；输入版本号 = 回滚到该回合；运行中会拒绝，先暂停）
+# ① WebUI: session "More ▾ → Roll back task changes…" (when multiple round versions exist they are listed in groups;
+#    enter 0/leave blank = roll back the whole task; enter a version number = roll back to that round; refused while running, pause first)
 
 # ② HTTP API
 curl -X POST http://127.0.0.1:8765/v1/agent/sessions/<sid>/rollback -H "Content-Type: application/json" -d '{"version":3}'
-#    不带 body 或 version 为空 = 整任务回滚
+#    No body or empty version = roll back the whole task
 
-# ③ 离线 CLI（服务/WebUI 起不来时也能用）
-python scripts/rollback.py --list                      # 看有哪些可回滚
-python scripts/rollback.py --last --yes                # 回滚最近一次任务的工作区改动
-python scripts/rollback.py --sid <id> --versions        # 列出可选的回合版本点
-python scripts/rollback.py --sid <id> --rev 3 --yes     # 回滚到回合 3
-python scripts/rollback.py --scope self --last --yes   # 回滚最近一次「服务自升级」
+# ③ Offline CLI (works even when the service/WebUI can't start)
+python scripts/rollback.py --list                      # See what can be rolled back
+python scripts/rollback.py --last --yes                # Roll back the most recent task's workspace changes
+python scripts/rollback.py --sid <id> --versions        # List the available round version points
+python scripts/rollback.py --sid <id> --rev 3 --yes     # Roll back to round 3
+python scripts/rollback.py --scope self --last --yes   # Roll back the most recent "service self-upgrade"
 ```
 
-规则：修改过的文件还原内容、任务新建的文件被删除；单路径保留的**回合版本**上限 6（最早 + 最近几个），单文件 8MB、单会话 800 条（超限记入 `skipped`，那些路径不回滚）。
+Rules: modified files have their contents restored, files created by the task are deleted; per-path retained **round versions** are capped at 6 (the earliest plus the most recent few), 8MB per file, 800 entries per session (overflow goes into `skipped`, and those paths are not rolled back).
 
-### 4. 服务自升级（默认关闭）
+### 4. Service self-upgrade (off by default)
 
-`config.json` 中把 `agent.allow_self_upgrade` 设为 `true` 并重启后，Agent 获得 `self_*` 工具，可以修改**服务自身的代码**（即使当前工作区是别的项目）：
+After setting `agent.allow_self_upgrade` to `true` in `config.json` and restarting, the Agent gains the `self_*` tools and can modify **the service's own code** (even if the current workspace is another project):
 
 ```powershell
-# 开启后确认状态
+# Confirm status after enabling
 curl http://127.0.0.1:8765/v1/agent/self/status
 ```
 
-给 Agent 的任务示例：「读 gantry/tools.py，把 outlook_search 的 max_count 上限从 100 提到 200，然后自升级验证并跑单测」。
+Example task for the Agent: "Read gantry/tools.py, raise the max_count limit of outlook_search from 100 to 200, then self-upgrade, validate, and run the unit tests."
 
-内置护栏：
+Built-in guardrails:
 
-1. **白名单**：`gantry/`、`webui/`、`scripts/`、`docs/`、`tests/` + 若干顶层文件；`config.json`、`data/`、`EdgeProfile/`、`.git/` 一律拒绝
-2. **验证门**：写完必须 `self_validate`（全安装目录语法检查）+ `self_unittest`（服务自身单测）双通过，提前返回 final 会被 `validation_gate` 拦下
-3. **独立快照**：自升级改动存 `data/snapshots/_self_<会话>/`，与工作区改动分开回滚
-4. **重启标记**：写盘落 `data/.self_upgrade_pending`，你重启服务后标记自动归档，启动日志会打印「已加载上一轮自升级改动」
-5. **失败兜底**：若升级把服务改到起不来，`app.py` 导入失败时会直接打印回滚命令；用 `python scripts/rollback.py --scope self --last --yes` 还原（该命令不依赖服务）
+1. **Whitelist**: `gantry/`, `webui/`, `scripts/`, `docs/`, `tests/` plus a few top-level files; `config.json`, `data/`, `EdgeProfile/`, `.git/` are always refused
+2. **Validation gate**: after writing, both `self_validate` (syntax check of the entire install directory) and `self_unittest` (the service's own unit tests) must pass; returning final early is intercepted by the `validation_gate`
+3. **Separate snapshots**: self-upgrade changes are stored in `data/snapshots/_self_<session>/`, rolled back separately from workspace changes
+4. **Restart marker**: a write drops `data/.self_upgrade_pending`; after you restart the service the marker is automatically archived, and the startup log prints "Loaded last round's self-upgrade changes"
+5. **Failure fallback**: if an upgrade breaks the service so it can't start, the rollback command is printed directly when `app.py` fails to import; restore with `python scripts/rollback.py --scope self --last --yes` (this command does not depend on the service)
 
-> ⚠️ 自升级等于把服务代码交给模型改。建议：先确保 `tests/` 能跑；一次只让 Agent 做一件事；升级后先重启看能否正常启动与跑测试，确认无误再继续下一个改动。
+> ⚠️ Self-upgrade means handing the service code to the model to modify. Recommendations: make sure `tests/` runs first; have the Agent do only one thing at a time; after an upgrade, restart first to see whether it starts and runs tests normally, and only continue with the next change once confirmed.
 
-### 5. 大文件：让 Copilot 直接生成再下载
-写大文件的传统路径是 b64 分块（每块 ≤3000 字符，受 Copilot 单条输出上限约束）。更省事的是让 Copilot 自己生成文件、桥接下载：
+### 5. Large files: have Copilot generate them directly, then download
+The traditional path for writing large files is b64 chunking (each chunk ≤3000 characters, constrained by Copilot's per-message output limit). A much easier approach is to have Copilot generate the file itself and bridge the download:
 
 ```json
 {"type":"tool","tool":"copilot_file","arguments":{
@@ -449,118 +452,118 @@ curl http://127.0.0.1:8765/v1/agent/self/status
   "instruction": "实现一个可运行的扫雷游戏，命令行版，带难度选择"}}
 ```
 
-- 内容**不经过聊天消息**，所以没有输出上限、没有截断、没有分块，一个回合拿到完整文件
-- 桥接会认 `blob:`/`data:` 链接与"下载"按钮两种入口；多个入口时按文件名优先
-- 落盘前照常存原像（可回滚）；`.py/.json/.html` 仍需 `validate_python` + `run_unittest` 通过才算完成
-- 关掉它：`agent.allow_copilot_file: false`
-- **模型要求**：生成下载入口需要**非 Auto** 模型（Auto 通常只在聊天里回答）。会话模型是 Auto 时，配置 `agent.copilot_file_model`（例如 `copilot-gpt-5-6-sol-think-deeper`）会自动改用；没配则工具会明确报"Auto 不产生下载入口"，Agent 可据此回退分块写入。
-- 报"没有找到下载入口"时看服务目录的 `last_answer.html`（回答区现场快照），把结构发维护者；同时 Agent 会自动改用分块写入
+- The content **does not pass through chat messages**, so there is no output limit, no truncation, no chunking—one round yields the complete file
+- The bridge recognizes two kinds of entry points: `blob:`/`data:` links and "Download" buttons; when multiple entry points exist, the filename match wins
+- The original image is saved as usual before writing to disk (rollback works); `.py/.json/.html` still must pass `validate_python` + `run_unittest` to count as done
+- To turn it off: `agent.allow_copilot_file: false`
+- **Model requirement**: generating the download entry point requires a **non-Auto** model (Auto usually only answers in chat). When the session model is Auto, configuring `agent.copilot_file_model` (e.g. `copilot-gpt-5-6-sol-think-deeper`) automatically switches to it; if not configured, the tool explicitly reports "Auto produces no download entry point", and the Agent can fall back to chunked writing accordingly.
+- When it reports "no download entry point found", look at `last_answer.html` in the service directory (a live snapshot of the answer area) and send the structure to the maintainer; meanwhile the Agent automatically switches to chunked writing
 
-**什么时候用哪个**：内容由 Copilot 生成（新写一个大文件/Office 文档）→ `copilot_file` 最省；内容来自本地已有材料、需要精确控制（逐字节一致的改写、二进制搬运）→ 本地工具 + 批量动作（`{"type":"actions",...}`,一次回答多个小动作）更稳。
+**When to use which**: content generated by Copilot (writing a new large file / Office document) → `copilot_file` is cheapest; content comes from existing local material and needs precise control (byte-for-byte rewrites, binary transfers) → local tools + batch actions (`{"type":"actions",...}`, multiple small actions per answer) are more reliable.
 
-#### 一次成型模式（新会话首轮，省回合）
-新会话用 Copilot 时，Agent 的首轮提示会要求"**一次成型**"，而不是逐步探索：
+#### One-shot mode (first round of a new session, saves rounds)
+When a new session uses Copilot, the Agent's first-round prompt asks for "**one-shot completion**" instead of step-by-step exploration:
 
-1. 直接 `copilot_file` 让 Copilot 一次生成**完整文件**（多文件就连续多次调用），不要 list/read 逐个探索、也不要 b64 分块拼；
-2. 文件拿到后**本地**立刻跑起来验证（`run_python`/`validate_python`/`run_unittest`）；
-3. 出错**先本地修**（`read_text` 定位 + `replace_text` 改），本地修两轮仍不行才带着**具体报错**定向问 Copilot（只改出错那一处，不整篇重生成）。
+1. Directly use `copilot_file` to have Copilot generate the **complete file** in one go (for multiple files, call it several times in a row); don't list/read to explore one by one, and don't assemble via b64 chunks;
+2. Once the file is obtained, run and verify it **locally** right away (`run_python`/`validate_python`/`run_unittest`);
+3. On errors, **fix locally first** (locate with `read_text` + fix with `replace_text`); only after two local fix rounds still fail do you ask Copilot with the **specific error**, targeting just the broken spot (not regenerating the whole file).
 
-目标是一次任务 **1~3 个 Copilot 回合**交付。协议里也加了"本地闭环"规则：运行、测试、小修这类本地能做的事不回问 Copilot。系统提示词本身保持逐字稳定（prompt cache），首轮提示只加在当轮用户消息里。
+The goal is to deliver one task in **1–3 Copilot rounds**. The protocol also adds a "local closed loop" rule: things that can be done locally—running, testing, small fixes—are not sent back to Copilot. The system prompt itself stays byte-stable (prompt cache); the first-round prompt is only added to that round's user message.
 
-### 6. 扩展工具（参考 DSH 的工具面，独立模块）
+### 6. Extended tools (modeled on DSH's tool surface, a standalone module)
 
-`gantry/tools_extra.py` 是**解耦的扩展工具模块**（删掉文件 + 取消 bridge 里一行调用即可整体下线），
-按组合并提供逐组开关（`agent.tools_extra`）：
+`gantry/tools_extra.py` is a **decoupled extended-tools module** (delete the file + remove one call line in the bridge to take the whole thing offline),
+offered by group with per-group switches (`agent.tools_extra`):
 
-| 组 | 工具 | 说明 |
+| Group | Tool | Description |
 |---|---|---|
-| `search` | `grep` | 按**内容**正则搜索（`find_files` 只按文件名），返回 `文件:行号:内容` |
-| `web` | `web_fetch` | 抓 HTTP(S) URL 正文（HTML 自动去标签）；默认**拒绝内网/本地地址**（SSRF 防护） |
-| `shell` | `pwsh` | 执行 PowerShell 命令（默认**需要一次性审批**）；`run_in_background=true` 起后台任务 |
-| `shell` | `job_list` / `job_output` / `job_kill` | 后台任务列表 / 读输出（可等待）/ 终止 |
-| `plan` | `todo_write` | 任务清单（长任务跟踪进度） |
-| `plan` | `present` | 声明交付物（最多 4 个文件，供 WebUI 展示） |
-| `vision` | `read_image` | 图片元数据（格式/尺寸/大小）+ 交给 Copilot 视觉描述 |
-| `ask` | `ask_user_question` | 任务中途向用户提问并**阻塞等待**；WebUI 会弹提问条，提交后继续 |
+| `search` | `grep` | Search by **content** with regex (`find_files` only matches filenames), returns `file:line:content` |
+| `web` | `web_fetch` | Fetch the body of an HTTP(S) URL (HTML tags stripped automatically); **refuses intranet/local addresses by default** (SSRF protection) |
+| `shell` | `pwsh` | Execute PowerShell commands (**requires one-time approval by default**); `run_in_background=true` starts a background job |
+| `shell` | `job_list` / `job_output` / `job_kill` | Background job list / read output (can wait) / terminate |
+| `plan` | `todo_write` | Task checklist (track progress on long tasks) |
+| `plan` | `present` | Declare deliverables (up to 4 files, for WebUI display) |
+| `vision` | `read_image` | Image metadata (format/dimensions/size) + hand to Copilot for visual description |
+| `ask` | `ask_user_question` | Ask the user mid-task and **block waiting**; the WebUI pops up a question bar and continues after submission |
 
-配置（`config.json` → `agent`）：
+Configuration (`config.json` → `agent`):
 
 ```json
 {
-  "allow_shell": true,             // pwsh 总开关（false 整体禁用）
+  "allow_shell": true,             // pwsh master switch (false disables everything)
   "shell_timeout_seconds": 120,
-  "allow_web": true,               // web_fetch 总开关
-  "allow_private_web": false,      // true 才允许抓内网/本地地址
-  "question_timeout_seconds": 600, // ask_user_question 等待上限
+  "allow_web": true,               // web_fetch master switch
+  "allow_private_web": false,      // true allows fetching intranet/local addresses
+  "question_timeout_seconds": 600, // ask_user_question wait limit
   "tools_extra": {"search": true, "web": true, "shell": true,
                   "plan": true, "vision": true, "ask": true}
 }
 ```
 
-安全约定：`pwsh` 与 `delete_path`/`outlook_send`/`run_python` 一样走**一次性审批**
-（`approval_policy: "ask"` 时 WebUI 逐次授权，用后即焚）；`read_image` 的视觉分析与
-`ask_user_question` 依赖 Copilot 网页/WebUI，没有对应通道时优雅降级（返回元数据/明确报错）。
+Security conventions: `pwsh`, like `delete_path`/`outlook_send`/`run_python`, goes through **one-time approval**
+(when `approval_policy: "ask"` the WebUI authorizes each time, single-use); the visual analysis of `read_image` and
+`ask_user_question` depend on the Copilot webpage/WebUI, and degrade gracefully when the corresponding channel is unavailable (return metadata / a clear error).
 
-### 5.6.2 插件安装 / 升级 / 卸载（版本化）
+### 5.6.2 Plugin install / upgrade / uninstall (versioned)
 
 ```bash
-gantry plugins install ./my-plugin           # 本地目录
-gantry plugins install ./pkg.zip             # zip（拒绝 ../ 越界条目，防 zip-slip）
+gantry plugins install ./my-plugin           # Local directory
+gantry plugins install ./pkg.zip             # zip (rejects ../ escaping entries, prevents zip-slip)
 gantry plugins install https://x/y.git       # git clone --depth 1
-gantry plugins registry                      # 已安装版本/来源/备份
-gantry plugins uninstall my-plugin           # 卸载（默认留备份）
+gantry plugins registry                      # Installed versions/sources/backups
+gantry plugins uninstall my-plugin           # Uninstall (keeps a backup by default)
 ```
 
-HTTP 等价：`POST /v1/plugins/install {source, name?, force?}`、`POST /v1/plugins/uninstall`、
-`GET /v1/plugins/registry`。
+HTTP equivalents: `POST /v1/plugins/install {source, name?, force?}`, `POST /v1/plugins/uninstall`,
+`GET /v1/plugins/registry`.
 
-- **版本比较**：新版覆盖旧版并**自动备份**到 `data/plugin-backups/<name>-<时间>/`
-- **降级默认拒绝**（避免误把新功能换回旧版），确需降级用 `force=true` / `--force`
-- 安装后立即加载（工具/接口/面板一起生效），无需重启
-- 卸载会先摘运行时贡献（工具/路由/面板）再删目录
+- **Version comparison**: a newer version overwrites the older one and is **automatically backed up** to `data/plugin-backups/<name>-<time>/`
+- **Downgrades are refused by default** (to avoid accidentally swapping new features back to an old version); use `force=true` / `--force` if a downgrade is truly needed
+- Loaded immediately after install (tools/APIs/panels all take effect together), no restart needed
+- Uninstall first detaches the runtime contributions (tools/routes/panels) and then deletes the directory
 
-### 5.6.1 插件 UI：声明式面板
+### 5.6.1 Plugin UI: declarative panels
 
-插件可以往界面加**面板**（`permissions` 需含 `ui`），但只能声明式：
+Plugins can add **panels** to the interface (`permissions` must include `ui`), but only declaratively:
 
 ```python
 ctx.register_panel({"id": "schedules", "title": "定时任务", "view": "table",
                     "api": {"method": "GET", "path": "api/list"}})
 ```
 
-- `view` ∈ `kv` / `list` / `table` / `json` / `markdown`；插件只给**数据接口**，
-  渲染由前端完成——**不接受插件注入 HTML/JS**（插件是第三方代码，等于开放 XSS 面）
-- 面板入口：插件管理弹窗 →「插件面板」，或 `GET /v1/plugins/panels`
-- 卸载插件会同时摘掉它的面板（不留点开就 404 的入口）
-- 内置示例：`schedule` 的「定时任务」表、`mcp` 的「MCP 服务器」JSON
+- `view` ∈ `kv` / `list` / `table` / `json` / `markdown`; plugins only provide a **data API**,
+  rendering is done by the frontend—**plugins may not inject HTML/JS** (plugins are third-party code; allowing it would open an XSS surface)
+- Panel entry: plugin management dialog → "Plugin Panels", or `GET /v1/plugins/panels`
+- Uninstalling a plugin also removes its panels (no entry points left that 404 when clicked)
+- Built-in examples: `schedule`'s "Scheduled Tasks" table, `mcp`'s "MCP Servers" JSON
 
-### 5.7 斜杠命令（`/`）
+### 5.7 Slash commands (`/`)
 
-新会话输入框以 `/` 开头即进入命令模式（面板可键盘操作）：
+Starting the new-session input box with `/` enters command mode (the panel is keyboard-operable):
 
-| 命令 | 别名 | 作用 |
+| Command | Aliases | Action |
 |---|---|---|
-| `/research <问题>` | `/深研`、`/dr` | 走深研：多角度搜索 + 抓正文 → 带来源的报告（新会话） |
-| `/agent` | `/执行` | 切到 **Agent 执行** 模式 |
-| `/chat` | `/对话` | 切到 **普通对话** 模式 |
-| `/help` | `/?`、`/帮助` | 重新列出全部命令 |
-| `/goal <目标>` | `/目标` | **目标模式**：先 `create_goal` 再分多轮推进，目标未完成时返回 final 会自动续轮（轮次上限默认 10），达成/受阻时 `update_goal` 收尾 |
-| `/plan <任务>` | `/计划` | **计划模式（强制只读）**：探索阶段写操作会被 `SANDBOX_PLAN_MODE` 拒绝；模型用 `exit_plan_mode(plan)` 提交方案即**结束本轮**，等你确认后再执行 |
-| `/server.模板名 参数…` | — | **MCP prompt 模板**：自动按 MCP server 提供的模板生成命令，渲染结果载入输入框（未配置 MCP 时不出现） |
+| `/research <question>` | `/深研`、`/dr` | Deep research: multi-angle search + fetch full text → report with sources (new session) |
+| `/agent` | `/执行` | Switch to **Agent execution** mode |
+| `/chat` | `/对话` | Switch to **normal chat** mode |
+| `/help` | `/?`、`/帮助` | List all commands again |
+| `/goal <goal>` | `/目标` | **Goal mode**: `create_goal` first, then advance over multiple rounds; returning final while the goal is unfinished automatically continues (round cap defaults to 10); `update_goal` wraps up on achievement/blockage |
+| `/plan <task>` | `/计划` | **Plan mode (enforced read-only)**: write operations during the exploration phase are rejected by `SANDBOX_PLAN_MODE`; the model submits a proposal with `exit_plan_mode(plan)`, which **ends the round**, and execution waits for your confirmation |
+| `/server.template-name args…` | — | **MCP prompt template**: automatically generates commands from templates provided by MCP servers; the rendered result is loaded into the input box (does not appear when MCP is not configured) |
 
-- 命令注册在 `webui/app.js` 的 `SLASH_COMMANDS`，加新命令只需追加一条 `{id,label,aliases,desc,run}`
-- 不带参数回车 = 补全等待输入；带参数回车 = 立即执行
-- 面板文案走 i18n（i18n 审计会主动展开面板检查）
+- Commands are registered in `SLASH_COMMANDS` in `webui/app.js`; adding a new command just means appending one `{id,label,aliases,desc,run}` entry
+- Enter without arguments = completion waiting for input; Enter with arguments = execute immediately
+- Panel text goes through i18n (the i18n audit proactively expands panels to check)
 
-### 5.6 插件系统（与 DSH 插件语义兼容）
+### 5.6 Plugin system (semantically compatible with DSH plugins)
 
-Gantry 的插件是"**语义兼容** DSH"而不是"直接跑 DSH 插件"：DSH 插件是 npm 包 + Cordis
-（JS `apply(ctx)`）在 Node 里跑；Gantry 是 Python 服务。对齐的是**契约**——同形清单、
-同一套贡献点、同样的加载→apply→卸载生命周期、同样的 `id + disabled + config` 启停语义。
-（要直跑 JS 插件需要内嵌 Node，不在本系统目标内。）
+Gantry plugins are "**semantically compatible** with DSH" rather than "directly running DSH plugins": DSH plugins are npm packages + Cordis
+(JS `apply(ctx)`) running in Node; Gantry is a Python service. What is aligned is the **contract**—same-shaped manifest,
+the same set of contribution points, the same load→apply→unload lifecycle, the same `id + disabled + config` enable/disable semantics.
+(Directly running JS plugins would require embedding Node, which is not within this system's goals.)
 
-**清单**（`plugins/<name>/plugin.json`，也接受 `package.json` 里放 `"gantry"` 字段，
-`"dsh"` 字段原样透传供迁移参考）：
+**Manifest** (`plugins/<name>/plugin.json`; a `"gantry"` field inside `package.json` is also accepted,
+and the `"dsh"` field is passed through verbatim for migration reference):
 
 ```json
 {
@@ -577,54 +580,54 @@ Gantry 的插件是"**语义兼容** DSH"而不是"直接跑 DSH 插件"：DSH �
 }
 ```
 
-**入口**（`plugin.py`）：
+**Entry** (`plugin.py`):
 
 ```python
-def setup(ctx):                      # ctx ≈ DSH/Cordis 的 ctx
+def setup(ctx):                      # ctx ≈ DSH/Cordis's ctx
     ctx.register_tool("web_search", handler, "说明", {"query": "..."})
     ctx.register_api("GET", "api/search", handler)   # → /v1/plugins/<name>/api/search
     ctx.on("step_done", callback)                    # session_start / step_done / session_end
 def teardown(ctx): ...
 ```
 
-**ctx 能力**：`register_tool` / `register_provider` / `register_api` / `on` /
-`state` + `save_state` / `read_text` + `write_text`（限插件目录）/ `log`。
-权限 `tools/providers/api/ui/events/storage/files` 必须在清单里声明，否则调用报错。
+**ctx capabilities**: `register_tool` / `register_provider` / `register_api` / `on` /
+`state` + `save_state` / `read_text` + `write_text` (limited to the plugin directory) / `log`.
+Permissions `tools/providers/api/ui/events/storage/files` must be declared in the manifest, otherwise calls raise an error.
 
-**管理**：WebUI「更多 ▾ → 插件管理…」可启用/禁用/重载；对应 API
-`GET /v1/plugins`、`POST /v1/plugins/{name}/{enable|disable|reload}`。
-启停记录在 `data/plugins.json`，**不需要重启服务**（禁用即摘掉工具/提供商/路由/事件）。
+**Management**: WebUI "More ▾ → Plugin Management…" can enable/disable/reload; corresponding APIs
+`GET /v1/plugins`, `POST /v1/plugins/{name}/{enable|disable/reload}`.
+Enable/disable state is recorded in `data/plugins.json`, **no service restart needed** (disabling detaches the tools/providers/routes/events).
 
-**内置插件（现代 bot 的核心能力，按需启用）**
+**Built-in plugins (core capabilities of a modern bot, enable as needed)**
 
-| 插件 | 能力 | 依赖 |
+| Plugin | Capability | Dependencies |
 |---|---|---|
-| `web-search` | `web_search` 联网搜索 | DuckDuckGo 免 key；可选 BRAVE/TAVILY/SERPER_API_KEY |
-| `research` | `deep_research` 多角度并行搜索 + 抓正文，返回证据包 | 无 |
-| `schedule` | `schedule_add/list/remove/run` 定时任务（every / daily / once），到点在**独立新会话**跑任务；`workspace` 指定工作目录（默认当前工作区） | 无 |
-| `image-gen` | `image_generate` 文生图，落盘到 `workspace/generated/` | DASHSCOPE_API_KEY 或 OPENAI_API_KEY |
-| `mcp` | **MCP 客户端**：连接 MCP server（stdio / HTTP），把工具与资源注册成 `mcp__<server>__<tool>` | 无（本地进程或 HTTP 端点） |
+| `web-search` | `web_search` web search | DuckDuckGo key-free; optional BRAVE/TAVILY/SERPER_API_KEY |
+| `research` | `deep_research` multi-angle parallel search + full-text fetching, returns an evidence bundle | None |
+| `schedule` | `schedule_add/list/remove/run` scheduled tasks (every / daily / once), run the task in a **separate new session** at the scheduled time; `workspace` specifies the working directory (defaults to the current workspace) | None |
+| `image-gen` | `image_generate` text-to-image, written to `workspace/generated/` | DASHSCOPE_API_KEY or OPENAI_API_KEY |
+| `mcp` | **MCP client**: connects to MCP servers (stdio / HTTP), registers tools and resources as `mcp__<server>__<tool>` | None (local process or HTTP endpoint) |
 
-**Combined = Grok 式 bot**：实时搜索（web-search）+ 深研（research）+ 定时任务（schedule）+
-生图（image-gen）+ 跨会话记忆（memory）+ 子代理/编排（subagent/ralph/workflow）。
+**Combined = Grok-style bot**: real-time search (web-search) + deep research (research) + scheduled tasks (schedule) +
+image generation (image-gen) + cross-session memory (memory) + subagents/orchestration (subagent/ralph/workflow).
 
-> 生图需要**有效的** API key：本机现有 `DASHSCOPE_API_KEY` 实测 401（无效），
-> 换一个有效 key 或改用 `OPENAI_API_KEY` 即可；插件会返回结构化错误而不是 500。
+> Image generation requires a **valid** API key: the existing `DASHSCOPE_API_KEY` on this machine tested as 401 (invalid);
+> switch to a valid key or use `OPENAI_API_KEY` instead; the plugin returns a structured error instead of a 500.
 
-**内置示例：`web-search`**（现代 bot 的核心能力）
-- 工具 `web_search(query, max_results=6)`：DuckDuckGo 免 key；配了
-  `BRAVE_API_KEY` / `TAVILY_API_KEY` / `SERPER_API_KEY` 会自动优选
-- 接口 `GET /v1/plugins/web-search/api/search?q=...&n=6`
+**Built-in example: `web-search`** (a core capability of a modern bot)
+- Tool `web_search(query, max_results=6)`: DuckDuckGo key-free; if
+  `BRAVE_API_KEY` / `TAVILY_API_KEY` / `SERPER_API_KEY` are configured they are preferred automatically
+- API `GET /v1/plugins/web-search/api/search?q=...&n=6`
 
-### 5.8 MCP（Model Context Protocol）
+### 5.8 MCP (Model Context Protocol)
 
-Gantry 当 **MCP 客户端**：连上外部 MCP server，把它的工具与资源注册进 Agent，模型就能像用内置
-工具一样调用。支持两种传输：
+Gantry acts as an **MCP client**: connect to external MCP servers and register their tools and resources into the Agent, so the model can call them just like built-in
+tools. Two transports are supported:
 
-| 传输 | 配置 | 说明 |
+| Transport | Configuration | Notes |
 |---|---|---|
-| **stdio** | `{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","C:/data"]}` | 本地进程，主流方式 |
-| **HTTP** | `{"url":"https://host/mcp","headers":{"Authorization":"Bearer ..."}}` | streamable HTTP；响应是 `application/json` 或 `text/event-stream`(SSE) 都能解析，自动维护 `Mcp-Session-Id` |
+| **stdio** | `{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","C:/data"]}` | Local process, the mainstream approach |
+| **HTTP** | `{"url":"https://host/mcp","headers":{"Authorization":"Bearer ..."}}` | streamable HTTP; responses of either `application/json` or `text/event-stream` (SSE) are parsed; `Mcp-Session-Id` is maintained automatically |
 
 ```bash
 # stdio
@@ -632,485 +635,485 @@ curl -X POST http://127.0.0.1:8765/v1/plugins/mcp/api/add \
   -H 'Content-Type: application/json' \
   -d '{"name":"fs","spec":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","C:/data"]}}'
 
-# HTTP + 鉴权头
+# HTTP + auth header
 curl -X POST http://127.0.0.1:8765/v1/plugins/mcp/api/add \
   -H 'Content-Type: application/json' \
   -d '{"name":"remote","spec":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer xxx"}}}'
 
-curl http://127.0.0.1:8765/v1/plugins/mcp/api/list            # 连接状态 / 工具 / 资源
+curl http://127.0.0.1:8765/v1/plugins/mcp/api/list            # Connection status / tools / resources
 curl -X POST http://127.0.0.1:8765/v1/plugins/mcp/api/call \
   -H 'Content-Type: application/json' \
   -d '{"server":"fs","tool":"read_file","arguments":{"path":"C:/data/a.txt"}}'
-curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs'          # 资源清单
-curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C:/data/a.txt'  # 读资源
+curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs'          # Resource list
+curl 'http://127.0.0.1:8765/v1/plugins/mcp/api/resources?server=fs&uri=file:///C:/data/a.txt'  # Read a resource
 ```
 
-**能力映射**
-- `tools/list` → 每个工具注册成 `mcp__<server>__<tool>`，参数由 `inputSchema` 自动转成参数说明
-- `tools/call` → `content[].type=text` 拼成结果；`isError` 转成工具错误
-- `resources/list` → 每个 server 额外注册一个只读工具 `mcp__<server>__read_resource(uri)`，
-  工具说明里列出可用 uri（避免把几十个资源各注册成一个工具，撑爆工具表）
-- `resources/read` → 文本直接返回；二进制（`blob`）给出 mime 与 base64 长度
-- 通用工具：`mcp_list`（状态）、`mcp_call`（手动调）、`mcp_read_resource`（读资源）
-- `prompts/list` → 每个有模板的 server 注册 `mcp__<server>__use_prompt(name, arguments)`；
-  同时 **WebUI 自动生成斜杠命令**：`/server.模板名 参数1 参数2 …`，渲染结果直接填进输入框
-- `prompts/get` → 消息序列拼成文本（`[role] 内容`）
-- 通用工具：`mcp_get_prompt(server, name, arguments)`
+**Capability mapping**
+- `tools/list` → each tool is registered as `mcp__<server>__<tool>`; parameters are automatically converted from `inputSchema` into parameter descriptions
+- `tools/call` → `content[].type=text` is concatenated into the result; `isError` is converted into a tool error
+- `resources/list` → each server additionally registers one read-only tool `mcp__<server>__read_resource(uri)`,
+  with the available uris listed in the tool description (avoids registering dozens of resources as individual tools and blowing up the tool table)
+- `resources/read` → text is returned directly; binary (`blob`) reports the mime and base64 length
+- Generic tools: `mcp_list` (status), `mcp_call` (manual call), `mcp_read_resource` (read a resource)
+- `prompts/list` → each server with templates registers `mcp__<server>__use_prompt(name, arguments)`;
+  the **WebUI also automatically generates slash commands**: `/server.template-name arg1 arg2 …`, with the rendered result filled directly into the input box
+- `prompts/get` → the message sequence is concatenated into text (`[role] content`)
+- Generic tool: `mcp_get_prompt(server, name, arguments)`
 
-**健壮性**
-- 单个 server 起不来只记录在 `errors`，不影响其它 server 与内置工具
-- `resources/list` 属于可选能力：用 **8 秒短超时**探测（未实现的 server 可能不回包，
-  不探测会让连接阶段白等 30 秒）
-- 配置持久化在 `data/plugins.json` 的 `mcp.state.servers`，重启自动重连
+**Robustness**
+- A single server failing to start is only recorded in `errors` and does not affect other servers or built-in tools
+- `resources/list` is an optional capability: probed with a **short 8-second timeout** (servers that don't implement it may never reply;
+  not probing would waste 30 seconds waiting during the connect phase)
+- Configuration is persisted in `mcp.state.servers` in `data/plugins.json`, and reconnects automatically on restart
 
-> 尚未接入：旧版 **HTTP+SSE 双端点**传输（2024-11-05 老规范，只支持 streamable HTTP）。
+> Not yet supported: the legacy **HTTP+SSE dual-endpoint** transport (old 2024-11-05 spec; only streamable HTTP is supported).
 
-### 5.3.4 待办清单：从 TODO 文件自动同步 + 按清单派子代理
+### 5.3.4 Todo checklist: automatic sync from TODO files + dispatching subagents by checklist
 
-用户实测痛点（pyshot 整改）：说"按 todo 完成整改"之后，**面板清单一直 0/5**，
-而子代理面板里那 4 个还是上一阶段的遗留，"像摆设"。
+A real user pain point (the pyshot remediation): after saying "complete the remediation per the todo", **the panel checklist stayed at 0/5**,
+while the 4 entries in the subagent panel were leftovers from the previous phase—"like decorations".
 
-**① TODO 文件自动同步**（`gantry/todo_sync.py`）
-- 每步开始时按 **mtime** 检查工作区里的 `*todo*.md`（也认 `.txt`），解析 `- [ ] / - [x]`
-  复选框（没有方框时退化成 `- 项` 列表），写进会话 `todos`；
-- **不覆盖进度**：同一项已是 `completed` 不会被文件里的 `[ ]` 拉回；文件里删掉的
-  已完成项会保留；文件消失时**不清空**现有清单；
-- 之前 Gantry 完全不看 `pyshot_todo.md`（23KB 的计划文件），面板只认 `todo_write`。
+**① Automatic TODO file sync** (`gantry/todo_sync.py`)
+- At the start of each step, checks `*todo*.md` files in the workspace by **mtime** (`.txt` also recognized), parses `- [ ] / - [x]`
+  checkboxes (degrades to a `- item` list when there are no boxes), and writes them into the session `todos`;
+- **Does not overwrite progress**: an item already `completed` is not pulled back by a `[ ]` in the file; completed items
+  deleted from the file are kept; when the file disappears, the existing checklist is **not cleared**;
+- Previously Gantry completely ignored `pyshot_todo.md` (a 23KB plan file); the panel only recognized `todo_write`.
 
-**② 按清单自动派子代理**（`gantry/auto_team.py`，**默认关闭**）
-- 条件：`agent.auto_team_enabled=true`、存在 **≥2 个** `pending` 且**作用域不重叠**
-  （按文件路径/标识符判断互不依赖）、当前没有子代理在跑；
-- 动作：把这几项转成自足的任务文本（目标、验收、汇报格式）交给 `fanout`，
-  子代理 id 记回对应待办，清单里能看到"谁在跑"；
-- 为什么默认关：每个子代理都是一条独立 Copilot 对话，**成倍消耗额度**。
+**② Automatic subagent dispatch by checklist** (`gantry/auto_team.py`, **off by default**)
+- Conditions: `agent.auto_team_enabled=true`, there are **≥2** `pending` items whose **scopes don't overlap**
+  (judged mutually independent by file paths/identifiers), and no subagent is currently running;
+- Action: turns these items into self-contained task texts (goal, acceptance criteria, reporting format) handed to `fanout`;
+  the subagent id is recorded back onto the corresponding todo, so the checklist shows "who is running what";
+- Why it's off by default: each subagent is an independent Copilot conversation, **multiplying quota consumption**.
 
-配置项：
+Configuration:
 
 ```json
 {"agent": {"auto_team_enabled": false, "auto_team_max_agents": 4, "auto_team_max_steps": 30}}
 ```
 
-**③ 子代理面板可折叠**：标题栏「折叠 / 展开」，状态记在 `localStorage`，刷新后保持。
+**③ Collapsible subagent panel**: "Collapse / Expand" in the title bar; state is stored in `localStorage` and persists across refreshes.
 
-### 5.3.3 测试脚本的浏览器回收
+### 5.3.3 Browser reclamation for test scripts
 
-连续跑 UI 审计/截图脚本会在系统里攒下泄漏的 Playwright 浏览器（实测 **21 个** msedge，
-每个都带 `--user-data-dir=%TEMP%\playwright_*`）。它们既吃内存，也会让人误以为
-"有程序在捣乱"。`scripts/reap_browsers.py` 按年龄回收（默认 >15 分钟的才杀，
-不影响正在跑的脚本），`scripts/regression.py` 启动时会自动调用它。
+Running UI audit/screenshot scripts repeatedly accumulates leaked Playwright browsers in the system (measured: **21** msedge processes,
+each with `--user-data-dir=%TEMP%\playwright_*`). They eat memory and can make people think
+"some program is misbehaving". `scripts/reap_browsers.py` reclaims them by age (only kills those older than 15 minutes by default,
+so it doesn't affect running scripts), and `scripts/regression.py` calls it automatically at startup.
 
 ```bash
-python scripts/reap_browsers.py            # 只报告
-python scripts/reap_browsers.py --kill     # 回收
+python scripts/reap_browsers.py            # Report only
+python scripts/reap_browsers.py --kill     # Reclaim
 ```
 
-### 5.3.2 长命令与"看不到在跑什么"
+### 5.3.2 Long commands and "can't see what's running"
 
-- **`pwsh` 超时会终止整棵进程树**：只 `proc.kill()` 会留下孙进程（`python`/`git`/`pip`）
-  继续持有 stdout 管道，`communicate()` 永远等不到 EOF——实测一条 `pip install PySide6`
-  把任务卡住 10 分钟、超时形同虚设。现在 `taskkill /T /F`（POSIX `killpg`）+ 5s 兜底
-  取回部分输出，错误里直接提示"换策略：拆小命令 / 用 run_in_background + job_output"。
-- **实时面板显示正在执行的步骤**：`runtime.phase` 在 step 开始时置为 `executing`
-  （`正在执行第 N 步 · 工具名`），结束后回到 `thinking`。以前整个执行期间界面都停在
-  上一轮的 "waiting · 等待 Copilot 回答"，看着像挂死。
-- **时间线并入实时面板**：`当前执行状态 / 当前回答 / 最近发送内容 / 继续对话 / 步骤时间线`
-  五个标签共用一个面板（像 DSH 一屏看全），时间线在该标签内滚动；筛选与导出照旧。
+- **`pwsh` timeouts terminate the whole process tree**: a bare `proc.kill()` leaves grandchild processes (`python`/`git`/`pip`)
+  still holding the stdout pipe, and `communicate()` never sees EOF—in one measured case a single `pip install PySide6`
+  stalled a task for 10 minutes, making the timeout meaningless. Now `taskkill /T /F` (POSIX `killpg`) + a 5s fallback
+  retrieves partial output, and the error directly suggests "switch strategy: split into smaller commands / use run_in_background + job_output".
+- **The real-time panel shows the step being executed**: `runtime.phase` is set to `executing` when a step starts
+  (`Executing step N · tool name`), and returns to `thinking` when it ends. Previously the UI stayed stuck at the
+  previous round's "waiting · waiting for Copilot's answer" for the entire execution, looking frozen.
+- **Timeline merged into the real-time panel**: `Current execution status / Current answer / Recently sent content / Continue conversation / Step timeline`
+  —five tabs share one panel (see everything on one screen, like DSH), and the timeline scrolls within its tab; filtering and export are unchanged.
 
-### 5.3.1 编辑工具：容错匹配 + 补丁（治"改文件失败→回合爆炸"）
+### 5.3.1 Editing tools: tolerant matching + patches (curing "edit failure → round explosion")
 
-痛点：模型抄片段时缩进（tab/空格、层级）、行尾空白稍有出入，`replace_text` 就匹配失败，
-于是"读一遍—猜一遍"循环，实测把一次小改拖成几十上百回合、token 直接爆掉。
+The pain point: when the model copies a snippet with slightly different indentation (tabs/spaces, nesting level) or trailing whitespace, `replace_text` fails to match,
+leading to a "read once—guess once" loop that, in practice, dragged one small edit into dozens or even hundreds of rounds and blew up the token count.
 
-- **`replace_text` 多级降级匹配**：精确 → 行尾空白 → **行首缩进弹性** → 空白折叠。
-  唯一命中即采用，结果里回传 `match` 策略并在 `note` 里说明"这次是容错匹配"；
-  **新片段按文件实际缩进重排**（tab 文件不会写成 4 空格、嵌套层级不会错位）。
-- **失败诊断**：不再只说"未找到"——给出**首个差异的行/列 + 两侧原文**，让模型一轮改对。
-- **`apply_patch(path, patch|edits)`**：一次调用多处修改，**原子**（任一块失败则整体不写）。
-  支持 Codex 风格补丁（`*** Begin Patch` / `*** Update File:` / `@@` 分块，
-  ` `=上下文 `-`=旧 `+`=新）或简单 `edits: [{old,new,count?}]`；
-  每块同样走容错匹配，结果回报每块的 `match` 策略与行号。
-- 已有 `replace_lines`（按行号改，完全不依赖匹配）与 `convert_indentation`（批量换缩进），
-  三者分工：**一处**用 `replace_text`、**多处**用 `apply_patch`、**整段/缩进**用 `replace_lines`。
+- **`replace_text` multi-level fallback matching**: exact → trailing whitespace → **leading-indentation flexibility** → whitespace collapsing.
+  A unique match is adopted; the result returns the `match` strategy and a `note` explaining "this was a tolerant match";
+  **the new snippet is re-indented to the file's actual indentation** (a tab-indented file won't be written with 4 spaces, and nesting levels won't shift).
+- **Failure diagnostics**: no longer just "not found"—it reports **the line/column of the first difference + the original text on both sides**, so the model fixes it in one round.
+- **`apply_patch(path, patch|edits)`**: multiple edits in one call, **atomic** (if any block fails, nothing is written).
+  Supports Codex-style patches (`*** Begin Patch` / `*** Update File:` / `@@` hunks,
+  ` `=context `-`=old `+`=new) or simple `edits: [{old,new,count?}]`;
+  each block goes through the same tolerant matching, and the result reports each block's `match` strategy and line number.
+- Together with the existing `replace_lines` (edit by line number, no matching at all) and `convert_indentation` (batch indentation conversion),
+  the three divide the work: **one spot** → `replace_text`, **multiple spots** → `apply_patch`, **whole sections/indentation** → `replace_lines`.
 
-实测（真实回合，DeepSeek）：tab 缩进 + 行尾空格的 `maths.py` 加三处注释 →
-**10 步、0 失败**；对抗性场景（模型给 4 空格片段改 tab 文件）→ `match=indentation`、
-结果仍是 tab；两处补丁一次性原子应用。
+Measured (real rounds, DeepSeek): adding three comments to a tab-indented `maths.py` with trailing whitespace →
+**10 steps, 0 failures**; adversarial scenario (model supplies a 4-space snippet to edit a tab file) → `match=indentation`,
+result still in tabs; a two-spot patch applied atomically in one call.
 
-### 5.4.0 显式扇出（不依赖模型判断）
+### 5.4.0 Explicit fanout (not dependent on model judgment)
 
 ```bash
 gantry fanout --task "审计 workspace/core" --task "审计 workspace/webui" --model kimi-coding/k3
 ```
-或在输入框里：`/fanout 任务1 | 任务2 | 任务3`
+Or in the input box: `/fanout task1 | task2 | task3`
 
-- 每个任务各派**一个子代理**（独立会话），跑完把结果写回一个父会话（`fan-*`）并在界面里打开
-- 提供商模型可并行；网页通道仍按顺序跑（`fanout` 不占父窗口，子代理各自独占窗口，但默认窗口数 = 1）；单项失败不影响其余，失败原因写进父会话消息
-- 上限 8 个；`POST /v1/agent/fanout` 是同一能力，供脚本/CI 调用
-- 与"模型自己决定要不要用子代理"互补：提示词 + 运行时提示让它想起来，这个入口让它**必定发生**
+- Each task gets **one subagent** (an independent session); when done, results are written back to one parent session (`fan-*`) and opened in the UI
+- Provider models can run in parallel; the webpage channel still runs sequentially (`fanout` doesn't occupy the parent window; each subagent gets its own window, but the default window count = 1); a single failure doesn't affect the rest, and the failure reason is written into the parent session's messages
+- Cap of 8; `POST /v1/agent/fanout` is the same capability, for script/CI calls
+- Complementary to "the model decides whether to use subagents": the prompt + runtime hints remind it, while this entry makes it **always happen**
 
-### 5.4.1 对抗式审计（多个审计员 + 裁判，循环到只剩小问题）
+### 5.4.1 Adversarial audit (multiple auditors + a judge, looping until only minor issues remain)
 
-`/audit 审计目标说明`（或对话框输入 `/audit` 回车）：后台开一个 `audit-*` 会话：
+`/audit <audit objective>` (or type `/audit` in the dialog and press Enter): starts an `audit-*` session in the background:
 
-1. **N 名审计员**（默认 3 个不同角度：正确性 / 健壮性 / 安全 / 一致性）各自只读审查，
-   只报「有证据」的问题（文件 + 行号 + 分级 p0/p1/p2），输出 JSON 清单；
-2. **裁判**亲自用 `read_text` 核验每条证据，合并去重、剔除误报、重新分级，
-   给出 verdict：`clean`（没有）/ `minor`（仅剩 p2）/ `major`（还有 p0/p1）；
-3. major 且开了自动修复（默认开）→ 派一个修复子代理逐个修（最小改动 + 验证闭环），
-   再进入下一轮；**直至 clean/minor 或轮次用完**（默认 3 轮，上限 8）；
-4. 每轮报告与最终汇总写进审计会话的消息里（点开会话就能看）。
+1. **N auditors** (3 different angles by default: correctness / robustness / security / consistency) each review read-only,
+   reporting only problems "with evidence" (file + line number + severity p0/p1/p2), output as a JSON list;
+2. **The judge** personally verifies every piece of evidence with `read_text`, merges and deduplicates, removes false positives, re-grades,
+   and gives a verdict: `clean` (none) / `minor` (only p2 left) / `major` (p0/p1 still present);
+3. If major and auto-fix is on (default) → dispatch a fix subagent to fix them one by one (minimal changes + verification loop),
+   then enter the next round; **until clean/minor or rounds are exhausted** (default 3 rounds, cap 8);
+4. Each round's report and the final summary are written into the audit session's messages (open the session to see them).
 
-网页通道顺序执行（窗口数 1 时不抢父窗口）；提供商通道按 `agent.subagent_parallel` 并行。
+The webpage channel executes sequentially (doesn't grab the parent window when the window count is 1); the provider channel runs in parallel per `agent.subagent_parallel`.
 
-HTTP：`POST /v1/agent/audit {objective, target?, auditors?, max_rounds?, auto_fix?, model?}`
-后台执行，返回 `{session_id, started}`。
+HTTP: `POST /v1/agent/audit {objective, target?, auditors?, max_rounds?, auto_fix?, model?}`
+runs in the background and returns `{session_id, started}`.
 
-### 5.4 子代理：新建 / 继续 / 分叉
+### 5.4 Subagents: create / continue / fork
 
-| 工具 | 作用 |
+| Tool | Action |
 |---|---|
-| `subagent(task, description, model, max_steps)` | 新建子代理（独立会话/独立上下文），跑完返回结果 |
-| `subagent_send(session_id, message, ...)` | **继续**已有子代理（同一上下文追加一轮；也接受 `agent_id`） |
-| `subagent_fork(session_id, description, keep_messages)` | 从某会话**分叉**出新子代理（复制最近对话，试另一条路） |
-| `subagent_list(parent_id, limit)` | 列出子代理（状态/步数/标签） |
+| `subagent(task, description, model, max_steps)` | Create a new subagent (independent session/context), returns the result when done |
+| `subagent_send(session_id, message, ...)` | **Continue** an existing subagent (appends a round in the same context; also accepts `agent_id`) |
+| `subagent_fork(session_id, description, keep_messages)` | **Fork** a new subagent from a session (copies the recent conversation to try another path) |
+| `subagent_list(parent_id, limit)` | List subagents (status/steps/label) |
 
-- 子会话记录 user/assistant 消息，面板点进去能看到"问了什么、答了什么"
-- 子代理深度上限 1（子代理里不能再开子代理，防递归）
-- 继承父会话的会话级授权（不重复弹审批）
-- HTTP：`POST /v1/agent/subagents/{sid}/send`、`POST /v1/agent/subagents/{sid}/fork`
+- Child sessions record user/assistant messages; click into one in the panel to see "what was asked, what was answered"
+- Subagent depth cap is 1 (a subagent cannot spawn further subagents, preventing recursion)
+- Inherits the parent session's session-level approvals (no repeated approval popups)
+- HTTP: `POST /v1/agent/subagents/{sid}/send`, `POST /v1/agent/subagents/{sid}/fork`
 
-> 实现注意：`subagent_send` **不能**走 `run_agent`——父回合正持着自己的自动化窗口，
-> 再去抢同一个窗口会死锁（实测卡满 600 秒客户端超时）；它与 `subagent` 共用
-> `_drive_child` 自建 runner（有父页面时复用父页面，没有时自己占一个窗口）。
+> Implementation note: `subagent_send` **must not** go through `run_agent`—the parent round is holding its own automation window,
+> and grabbing the same window again would deadlock (measured: a full 600-second client timeout); it shares
+> `_drive_child` with `subagent`, a self-built runner (reuses the parent page when available, otherwise occupies its own window).
 
-### 5.5 子代理面板（看有哪些子代理、在跑什么）
+### 5.5 Subagent panel (see which subagents exist and what they're running)
 
-用 `subagent` / `ralph` / `workflow` 派生出的子代理会以 `sub-xxxxxxxxxx` 独立会话运行。
-WebUI 在 KPI 区下方有**子代理面板**（有子代理时才出现）：
+Subagents spawned by `subagent` / `ralph` / `workflow` run as independent `sub-xxxxxxxxxx` sessions.
+The WebUI has a **subagent panel** below the KPI area (appears only when subagents exist):
 
-- 每行：状态点 + 子代理描述 + 状态/步数/当前阶段
-- 点一行 → 切到该子会话看完整时间线；点「刷新」立即拉取
-- 数据来自 `GET /v1/agent/subagents`（可按 `?parent=<sid>` 过滤）
-- **没有就不显示**：面板与待办条都只在当前会话确实有内容时出现；点「+ 新任务」或切换会话会
-  立即清空上一轮的待办/子代理（包括外层空卡片），不等新会话的第一份 runtime 快照。
+- Each row: status dot + subagent description + status/steps/current phase
+- Click a row → switch to that child session to see the full timeline; click "Refresh" to pull immediately
+- Data comes from `GET /v1/agent/subagents` (filterable by `?parent=<sid>`)
+- **Hidden when empty**: both the panel and the todo bar only appear when the current session actually has content; clicking "+ New task" or switching sessions
+  immediately clears the previous round's todos/subagents (including the outer empty card), without waiting for the new session's first runtime snapshot.
 
-子会话会记录 `parent_id` 与 `description`（会话表新增两列，自动迁移）。子代理**继承父会话的
-会话级授权**（父授权了 pwsh，子代理不再弹），但逐参数的一次性授权不继承。
+Child sessions record `parent_id` and `description` (two new columns in the session table, auto-migrated). Subagents **inherit the parent session's
+session-level approvals** (if the parent approved pwsh, the subagent doesn't prompt again), but per-parameter one-time approvals are not inherited.
 
-### 6. 常用运维命令
+### 6. Common operations commands
 ```powershell
-python start.py                              # 启动服务（默认 127.0.0.1:8765）
-python scripts/login.py                      # 登录向导（--reset 彻底重来；服务运行时会拒绝执行）
-python -m unittest discover -s tests         # 回归测试
-python scripts/calibrate.py                  # 会话阈值校准（读 data/agent.db 的实测样本）
-python scripts/outlook_selftest.py           # Outlook 分步自检（含线程池/专用COM线程对照）
-python scripts/rollback.py --list            # 查看可回滚的任务与自升级记录
+python start.py                              # Start the service (default 127.0.0.1:8765)
+python scripts/login.py                      # Login wizard (--reset starts completely over; refused while the service is running)
+python -m unittest discover -s tests         # Regression tests
+python scripts/calibrate.py                  # Session threshold calibration (reads measured samples from data/agent.db)
+python scripts/outlook_selftest.py           # Outlook step-by-step self-check (includes thread-pool/dedicated-COM-thread comparison)
+python scripts/rollback.py --list            # View rollbackable tasks and self-upgrade records
 ```
 
-### 7. 故障排查
+### 7. Troubleshooting
 
-| 现象 | 处理 |
+| Symptom | Action |
 |---|---|
-| 服务起不来、导入报错 | 多半是自升级改坏了：`python scripts/rollback.py --scope self --last --yes` 后重启 |
-| 写文件只写了一半、写文件中断 | WebUI 导出该会话时间线发维护者；确认用的是 b64 分块（每块 ≤3000 字符）；大文件优先改用 `copilot_file` 让 Copilot 直接生成下载 |
-| 任务卡在「等待服务」 | 限流/服务不可用，指数退避自动重试；界面中央出现**倒计时卡片**（锚定首次超限 + `service_retry_window_seconds`，默认 1 小时 1 分钟，标题按 Copilot / API 提供商分别措辞）显示预计恢复时间。卡片**可点 × 收起**为右下角小标（点小标可再展开），不会挡住顶部控件，因此限流期间照样能切换会话模型；新一轮限流会自动重新展开。长时间不恢复会安全暂停，服务恢复后点「恢复」。若提示的是"消息未能发送"而非限流，那不是限流——点「切换到页面」查看或「重试浏览器」重建页面 |
-| 页面找不到输入框/模型按钮 | 登录态失效：停服务后 `python scripts/login.py`（必要时 `--reset`） |
-| 频繁换会话/上下文被压缩 | 跑 `scripts/calibrate.py`，按建议调整 `compact_at_tokens`/`rollover_at_tokens` |
-| Outlook 报「不可用」或 0x8000400x | 跑 `scripts/outlook_selftest.py` 定位；COM 路径必须走专用消息泵线程（`_ComWorker`），OWA 路径看登录态 |
-| 模型列表刷新后看不到某些模型 | 点 ↻ 看提示：`scanned=false` 说明没扫成；扫成了但缺少二级菜单模型时，把服务目录的 `last_menu.html` / `last_menu.txt`（每次扫描自动落盘的菜单现场）发维护者 |
-| 浏览器层异常 | 看服务目录 `last_page.txt`（出错时的整页文本快照），必要时在 `config.json` 的 `markers` 追加界面文案锚点 |
-| 删会话报「部分失败」 | 看结果弹窗的 `verified-absent` 标记；仍失败可点「重试远程并强制清理本地记录」 |
+| Service won't start, import errors | Most likely a self-upgrade broke it: run `python scripts/rollback.py --scope self --last --yes`, then restart |
+| File only half-written, write interrupted | Export the session timeline from the WebUI and send it to the maintainer; confirm b64 chunking is used (each chunk ≤3000 characters); for large files prefer `copilot_file` to have Copilot generate and download directly |
+| Task stuck at "waiting for service" | Rate limiting/service unavailable; automatic retries with exponential backoff; a **countdown card** appears in the center of the screen (anchored to the first over-limit event + `service_retry_window_seconds`, default 1 hour 1 minute, with wording tailored for Copilot vs. API providers) showing the estimated recovery time. The card **can be collapsed with ×** to a small badge in the bottom-right corner (click the badge to expand again), so it doesn't block the top controls and you can still switch the session model during rate limiting; a new round of rate limiting re-expands it automatically. If it doesn't recover for a long time, it pauses safely; click "Resume" after the service recovers. If the message says "message could not be sent" rather than rate limiting, that's not rate limiting—click "Switch to page" to inspect or "Retry browser" to rebuild the page |
+| Page can't find the input box/model button | Login state expired: stop the service, then run `python scripts/login.py` (use `--reset` if necessary) |
+| Sessions frequently rolled over / context compressed | Run `scripts/calibrate.py` and adjust `compact_at_tokens`/`rollover_at_tokens` as suggested |
+| Outlook reports "unavailable" or 0x8000400x | Run `scripts/outlook_selftest.py` to locate the issue; the COM path must go through the dedicated message-pump thread (`_ComWorker`); for the OWA path check the login state |
+| Some models missing after refreshing the model list | Click ↻ to see the hint: `scanned=false` means the scan failed; if the scan succeeded but second-level menu models are missing, send the maintainer `last_menu.html` / `last_menu.txt` in the service directory (a snapshot of the menu saved automatically on each scan) |
+| Browser-layer anomaly | Check `last_page.txt` in the service directory (a full-page text snapshot taken on error); if necessary, append UI text anchors to `markers` in `config.json` |
+| Deleting a session reports "partial failure" | Check the `verified-absent` marker in the result dialog; if it still fails, click "Retry remote and force-clean local records" |
 
-## 安全警告
+## Security Warnings
 
-1. **API 鉴权**：默认绑 `127.0.0.1` 仅本机可达；配置 `api_token` 后所有 `/v1/*` 端点要求 Bearer 令牌。绑非回环地址且未配置 token 时**服务拒绝启动**。`agent.workspace_roots` 可进一步把工具工作区限制在白名单根目录内。
-2. **间接 Prompt Injection**：Agent 读取的工作区文件内容会进入 Copilot 上下文，而返回的动作会被直接执行。**不要让 Agent 处理来源不可信的文件**；开启 `allow_python` / `allow_delete` 后风险升级为任意代码执行与文件删除。
-3. **登录态敏感**：`EdgeProfile/` 目录包含你的 Copilot 登录 Cookie，已被 `.gitignore` 排除，请勿外泄。
-4. **容错写文件**：对 Copilot 返回的未转义写文件动作有正则容错恢复，恢复结果可能不完美；重要文件请先备份，`.py/.json/.html` 有语法+单测验证闭环兜底，其他类型没有。
-5. **自升级是高权限开关**：`allow_self_upgrade=true` 后 Agent 能改服务自身代码（白名单内）。虽然每次改动前都有快照、验证不过会被门拦住、且有离线回滚通道，但它仍是"让模型改运行中的服务"——只在你能接受这个前提、并且测试套件可用的前提下开启；不要在工作区里处理来源不可信的文件时同时开着自升级。
-6. **凭据与快照**：`data/snapshots/` 保存了被改文件的**改动前原像**，其中可能包含敏感内容（例如曾写入过密钥的文件），外发调试数据前先确认；`data/` 与 `EdgeProfile/` 都不要提交或分享。
-7. **跨站写入（CSRF）**：服务默认无 token 时，任意网页都能用 `fetch(..., {mode:'no-cors'})` 向 `127.0.0.1` 发简单请求（不触发 CORS 预检），从而取消任务、回滚服务自身代码、删会话——**读不到响应不等于没有副作用**。因此内置 `origin_guard` 中间件：写方法（POST/PUT/PATCH/DELETE）按浏览器信号判定，`Sec-Fetch-Site: cross-site|same-site` 或 `Origin` 非本机/异端口一律 **403**；不带 `Origin`/`Sec-Fetch-*` 的非浏览器客户端（curl、评测脚本）照常放行。可用 `agent.csrf_protect: false` 关闭（不推荐），`agent.csrf_allowed_origins` 加白名单。
-8. **安全响应头与 CSP**：所有响应带 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`（防点击劫持——本机场景下"诱导点删除/回滚"是现实威胁）与 CSP。CSP 为
-   `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`。
-   **`script-src` 不含 `'unsafe-inline'`，这是硬约束**：
-   - 页面里**不允许**再写内联事件处理器（`onclick="..."`）：一律用 `data-act="名称"`（输入类用 `data-act-input`，键盘类用 `data-act-key`），并在 `webui/app.js` 的 `ACTIONS` 表里注册实现——分发器会按 `data-act` 调用。写错名字不会报错、只是"点了没反应"，所以有第 14 条不变量**双向核对** `data-act` ↔ `ACTIONS`（缺实现 / 有死条目都会失败）。
-   - 也**不允许**内联 `<script>`：首屏主题初始化已外置为 `webui/boot.js`；新增静态资源必须加进 `gantry/api.py` 里 `/ui/{asset}` 的白名单（目前是 `style.css` / `app.js` / `boot.js` / `i18n.js`）。第 15 条不变量会核对"页面引用 ⊂ 白名单"，漏加会立刻失败。
-   - `style-src` 仍保留 `'unsafe-inline'`：页面大量使用 `style="..."` 属性与动态注入的 `<style>`，影响面小于脚本，暂不收紧。
+1. **API authentication**: by default the service binds to `127.0.0.1` and is only reachable from the local machine; once `api_token` is configured, all `/v1/*` endpoints require a Bearer token. If you bind a non-loopback address without a token, the service **refuses to start**. `agent.workspace_roots` can further restrict the tool workspace to whitelisted root directories.
+2. **Indirect prompt injection**: workspace file content read by the Agent enters the Copilot context, and the returned actions are executed directly. **Do not let the Agent process files from untrusted sources**; enabling `allow_python` / `allow_delete` escalates the risk to arbitrary code execution and file deletion.
+3. **Login state is sensitive**: the `EdgeProfile/` directory contains your Copilot login cookies. It is excluded by `.gitignore` — do not leak it.
+4. **Fault-tolerant file writes**: there is regex-based fault-tolerant recovery for unescaped write-file actions returned by Copilot, and the recovered result may be imperfect; back up important files first. `.py/.json/.html` have a syntax + unit-test validation loop as a safety net; other types do not.
+5. **Self-upgrade is a high-privilege switch**: with `allow_self_upgrade=true`, the Agent can modify the service's own code (within the whitelist). Although every change is snapshotted beforehand, blocked by a verification gate if validation fails, and backed by an offline rollback channel, it is still "letting a model modify a running service" — enable it only if you accept that premise and the test suite is available; do not process untrusted files in the workspace while self-upgrade is on.
+6. **Credentials and snapshots**: `data/snapshots/` stores the **pre-change originals** of modified files, which may contain sensitive content (e.g. files that once had keys written to them) — check before sending debug data out; do not commit or share `data/` or `EdgeProfile/`.
+7. **Cross-site writes (CSRF)**: when the service runs without a token by default, any web page can use `fetch(..., {mode:'no-cors'})` to send simple requests to `127.0.0.1` (without triggering a CORS preflight), thereby cancelling tasks, rolling back the service's own code, or deleting sessions — **not being able to read the response does not mean there are no side effects**. Therefore the built-in `origin_guard` middleware judges write methods (POST/PUT/PATCH/DELETE) by browser signals: `Sec-Fetch-Site: cross-site|same-site` or an `Origin` that is non-local / from a different port always gets **403**; non-browser clients without `Origin`/`Sec-Fetch-*` headers (curl, evaluation scripts) are let through as usual. You can disable it with `agent.csrf_protect: false` (not recommended), and add whitelist entries via `agent.csrf_allowed_origins`.
+8. **Security response headers and CSP**: all responses carry `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` (anti-clickjacking — in a local scenario, "tricking the user into clicking delete/rollback" is a real threat) and a CSP. The CSP is
+   `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`.
+   **`script-src` does not include `'unsafe-inline'` — this is a hard constraint**:
+   - Pages **must not** contain inline event handlers (`onclick="..."`): always use `data-act="name"` (`data-act-input` for input-type controls, `data-act-key` for keyboard-type ones), and register the implementation in the `ACTIONS` table in `webui/app.js` — the dispatcher invokes by `data-act`. A wrong name does not raise an error, it just "does nothing when clicked", so invariant #14 **cross-checks both directions** between `data-act` ↔ `ACTIONS` (missing implementations or dead entries both fail).
+   - Inline `<script>` is also **not allowed**: first-paint theme initialization has been externalized to `webui/boot.js`; new static assets must be added to the `/ui/{asset}` whitelist in `gantry/api.py` (currently `style.css` / `app.js` / `boot.js` / `i18n.js`). Invariant #15 checks that "page references ⊂ whitelist" — a missing entry fails immediately.
+   - `style-src` still keeps `'unsafe-inline'`: pages heavily use `style="..."` attributes and dynamically injected `<style>` tags; the impact surface is smaller than scripts, so it is not tightened for now.
 
-## 界面多语言（简 / 繁 / EN）
+## UI Multilingual (Simplified / Traditional / EN)
 
-侧栏工具栏的「简 / 繁 / EN」按钮循环切换，选择存在 `localStorage.gantry-lang`。实现要点与**约束**：
+The 「简 / 繁 / EN」 buttons in the sidebar toolbar cycle through the languages; the choice is stored in `localStorage.gantry-lang`. Implementation points and **constraints**:
 
-- **以中文原文当 key**：`tr('取消任务')` 查 `webui/i18n.js` 的 `I18N_EN` 表；缺翻译时**回落中文**，不会出现空白或 `key.not.found`。繁体由「短语覆盖表 + 字形转换表」自动生成。
-- **静态界面**：给元素加 `data-i18n` / `data-i18n-title` / `data-i18n-ph` / `data-i18n-aria`；此外还有一遍“DOM 直译”（叶子节点文本与 `title/placeholder/aria-label` 按字典替换）。
-- **动态内容必须自己调 `tr()`**：对话、时间线、回答、日志等容器在 `I18N_SKIP_IDS` 里被排除（其中可能有模型输出或用户输入，恰好等于某个 key 就会被误翻）；切语言后由 `rerenderForLang()` 重画动态区域。
-- **禁止把 `tr(...)` 写成字符串字面量**：`'tr(重试浏览器)'` 会让界面直接显示 `tr(重试浏览器)`。这类错误**语法合法、单测也覆盖不到**，因此加了第 16 条不变量静态拦截（`gantry/invariants.py`）。
-- **覆盖率审计**：`python scripts/ui_i18n_audit.py` 三语言逐面扫描界面外壳（按钮/标签/页签/表头/提示/弹窗/占位符），报告三类问题：英文模式仍含中文、`tr(`/`data-i18n` 等原始 key 泄漏、**繁化漏字**（用独立维护的简繁对照表检测，不依赖 i18n.js 自己的表——真实事故里「浏」不在表内，用表自身当检测集完全看不出来）。
-- **覆盖审计**：`python scripts/i18n_coverage.py` 在英文模式下逐个打开 12 个界面状态
-  （首页/新任务/手册/插件/面板/工作区/全局搜索/更多/记忆/会话更多/填充态/模型）并采集**可见**中文，
-  当前 **0 处**；`ui_i18n_audit.py` 只扫静态外壳，两者互补（实测前者多抓出 30 处：记忆面板 28 + 主题标题 + 工作区选择）。
-- **后端错误文案**：`HTTPException` 的 detail 由全局处理器按 `X-Gantry-Lang` 翻译（`gantry/i18n.py` 精确表 + 模式表，
-  未知文案回落中文）；不变量「后端错误文案都有英文翻译」守着新增的 raise。
-- **使用手册**：中英**两套完整模板**（`MANUAL_HTML` / `MANUAL_HTML_EN`，各 18 节），按界面语言整篇切换，含自动目录与低频章节折叠（折叠章节名也随语言走）；不变量「手册中英两版章节一致」防只改一边。
-- **插件自带译文**：插件在 `plugin.json` 声明 `gantry.i18n: {en: {...}, tw: {...}}`，
-  `GET /v1/plugins/i18n` 汇总**已加载**插件，前端启动/启停插件时合并进字典 → 第三方插件的中文也能翻
-- **繁体术语表**：`I18N_TW_OVERRIDE` 按词修正（文件→檔案、数据→資料、插件→外掛、服务器→伺服器…），
-  应用时**按词长降序**，否则"服务"会吃掉"服务器"（实测踩到）
-- **系统生成的标题**：深研会话标题按 `X-Gantry-Lang` 生成（`[Research] …` / `[深研] …`）；cron 等无请求上下文的仍用中文
-- **静态属性**：不变量「静态属性文案都有英文键」静态核对 `index.html` 里含中文的
-  `title/placeholder/aria-label/alt` 是否都有词条（实测补了 6 条：跟进消息、输入、收起、限流中…）
-- **已知取舍**：后端与 Agent 协议文案（系统提示词、工具描述、步骤 reason/错误原文）一律保持中文，它们与协议和评测绑定。繁体是**字形级**自动转换，专有名词可能不完美，需要精修时往 `I18N_TW_OVERRIDE` 短语表里加。
+- **Chinese source text as the key**: `tr('取消任务')` looks up the `I18N_EN` table in `webui/i18n.js`; when a translation is missing it **falls back to Chinese** — no blank space or `key.not.found` ever appears. Traditional Chinese is generated automatically from a "phrase override table + glyph conversion table".
+- **Static UI**: add `data-i18n` / `data-i18n-title` / `data-i18n-ph` / `data-i18n-aria` to elements; there is also a "direct DOM translation" pass (leaf-node text and `title/placeholder/aria-label` replaced via the dictionary).
+- **Dynamic content must call `tr()` itself**: containers such as conversation, timeline, answers, and logs are excluded via `I18N_SKIP_IDS` (they may contain model output or user input that happens to equal a key and would be mistranslated); after switching languages, `rerenderForLang()` redraws the dynamic regions.
+- **Never write `tr(...)` as a string literal**: `'tr(重试浏览器)'` would make the UI literally display `tr(重试浏览器)`. This kind of mistake is **syntactically legal and unit tests cannot catch it**, so invariant #16 was added for static interception (`gantry/invariants.py`).
+- **Coverage audit**: `python scripts/ui_i18n_audit.py` scans the UI shell surface by surface in all three languages (buttons/labels/tabs/table headers/hints/dialogs/placeholders) and reports three classes of problems: Chinese remaining in English mode, raw-key leakage such as `tr(`/`data-i18n`, and **missing traditional-conversion characters** (detected with an independently maintained simplified–traditional mapping table, not relying on i18n.js's own table — in a real incident, 「浏」 was absent from the table, and using the table itself as the detection set revealed nothing).
+- **Coverage audit**: `python scripts/i18n_coverage.py` opens 12 UI states one by one in English mode
+  (home / new task / manual / plugins / panels / workspace / global search / more / memory / session-more / filled state / model) and collects **visible** Chinese —
+  currently **0 occurrences**; `ui_i18n_audit.py` only scans the static shell, so the two complement each other (in practice the former caught 30 extra occurrences: 28 in the memory panel + theme title + workspace selection).
+- **Backend error messages**: the `HTTPException` detail is translated by the global handler according to `X-Gantry-Lang` (`gantry/i18n.py` exact table + pattern table,
+  unknown text falls back to Chinese); the invariant "all backend error messages have English translations" guards newly added raises.
+- **User manual**: two **complete template sets** for Chinese and English (`MANUAL_HTML` / `MANUAL_HTML_EN`, 18 sections each), switched wholesale with the UI language, including an auto-generated table of contents and collapsing of low-frequency sections (collapsed section names also follow the language); the invariant "Chinese and English manual versions have consistent sections" prevents changing only one side.
+- **Plugin-provided translations**: plugins declare `gantry.i18n: {en: {...}, tw: {...}}` in `plugin.json`;
+  `GET /v1/plugins/i18n` aggregates **loaded** plugins, and the frontend merges them into the dictionary on startup and when plugins are enabled/disabled → third-party plugins' Chinese can be translated too.
+- **Traditional-Chinese glossary**: `I18N_TW_OVERRIDE` corrects by word (文件→檔案、数据→資料、插件→外掛、服务器→伺服器…),
+  applied **in descending word-length order**, otherwise "服务" would swallow "服务器" (actually hit in practice).
+- **System-generated titles**: deep-research session titles are generated according to `X-Gantry-Lang` (`[Research] …` / `[深研] …`); those without a request context, such as cron, still use Chinese.
+- **Static attributes**: the invariant "static attribute text has English keys" statically checks whether
+  Chinese-containing `title/placeholder/aria-label/alt` attributes in `index.html` all have entries (in practice 6 were added: follow-up message, input, collapse, rate-limiting…).
+- **Known trade-offs**: backend and Agent protocol text (system prompts, tool descriptions, step reasons / original error text) stays in Chinese across the board — it is bound to the protocol and evaluations. Traditional Chinese is an automatic **glyph-level** conversion; proper nouns may be imperfect — when refinement is needed, add entries to the `I18N_TW_OVERRIDE` phrase table.
 
-## 已知限制
+## Known Limitations
 
-- 依赖 Copilot 页面的可访问性文本（如 `Copilot said:`）与 DOM 结构，**Microsoft 前端更新可能导致桥接失效**，出错时查看 `last_page.txt` 诊断快照；
-- 普通对话的流式输出基于公共前缀 diff，若 Copilot 重写已输出文本可能出现重复/缺失（Agent 模式不受影响）;
-- 默认 1 个自动化窗口（`agent.copilot_windows: 1`）：同一时刻只有一个回合在浏览器中进行；
-  本预览分支可开到 1–4 个窗口并行，见 [docs/MULTI-WINDOW.md](docs/MULTI-WINDOW.md)（有额度与内存代价）；
-- 回滚是**任务/作用域级**的：同一任务里混做多件不相关的改动，回滚会整块回退，没法只挑其中一件；
-- 快照只覆盖经工具层的写操作；快照超限（单文件 8MB／单会话 800 条）的路径不记录、也就无法回滚。
-- **生图需要有效 key**：`DASHSCOPE_API_KEY`（通义万相）或 `OPENAI_API_KEY`；本机现有的 DashScope
-  key 实测 401，未配有效 key 时 `image_generate` 返回结构化错误而不是崩溃；
-- **系统文件夹对话框在服务里不可用**：由服务托管的进程会继承非交互窗口站，PowerShell 的
-  `FolderBrowserDialog` 能创建窗口却不在可见桌面上（请求会挂住）。因此工作目录选择器只用
-  **应用内浏览**（`/v1/agent/browse`）；`/v1/agent/pick-directory` 保留但 15s 超时返回 400；
-- **深研是"检索 + 一次综合"**：不做多轮 follow-up 追问；来源以搜索引擎返回为准，不保证可访问性。
+- Depends on the Copilot page's accessibility text (e.g. `Copilot said:`) and DOM structure — **Microsoft frontend updates may break the bridge**; when errors occur, check the `last_page.txt` diagnostic snapshot;
+- Streaming output for normal conversation is based on common-prefix diffing; if Copilot rewrites already-output text, duplication/omission may occur (Agent mode is unaffected);
+- Default of 1 automation window (`agent.copilot_windows: 1`): only one turn runs in the browser at a time;
+  this preview branch can run 1–4 windows in parallel, see [docs/MULTI-WINDOW.md](docs/MULTI-WINDOW.md) (at the cost of quota and memory);
+- Rollback is **task/scope-level**: if a single task mixes several unrelated changes, rollback reverts the whole block — you cannot pick just one of them;
+- Snapshots only cover write operations through the tool layer; paths exceeding the snapshot limits (8MB per file / 800 entries per session) are not recorded and therefore cannot be rolled back.
+- **Image generation requires a valid key**: `DASHSCOPE_API_KEY` (Tongyi Wanxiang) or `OPENAI_API_KEY`; the existing local DashScope
+  key tested as 401 — without a valid key configured, `image_generate` returns a structured error instead of crashing;
+- **System folder dialogs are unavailable inside the service**: processes hosted by the service inherit a non-interactive window station; PowerShell's
+  `FolderBrowserDialog` can create a window but it is not on the visible desktop (the request would hang). Therefore the working-directory picker only uses
+  **in-app browsing** (`/v1/agent/browse`); `/v1/agent/pick-directory` is retained but returns 400 after a 15s timeout;
+- **Deep research is "search + one synthesis"**: it does not do multi-round follow-up questioning; sources are as returned by the search engine, with no guarantee of accessibility.
 
-## 项目结构
+## Project Structure
 
 ```
-app.py            组装入口（shim：from gantry.api import app，uvicorn 加载点）
-start.py          服务入口
-install.py        依赖安装
-gantry/              核心包
-  api.py            FastAPI 应用与中间件/启动装配（端点已拆成 routes_*）
-  routes_core.py    系统与入口端点（health/models/chat/UI/关停重启）
-  routes_config.py  设置端点（配置/沙箱/插件/浏览器/工作区）
-  routes_agents.py  子代理/深研/审计/记忆/自升级端点
-  routes_sessions.py 会话端点（列表/消息/继续/队列/事件/审批/删除）
-  bridge.py         配置、运行状态、工具装配与接线（facade 重导出各子模块）
-  agentrun.py       回合编排：run_agent 主流程、等回答、回合标记/缓存、待办同步
-  downloads.py      回答区下载解析与 copilot_file
-  workspace_files.py 工作区写文件/建目录/目录选择
-  research.py       深研任务、插件任务、扇出
-  page.py           页面自动化：新对话、模型菜单、发消息、取回答/流式更新
-  browser.py        浏览器生命周期与窗口池（多窗口并行、提供商逻辑槽）
-  answer.py         回答解析：回合标记、噪声/思考占位剔除、服务不可用识别
-  provider.py       外部提供商通道（HTTP 回合、历史裁剪）
-  queue.py          会话消息队列（排队/取消/插入）
-  orchestration.py  ralph / workflow / 对抗式审计
-  subagents.py      子代理派发、驱动、续跑与 fork
-  copilot_delete.py Copilot 侧栏会话删除流程（URL 身份 + 标记同属校验 + 对账终验）
-  owa.py            Outlook 网页版（OWA）自动化后端
-  agent.py          Agent 核心循环、状态治理、验证门、换会话/压缩
-  agent_prompt.py   PromptMixin：系统提示词装配 / AGENT.md / skills / 工具面裁剪
-  agent_parse.py    ParseMixin：JSON 动作协议 / 容错解析 / 批量恢复
-  agent_text.py     TextMixin：token 估算 / spill / 保头保尾压缩
-  tools.py          工具注册表/分派、路径沙箱与权限门（核心 mixin）
-  tools_files.py    文件读写/替换/补丁/缩进/目录操作
+app.py            Assembly entry (shim: from gantry.api import app, uvicorn load point)
+start.py          Service entry
+install.py        Dependency installation
+gantry/              Core package
+  api.py            FastAPI app and middleware/startup assembly (endpoints split into routes_*)
+  routes_core.py    System and entry endpoints (health/models/chat/UI/shutdown-restart)
+  routes_config.py  Settings endpoints (config/sandbox/plugins/browser/workspace)
+  routes_agents.py  Subagent/deep-research/audit/memory/self-upgrade endpoints
+  routes_sessions.py Session endpoints (list/messages/continue/queue/events/approvals/delete)
+  bridge.py         Config, runtime state, tool assembly and wiring (facade re-exporting submodules)
+  agentrun.py       Turn orchestration: run_agent main flow, answer waiting, turn markers/cache, todo sync
+  downloads.py      Answer-area download parsing and copilot_file
+  workspace_files.py Workspace file writing / directory creation / directory picking
+  research.py       Deep-research tasks, plugin tasks, fan-out
+  page.py           Page automation: new conversation, model menu, sending messages, fetching answers / streaming updates
+  browser.py        Browser lifecycle and window pool (multi-window parallelism, provider logical slots)
+  answer.py         Answer parsing: turn markers, noise/thinking placeholder removal, service-unavailable detection
+  provider.py       External provider channel (HTTP turns, history trimming)
+  queue.py          Session message queue (enqueue/cancel/insert)
+  orchestration.py  ralph / workflow / adversarial audit
+  subagents.py      Subagent dispatch, driving, continuation and fork
+  copilot_delete.py Copilot sidebar session deletion flow (URL identity + same-owner marker check + reconciliation final verification)
+  owa.py            Outlook Web App (OWA) automation backend
+  agent.py          Agent core loop, state governance, verification gates, session switching/compaction
+  agent_prompt.py   PromptMixin: system prompt assembly / AGENT.md / skills / tool-surface trimming
+  agent_parse.py    ParseMixin: JSON action protocol / fault-tolerant parsing / batch recovery
+  agent_text.py     TextMixin: token estimation / spill / keep-head-keep-tail compaction
+  tools.py          Tool registry/dispatch, path sandbox and permission gates (core mixin)
+  tools_files.py    File read/write/replace/patch/indent/directory operations
   tools_exec.py     validate_python / run_unittest / run_code / run_python
   tools_office.py   Excel / Word / PPT / PDF
-  tools_outlook.py  Outlook（COM + OWA）
-  tools_skills.py   技能库 list/read/create
-  tools_memory.py   长期记忆
-  tools_self.py     自升级（读写/校验/单测/回滚）
-  providers.py      API 提供商接入层（OpenAI/DeepSeek/Kimi/Grok 等）
-  session_store.py  SQLite 会话持久化、中断恢复、会话实测统计
-  snapshots.py      改动前原像快照与任务级回滚（自我升级 failback）
-webui/            零依赖 Web 管理台（index.html 结构 + style.css + app.js）
-AGENT.md          项目级 Agent 约定（工作区根目录存在时自动注入系统提示）
-skills/           目录式技能库（每个技能一个 SKILL.md，按需加载）
-scripts/          工具脚本（login.py 登录向导、calibrate.py 阈值校准、
-                  outlook_selftest.py COM 自检、rollback.py 离线回滚）
-tests/            单元/集成/不变量测试（python -m unittest discover -s tests，约 1030 用例）
+  tools_outlook.py  Outlook (COM + OWA)
+  tools_skills.py   Skill library list/read/create
+  tools_memory.py   Long-term memory
+  tools_self.py     Self-upgrade (read-write/validate/unit-test/rollback)
+  providers.py      API provider integration layer (OpenAI/DeepSeek/Kimi/Grok etc.)
+  session_store.py  SQLite session persistence, interruption recovery, session runtime statistics
+  snapshots.py      Pre-change original snapshots and task-level rollback (self-upgrade failback)
+webui/            Zero-dependency web console (index.html structure + style.css + app.js)
+AGENT.md          Project-level Agent conventions (auto-injected into the system prompt when present at the workspace root)
+skills/           Directory-based skill library (one SKILL.md per skill, loaded on demand)
+scripts/          Utility scripts (login.py login wizard, calibrate.py threshold calibration,
+                  outlook_selftest.py COM self-test, rollback.py offline rollback)
+tests/            Unit/integration/invariant tests (python -m unittest discover -s tests, ~1030 cases)
 ```
 
-## 免责声明
+## Disclaimer
 
-本项目通过浏览器自动化使用 Copilot 网页版，仅供个人学习与研究。请遵守 Microsoft 365 Copilot 的使用条款，勿用于高频率、商业化或违反服务条款的用途。
+This project uses the Copilot web version via browser automation and is for personal learning and research only. Please comply with the Microsoft 365 Copilot terms of use; do not use it for high-frequency, commercial, or terms-violating purposes.
 
-## 破坏性操作的一次性审批（fail-closed）
+## One-Time Approval for Destructive Operations (fail-closed)
 
-威胁模型：`delete_path` / `outlook_send` / `run_python` 一旦被模型误调用后果不可回滚。
-因此默认 `agent.approval_policy: "ask"`：**每次**执行前都要用户下达一次授权，
-授权精确到「工具 + 参数哈希」，**用后即焚**（没有 allow-always，也没有撤销存储）。
+Threat model: once `delete_path` / `outlook_send` / `run_python` are mistakenly invoked by the model, the consequences cannot be rolled back.
+Therefore the default is `agent.approval_policy: "ask"`: **every** execution requires the user to grant one authorization first.
+The authorization is precise down to "tool + argument hash" and is **burned after use** (no allow-always, no revocation storage).
 
 ```powershell
-# 查看待授权（含会话记录的 approval_pending）
+# View pending approvals (including approval_pending recorded for the session)
 curl http://127.0.0.1:8765/v1/agent/sessions/<sid>/approvals
-# 下达一次性授权（不传 args_hash 时按 approval_pending 精确授权）
+# Grant a one-time authorization (when args_hash is omitted, authorizes exactly per approval_pending)
 curl -X POST -H "Content-Type: application/json" \
   -d '{"tool":"delete_path"}' http://127.0.0.1:8765/v1/agent/sessions/<sid>/approvals
 ```
 
-未获授权时 Agent 不会执行该操作：它会记录一条 `approval_required` 步骤、把状态置为
-`waiting`（并在 runtime 里写 `approval_pending`），然后停下等你授权；授权后点继续即可。
-把 `approval_policy` 设为 `"never"` 表示你明确承担这些操作的风险（不推荐）。
+Without authorization, the Agent will not execute the operation: it records an `approval_required` step, sets the status to
+`waiting` (and writes `approval_pending` into the runtime), then stops and waits for your authorization; after authorizing, just click continue.
+Setting `approval_policy` to `"never"` means you explicitly accept the risk of these operations (not recommended).
 
-### 授权范围：once / session
+### Approval Scope: once / session
 
-实测痛点：`pwsh` 被拦后模型改了命令措辞，参数哈希变化 → 又弹一次授权（逐参数太碎）。
+Observed pain point: after `pwsh` was blocked, the model reworded the command, the argument hash changed → another approval prompt appeared (per-argument is too fragmented).
 
-`agent.approval_scope` 控制授权范围：
+`agent.approval_scope` controls the authorization scope:
 
-| 值 | 含义 | 适用 |
+| Value | Meaning | When to use |
 |---|---|---|
-| `"once"`（默认） | 精确到「工具 + 参数」，**用后即焚** | 最严格；破坏性操作少时 |
-| `"session"` | 一次授权后，**该工具在本会话内**都放行（会话结束即失效；不跨会话、不跨工具） | 连续 shell 任务，比 `never` 安全 |
+| `"once"` (default) | Precise down to "tool + arguments", **burned after use** | Strictest; when destructive operations are rare |
+| `"session"` | After one authorization, **that tool is allowed within this session** (expires when the session ends; does not cross sessions or tools) | Consecutive shell tasks; safer than `never` |
 
 ```powershell
-# 本会话级授权（scope=session 时 WebUI 按钮自动走这条）
+# Session-level authorization (the WebUI button automatically takes this route when scope=session)
 curl -X POST -H "Content-Type: application/json" \
   -d '{"tool":"pwsh","scope":"session"}' http://127.0.0.1:8765/v1/agent/sessions/<sid>/approvals
 ```
 
-WebUI 的授权横幅会按 `approval_scope` 显示不同措辞（"仅对这一次执行有效" /
-"仅对本会话有效"）；runtime 快照里带 `approval_scope` 供前端判断。
+The WebUI approval banner shows different wording according to `approval_scope` ("valid only for this one execution" /
+"valid only for this session"); the runtime snapshot carries `approval_scope` for the frontend to decide.
 
-## 沙箱拒绝是结构化的
+## Sandbox Denials Are Structured
 
-越界/敏感路径不再只回一句"拒绝访问"，而是给出错误码（`FS_SANDBOX_ESCAPE` /
-`FS_SANDBOX_DENYLIST` / `FS_SANDBOX_NOT_ALLOWED`）、当前模式、原因与**可行动方案**
-（改用工作区相对路径 / 开启自升级 / 让用户把文件放进工作区）。工具参数写错时也会
-列出该工具的**合法参数名**，避免模型反复试探。
+Out-of-bounds / sensitive paths no longer get just a bare "access denied"; instead they return an error code (`FS_SANDBOX_ESCAPE` /
+`FS_SANDBOX_DENYLIST` / `FS_SANDBOX_NOT_ALLOWED`), the current mode, the reason, and **actionable remedies**
+(use a workspace-relative path / enable self-upgrade / ask the user to put the file into the workspace). When tool arguments are written incorrectly, it also
+lists the tool's **legal argument names**, preventing the model from probing repeatedly.
 
-## 整体回归（真跑各能力）
+## Full Regression (actually exercising each capability)
 
-单测/审计是白盒；这个脚本**真跑一遍面向用户的能力**（用真实模型），几分钟给出结论：
+Unit tests/audits are white-box; this script **actually runs through the user-facing capabilities** (with real models) and gives a verdict in a few minutes:
 
 ```bash
-python scripts/regression.py                 # 默认 kimi-coding/k3，跑完自动清理
-python scripts/regression.py --skip-slow     # 跳过深研/单测/布局审计（约 1.5 分钟）
-python scripts/regression.py --model copilot-auto --keep   # 保留现场排查
+python scripts/regression.py                 # default kimi-coding/k3, auto-cleanup after the run
+python scripts/regression.py --skip-slow     # skip deep-research/unit-tests/layout audit (~1.5 minutes)
+python scripts/regression.py --model copilot-auto --keep   # keep the scene for investigation
 ```
 
-覆盖 22 项：健康检查、工具面完整性（62 个）、沙箱三档、**计划模式（提交方案且不写文件）**、
-普通写入任务、子代理创建/继续/分叉、深研（证据+报告）、定时任务执行、MCP（stdio 工具可用 +
-移除后摘除）、插件安装/卸载、插件面板、CLI 只读命令、单测、不变量、UI 冒烟、i18n/布局/对比度审计。
+Covers 22 items: health check, tool-surface completeness (62 tools), three sandbox tiers, **plan mode (submit a plan without writing files)**,
+normal write tasks, subagent create/continue/fork, deep research (evidence + report), scheduled task execution, MCP (stdio tools available +
+removed after removal), plugin install/uninstall, plugin panels, CLI read-only commands, unit tests, invariants, UI smoke test, i18n/layout/contrast audits.
 
-结果写到 `data/regression/report.json`，失败时退出码非零（可接 CI）。
+Results are written to `data/regression/report.json`; on failure the exit code is non-zero (can be wired into CI).
 
-## 运行时不变量检查（提交前必跑）
+## Runtime Invariant Checks (must run before committing)
 
 ```powershell
-python scripts/invariants.py        # 失败退出码 1；--json 供 CI 使用
+python scripts/invariants.py        # exit code 1 on failure; --json for CI use
 ```
 
-它检查那些"坏了不一定报错、但会让行为错误"的隐式契约：工具分组表与注册表一致、
-core 组最小工具面、steps 表 append-only、检查点表与状态取值、AgentRunner 可选回调
-向后兼容、评测断言名与实现一致、提示词工具清单单一数据源、破坏性工具审批契约。
+It checks the implicit contracts that "don't necessarily error when broken, but cause wrong behavior": tool group tables consistent with the registry,
+minimal tool surface of the core group, append-only steps table, checkpoint table and status values, AgentRunner optional callbacks
+backward-compatible, evaluation assertion names consistent with implementations, single source of truth for the prompt tool manifest, destructive-tool approval contract.
 
-## 崩溃恢复时的检查点语义
+## Checkpoint Semantics During Crash Recovery
 
-- **发请求前**登记回合（`turn_results.status=inflight`），成功后转 `done`；
-- **工具派发前**登记步骤（`step_dispatch`），成功/失败/未知分别收尾；
-- 恢复时若发现"已派发但未收尾"的步骤，**绝不原样重放**：先让模型只读核对现状
-  （对应 DSH 的 `Its outcome is unknown.`），避免重复副作用。
+- Register the turn **before sending the request** (`turn_results.status=inflight`); transition to `done` after success;
+- Register the step **before tool dispatch** (`step_dispatch`); close it out as success/failure/unknown respectively;
+- If recovery finds steps that were "dispatched but never closed out", it **never replays them as-is**: it first has the model verify the current state read-only
+  (corresponding to DSH's `Its outcome is unknown.`), avoiding duplicated side effects.
 
-## 超大工具结果会落盘（spill）
+## Oversized Tool Results Spill to Disk (spill)
 
-单条工具结果超过 `agent.spill_threshold_chars`（默认 20000 字符）时，**完整内容**写入
-工作区 `.spill/<会话>/<步骤>-<工具>.json`，上下文里只保留"保头保尾"的摘要 + 路径提示；
-模型需要全文时用 `read_text` 读那个路径（路径在工作区内，因此沙箱允许、用户也能直接看）。
-好处：不再为了省 token 而**丢掉信息**——以前只有一个截断值，现在是"摘要 + 可取的全文"。
-上限由 `spill_max_bytes` 控制（默认 2MB）；设为 `spill_threshold_chars: 0` 可整体关闭。
+When a single tool result exceeds `agent.spill_threshold_chars` (default 20000 characters), the **full content** is written to
+the workspace `.spill/<session>/<step>-<tool>.json`, and the context keeps only a "keep-head-keep-tail" summary + path hint;
+when the model needs the full text it reads that path with `read_text` (the path is inside the workspace, so the sandbox allows it and the user can inspect it directly).
+Benefit: information is no longer **discarded** to save tokens — previously there was only a truncation value; now it is "summary + retrievable full text".
+The cap is controlled by `spill_max_bytes` (default 2MB); set `spill_threshold_chars: 0` to disable spilling entirely.
 
-## 超时的诚实语义（结果未知 ≠ 没发生）
+## Honest Timeout Semantics (unknown result ≠ didn't happen)
 
-COM（Outlook）调用**无法真正取消**：超时只表示"我们不再等"，线程里的调用仍在执行。
-旧实现在超时后直接放弃等待、外层还可能重试一次——等于在"第一次可能已经发出去"的情况下
-再来一遍。现在改为：
+COM (Outlook) calls **cannot be truly cancelled**: a timeout only means "we stop waiting" — the call in the thread is still executing.
+The old implementation gave up waiting after a timeout and the outer layer might even retry once — equivalent to doing it again
+when "the first attempt may already have gone out". It is now changed to:
 
-1. 用 `asyncio.shield` 保护底层调用，**不抛弃**它，并给它挂回调：迟到的结果会写进日志
-   （成功会明确提示"副作用很可能已发生"）；
-2. 超时**绝不重试**同一动作；
-3. 记下"结果未知"并**阶段性封锁不可幂等动作**（`outlook_send`/`delete_path`/`move_path`/
-   `append_text`/`copy_path`），直到任一**只读动作**成功（例如 `outlook_unread`、
-   `read_text`、`list_directory`）——即"先核对现状再说"；
-4. 封锁期间相关动作会返回 `[TOOL_TIMEOUT_UNKNOWN]` 的结构化错误，说明该做什么。
+1. Protect the underlying call with `asyncio.shield`, **not abandoning** it, and attach a callback: late-arriving results are written to the log
+   (on success it clearly warns "the side effect has most likely already occurred");
+2. **Never retry** the same action after a timeout;
+3. Record "result unknown" and **phase-block non-idempotent actions** (`outlook_send`/`delete_path`/`move_path`/
+   `append_text`/`copy_path`) until any **read-only action** succeeds (e.g. `outlook_unread`,
+   `read_text`, `list_directory`) — i.e. "verify the current state first";
+4. While blocked, the affected actions return a structured `[TOOL_TIMEOUT_UNKNOWN]` error explaining what to do.
 
-超时上限可用 `agent.outlook_timeout_seconds`（默认 60 秒）调整。
+The timeout ceiling can be adjusted with `agent.outlook_timeout_seconds` (default 60 seconds).
 
-## 事件日志与投影（P2-10）
+## Event Log and Projection (P2-10)
 
-会话的所有关键动作都会写成 **append-only 事件**（`events` 表，共 13 个发点）：
-状态迁移、回合开始/结束、工具派发/收尾、工具结果入库（`step_recorded`）、
-文件改动（`file_event`，来自 `file_events` 的真实写路径）、队列进出（`queue`，只记数量不记正文）、
-消息元信息（`message`，仅 WebUI 对话）、审批下达/取用/拒绝。它现在是**旁路记录**（运行时仍读数据库
-列），用途是排障、审计，以及为将来"状态可由日志重建"铺路。
+All key actions of a session are written as **append-only events** (`events` table, 13 emission points in total):
+status transitions, turn begin/end, tool dispatch/closeout, tool result recording (`step_recorded`),
+file changes (`file_event`, from the real write paths of `file_events`), queue in/out (`queue`, counts only, no content),
+message metadata (`message`, WebUI conversations only), approval grant/consume/reject. It is currently a **side-channel record** (the runtime still reads the database
+columns); its purpose is troubleshooting, auditing, and paving the way for a future where "state can be rebuilt from the log".
 
 ```powershell
-# 历史事件（一次性返回；kinds 可逗号分隔过滤）
+# Historical events (returned in one shot; kinds can be filtered comma-separated)
 curl "http://127.0.0.1:8765/v1/agent/sessions/<sid>/event-log?limit=50&kinds=turn_begin,turn_done"
-# 由事件重建的状态快照 + 与数据库列的一致性核对（consistency 为空=一致）
+# State snapshot rebuilt from events + consistency check against database columns (empty consistency = consistent)
 curl "http://127.0.0.1:8765/v1/agent/sessions/<sid>/projection"
 ```
 
-### 巡检：投影与列是否一致（P2-10 第三期前的验收）
+### Inspection: whether projection and columns agree (acceptance before P2-10 phase 3)
 
 ```powershell
-python scripts/health.py            # 巡检全部会话；--limit / --session / --json 可选
+python scripts/health.py            # inspect all sessions; --limit / --session / --json optional
 ```
 
-它逐个会话把**事件流重放**成状态，再与数据库列交叉核对，并额外检查**事件覆盖**
-（表里有记录却没有对应事件 = 覆盖缺口）。输出区分四类：
+It **replays the event stream** into state session by session, cross-checks it against the database columns, and additionally checks **event coverage**
+(records in tables without corresponding events = coverage gaps). The output distinguishes four categories:
 
-| 类别 | 含义 | 是否致命 |
+| Category | Meaning | Fatal? |
 |---|---|---|
-| 一致 | 投影与列完全相符 | — |
-| **不一致** | 有事件却重建不出列里的事实 = 真缺口 | ✅ 退出码 1 |
-| **覆盖告警** | 表里有记录但没有对应事件（多为功能上线前的历史会话） | ❌ 默认仅告警；`--strict` 视为失败 |
-| 早于事件功能 | 0 事件的历史会话 | ❌ 跳过不计 |
+| Consistent | Projection and columns match exactly | — |
+| **Inconsistent** | Events exist but the column facts cannot be rebuilt = real gap | ✅ exit code 1 |
+| **Coverage warning** | Records in tables without corresponding events (mostly historical sessions predating the feature) | ❌ warning only by default; `--strict` treats as failure |
+| Predates event feature | Historical sessions with 0 events | ❌ skipped, not counted |
 
-设计取舍：一致性是**致命项**（说明日志不足以重建状态），覆盖缺口是**告警项**——
-否则每逢新增事件类型，所有历史会话都会让 CI 变红，指标就失去意义。
+Design trade-off: consistency is a **fatal item** (it means the log is insufficient to rebuild state), coverage gaps are **warnings** —
+otherwise every newly added event type would turn CI red for all historical sessions, and the metric would lose its meaning.
 
-### 读取路径开关（P2-10 第三期）
+### Read-Path Switch (P2-10 phase 3)
 
-默认 `columns`（读数据库列）；设为 `projection` 时，**"结果未知步骤"的判定改读事件投影**：
+Default is `columns` (read database columns); when set to `projection`, the **"unknown-result step" determination reads the event projection instead**:
 
 ```powershell
 # config.json: "agent": { "event_source": "projection" }
-# 或临时用环境变量（便于灰度验证，不必改配置）
+# or temporarily via environment variable (for gray verification without changing config)
 $env:CBP_EVENT_SOURCE = "projection"
 ```
 
-切换是**可回退的小步**：投影与列不一致时会**记告警并自动回退到列**（安全优先），
-`/health` 会显示当前生效的 `event_source`。已实测：投影模式下评测 7/7、事件核对全绿，
-与列模式行为一致。
+The switch is a **reversible small step**: when projection and columns disagree, it **logs a warning and automatically falls back to columns** (safety first);
+`/health` shows the currently effective `event_source`. Verified in practice: in projection mode, evals 7/7, event checks all green,
+behavior identical to column mode.
 
-会话删除会**级联清掉事件**（隐私优先），但"某会话何时被删"会写进独立的 `audit` 表
-（只记 kind + session_id，不含内容），删除事实不随会话消失。
+Session deletion **cascades to clear events** (privacy first), but "when a session was deleted" is written to a separate `audit` table
+(kind + session_id only, no content), so the deletion fact does not disappear with the session.
 
-⚠️ 不要用普通 GET 调 `/v1/agent/sessions/{sid}/events`——那是 **SSE 长连接**（前端
-EventSource 用），普通请求会一直挂着直到断开，这是设计如此；要历史事件请用上面的
-`event-log`。
+⚠️ Do not call `/v1/agent/sessions/{sid}/events` with a plain GET — that is an **SSE long-lived connection** (used by the frontend
+EventSource); a plain request will hang until disconnected — this is by design; for historical events use the
+`event-log` endpoint above.
 
-## 程序化工具调用 `run_code`（默认关闭）
+## Programmatic Tool Calling `run_code` (off by default)
 
-让模型写一段代码，在**独立子进程**里批量调用**只读**工具（`read_text` / `list_directory` /
-`find_files` / `skill_list` / `memory_search` / `tool_list`），最后用 `final(值)` 回传结果。
-适合「读很多文件再汇总」这类分析任务：工具循环要 N 个远端回合，`run_code` 只要 1 个。
+Lets the model write a piece of code that batch-calls **read-only** tools (`read_text` / `list_directory` /
+`find_files` / `skill_list` / `memory_search` / `tool_list`) in an **independent subprocess**, finally returning the result via `final(value)`.
+Suitable for analysis tasks like "read many files then summarize": a tool loop needs N remote turns, while `run_code` needs only 1.
 
-**实测（同一任务、deepseek/deepseek-chat）**
+**Measured (same task, deepseek/deepseek-chat)**
 
-| 文件数 | 关闭 run_code | 开启 run_code |
+| File count | run_code off | run_code on |
 |---|---|---|
-| 4 | 5 步 / 4.3s | 5 步（**模型未采纳**，仍走工具循环） |
-| 12 | **17 步** / 10.2s | **7 步**（find_files → run_code ×2 → read_text ×3）/ 8.9s |
+| 4 | 5 steps / 4.3s | 5 steps (**model did not adopt it**, still went through the tool loop) |
+| 12 | **17 steps** / 10.2s | **7 steps** (find_files → run_code ×2 → read_text ×3) / 8.9s |
 
-即：小规模不划算（模型自己不会用），规模上来后回合数减少约 59%。
+In other words: not worth it at small scale (the model won't use it on its own); once scale grows, turn count drops by about 59%.
 
-**安全边界（v1 刻意保守）**：只暴露只读工具（**无任何写入/删除/发信**）；子进程隔离；
-硬限额——超时 `run_code_timeout_seconds`（默认 30s）、工具调用次数 `run_code_max_calls`
-（默认 50）、回传上限 `run_code_max_output_chars`（默认 20000）；工具侧路径沙箱照旧生效。
-子进程内的工具错误是**具名异常 ToolError**，模型代码可捕获后优雅收尾。
+**Safety boundaries (deliberately conservative in v1)**: only read-only tools are exposed (**no writes/deletes/sending at all**); subprocess isolation;
+hard limits — timeout `run_code_timeout_seconds` (default 30s), tool-call count `run_code_max_calls`
+(default 50), return-size cap `run_code_max_output_chars` (default 20000); the tool-side path sandbox remains in effect as usual.
+Tool errors inside the subprocess are the **named exception ToolError**, which model code can catch for a graceful finish.
 
-开启方式：`config.json` 的 `agent.allow_run_code: true`（默认 false）。建议同时把 `run_code`
-加进 `approval_required_tools`，让它像 `run_python` 一样逐次授权。
+How to enable: `agent.allow_run_code: true` in `config.json` (default false). It is recommended to also add `run_code`
+to `approval_required_tools`, so it is authorized per call like `run_python`.
 
-### 评测的方差处理
+### Handling Variance in Evaluations
 
-模型是随机的：同一任务可能 3 步完成、也可能 28 步。因此评测支持在 `tests/evals/tasks.json`
-里给单个任务声明 `"retries": 1`（失败后**重试一次**，两次都失败才算失败）——这样既能压掉
-单次抽样的假失败，又不会掩盖真实回归。当前只有 `code-with-validation` 声明了重试。
+Models are stochastic: the same task may finish in 3 steps or in 28. Therefore evaluations support declaring `"retries": 1`
+for an individual task in `tests/evals/tasks.json` (**retry once** after failure; only two failures count as a failure) — this both
+suppresses false failures from single sampling and does not mask real regressions. Currently only `code-with-validation` declares a retry.

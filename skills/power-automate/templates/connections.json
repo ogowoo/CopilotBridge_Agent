@@ -1,0 +1,9 @@
+{
+  "shared_teams": {
+    "id": "/providers/Microsoft.PowerApps/apis/shared_teams",
+    "displayName": "Microsoft Teams",
+    "connectionRef": "<占位：连接引用逻辑名，如 new_sharedteams_xxxxx>",
+    "connectionId": "<占位：同租户 automate 环境中的连接实例 ID，导入时选择或新建>",
+    "tier": "Standard"
+  }
+}

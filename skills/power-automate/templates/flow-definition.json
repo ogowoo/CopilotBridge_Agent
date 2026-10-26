@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "$connections": {
+      "defaultValue": {},
+      "type": "Object"
+    },
+    "$authentication": {
+      "defaultValue": {},
+      "type": "SecureObject"
+    }
+  },
+  "triggers": {
+    "manual": {
+      "type": "Request",
+      "kind": "Button",
+      "inputs": {
+        "schema": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "title": "<占位：输入框标题>",
+              "description": "<占位：输入框说明>"
+            }
+          },
+          "required": []
+        }
+      }
+    }
+  },
+  "actions": {
+    "Post_message_in_a_chat_or_channel": {
+      "type": "OpenApiConnection",
+      "inputs": {
+        "host": {
+          "connectionName": "shared_teams",
+          "operationId": "PostMessageV3",
+          "apiId": "/providers/Microsoft.PowerApps/apis/shared_teams"
+        },
+        "parameters": {
+          "poster": "Flow bot",
+          "location": "Channel",
+          "body/recipient/groupId": "<占位：Team ID>",
+          "body/recipient/channelId": "<占位：Channel ID>",
+          "body/messageBody": "<占位：消息正文，可引用触发器输入 @{triggerBody()['message']}>"
+        },
+        "authentication": "@parameters('$authentication')"
+      },
+      "runAfter": {}
+    }
+  },
+  "outputs": {}
+}
