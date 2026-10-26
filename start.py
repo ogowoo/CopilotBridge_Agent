@@ -17,6 +17,10 @@ import uvicorn
 from gantry import lifecycle
 
 BASE = Path(__file__).resolve().parent
+# 从任意 cwd 启动都要能 `import app` / `gantry`（重启时 exec 保留 cwd，
+# 用 `gantry serve` 或快捷方式启动时 cwd 未必是项目根）。
+if str(BASE) not in sys.path:
+    sys.path.insert(0, str(BASE))
 CFG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
 SERVER = CFG.get("server", {})
 BIND_RETRIES = 6          # 绑定失败重试次数（合计约 6 × 0.8s ≈ 5s 窗口）
@@ -29,10 +33,22 @@ def build_server() -> "uvicorn.Server":
     不直接用 `uvicorn.run`：server 对象藏在内部，路由层就拿不到，WebUI 的
     「终止服务」只能靠信号硬杀（Windows 上是 TerminateProcess，收尾做不完）。
     """
+    # 端口优先级：环境变量（`gantry serve --port` / 容器）> config.json > 8765。
+    # 以前只读 config.json，`--port` 写了环境变量却没人读，静默不生效。
+    _port_env = ""
+    try:
+        from gantry.brand import env as _env
+        _port_env = (_env("PORT") or "").strip()
+    except Exception:
+        _port_env = ""
+    try:
+        _port = int(_port_env) if _port_env else int(SERVER.get("port", 8765))
+    except ValueError:
+        _port = int(SERVER.get("port", 8765))
     config = uvicorn.Config(
         "app:app",
         host=SERVER.get("host", "127.0.0.1"),
-        port=int(SERVER.get("port", 8765)),
+        port=_port,
         reload=False,
     )
     server = uvicorn.Server(config)

@@ -14,6 +14,32 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.5] - 2026-10-26
+
+### Fixed
+
+- **「重启服务」因路径问题失败**（用户报障）。三个坑：
+  1. **入口解析用 `sys.argv[0]`**：用 `python -m gantry.cli serve` 或 `uvicorn app:app`
+     启动时，`sys.argv[0]` 是**包内的 `gantry/cli.py`**；`os.execv` 把它当脚本重跑 →
+     `from .brand import env` 立刻 `ImportError: attempted relative import with no known
+     parent package`，重启后的进程直接死掉，WebUI 等 90 秒报"未恢复"。
+     现在入口**固定**为项目根的 `start.py`（由包位置反推绝对路径），只在没有 `start.py`
+     （装成纯包）时退回 `-m gantry.cli serve`；`serve` 这类子命令不再被当参数带过去。
+  2. **cwd 依赖**：`exec` 不改变工作目录，而 `start.py` 的 `uvicorn.Config("app:app")`、
+     `config.json`、`data/` 都相对 cwd。现在 `exec_restart()` 先 `os.chdir(项目根)`，
+     派生兜底也用 `cwd=项目根`；`start.py` 还额外把项目根插入 `sys.path`。
+  3. **`gantry serve --port N` 静默无效**：只写了环境变量，`start.py` 从不读它。
+     现在端口优先级 = `GANTRY_PORT`（兼容 `CBP_PORT`）> `config.json` > 8765。
+
+### Added
+
+- `tests/test_restart_paths.py`（8 条）：入口必须是项目根的绝对 `start.py`、绝不能是包内
+  `.py`、模拟 `-m gantry.cli serve` 启动、无 `start.py` 时退回模块启动、
+  `exec_restart()` 必须 `chdir`、端口必须优先取环境变量。
+
+实测（临时端口 8799，不动在跑的 8765）：`POST /v1/restart` → 200 → 90 秒内
+`/health` 恢复、版本一致；`gantry serve --port 8798` 确认绑定 8798。
+
 ## [11.0.0-preview.4] - 2026-10-26
 
 ### Fixed

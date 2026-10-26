@@ -103,22 +103,36 @@ def on_restart(fn) -> None:
     _atexit.append(fn)
 
 
-def _entry_argv() -> list[str]:
-    """重启用的命令行：沿用当前进程的 argv（入口脚本 + 原有参数）。
-
-    `sys.argv[0]` 常是相对路径（`python start.py`），解析成绝对路径；不存在时退回
-    安装目录下的 start.py——重启不能因为 cwd 不同就起不来。
-    """
-    import sys
+def _project_root() -> Path:
+    """项目根（本文件在 <root>/gantry/lifecycle.py）。"""
     from pathlib import Path
-    argv = list(sys.argv)
-    script = argv[0] if argv else ""
-    if script and Path(script).is_file():
-        argv[0] = str(Path(script).resolve())
-    else:
-        base = Path(__file__).resolve().parent.parent
-        argv = [str(base / "start.py")] + argv[1:]
-    return argv
+    return Path(__file__).resolve().parent.parent
+
+
+def _entry_argv() -> list[str]:
+    """重启用的命令行：**永远**指向项目根的 `start.py`（绝对路径）。
+
+    以前沿用 `sys.argv[0]`，在 `python -m gantry.cli serve` / `uvicorn app:app`
+    这类启动方式下 `sys.argv[0]` 是**包内的 .py**，`os.execv` 会把它当脚本跑，
+    相对导入立刻 ImportError → 重启后的进程直接死掉（用户："重启会因为路径问题失败"）。
+
+    - 有 `start.py` → `["<root>/start.py"]`（附加的 CLI 参数一并保留）；
+    - 没有（装成纯包）→ `["-m", "gantry.cli", "serve"]`；
+    - 两者都不可用 → 抛错，让人看到真正原因，而不是静默死掉。
+    """
+    from pathlib import Path
+    import sys
+
+    root = _project_root()
+    entry = root / "start.py"
+    if entry.is_file():
+        # 只保留选项参数（`--port 9000`）：`serve` 这类子命令、脚本名都丢掉，
+        # 免得 `-m gantry.cli serve` 启动时把 "serve" 当成 start.py 的参数重跑。
+        extra = [a for a in sys.argv[1:] if a.startswith("-")]
+        return [str(entry)] + extra
+    if (root / "gantry" / "cli.py").is_file():
+        return ["-m", "gantry.cli", "serve"]
+    raise RuntimeError(f"找不到重启入口：{root} 下既没有 start.py 也没有 gantry/cli.py")
 
 
 def exec_restart() -> str:
@@ -132,13 +146,20 @@ def exec_restart() -> str:
     import sys
     from pathlib import Path
     argv = _entry_argv()
+    root = _project_root()
+    # exec 不会改 cwd：`start.py` 里的 `uvicorn.Config("app:app")`、config.json、
+    # data/ 都是相对 cwd 的，从别的目录启动时必须先切回项目根，否则重启起不来。
+    try:
+        os.chdir(root)
+    except Exception as exc:                # noqa: BLE001
+        log.warning("切换到项目根失败（继续尝试重启）：%s", exc)
     for h in list(_atexit):
         try:
             h()
         except Exception:
             pass
     try:
-        log.warning("正在重启服务：%s %s", sys.executable, " ".join(argv))
+        log.warning("正在重启服务：%s %s（cwd=%s）", sys.executable, " ".join(argv), root)
         os.execv(sys.executable, [sys.executable] + argv)
         return "exec"                       # 正常情况下 exec 不返回
     except Exception as exc:                # noqa: BLE001
@@ -149,7 +170,7 @@ def exec_restart() -> str:
                 flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
                          | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
             subprocess.Popen([sys.executable] + argv,
-                             cwd=str(Path(argv[0]).parent),
+                             cwd=str(root),
                              creationflags=flags, close_fds=True)
         except Exception as exc2:           # noqa: BLE001
             log.error("派生新进程也失败：%s", exc2)

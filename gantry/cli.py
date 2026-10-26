@@ -95,7 +95,7 @@ def cmd_serve(args) -> int:
     argv = [sys.executable, server]
     if args.port:
         os.environ["GANTRY_PORT"] = str(args.port)
-    os.environ["CBP_PORT"] = str(args.port)  # 兼容旧名
+        os.environ["CBP_PORT"] = str(args.port)  # 兼容旧名
     try:
         import uvicorn  # noqa: F401
     except Exception:
