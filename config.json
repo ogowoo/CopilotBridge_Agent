@@ -62,5 +62,6 @@
   "allow_copilot_file": false,
   "spans_enabled": false,
   "browser_startup": "lazy",
-  "sandbox_mode": "read-only"
+  "sandbox_mode": "read-only",
+  "allow_self_upgrade": true
 }

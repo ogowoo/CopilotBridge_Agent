@@ -596,8 +596,8 @@ class ToolsCoreMixin:
             ]
         if self.allow_self_upgrade:
             items += [
-                {"name": "self_find_files", "description": "【自升级】列举服务目录下的文件（模糊任务的「先定位」第一步：不知道文件在哪就先列）", "arguments": {"pattern": "glob，如 gantry/*.py，默认 **/*.py"}},
-                {"name": "self_search_text", "description": "【自升级】在服务目录里搜文本/正则（用户给的是模糊描述时：先搜出代码在哪，再改）", "arguments": {"query": "文本或正则", "path": "目录，默认 .", "max_results": "默认 50"}},
+                {"name": "self_find_files", "description": "【自升级】列举**服务安装目录**下的文件（排查本服务的问题时用它定位；工作区里没有服务代码）", "arguments": {"pattern": "glob，如 gantry/*.py，默认 **/*.py"}},
+                {"name": "self_search_text", "description": "【自升级】在**服务安装目录**里搜文本/正则（用户报的是本服务的按钮/功能/报错时，先用它定位；工作区工具搜不到服务代码）", "arguments": {"query": "文本或正则", "path": "目录，默认 .", "max_results": "默认 50"}},
                 {"name": "self_read_text", "description": "【自升级】读取服务自身代码（安装目录相对路径，白名单内）", "arguments": {"path": "如 gantry/agent.py", "offset": "字符偏移，默认0", "limit": "默认全文件"}},
                 {"name": "self_write_text_b64", "description": "【自升级】覆盖写入服务自身文件；代码必须 Base64 分块（每块≤3000字符），全部写完后用 self_validate + self_unittest 验证", "arguments": {"path": "安装目录相对路径", "content_b64": "Base64"}},
                 {"name": "self_append_text_b64", "description": "【自升级】追加写入服务自身文件（分块续写用）", "arguments": {"path": "安装目录相对路径", "content_b64": "Base64"}},
