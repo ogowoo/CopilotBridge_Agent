@@ -60,10 +60,10 @@ class EventSourceTests(unittest.TestCase):
     def test_disagreement_falls_back_to_columns(self):
         """投影与列不一致时必须回退到列（安全优先），而不是相信投影。"""
         # 只写列（不发事件）→ 投影认为没有未收尾步骤，列里有
-        con = self.store._connect()
-        con.execute("INSERT INTO step_dispatch(session_id,conversation_index,step_no,tool,"
-                    "args_hash,status,created) VALUES('s1',0,9,'delete_path','h','inflight',0)")
-        con.commit()
+        with self.store._connect() as con:
+            con.execute("INSERT INTO step_dispatch(session_id,conversation_index,step_no,tool,"
+                        "args_hash,status,created) VALUES('s1',0,9,'delete_path','h','inflight',0)")
+            con.commit()
         got = B.pending_steps_via("s1", "projection")
         self.assertEqual([(x["step_no"], x["tool"]) for x in got], [(9, "delete_path")],
                          "不一致时应采用列的结果")

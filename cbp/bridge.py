@@ -470,7 +470,7 @@ class AgentRequest(BaseModel):
 
 
 def log(s):
-    print(f"[{datetime.now():%H:%M:%S}] {s}", flush=True)
+    print(f"[{datetime.now():%H:%M:%S}] {s}".encode("ascii", "backslashreplace").decode("ascii"), flush=True)
 
 
 def normalize_model(model_id):

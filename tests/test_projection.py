@@ -122,12 +122,13 @@ class ProjectionAgainstRealRunTests(unittest.TestCase):
         self.assertIn("step_done", kinds)
 
         p = project(events)
-        turns_rows = [{"prompt_hash": r["prompt_hash"], "status": r["status"],
-                       "steps_after": r["steps_after"]}
-                      for r in self.store._connect().execute(
-                          "SELECT prompt_hash,status,steps_after FROM turn_results WHERE session_id='s1'")]
-        steps_rows = [dict(r) for r in self.store._connect().execute(
-            "SELECT step_no,tool,status FROM step_dispatch WHERE session_id='s1'")]
+        with self.store._connect() as con:
+            turns_rows = [{"prompt_hash": r["prompt_hash"], "status": r["status"],
+                           "steps_after": r["steps_after"]}
+                          for r in con.execute(
+                              "SELECT prompt_hash,status,steps_after FROM turn_results WHERE session_id='s1'")]
+            steps_rows = [dict(r) for r in con.execute(
+                "SELECT step_no,tool,status FROM step_dispatch WHERE session_id='s1'")]
         problems = compare_with_columns(p, turns_rows, steps_rows)
         self.assertEqual(problems, [], f"投影与列必须一致：{problems}")
         self.assertGreaterEqual(p["event_count"], 4)

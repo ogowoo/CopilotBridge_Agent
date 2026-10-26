@@ -22,7 +22,8 @@ class HealthScriptTests(unittest.TestCase):
     def _run(self, *args):
         return subprocess.run([sys.executable, str(BASE / "scripts" / "health.py"),
                                "--db", str(self.db), *args],
-                              cwd=BASE, capture_output=True, text=True)
+                              cwd=BASE, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
 
     def test_consistent_session_exit_zero(self):
         self.store.create("s-new", "任务", str(self.tmp), "m")

@@ -27,7 +27,7 @@ class McpStdioTests(unittest.TestCase):
         self.mgr = self.mod.McpManager()
 
     def tearDown(self):
-        self.mgr = self.mod.McpManager()
+        asyncio.run(self.mgr.close_all())
 
     def test_connect_lists_tools(self):
         async def scenario():
@@ -171,8 +171,8 @@ class McpHttpTests(unittest.TestCase):
         self.url = self.srv.start()
 
     def tearDown(self):
+        asyncio.run(self.mgr.close_all())
         self.srv.stop()
-        self.mgr = self.mod.McpManager()
 
     def test_http_connect_and_tools(self):
         async def scenario():

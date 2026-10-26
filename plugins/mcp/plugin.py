@@ -110,6 +110,7 @@ class McpStdioClient:
     async def start(self) -> None:
         exe = shutil.which(self.command) or self.command
         env = {**os.environ, **self.env}
+        env.setdefault("PYTHONIOENCODING", "utf-8")
         kwargs = {}
         if os.name == "nt":
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -124,9 +125,11 @@ class McpStdioClient:
         await self._handshake()
 
     async def close(self) -> None:
-        for task in (self._pump_task, self._stderr_task):
-            if task is not None:
-                task.cancel()
+        tasks = [t for t in (self._pump_task, self._stderr_task) if t]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         self._pump_task = self._stderr_task = None
         proc = self.proc
         self.proc = None
@@ -138,10 +141,11 @@ class McpStdioClient:
         except Exception:
             pass
         try:
-            await asyncio.wait_for(proc.wait(), timeout=5)
+            await asyncio.wait_for(proc.wait(), timeout=1)
         except Exception:
             try:
                 proc.kill()
+                await asyncio.wait_for(proc.wait(), timeout=1)
             except Exception:
                 pass
         # Windows 的 proactor 管道不显式关会在 GC 时刷 "unclosed transport" 警告。

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 import time
 from pathlib import Path
 from typing import Any
@@ -18,12 +19,17 @@ class SessionStore:
         self.lock = threading.RLock()
         self._init_db()
 
+    @contextmanager
     def _connect(self):
         con = sqlite3.connect(self.path, timeout=30)
-        con.row_factory = sqlite3.Row
-        con.execute("PRAGMA journal_mode=WAL")
-        con.execute("PRAGMA foreign_keys=ON")
-        return con
+        try:
+            con.row_factory = sqlite3.Row
+            con.execute("PRAGMA journal_mode=WAL")
+            con.execute("PRAGMA foreign_keys=ON")
+            with con:
+                yield con
+        finally:
+            con.close()
 
     def _init_db(self):
         with self.lock, self._connect() as con:

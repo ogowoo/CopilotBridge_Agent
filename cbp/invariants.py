@@ -328,11 +328,11 @@ def _events_reconstruct_checkpoints() -> None:
         st.patch("s1", state="completed")
 
         events = st.events("s1")
-        con = st._connect()
-        turns = [dict(r) for r in con.execute(
-            "SELECT prompt_hash,status,steps_after FROM turn_results WHERE session_id='s1'")]
-        steps = [dict(r) for r in con.execute(
-            "SELECT step_no,tool,status FROM step_dispatch WHERE session_id='s1'")]
+        with st._connect() as con:
+            turns = [dict(r) for r in con.execute(
+                "SELECT prompt_hash,status,steps_after FROM turn_results WHERE session_id='s1'")]
+            steps = [dict(r) for r in con.execute(
+                "SELECT step_no,tool,status FROM step_dispatch WHERE session_id='s1'")]
         problems = compare_with_columns(project(events), turns, steps)
         if problems:
             raise InvariantError("投影与列不一致: " + "; ".join(problems[:3]))

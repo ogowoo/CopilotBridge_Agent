@@ -282,7 +282,7 @@ class PluginHost:
         self.run_task_fn: Callable[..., Awaitable[dict[str, Any]]] | None = None
         # 由桥接层注入：把二进制写进工作区（生图等）
         self.save_file_fn: Callable[[str, bytes], str] | None = None
-        self.log_fn = log_fn or (lambda m: print(m, flush=True))
+        self.log_fn = log_fn or (lambda m: print(m.encode("ascii", "backslashreplace").decode("ascii"), flush=True))
         self.routes: dict[tuple[str, str, str], Callable[..., Any]] = {}
         self.listeners: list[tuple[str, str, Callable[..., Any]]] = []
         self.panels_list: list[dict[str, Any]] = []

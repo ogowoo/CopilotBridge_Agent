@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi.testclient import TestClient
 
 from cbp import bridge as b
+from cbp import copilot_delete as cd
 from cbp.session_store import SessionStore
 
 
@@ -19,6 +20,17 @@ class DeletionPlanTests(unittest.TestCase):
         self.ws = self.tmp / "ws"
         self.ws.mkdir()
         self.saved = (b.AGENT_SESSIONS, b.AGENT_TOOLS.root)
+        self.saved_delete = cd.delete_copilot_conversation
+        self.saved_finalize = cd.finalize_session_remote_deletion
+
+        async def fail_remote(url, marker):
+            return {"url": url, "deleted": False, "error": "mock remote failure"}
+
+        async def keep_results(sid, results):
+            return results
+
+        cd.delete_copilot_conversation = fail_remote
+        cd.finalize_session_remote_deletion = keep_results
         b.AGENT_SESSIONS = SessionStore(self.tmp / "a.db")
         b.AGENT_TOOLS.set_root(self.ws, False)
         from cbp import api as api_mod
@@ -31,6 +43,8 @@ class DeletionPlanTests(unittest.TestCase):
         b.AGENT_SESSIONS.create("prov", "问答", str(self.ws), "deepseek/deepseek-chat")
 
     def tearDown(self):
+        cd.delete_copilot_conversation = self.saved_delete
+        cd.finalize_session_remote_deletion = self.saved_finalize
         b.AGENT_SESSIONS, b.AGENT_TOOLS.root = self.saved
 
     def test_copilot_session_detected(self):

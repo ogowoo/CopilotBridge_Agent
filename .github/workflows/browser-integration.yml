@@ -1,0 +1,80 @@
+name: Browser Integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-integration
+  cancel-in-progress: false
+
+jobs:
+  browser-integration:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+
+      - name: Install locked dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt
+          python -m pip check
+
+      - name: Install Playwright Chromium
+        shell: pwsh
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run browser integration tests
+        shell: pwsh
+        run: |
+          $stdout = "browser-integration.stdout.log"
+          $stderr = "browser-integration.stderr.log"
+          $arguments = @(
+            "-m", "unittest", "-v",
+            "tests/test_copilot_file.py",
+            "tests/test_model_menu_scan.py"
+          )
+          $process = Start-Process `
+            -FilePath "python" `
+            -ArgumentList $arguments `
+            -NoNewWindow `
+            -PassThru `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr
+          if (-not $process.WaitForExit(600000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw "Browser integration tests exceeded the 10-minute timeout."
+          }
+          Get-Content $stdout -ErrorAction SilentlyContinue
+          Get-Content $stderr -ErrorAction SilentlyContinue
+          if ($process.ExitCode -ne 0) {
+            throw "Browser integration tests failed with exit code $($process.ExitCode)."
+          }
+
+      - name: Upload browser test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-integration-output
+          path: |
+            browser-integration.stdout.log
+            browser-integration.stderr.log
+          if-no-files-found: warn
+          retention-days: 14

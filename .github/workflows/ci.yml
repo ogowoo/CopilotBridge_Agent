@@ -1,0 +1,82 @@
+name: Offline CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-tests:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+
+      - name: Install locked dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt
+          python -m pip check
+
+      - name: Compile Python sources
+        shell: pwsh
+        run: |
+          @'
+          import py_compile
+          from pathlib import Path
+
+          entries = [Path("app.py"), Path("start.py"), Path("install.py")]
+          roots = [Path("cbp"), Path("scripts"), Path("tests")]
+          missing = [str(path) for path in entries if not path.is_file()]
+          missing += [str(path) for path in roots if not path.is_dir()]
+          if missing:
+              raise SystemExit("Missing required paths: " + ", ".join(missing))
+
+          files = entries[:]
+          for root in roots:
+              files.extend(sorted(root.rglob("*.py")))
+          for path in files:
+              py_compile.compile(str(path), doraise=True)
+          print(f"Compiled {len(files)} Python files.")
+          '@ | python -
+
+      - name: Run deterministic offline tests
+        shell: pwsh
+        run: |
+          @'
+          import unittest
+
+          excluded = {"test_copilot_file", "test_model_menu_scan"}
+          discovered = unittest.defaultTestLoader.discover("tests", pattern="test_*.py")
+
+          def offline_tests(suite):
+              selected = unittest.TestSuite()
+              for test in suite:
+                  if isinstance(test, unittest.TestSuite):
+                      selected.addTests(offline_tests(test))
+                  elif test.__class__.__module__.split(".")[-1] not in excluded:
+                      selected.addTest(test)
+              return selected
+
+          suite = offline_tests(discovered)
+          count = suite.countTestCases()
+          if count == 0:
+              raise SystemExit("No offline tests were discovered.")
+          print(f"Running {count} deterministic offline tests.")
+          result = unittest.TextTestRunner(verbosity=2, failfast=True).run(suite)
+          if not result.wasSuccessful():
+              raise SystemExit(1)
+          '@ | python -
