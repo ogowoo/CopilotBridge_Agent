@@ -550,6 +550,14 @@ const SLASH_COMMANDS=[
    if(t)t.value=arg;
    planModeOnce=true;        // 由后端强制只读，不只靠提示词
    runTask()}},
+ {id:'self-upgrade',label:'self-upgrade',aliases:['self-upgrade','自升级','改服务'],
+  desc:'自升级任务模板：一键填进输入框（记得先在 设置→危险区 打开「允许自升级」）',
+  run:(arg)=>{
+   const t=document.getElementById('task');
+   if(t){t.value=(arg?arg+'\n\n':'')+'[自升级任务]\n文件：gantry/<文件名>.py（安装目录相对路径，不要写绝对路径）\n现状：<你看到的现象，例如「重启后旧会话恢复失败」>\n改成：<具体要改什么；能贴函数名/字段名/代码片段最好>\n范围：只改上面的文件/逻辑，别动无关文件\n验收：self_validate + self_unittest 都通过\n交付：改了哪几行、验证结果、是否要重启、以及回滚命令';
+    setTaskMode('agent');
+    toast(tr('已载入自升级模板：把 <…> 部分填掉即可'),'ok');
+    t.focus()}}},
  {id:'help',label:'help',aliases:['help','?','帮助'],
   desc:'列出全部可用命令',run:()=>{const t=document.getElementById('task');
    if(t){t.value='/';slashUpdate(true);t.focus()}}},
@@ -4922,7 +4930,11 @@ async function renderSettings(){
  box.innerHTML=visible.map(([gid,label])=>{
   if(gid==='ui')return pane('ui',uiHtml);
   if(gid==='entries')return pane('entries',entriesHtml);
-  if(gid==='danger')return pane('danger',dangerHtml);
+  if(gid==='danger'){
+   // 危险区：先渲染 schema 里登记的高风险开关（如"允许自升级"），再放操作按钮
+   const rows=(groups[gid]||[]).map(([k,spec])=>_cfgInput(k,spec,settingsValues[k])).join('');
+   return pane('danger',(rows?`<h4>${esc(tr('高风险设置'))}</h4>${rows}`:'')+dangerHtml);
+  }
   return pane(gid,cfgPane(gid,label));
  }).join('');
  try{translateAttrs(box);translateAttrs(nav)}catch(e){}

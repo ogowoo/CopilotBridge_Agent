@@ -491,6 +491,80 @@ async def delete_copilot_conversation(url: str, expected_title: str) -> dict:
     return result
 
 
+async def scan_sidebar_markers(sids=None, scroll=True):
+    """扫描侧栏中带 GANTRY/CBP-AGENT 标记的会话行（只读，不删）。
+
+    sids 为空时用宽匹配 `[X-AGENT][…]`，否则只认这几个 sid（两套前缀都认）。
+    返回 [{text, href}]，用于「先看看还有哪些远端会话没删干净」。
+
+    侧栏是**虚拟滚动**：只有可视行被渲染，不滚会漏（实测：删完一轮还有残留）。
+    这里滚动到"内容不再变化"为止（最多 12 轮）。
+    """
+    from .brand import marker_prefix_regex
+    page = _b.page  # 模块级缓存会拿到死引用，每函数取值
+    if page is None:
+        return []
+    try:
+        await _open_chat_sidebar()
+    except Exception:
+        pass
+    if sids:
+        rxs = [marker_prefix_regex(sid) for sid in sids]
+
+        def _hit(t):
+            return any(r.search(t or "") for r in rxs)
+    else:
+        broad = re.compile(r"\[(?:GANTRY|CBP)-AGENT\]\[[^\]]+\]")
+
+        def _hit(t):
+            return bool(broad.search(t or ""))
+    out = []
+    seen = set()
+    stagnant = 0
+    for _round in range(12 if scroll else 1):
+        before = len(out)
+        try:
+            hits = page.get_by_text(re.compile(r"\[(?:GANTRY|CBP)-AGENT\]"))
+            for i in range(min(await hits.count(), 200)):
+                try:
+                    hit = hits.nth(i)
+                    if not await hit.is_visible():
+                        continue
+                    row = await _chat_row_from_link(hit)
+                    text = (await row.inner_text()).strip()
+                    if not _hit(text):
+                        continue
+                    link = row.locator('a[href*="/conversation/"]').first
+                    href = await link.get_attribute("href") if await link.count() else None
+                    key = href or text[:80]
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    out.append({"text": text[:200], "href": href})
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        if len(out) == before:
+            stagnant += 1
+            if stagnant >= 2:
+                break
+        else:
+            stagnant = 0
+        if not scroll:
+            break
+        # 滚一屏，触发虚拟列表渲染更多行
+        try:
+            anchor_el = page.locator('a[href*="/conversation/"]').first
+            if await anchor_el.count():
+                await anchor_el.hover(timeout=3000)
+                await page.mouse.wheel(0, 1500)
+                await asyncio.sleep(1.0)
+        except Exception:
+            break
+    return out
+
+
 async def finalize_session_remote_deletion(sid: str, remote_results: list) -> list:
     if not remote_results:
         return remote_results          # 没有远端条目就不用（也不该）碰浏览器

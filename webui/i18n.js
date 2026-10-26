@@ -925,6 +925,11 @@ Object.assign(I18N_EN, {
   "该提问已回答或已过期，已收起": "That question was answered or expired; collapsed",
   "调用": "Calls",
   "进行中（推断）": "In progress (inferred)",
+  "高风险设置": "High-risk settings",
+  "允许 Agent 修改服务自身代码（自升级）": "Let the agent modify the service's own code (self-upgrade)",
+  "自升级任务模板：一键填进输入框（记得先在 设置→危险区 打开「允许自升级」）": "Self-upgrade task template: fills the input (first enable \"Allow self-upgrade\" in Settings → Danger zone)",
+  "已载入自升级模板：把 <…> 部分填掉即可": "Self-upgrade template loaded — fill in the <…> parts",
+  "自升级": "Self-upgrade",
 });
 
 /* 动态渲染出来的**属性**在 DOM 层翻译（title / placeholder / aria-label）。

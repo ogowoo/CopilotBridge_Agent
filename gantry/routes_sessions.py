@@ -838,3 +838,57 @@ async def grant_approval(sid: str, payload: dict):
         pass
     return {"ok": True, "tool": tool, "args_hash": args_hash,
             "scope": scope, "note": note, "note_code": note_code}
+
+@router.post("/v1/agent/copilot/cleanup-marked")
+async def cleanup_marked_copilot(payload: dict):
+    """按会话标记清理远端 Copilot 会话（本地记录已删后也能用）。
+
+    - `scan_only=true`：只列侧栏里带标记的行（不删）；
+    - 否则对每个 sid 跑对账式删除（补删所有 `[X-AGENT][sid]` 的会话）。
+
+    为什么需要：测试/诊断会话只删本地记录时，Copilot 侧栏还留着带标记的会话；
+    本地记录删了之后 URL 映射也丢了，普通删除接口走不通。
+    """
+    sids = payload.get("sids") or []
+    scan_only = bool(payload.get("scan_only"))
+    if not isinstance(sids, list) or len(sids) > 50:
+        raise HTTPException(400, "sids 必须是列表（最多 50 个）")
+    for sid in sids:
+        if not re.match(r"^[a-zA-Z0-9_-]{3,48}$", str(sid)):
+            raise HTTPException(400, f"非法 sid: {sid}")
+    if b.current_page() is None:
+        raise HTTPException(409, "自动化浏览器未启动，无法访问 Copilot 侧栏")
+    stack = AsyncExitStack()
+    try:
+        await stack.enter_async_context(b._window("", wait_timeout=15))
+        delete_matching = bool(payload.get("delete_matching"))
+        if scan_only or delete_matching:
+            rows = await a.cd.scan_sidebar_markers(sids or None, scroll=True)
+            if not delete_matching:
+                return {"rows": rows}
+            # 逐行删：href + 行文本里提取的完整标记（行文本没标记就不敢删）
+            out = []
+            for row in rows:
+                href = row.get("href") or ""
+                if href.startswith("/"):
+                    href = "https://m365.cloud.microsoft" + href
+                m = re.search(r"\[(?:GANTRY|CBP)-AGENT\]\[[^\]]+\]\[C\d+\]",
+                              row.get("text") or "")
+                if not href or not m:
+                    out.append({"url": href, "deleted": False,
+                                "error": "行文本里没有完整标记，跳过（不敢删）"})
+                    continue
+                out.append(await a.cd.delete_copilot_conversation(href, m.group(0)))
+            return {"deleted_rows": out}
+        results = {}
+        for sid in sids:
+            try:
+                results[sid] = await a.cd.finalize_session_remote_deletion(str(sid), [])
+            except Exception as exc:            # noqa: BLE001
+                results[sid] = {"error": str(exc)}
+        return {"results": results}
+    except b.CopilotBusy as exc:
+        raise HTTPException(409, f"{exc}（清理需要独占一个浏览器窗口）") from exc
+    finally:
+        await stack.aclose()
+

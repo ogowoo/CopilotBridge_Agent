@@ -14,6 +14,27 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.7] - 2026-10-27
+
+### Added
+
+- **设置 → 危险区：「允许 Agent 修改服务自身代码（自升级）」开关**（用户要求）。
+  原有 `allow_self_upgrade` 只能手改 config.json；现在进了设置页（默认关），
+  且**即时生效**（`/v1/config` 保存时直接写回 `AGENT_TOOLS`，不用重启）。
+- **斜杠命令 `/self-upgrade`**（别名：自升级/改服务）：一键把中文自升级任务模板
+  填进输入框并切到 Agent 模式（手册里原有的英文模板做成了"方便直接填"的命令）。
+- **维护端点 `POST /v1/agent/copilot/cleanup-marked`**：本地记录删了之后，也能按
+  会话标记清理远端 Copilot 会话（`scan_only` 先列后删；`delete_matching` 逐行删）。
+  侧栏扫描支持**滚动**（虚拟列表只渲染可视行，不滚会漏——实测删一轮还剩残留）。
+
+### Fixed
+
+- **浏览器启动失败（`ERR_ABORTED`，页面停在 about:blank）**：首次启动的
+  `page.goto(..., wait_until="domcontentloaded")` 没有容错——企业租户的 SSO 会在
+  domcontentloaded 之前就重定向走，Playwright 报 `ERR_ABORTED`。复用窗口/新窗口两处
+  goto 都有兜底，唯独首次启动漏了。现在 ERR_ABORTED 视为正常（交给就绪检测接手）。
+  `tests/test_browser_boot_aborted.py`（2 条）钉住三处 goto 都必须容错。
+
 ## [11.0.0-preview.6] - 2026-10-26
 
 处理 GitHub issue #2 / #3 / #4：

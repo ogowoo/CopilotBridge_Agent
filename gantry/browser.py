@@ -99,7 +99,16 @@ async def _start_browser(headless: bool) -> bool:
         b.WINDOWS.attach_existing(b._PAGE_RAW)
     except Exception:
         pass
-    await b.page.goto(b.URL, wait_until="domcontentloaded", timeout=120000)
+    # ERR_ABORTED（domcontentloaded 之前就被 SSO 重定向走）不是失败：页面仍在跳，
+    # 后续 wait_copilot_ready 会等它落到 Copilot 输入框可用为止。
+    # 复用窗口/新窗口两处 goto 都有同样的容错，只有首次启动漏了（about:blank 实录）。
+    try:
+        await b.page.goto(b.URL, wait_until="domcontentloaded", timeout=120000)
+    except Exception as exc:
+        if "ERR_ABORTED" in str(exc):
+            b.log(f"首次导航被重定向中止（正常，SSO 跳转中）：{exc}")
+        else:
+            raise
     b._forget_selected_model()  # 页面重载，模型选择状态未知
     return b.HEADLESS_CURRENT
 

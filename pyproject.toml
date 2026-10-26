@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gantry"
-version = "11.0.0-preview.6"
+version = "11.0.0-preview.7"
 description = "把 M365 Copilot 网页端桥接成本地 OpenAI 兼容 API + Agent 运行时（含 WebUI、插件、MCP、子代理）"
 readme = "README.md"
 requires-python = ">=3.11"

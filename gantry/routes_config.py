@@ -131,6 +131,11 @@ CONFIG_SCHEMA: dict[str, dict] = {
                                  "label": "文件快照保留份数"},
     "agent.completed_session_retention_days": {"kind": "int", "min": 0, "max": 365,
                                                "group": "data", "label": "已完成会话保留天数"},
+
+    # ── 危险区（设置页单列，默认关闭）─────────────────────────────
+    "allow_self_upgrade": {"kind": "bool", "default": False,
+                           "label": "允许 Agent 修改服务自身代码（自升级）",
+                           "group": "danger"},
 }
 
 
@@ -215,6 +220,9 @@ async def set_config(payload: dict | None = None):
             b.AGENT_CFG["headless"] = val
         elif key.startswith("agent."):
             b.AGENT_CFG[key.split(".", 1)[1]] = val
+        elif key == "allow_self_upgrade":
+            # 即时生效：危险区开关一拨就能用，不用重启服务
+            b.AGENT_TOOLS.allow_self_upgrade = val
         elif key == "auto_resume":
             b.AGENT_CFG["auto_resume"] = val
 
