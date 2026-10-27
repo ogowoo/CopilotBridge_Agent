@@ -151,6 +151,16 @@ class ServiceUnavailableBadgeTests(unittest.TestCase):
         self.assertIsNotNone(m, "缺少 .retrychip 样式")
         self.assertIn("inline-flex", m.group(1).replace(" ", ""))
 
+    def test_badge_yields_to_countdown(self):
+        """有明确恢复时间点（retry_resume_at）时，badge 不得抢倒计时——
+        否则用户只能看到 ⚠ 图标，永远不知道还要等多久（issue #5 实测）。"""
+        i = APP.index("function showServiceBadge")
+        seg = APP[i:i + 600]
+        # 必须先判 retry_resume_at，再判服务错误
+        a = seg.index("retry_resume_at")
+        b = seg.index("service_error")
+        self.assertLess(a, b, "showServiceBadge 必须先判 retry_resume_at 再判 service_error")
+
     def test_no_floating_chip_left(self):
         self.assertNotIn(".retry-chip{", CSS, "旧的右下角浮层样式应已删除")
         self.assertNotIn("body .retry-chip", CSS)

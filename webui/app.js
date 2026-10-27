@@ -3270,6 +3270,10 @@ function dismissRetryOverlay(){
 function showServiceBadge(){
  const chip=document.getElementById('retryChip');
  if(!chip)return false;
+ // 有明确恢复时间点（retry_resume_at）时，倒计时卡片优先显示——
+ // 否则用户只能看到 ⚠ badge，永远不知道还要等多久（issue #5 实测）
+ const resumeAt=(lastRuntime&&lastRuntime.retry_resume_at)||null;
+ if(resumeAt&&resumeAt*1000>Date.now())return false;
  const err=String((lastRuntime&&lastRuntime.service_error)||"");
  const waiting=!!(lastRuntime&&lastRuntime.service_waiting);
  if(!(waiting||/不可用|rate.?limit|限流|超时|timeout/i.test(err)))return false;
