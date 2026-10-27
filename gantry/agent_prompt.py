@@ -8,6 +8,15 @@ from . import prompt_lang
 from .prompt import (PromptRegistry, agent_protocol, agent_team, deliverable_rule,
                      file_ops_rule, language_directive)
 
+# 自升级任务的"别去工作区"强提示（实测模型会先 list_directory('.') 把工作区里
+# 别的项目当目标——工作区只是用户项目的容器，服务代码在**安装目录**）。
+SELF_UPGRADE_TASK_LEAD_ZH = """
+【本任务是自升级】协议里"路径相对于当前工作目录"不适用本任务：目标代码在**服务安装目录**
+（self_* 工具的根），不在当前工作区。
+- 第一步就调 self_search_text / self_find_files 定位（不要 list_directory、不要读工作区文件）；
+- 搜不到就停下来问我，不要去工作区找（工作区里只是别的项目，和本服务无关）。
+"""
+
 
 class PromptMixin:
     def _system_prompt(self) -> str:
@@ -118,6 +127,25 @@ class PromptMixin:
         """自升级（修改服务自身代码）的专用规则，仅在 allow_self_upgrade 时注入。"""
         if not getattr(self.tools, "allow_self_upgrade", False):
             return ""
+        # 走 localize：英文界面要拿到译本，繁体按字转换（不然英文模式下整段提示词露中文）
+        from . import prompt_lang as _pl
+        task = getattr(self, "_task_text", "") or ""
+        is_self_task = ("[自升级任务]" in task) or ("自升级" in task)
+        zh = self._self_upgrade_rules_zh()
+        if not is_self_task:
+            return _pl.localize("self_upgrade", zh)
+        # 自升级任务：再加一段"别去工作区"的强提示（实测模型会先 list_directory('.')
+        # 把工作区里别的项目（pyshot/wgime）当成目标，一路查错项目）。
+        lead_zh = SELF_UPGRADE_TASK_LEAD_ZH
+        target = _pl.request_lang()
+        if target == "en":
+            return _pl.EN.get("self_upgrade_lead", "") + _pl.EN.get("self_upgrade", zh)
+        if target == "tw":
+            return _pl.to_tw(lead_zh + zh)
+        return lead_zh + zh
+
+    def _self_upgrade_rules_zh(self) -> str:
+        """中文版原文（localize 的唯一真源；英文用 prompt_lang.EN 的译本）。"""
         root = getattr(self.tools, "global_root", None)
         root_txt = str(root) if root else "（未设置）"
         return f"""

@@ -44,7 +44,7 @@
     "max_service_unavailable": 30,
     "service_retry_base_seconds": 30,
     "service_retry_max_seconds": 600,
-    "allow_self_upgrade": false,
+    "allow_self_upgrade": true,
     "approval_scope": "session",
     "auto_team_enabled": false,
     "auto_team_max_agents": 4,
@@ -62,6 +62,5 @@
   "allow_copilot_file": false,
   "spans_enabled": false,
   "browser_startup": "lazy",
-  "sandbox_mode": "read-only",
-  "allow_self_upgrade": true
+  "sandbox_mode": "read-only"
 }

@@ -68,6 +68,15 @@ DESC_EN: dict[str, str] = {
     "read_pdf": "Extract per-page text from a PDF",
     "tool_list": ("List every available tool and its group (the prompt only lists tools relevant "
                   "to the current task; others can still be called directly)"),
+    "self_read_text": "Read the service's own code (install-dir relative path, within whitelist)",
+    "self_write_text_b64": "Overwrite a service file; code must be Base64-chunked (<=3000 chars per chunk); run self_validate + self_unittest afterwards",
+    "self_append_text_b64": "Append to a service file (chunked continuation)",
+    "self_replace_text": "Precise replacement for the service's own code (preferred for edits)",
+    "self_find_files": "List files under the service install dir (locate first when investigating the service itself)",
+    "self_search_text": "Search text/regex in the service install dir (locate before editing; workspace tools cannot see service code)",
+    "self_validate": "Syntax-check the whole install dir; must pass for self-upgrade",
+    "self_unittest": "Run the service's own unit tests; must pass for self-upgrade",
+    "self_rollback": "Roll back this task's changes to the service's own code",
 }
 
 # 参数提示：键为 "工具.参数"
@@ -139,6 +148,22 @@ ARG_EN: dict[str, str] = {
     "write_docx.mode": "append or overwrite, default append",
     "read_pptx.path": "Relative path",
     "read_pdf.path": "Relative path",
+    "self_read_text.path": "e.g. gantry/agent.py",
+    "self_read_text.offset": "char offset, default 0",
+    "self_read_text.limit": "default whole file",
+    "self_write_text_b64.path": "install-dir relative path",
+    "self_write_text_b64.content_b64": "Base64",
+    "self_append_text_b64.path": "install-dir relative path",
+    "self_append_text_b64.content_b64": "Base64",
+    "self_replace_text.path": "install-dir relative path",
+    "self_replace_text.old": "exact original text",
+    "self_replace_text.new": "replacement text",
+    "self_replace_text.count": "default 1",
+    "self_find_files.pattern": "glob, e.g. gantry/*.py, default **/*.py",
+    "self_search_text.query": "text or regex",
+    "self_search_text.path": "directory, default .",
+    "self_search_text.max_results": "default 50",
+    "self_unittest.pattern": "default test_*.py",
 }
 
 

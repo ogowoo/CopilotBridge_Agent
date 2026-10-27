@@ -73,7 +73,8 @@ TOOL_GROUPS: dict[str, tuple[str, ...]] = {
     # copilot 组只剩"上传文件给 Copilot 分析"，关键字围绕附件/图片
     "copilot": ("copilot_attach",),
     "self": ("self_read_text", "self_write_text_b64", "self_append_text_b64",
-             "self_replace_text", "self_validate", "self_unittest", "self_rollback"),
+             "self_replace_text", "self_validate", "self_unittest", "self_rollback",
+             "self_find_files", "self_search_text"),
 }
 
 GROUP_KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -343,6 +344,8 @@ class ToolsCoreMixin:
                 "self_validate": self.self_validate,
                 "self_unittest": self.self_unittest,
                 "self_rollback": self.self_rollback,
+                "self_find_files": self.self_find_files,
+                "self_search_text": self.self_search_text,
             })
 
     def clone(self) -> "ToolRegistry":

@@ -84,3 +84,24 @@ class SelfSearchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ToolRegistrationTests(unittest.TestCase):
+    """描述/分组/分发表必须三处一致（漏分发表 = 模型看得到却调不动，实测）。"""
+
+    def test_dispatch_and_group_and_description_all_have_new_tools(self):
+        src = (ROOT / "gantry" / "tools.py").read_text(encoding="utf-8")
+        for name in ("self_find_files", "self_search_text"):
+            self.assertIn(f'"{name}"', src, f"{name} 缺注册")
+            # 分组
+            group_part = src.split('"self": (')[1].split(")")[0]
+            assert f'"{name}"' in group_part, f"{name} 不在 TOOL_GROUPS[self] 里"
+            # 分发表
+            self.assertIn(f'"{name}": self.{name}', src, f"{name} 不在 _tools 分发表里")
+
+    def test_every_described_tool_is_dispatchable(self):
+        """所有被描述的工具都必须能 dispatch（不只是这两个新的）。"""
+        import gantry.bridge as b
+        tools = b.AGENT_TOOLS
+        described = [x["name"] for x in tools.descriptions()]
+        missing = [n for n in described if n not in tools._tools]
+        self.assertEqual(missing, [], f"这些工具有描述但不能调用：{missing}")

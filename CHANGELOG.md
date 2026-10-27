@@ -14,6 +14,39 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.12] - 2026-10-27
+
+### Fixed
+
+- **危险区开关拨了没用**（全链路实测）：`allow_self_upgrade` 历史位置是 config.json 的
+  **agent 段**（`tools.py` 从 `AGENT_CFG` 读、提示文案也写 `agent.allow_self_upgrade`），
+  而 schema 键被我误写成顶层 → UI 写顶层、注册表读 agent 段 → 开关永远不生效。
+  修法：schema 键改为 `agent.allow_self_upgrade`（danger 组），live-apply 写回 `AGENT_TOOLS`；
+  撤掉此前加的"顶层并入 agent 段"（它把用户配置漏进了测试环境，炸了 13 个测试）。
+- **`self_find_files`/`self_search_text` 调不动**：只注册了描述，没进分发表
+  （`self._tools`）和工具分组（`TOOL_GROUPS["self"]`）→ 模型一调就报错，误判成
+  "没提供自升级工具"，退回工作区乱翻。三处（描述/分组/分发）现在由测试钉住一致性。
+- **自升级任务跑去工作区**（用户实测"你去到我的 wgime 项目里去了"）：
+  协议默认"路径相对于当前工作目录"，模型据此把工作区当目标。现在任务文本含
+  `[自升级任务]`/`自升级` 时额外注入一段强提示：目标代码在安装目录、不要碰工作区、
+  搜不到就停下来问。英文模式有译本（`prompt_lang.EN.self_upgrade_lead`）。
+- **英文模式下自升级段仍是中文**：`_self_upgrade_rules` 没走 `localize`，
+  实测把英文模式的中文占比顶到 6.00% 压线。补了 `prompt_lang.EN["self_upgrade"]` 译本。
+- **self_* 工具缺英文描述**：开关开着后它们进了工具清单，`tool_i18n` 没条目
+  → 英文界面露中文工具说明。补齐 9 条描述 + 16 条参数。
+
+### Verified
+
+- 模糊任务实测（不提文件名）：`self_search_text` 直接命中 `gantry/agent.py`，
+  随后 `self_read_text` 读源码，**零工作区工具**、零乱猜路径，13 秒完成。
+  回答正确定位到限流处理分支、`retry_resume_at`、suspended 状态。
+
+### Added（测试）
+
+- `tests/test_self_upgrade_wiring.py`（3 条）：键必须在 agent 段、只有一个 agent.* 分支、
+  开关开着时 self_* 工具必须可调用。
+- `test_self_search.py` 新增注册一致性（描述/分组/分发表三处必须齐全）。
+
 ## [11.0.0-preview.11] - 2026-10-27
 
 ### Fixed

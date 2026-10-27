@@ -221,6 +221,35 @@ line_start/line_count (it returns line numbers); to change specific lines (espec
 use replace_lines(start, count, content) — it edits by line number, needs no snippet match, and
 keeps the file's newline style. **Do not** use shell (Get-Content x)[n], per-character handling or
 WriteAllText to edit files.""",
+    "self_upgrade": (
+        "[Self-upgrade mode is ON] You may modify Gantry's own code (whitelist paths: "
+        "gantry/, webui/, scripts/, tests/, app.py, ...), using the self_* tools; "
+        "the service code lives in the install directory, NOT the current workspace - "
+        "to investigate a problem with the service's own buttons/features/errors, locate it "
+        "first with self_search_text / self_find_files (the workspace find_files/list_directory "
+        "cannot see the service code); report the located file/line to the user for confirmation "
+        "BEFORE editing.\n"
+        "1. Read the current code with self_read_text first; prefer self_replace_text for edits; "
+        "write files with self_write_text_b64/self_append_text_b64 (Base64, <=3000 chars per "
+        "chunk, chunked continuation).\n"
+        "2. After all edits, run self_validate (syntax check of the whole install dir) and "
+        "self_unittest (the service's own unit tests); do NOT return final until both pass.\n"
+        "3. If broken (validation fails and you cannot fix), self_rollback; never stack more "
+        "changes on a broken state.\n"
+        "4. Self-upgrade changes take effect only after a manual service restart; in final you "
+        "MUST state: what changed, verification result, restart needed, and the rollback command."
+    ),
+
+    "self_upgrade_lead": (
+        "[This task is a SELF-UPGRADE] The protocol's 'paths are relative to the workspace' "
+        "does NOT apply: the target code lives in the service install directory (the root of "
+        "the self_* tools), NOT the current workspace.\n"
+        "- First step: call self_search_text / self_find_files to locate it (do NOT "
+        "list_directory or read workspace files);\n"
+        "- If you cannot find it, STOP and ask me; do not go looking in the workspace "
+        "(the workspace only contains other projects, unrelated to this service).\n"
+    ),
+
 }
 
 # 文件分流（一句，随通道不同）：协议里以 {{CBP_FILE_ROUTING}} 引用
@@ -234,7 +263,7 @@ ROUTING_EN = {
                  "(This session uses an API provider, so the Copilot web page and "
                  "copilot_attach / copilot_file are unavailable.)"),
 }
-_BLOCK_NAMES = ("protocol", "team", "deliverable", "file_ops")
+_BLOCK_NAMES = ("protocol", "team", "deliverable", "file_ops", "self_upgrade")
 
 
 def localize(name: str, zh_text: str, lang: str | None = None) -> str:

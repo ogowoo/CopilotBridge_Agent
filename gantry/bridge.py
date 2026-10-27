@@ -541,6 +541,8 @@ HEADLESS_CURRENT = bool(CFG.get("headless", False))
 
 
 AGENT_CFG = CFG.get("agent", {})
+# 自升级开关住 agent 段（`agent.allow_self_upgrade`）：注册表从这里读。
+# 顶层同名键是历史误放/旧配置，不往这里并（会漏进测试环境——实测炸了 13 个测试）。
 AGENT_WORKSPACE = (BASE / AGENT_CFG.get("workspace", "workspace")).resolve()
 AGENT_TOOLS = ToolRegistry(AGENT_WORKSPACE, AGENT_CFG)
 # 全局作用域：服务安装目录的 AGENT.md / skills 对所有工作区生效
