@@ -787,9 +787,13 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
                 _d = min(_base * send_failures, max(_base * 4, 20))
                 _dl = time.monotonic() + _d
                 while time.monotonic() < _dl:
-                    if (self.state_getter() or {}).get("cancel_requested"):
+                    _s = self.state_getter() or {}
+                    if _s.get("cancel_requested"):
                         self.state_saver(state="cancelled", last_error=None)
                         return AgentResult("任务已取消。", all_steps)
+                    if _s.get("state") == "paused":
+                        # 暂停即停放：退避停止，恢复后回循环顶部重发
+                        break
                     await asyncio.sleep(1)
                 continue
             except (CopilotRateLimited, TimeoutError) as exc:
