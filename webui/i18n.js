@@ -930,6 +930,7 @@ Object.assign(I18N_EN, {
   "自升级任务模板：一键填进输入框（记得先在 设置→危险区 打开「允许自升级」）": "Self-upgrade task template: fills the input (first enable \"Allow self-upgrade\" in Settings → Danger zone)",
   "已载入自升级模板：把 <…> 部分填掉即可": "Self-upgrade template loaded — fill in the <…> parts",
   "自升级": "Self-upgrade",
+  "代码明文单次写入上限（字符，超出改用 Base64 分块）": "Plain-code write limit per call (chars; larger writes must use Base64 chunks)",
 });
 
 /* 动态渲染出来的**属性**在 DOM 层翻译（title / placeholder / aria-label）。

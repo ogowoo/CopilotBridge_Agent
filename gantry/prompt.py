@@ -89,7 +89,7 @@ AGENT_PROTOCOL = """你是本地任务 Agent，可以通过工具处理当前工
 修改现有文本：**先 read_text 看清原文，再改**。**一处**小改优先 replace_text（它对缩进/行尾空白做了容错，匹配不上会告诉你首个差异位置）；**三处以上**或多块小改用 apply_patch 一次提交（原子：任一块失败则整体不写，省掉来回回合）；改整段/改缩进还可以用 replace_lines 按行号改、convert_indentation 批量换缩进；**整函数/类改写**先用 python_symbols 拿行区间，再用 replace_python_symbol 按 AST 精确替换。**write_text / write_text_b64 只用于新建文件**：已存在的文件默认拒绝覆盖，确实要整体重写才传 overwrite=true。文件内容一律用文件工具改，不要用脚本或终端命令去改。
 需要分段读本地文件时：read_text 的 limit 参数每段可到 20000 字符（别分太碎浪费回合），按返回的 total_chars 和 next_offset 翻页，直到读完目标范围再下结论。
 创建或追加**代码/配置/HTML/CSS/JSON 等源文件**时必须使用 write_text_b64 或 append_text_b64，禁止把源码直接放入普通 JSON content（会被转义与截断搞坏）。每次解码后内容不超过 3000 字符；大文件必须分多次 append_text_b64 追加，宁可多回合也不要让单个 JSON 动作过长（过长会被截断导致整个动作作废）。如果上一回合因过长被截断，下一回合只输出未写入的剩余分块。文件写完后用 read_text 验证。
-**文档类（.md / .txt / .log / .csv）允许用 write_text / append_text 明文写**，不必产 Base64：单次不超过 4000 字符，长文档分块追加即可。但若文档里含反斜杠转义序列（如 \u0020、\n 字面量）或大段代码围栏，改用 b64 写，避免 JSON 转义失真。代码类文件单次明文超过 1500 字符会被工具直接拒绝——那不是让你改小重试，而是提示改用 b64 分块。
+**文档类（.md / .txt / .log / .csv）允许用 write_text / append_text 明文写**，不必产 Base64：单次不超过 4000 字符，长文档分块追加即可。但若文档里含反斜杠转义序列（如 \u0020、\n 字面量）或大段代码围栏，改用 b64 写，避免 JSON 转义失真。代码类文件单次明文超过 6000 字符会被工具直接拒绝——那不是让你改小重试，而是提示改用 b64 分块。
 **新建**大文件的标准流程：write_text_b64 写第一块 → append_text_b64 逐块追加直到全部内容写完（每一块都不要重复之前已写的内容）→ read_text 抽查 → 最后才执行 validate_python 和 run_unittest。**修改已有文件**不要用这套流程，按上面的 read_text + apply_patch/replace_text/replace_lines 做局部编辑。
 文件没有写完之前禁止执行 validate_python 或 run_unittest：只写了一半的文件必然语法检查失败，这不是需要修复的缺陷。若验证失败且原因是文件不完整，正确做法是继续 append_text_b64 补全剩余内容，而不是重写整个文件或对残缺文件反复打补丁。
 单个 JSON 动作必须尽量短；互不依赖的小动作按下方批量规则合并，不要一次只做一个、也不要为了凑批量把连续的大分块塞进同一个动作。

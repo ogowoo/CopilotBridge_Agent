@@ -50,15 +50,15 @@ class PlainTextPolicyTests(unittest.TestCase):
     # ── 代码类：超限拒绝 ───────────────────────────────────────────
     def test_code_plain_write_over_limit_rejected(self):
         with self.assertRaises(ToolError) as ctx:
-            self._write("big.py", "x = 1\n" * 400)       # 2400 字符
+            self._write("big.py", "x = 1\n" * 1400)      # 8400 字符（>6000 才真超限）
         msg = str(ctx.exception)
         self.assertIn("write_text_b64", msg, "错误信息要指路到 b64")
-        self.assertIn("1500", msg)
+        self.assertIn("6000", msg)
 
     def test_code_plain_append_over_limit_rejected(self):
         self._write("s.py", "print(1)\n")
         with self.assertRaises(ToolError):
-            asyncio.run(self.r.append_text("s.py", "print(2)\n" * 300))
+            asyncio.run(self.r.append_text("s.py", "print(2)\n" * 700))
 
     def test_short_code_file_allowed(self):
         """短文件仍可明文写（提示词允许"新文件或完整短文件"）。"""
@@ -67,7 +67,7 @@ class PlainTextPolicyTests(unittest.TestCase):
     def test_code_extensions_covered(self):
         for name in ("a.json", "b.html", "c.css", "d.yml", "e.ps1", "f.ts"):
             with self.assertRaises(ToolError, msg=f"{name} 应受明文限制"):
-                self._write(name, "z" * 2000)
+                self._write(name, "z" * 7000)
 
     # ── b64 路径：永远放行 ─────────────────────────────────────────
     def test_b64_write_bypasses_limit(self):
@@ -96,7 +96,7 @@ class PromptPolicyWordingTests(unittest.TestCase):
         self.assertIn("文档类", AGENT_PROTOCOL)
         self.assertIn(".md", AGENT_PROTOCOL)
         self.assertIn("4000", AGENT_PROTOCOL, "文档明文的单次上限要写出来")
-        self.assertIn("1500", AGENT_PROTOCOL, "代码明文的硬上限要写出来")
+        self.assertIn("6000", AGENT_PROTOCOL, "代码明文的硬上限要写出来")
 
     def test_tool_description_states_split(self):
         ws = Path(tempfile.mkdtemp(prefix="cbp_desc_"))

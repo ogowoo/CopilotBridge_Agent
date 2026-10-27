@@ -274,7 +274,7 @@ class FilesMixin:
         """代码类文件不允许"一大段明文塞进单个 JSON 动作"。
 
         为什么：模型把长代码直接放进 action JSON 时，引号/反斜杠转义和输出截断
-        会把内容搞坏（实测）。所以代码类超过 `plain_code_limit`(默认 1500) 时
+        会把内容搞坏（实测）。所以代码类超过 `plain_code_limit`（默认 6000） 时
         要求改用 write_text_b64 / append_text_b64 分块。
         **文档类（md/txt/log 等）不受此限**：写长报告本来就该明文分块，不该逼
         模型去产 Base64——历史上正是这个压力把它推去用 PowerShell heredoc，

@@ -123,6 +123,8 @@ CONFIG_SCHEMA: dict[str, dict] = {
                                  "label": "子代理最多步数"},
     "agent.approval_scope": {"kind": "enum", "values": ["each", "session"], "group": "exec",
                              "label": "审批范围"},
+    "plain_code_limit": {"kind": "int", "min": 500, "max": 50000, "group": "exec",
+                         "label": "代码明文单次写入上限（字符，超出改用 Base64 分块）"},
     "agent.context_token_budget": {"kind": "int", "min": 2000, "max": 2000000, "group": "exec",
                                    "label": "上下文预算（token）"},
     "agent.max_sessions": {"kind": "int", "min": 1, "max": 500, "group": "data",

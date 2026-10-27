@@ -279,7 +279,7 @@ class ToolsCoreMixin:
                           ".json", ".html", ".htm", ".css", ".scss", ".yml", ".yaml",
                           ".toml", ".ini", ".cfg", ".sh", ".ps1", ".bat", ".sql",
                           ".xml", ".vue", ".svelte")
-        self.plain_code_limit = int(config.get("plain_code_limit", 1500))
+        self.plain_code_limit = int(config.get("plain_code_limit", 6000))
 
         # "需要 Copilot 网页会话"的工具：provider（API）会话里禁用（见 set_web_copilot_tools）
         self.web_copilot_tools = ("copilot_attach", "copilot_file")
