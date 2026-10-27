@@ -1900,7 +1900,7 @@ html,body{overflow:hidden}
 /* UROW-EXPANDED: 四条横条展开后的内容区用同一套规范——
    左侧缩进对齐行首（12px）、上下内边距 4/8、限高 34vh 内部滚动、
    行高 1.6、字号 12.5、hover 同色；列表项统一 5px 6px + 圆角。 */
-.todolist, #subagentList, #activity.streamdetail{max-height:34vh;overflow:auto}
+.todolist, #subagentList, #activity.streamdetail{max-height:46vh;overflow:auto}
 .todolist{margin:0;padding:2px 12px 8px;border-left:0}
 #subagentList{padding:2px 12px 8px}
 #activity.streamdetail{padding:10px 12px;background:var(--panel2);
@@ -1920,7 +1920,7 @@ html,body{overflow:hidden}
    对齐线：左缩进 12px（和行首文字对齐）；上下 2/8；限高 34vh 内部滚动；12.5px。 */
 #goalBar .todolist,
 #subagentBar #subagentList,
-#activity.streamdetail{max-height:34vh;overflow:auto;font-size:12.5px;line-height:1.6}
+#activity.streamdetail{max-height:46vh;overflow:auto;font-size:12.5px;line-height:1.6}
 #goalBar .todolist{margin:0;padding:2px 12px 8px;border-left:0}
 #subagentBar #subagentList{padding:2px 12px 8px}
 #activity.streamdetail{padding:10px 12px;background:var(--panel2);border-top:1px solid var(--line)}
@@ -2263,7 +2263,7 @@ html,body{overflow:hidden}
 #chat > #teamCard > #activity{max-height:min(14vh, 180px);overflow:auto}
 
 /* CAPS-FIT-VH2: 小屏（768）也装得下——body 16vh / 子代理 11vh。 */
-#chat > #teamCard > #toolLog > #toolLogBody{max-height:min(16vh, 200px);overflow:auto}
+#chat > #teamCard > #toolLog > #toolLogBody{max-height:min(34vh, 380px);overflow:auto}
 #chat > #teamCard #subagentList{max-height:min(11vh, 132px);overflow:auto}
 
 /* CHATLOG-MIN-96: 小屏时把对话区下限让出 24px，底部四行 + 展开内容不必再滚动。 */
@@ -2271,7 +2271,7 @@ html,body{overflow:hidden}
 
 /* CARD-HUG-CONTENT: 底部块按内容高度（收起时 = 四行 108px），不再强制 180px，
    否则收起调用记录后底下会留一条空白。 */
-#chat > #teamCard{flex:0 1 auto;min-height:0;max-height:min(58vh, 620px);overflow:auto}
+#chat > #teamCard{flex:0 1 auto;min-height:0;max-height:min(74vh, 860px);overflow:auto}
 
 /* FILECARD: 「给我看这个文件」的卡片（文本带行号 / 图片直显 / 二进制给下载）。 */
 .filecard{margin:8px 0;border:1px solid var(--line2);border-radius:10px;
@@ -2311,3 +2311,10 @@ html,body{overflow:hidden}
   pointer-events:none;z-index:6;opacity:0;transition:opacity .25s ease;
   background:none;border:0;outline:0}
 #chat > #teamCard.busy ~ .teamscope{opacity:1}
+
+/* ROWS-TALLER: 四行展开高度（用户实测"太矮"）。级联底部有十几条一路压小的旧规则
+   （min(11vh,132px) 等），这条放在最末尾统一抬起来；仍保留内部滚动，不撑破卡片。 */
+#chat > #teamCard > #goalBar .todolist{max-height:min(38vh, 400px);overflow:auto}
+#chat > #teamCard #subagentList{max-height:min(38vh, 400px);overflow:auto}
+#chat > #teamCard > #activity{max-height:min(38vh, 400px);overflow:auto}
+#chat > #teamCard > #toolLog > #toolLogBody{max-height:min(38vh, 420px);overflow:auto}
