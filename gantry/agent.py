@@ -437,7 +437,9 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
         history = list(state.get("recent_steps") or [])
         all_steps: list[dict[str, Any]] = []
         parse_failures = 0
-        service_failures = 0
+        # 限流重试次数必须从持久状态恢复：挂起/暂停/重启会新建 runner，
+        # 若从 0 起步，界面上每次都显示"第 1 次"，用户无法判断到底重试了多少次。
+        service_failures = int(state.get("retry_attempt") or 0)
         send_failures = 0
         # 验证闭环三面旗必须从持久状态恢复：暂停→继续/服务重启会新建 runner，
         # 若从 False 起步，"代码已改但没验证"的记忆就丢了，恢复后的 Agent 直接
