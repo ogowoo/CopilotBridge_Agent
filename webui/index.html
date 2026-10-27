@@ -140,6 +140,7 @@
       <section class="card teamcard" id="teamCard" hidden>
         <div id="goalBar" class="goalbar urow" hidden></div>
         <section class="subagents" id="subagentBar" style="display:none">
+          <div id="subagentList" class="subagentlist"></div>
           <div class="chead urow"><span class="urow-ic" id="subagentDot" data-dot="on" title="子代理状态"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="7"/></svg></span>
             <b class="urow-label" data-i18n="子代理">子代理</b>
             <span id="subagentCount" class="subcount urow-count"></span>
@@ -148,10 +149,10 @@
                       title="收起/展开子代理（点标题也行）"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 L6 8 L9.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </span>
           </div>
-          <div id="subagentList" class="subagentlist"></div>
         </section>
           <!-- 工具调用记录：默认只显示**最新一条**（与状态条同款一行），点它浮动展开 -->
         <section class="toollog" id="toolLog" hidden>
+          <div class="toollogbody" id="toolLogBody" hidden></div>
           <div class="toolloglatest urow" id="toolLogLatest" data-act="toggleToolLog"
                  title="点一下展开/收起调用记录" data-i18n-title="点一下展开/收起调用记录">
             <span class="ss-ic" id="toolLogIc">•</span>
@@ -161,10 +162,9 @@
             <span class="toollogclock" id="toolLogClock"></span>
             <span class="urow-right"><span class="urow-chev" id="toolLogChev">▸</span></span>
           </div>
-          <div class="toollogbody" id="toolLogBody" hidden></div>
         </section>
+        <div id="activity" class="kvpane streamdetail" hidden></div>
         <div class="streamstatus urow" id="streamStatus" data-act="toggleStreamDetail" title="点一下展开/收起完整状态">—</div>
-          <div id="activity" class="kvpane streamdetail" hidden></div>
         <canvas class="teamscope" id="teamScope" aria-hidden="true"></canvas>
       </section>
       <section class="card">

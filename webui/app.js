@@ -2899,7 +2899,7 @@ function renderGoalBar(r){
     +'<span class="urow-right"><span class="urow-chev">'+(todosOpen?'▾':'▸')+'</span></span>');
  }
  // 行与清单分两层：#goalBar 只是容器，hover 只作用在 .goalhead / .todoitem 上
- el.innerHTML='<div class="goalhead urow">'+parts.join('<span class="gb-sep">·</span>')+'</div>';
+ const headHtml='<div class="goalhead urow">'+parts.join('<span class="gb-sep">·</span>')+'</div>';
  if(todos.length&&todosOpen){
   const list=document.createElement('div');
   list.className='todolist';
@@ -2930,7 +2930,11 @@ function renderGoalBar(r){
    hint.textContent=tr('任务已结束，但待办状态没有同步（模型收尾时没有更新 todo）。');
    list.appendChild(hint);
   }
+  el.innerHTML='';
   el.appendChild(list);
+  el.insertAdjacentHTML('beforeend', headHtml);
+ } else {
+  el.innerHTML=headHtml;
  }
  try{syncTeamCard()}catch(e){}
 }
