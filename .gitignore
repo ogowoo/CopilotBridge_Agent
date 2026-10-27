@@ -33,3 +33,8 @@ Thumbs.db
 .commit_msg.txt
 # 调试截图（验证 UI 时生成的临时 PNG）
 _*.png
+
+# 密钥与本地环境（.env.example 是模板，可入库）
+.env
+.env.local
+!.env.example

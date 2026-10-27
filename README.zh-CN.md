@@ -152,6 +152,13 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
   }'
 ```
 
+## 密钥与环境变量（.env）
+
+- **不要把密钥写进 `config.json` 再提交**——它历史上被 git 跟踪过（现已脱钩）。
+- 新建 `.env`（已入 `.gitignore`）放密钥；`config.json` 里用 `"${VAR}"` 引用；
+- 读取优先级：**系统环境变量 > .env > config.json 字面量**（系统已有的不会被 .env 覆盖）；
+- 模板见 `.env.example`；启动时若 config.json 里仍有明文敏感字段，日志会提醒。
+
 ## 配置说明（config.json）
 
 ### 顶层

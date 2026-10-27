@@ -8,7 +8,7 @@
 
 > **Works without Copilot**: the browser starts on demand — service startup never touches the browser, and the WebUI plus provider models (DeepSeek/Kimi/OpenAI, etc.) are usable immediately; the browser is only launched when Copilot is actually needed, and a status with a "Retry browser" button is shown at the top of the UI. **Note**: in lazy mode, the first Copilot task after a restart must wait for the browser to launch and for SSO (can take several minutes on enterprise tenants); that waiting time does not count toward the task timeout. Provider models are unaffected.
 
-> **Version**: the `main` branch is currently **11.0.0-preview.12** (the multi-window parallel preview line has been merged in).
+> **Version**: the `main` branch is currently **11.0.0-preview.13** (the multi-window parallel preview line has been merged in).
 > The old stable line is archived at tag `v10.2.1-archive` / branch `archive/10.2.1-stable`.
 > For versioning rules, release process, and multi-machine collaboration conventions, see [docs/VERSIONING.md](docs/VERSIONING.md);
 > for changes in each release, see [CHANGELOG.md](CHANGELOG.md).
@@ -151,6 +151,14 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
     "workspace": "C:/path/to/project"
   }'
 ```
+
+## Secrets and environment variables (.env)
+
+- **Never commit secrets in `config.json`** — it was tracked by git historically (now untracked).
+- Put keys in `.env` (git-ignored) and reference them from `config.json` as `"${VAR}"`;
+- Precedence: **system environment variables > .env > literals in config.json**
+  (existing system variables are never overwritten by .env);
+- Template: `.env.example`. If `config.json` still has a plaintext secret, startup logs a warning.
 
 ## Configuration (config.json)
 

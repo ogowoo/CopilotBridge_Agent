@@ -24,7 +24,20 @@ from .spans import SpanRecorder, set_recorder
 from .tools import SANDBOX_MODES, ToolError, ToolRegistry
 
 BASE = Path(__file__).resolve().parent.parent  # 包在 gantry/ 内，项目根目录再上一层
-CFG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
+
+# 密钥与环境变量：先读系统环境变量（最高优先），再把 .env 里**没设过的**补进来；
+# config.json 里的 "${VAR}" 引用随后解析。优先级：系统环境 > .env > config.json 字面量。
+from . import envfile as _envfile
+_envfile.load_env_file(BASE / ".env")
+
+CFG = _envfile.resolve_placeholders(
+    json.loads((BASE / "config.json").read_text(encoding="utf-8")))
+_plain_secrets = _envfile.warn_plaintext_secrets(CFG)
+if _plain_secrets:
+    import logging as _log
+    _log.getLogger("gantry").warning(
+        "config.json 里有明文敏感字段（建议搬到 .env 后用 ${VAR} 引用）：%s",
+        ", ".join(_plain_secrets))
 validate_token_budget(CFG.get("agent", {}))
 PROFILE = BASE / "EdgeProfile"
 URL = CFG["copilot_url"]

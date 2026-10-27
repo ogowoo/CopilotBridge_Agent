@@ -11,7 +11,7 @@
   "diagnostics": true,
   "diagnostic_html": false,
   "default_model": "copilot-auto",
-  "api_token": "",
+  "api_token": "${GANTRY_TOKEN}",
   "csrf_protect": true,
   "csrf_allowed_origins": [],
   "server": {
@@ -143,5 +143,6 @@
     "user_turn": [
       "You said:"
     ]
-  }
+  },
+  "_secrets_note": "密钥放 .env（不入库），这里用 ${VAR} 引用；系统环境变量优先于 .env。"
 }

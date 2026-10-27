@@ -152,6 +152,13 @@ curl -X POST http://127.0.0.1:8765/v1/agent/completions \
   }'
 ```
 
+## 金鑰與環境變數（.env）
+
+- **不要把金鑰寫進 `config.json` 再提交**——它歷史上被 git 追蹤過（現已脫鉤）。
+- 新建 `.env`（已入 `.gitignore`）放金鑰；`config.json` 裡用 `"${VAR}"` 引用；
+- 讀取優先級：**系統環境變數 > .env > config.json 字面量**（系統已有的不會被 .env 覆蓋）；
+- 範本見 `.env.example`；啟動時若 config.json 裡仍有明文敏感欄位，日誌會提醒。
+
 ## 設定說明（config.json）
 
 ### 頂層

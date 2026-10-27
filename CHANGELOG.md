@@ -14,6 +14,26 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.13] - 2026-10-27
+
+### Added
+
+- **`.env` 密钥文件**（用户提议）：密钥放 `.env`（已入 `.gitignore`），
+  `config.json` 里用 `"${VAR}"` 引用。
+  - 读取优先级：**系统环境变量 > .env > config.json 字面量**（用户明确要求：
+    系统已有的环境变量**不会**被 .env 覆盖——`load_env_file` 只补缺）；
+  - 支持 `#` 注释、`export` 前缀、单/双引号、行内注释；
+  - 引用了但没设置的 `${VAR}` 保留原样并记 warning（不静默置空，避免把 token 抹成空串）；
+  - config.json 里仍有明文敏感字段（key/token/secret/password）时启动日志提醒。
+  - 模板：`.env.example`；`config.example.json` 的 api_token 示例改为 `${GANTRY_TOKEN}`。
+- **config.json 从 git 脱钩**（`git rm --cached`）：它历史上被跟踪过，这是密钥泄漏的
+  唯一通道（`.gitignore` 忽略了它但已在跟踪里照样入库）。文件保留在盘上，只是不再入库。
+
+### Added（测试）
+
+- `tests/test_envfile.py`（6 条）：系统优先、注释/引号/export 解析、占位符解析与
+  未设置保留、明文敏感字段点名、加载顺序（.env 先于 config.json）。
+
 ## [11.0.0-preview.12] - 2026-10-27
 
 ### Fixed
