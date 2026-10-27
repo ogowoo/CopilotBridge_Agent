@@ -118,9 +118,12 @@ class PromptMixin:
         """自升级（修改服务自身代码）的专用规则，仅在 allow_self_upgrade 时注入。"""
         if not getattr(self.tools, "allow_self_upgrade", False):
             return ""
-        return """
+        root = getattr(self.tools, "global_root", None)
+        root_txt = str(root) if root else "（未设置）"
+        return f"""
 
 【自升级模式已开启】你可以修改 Gantry 服务自身的代码（gantry/、webui/、scripts/、tests/、app.py 等白名单路径），用 self_* 系列工具操作；
+**安装目录的真实路径是 `{root_txt}`**（self_* 工具的根就是它，不用你猜；项目改名后文件夹名可能还是旧的，绝对不要按名字猜路径、更不要自己拼 c:\\gantry 之类的目录）；
 **服务代码在安装目录，当前工作区里没有**——排查「服务自身的按钮/功能/报错」这类问题时，**先用 self_search_text / self_find_files 定位**（工作区的 find_files/list_directory 搜不到服务代码，实测会去工作区乱翻然后问用户路径）；定位到文件/行号后先报告给用户确认，再动手改；config.json、data/、EdgeProfile/ 禁止触碰。硬性流程：
 1. 先 self_read_text 看清现状，修改优先用 self_replace_text 精确替换；写文件用 self_write_text_b64/self_append_text_b64（Base64、每块≤3000字符、分块续写），一次只做一件相关的改动。
 2. 全部写完后执行 self_validate（全安装目录语法检查）与 self_unittest（服务自身单测），两者 passed=true 前禁止返回 final。

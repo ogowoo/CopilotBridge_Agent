@@ -14,6 +14,17 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.11] - 2026-10-27
+
+### Added
+- 
+
+### Changed
+- 
+
+### Fixed
+-
+
 ## [11.0.0-preview.10] - 2026-10-27
 
 ### Changed
