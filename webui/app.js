@@ -3071,6 +3071,68 @@ function stopScope(){
  try{o.ctx.clearRect(0,0,o.w,o.h)}catch(e){}
 }
 
+/* ── 发送/停止按钮切换（仿 DSH：运行中变"强行停止"） ── */
+function updateSendButton(busy){
+ const btn=document.getElementById('sendFollowup');
+ if(!btn)return;
+ btn.classList.toggle('stop', !!busy);
+ // 用字面量赋值（不变量检查靠 data-act="stopTask" 这类静态引用找实现，三元表达式会漏）
+ if(busy){btn.dataset.act='stopTask'}else{btn.dataset.act='sendFollowup'}
+ btn.title=busy?tr('强行停止当前任务'):tr('发送');
+ btn.setAttribute('aria-label', btn.title);
+}
+function stopTask(){
+ if(!current)return;
+ if(!lastRuntime||!lastRuntime.busy)return;
+ // 与服务端的「取消任务」同一通道：actions/cancel（状态落库 + 通知 runner）
+ try{api(`/v1/agent/sessions/${encodeURIComponent(current)}/actions/cancel`,{method:'POST'})}catch(e){}
+ toast(tr('已要求停止当前任务'),'ok');
+}
+
+/* ── @ 文件弹层（DSH 的 @ 体验：输入 @ 唤起工作区文件选择） ── */
+let _atTimer=null, _atItems=[], _atIdx=0, _atOpen=false;
+function _atQuery(){
+ const ta=document.getElementById('followup');
+ if(!ta)return null;
+ const pos=ta.selectionStart||0;
+ const before=ta.value.slice(0,pos);
+ // 光标前最后一个 @（前面是空格/开头），取到光标为止的连续非空白字符
+ const m=/(^|[\s])@([^\s@]{0,80})$/.exec(before);
+ if(!m)return null;
+ return {query:m[2], start:pos-m[2].length};
+}
+async function atUpdate(){
+ const q=_atQuery();
+ const menu=document.getElementById('atMenu');
+ if(!menu)return;
+ if(!q){atClose();return}
+ try{
+  const d=await api('/v1/agent/workspace/files?sid='+encodeURIComponent(current||'')
+   +'&q='+encodeURIComponent(q.query)+'&limit=50');
+  _atItems=d.files||[]; _atIdx=0;
+ }catch(e){_atItems=[]}
+ if(!_atItems.length){menu.innerHTML='<div class="meta" style="padding:8px 10px">'
+  +esc(tr('没有匹配的文件'))+'</div>';}
+ else menu.innerHTML=_atItems.map((f,i)=>`<div class="atrow${i===_atIdx?' on':''}" data-i="${i}">
+   <code>📄</code><span class="sdesc" title="${esc(f)}">${esc(f)}</span></div>`).join('');
+ menu.hidden=false; _atOpen=true;
+ menu.querySelectorAll('.atrow').forEach(row=>{
+  row.onclick=()=>atPick(Number(row.dataset.i));
+ });
+}
+function atPick(i){
+ const f=_atItems[i]; if(!f)return;
+ const ta=document.getElementById('followup'), q=_atQuery();
+ if(!ta||!q){atClose();return}
+ // 用选中的路径替换 @query（保留 @ 前缀）
+ ta.value=ta.value.slice(0,q.start)+f+ta.value.slice(q.start+q.query.length);
+ ta.focus(); atClose();
+}
+function atClose(){
+ const menu=document.getElementById('atMenu');
+ if(menu)menu.hidden=true; _atOpen=false;
+}
+
 async function applyRuntime(r){
  if(!r)return;
  lastRuntime=r;              // 供 toggleTodos 重绘待办清单
@@ -3083,6 +3145,7 @@ async function applyRuntime(r){
    const _chat=document.getElementById('chat');
    if(_chat&&_tc)_chat.style.setProperty('--teamcard-h', _tc.offsetHeight+'px');
   }catch(e){}
+  updateSendButton(!!r.busy);
   if(_tc){
    const was=_tc.classList.contains('busy');
    const now=!!r.busy;
@@ -4743,7 +4806,27 @@ attachPasteHandler('followup','follow');
   if(!el) return;
   el.addEventListener('input',autoGrowFollowup);
   document.addEventListener('visibilitychange',autoGrowFollowup);
+  // @ 文件弹层：输入时刷新；↑↓/Enter/Esc 键盘操作
+  el.addEventListener('input',()=>{clearTimeout(_atTimer);_atTimer=setTimeout(atUpdate,200)});
+  el.addEventListener('keydown',e=>{
+   if(!_atOpen)return;
+   if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+    e.preventDefault();
+    _atIdx=Math.max(0,Math.min(_atItems.length-1,_atIdx+(e.key==='ArrowDown'?1:-1)));
+    document.querySelectorAll('#atMenu .atrow').forEach((r,i)=>r.classList.toggle('on',i===_atIdx));
+   }else if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();atPick(_atIdx)}
+   else if(e.key==='Escape'){e.preventDefault();atClose()}
+  });
+  document.addEventListener('click',e=>{if(_atOpen&&!e.target.closest('#atMenu')&&!e.target.closest('#followup'))atClose()});
 })();
+/* 旧实现保留在下方（不删）：原 bindFollowupAutoGrow 只绑了 input/visibilitychange */
+function bindFollowupAutoGrowLegacy(){
+  const el=document.getElementById('followup');
+  if(!el) return;
+  el.addEventListener('input',autoGrowFollowup);
+  document.addEventListener('visibilitychange',autoGrowFollowup);
+}
+
 (async()=>{try{await api('/v1/agent/sessions');hideConnBanner()}
  catch(e){
   // 以前 fetch 网络失败与 401 落进同一个 catch，一律 DEMO=true → 界面显示硬编码假数据，
@@ -5073,6 +5156,7 @@ const ACTIONS={
  setFollowupMode:(el)=>setFollowupMode(el.dataset.arg),
  setTaskMode:(el)=>setTaskMode(el.dataset.arg),
  sendFollowup:()=>sendFollowup(),
+ stopTask:()=>stopTask(),
  exportTimeline:()=>exportTimeline(),
  refreshModels:()=>refreshModels(),
  runTask:()=>runTask(),

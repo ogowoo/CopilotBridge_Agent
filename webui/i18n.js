@@ -932,6 +932,10 @@ Object.assign(I18N_EN, {
   "自升级": "Self-upgrade",
   "代码明文单次写入上限（字符，超出改用 Base64 分块）": "Plain-code write limit per call (chars; larger writes must use Base64 chunks)",
   "收尾提醒写记忆（做了实质工作却没记过时，拦一次 final）": "Remind to write memory at task end (blocks final once when ≥3 productive steps but no memory_write)",
+  "强行停止当前任务": "Force-stop the current task",
+  "已要求停止当前任务": "Stop requested for the current task",
+  "没有匹配的文件": "No matching files",
+  "选择文件": "Pick a file",
 });
 
 /* 动态渲染出来的**属性**在 DOM 层翻译（title / placeholder / aria-label）。

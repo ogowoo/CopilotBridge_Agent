@@ -389,6 +389,18 @@ def _map_agent_error(exc: Exception) -> Exception:
 @router.post("/v1/agent/completions")
 async def agent_completions(req: a.AgentRequest, request: HttpRequest = None):
     prompt_lang.set_request_lang(request.headers.get(a._LANG_HEADER) if request is not None else None)
+    # @文件引用展开：新任务也可以 @工作区里的文件（内容随消息一起发）。
+    try:
+        from .atrefs import expand_at_mentions
+        from pathlib import Path as _Path
+        _root = _Path(str(req.workspace or b.AGENT_TOOLS.root or (b.BASE / "workspace"))).resolve()
+        for _m in (req.messages or []):
+            if _m.role == "user" and "@" in (_m.content or ""):
+                _expanded, _refs = expand_at_mentions(_m.content, _root)
+                if _refs:
+                    _m.content = _expanded
+    except Exception as _e:
+        b.log(f"@ 引用展开失败（忽略）: {_e}")
     if not req.agent_mode:
         # 普通对话模式：创建 Session 绑定 Copilot 会话，但不跑工具循环
         try:

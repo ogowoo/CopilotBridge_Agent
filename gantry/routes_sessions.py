@@ -439,6 +439,17 @@ async def continue_session_message(sid: str, req: a.SessionMessageRequest,
         raise HTTPException(400, "消息不能为空")
     if not content:
         content = "请分析我附上的图片。"
+    # @文件引用展开：@工作区里的文件，发消息时把内容带上（DSH 的 @ 体验）。
+    # 展开后再走"给我看文件"的拦截（引用了同名文件就不再拦，内容已经在消息里）。
+    _at_refs = []
+    try:
+        from .atrefs import expand_at_mentions
+        _root = Path(str(state.get("workspace") or (b.BASE / "workspace"))).resolve()
+        _expanded, _at_refs = expand_at_mentions(content, _root)
+        if _at_refs:
+            content = _expanded
+    except Exception as _e:
+        b.log(f"@ 引用展开失败（忽略）: {_e}")
     model_id = b.normalize_model_soft(req.model or state.get("model") or b.DEFAULT_MODEL)
     if model_id != (req.model or state.get("model")):
         b.AGENT_SESSIONS.patch(sid, model=model_id)  # 清理会话里遗留的失效模型
@@ -838,6 +849,28 @@ async def grant_approval(sid: str, payload: dict):
         pass
     return {"ok": True, "tool": tool, "args_hash": args_hash,
             "scope": scope, "note": note, "note_code": note_code}
+
+@router.get("/v1/agent/workspace/files")
+async def workspace_files(sid: str = "", q: str = "", limit: int = 50):
+    """@ 弹层的文件检索：按相对路径子串匹配（工作区守卫，拒绝越界）。
+
+    会话指定 sid 时用它自己的 workspace；否则用默认工作区。
+    """
+    from .atrefs import search_files
+    root = None
+    if sid:
+        state = b.AGENT_SESSIONS.get(sid)
+        if state and state.get("workspace"):
+            root = Path(str(state["workspace"]))
+    if root is None:
+        root = b.AGENT_TOOLS.root if getattr(b.AGENT_TOOLS, "root", None) else (b.BASE / "workspace")
+    try:
+        root = Path(root).resolve()
+    except Exception:
+        raise HTTPException(400, "工作区不可用")
+    return {"files": search_files(root, q, limit=max(1, min(int(limit or 50), 200))),
+            "root": str(root)}
+
 
 @router.post("/v1/agent/copilot/cleanup-marked")
 async def cleanup_marked_copilot(payload: dict):
