@@ -936,6 +936,7 @@ Object.assign(I18N_EN, {
   "已要求停止当前任务": "Stop requested for the current task",
   "没有匹配的文件": "No matching files",
   "选择文件": "Pick a file",
+  "任务进行时的心跳动画（卡片上沿的示波器）": "Heartbeat animation while a task runs (the oscilloscope above the card)",
 });
 
 /* 动态渲染出来的**属性**在 DOM 层翻译（title / placeholder / aria-label）。

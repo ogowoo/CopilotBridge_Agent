@@ -3058,6 +3058,7 @@ function scopeFrame(){
 }
 function startScope(){
  if(_scopeRAF)return;
+ try{if(localStorage.getItem('gantry-teamscope-heartbeat')==='0')return;}catch(e){}
  const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
  _scopeStyle=null;
  _scopeIntensity=0.5; _scopeTarget=0.9; _scopeTimer=12;
@@ -4998,7 +4999,10 @@ async function renderSettings(){
        .map(([v,t])=>`<option value="${v}" ${_settingsTheme()===v?'selected':''}>${esc(tr(t))}</option>`).join('')}</select></label>
    <label class="setrow"><span>${esc(tr('语言'))}</span>
      <select id="setLang" data-ui="lang">${[['zh','中文'],['en','English'],['tw','繁體中文']]
-       .map(([v,t])=>`<option value="${v}" data-i18n-skip="1" ${currentLang()===v?'selected':''}>${esc(t)}</option>`).join('')}</select></label>`;
+       .map(([v,t])=>`<option value="${v}" data-i18n-skip="1" ${currentLang()===v?'selected':''}>${esc(t)}</option>`).join('')}</select></label>
+   <label class="setrow"><input type="checkbox" id="setTeamScopeHeartbeat" data-ui="scope"
+     ${localStorage.getItem('gantry-teamscope-heartbeat')==='0'?'':'checked'}>
+     <span>${esc(tr('任务进行时的心跳动画（卡片上沿的示波器）'))}</span></label>`;
 
  const entriesHtml=`<h4>${esc(tr('入口'))}</h4>
    <div class="setbtns">
@@ -5066,6 +5070,8 @@ async function saveSettings(){
  const langSel=document.getElementById('setLang');
  if(themeSel&&themeSel.value!==themeChoice()){try{localStorage.setItem('gantry-theme',themeSel.value)}catch(e){};applyTheme(themeSel.value,false);applyLangButton()}
  if(langSel&&langSel.value!==currentLang()){setLang(langSel.value)}
+ const teamScopeHeartbeat=document.getElementById('setTeamScopeHeartbeat');
+ if(teamScopeHeartbeat){try{localStorage.setItem('gantry-teamscope-heartbeat',teamScopeHeartbeat.checked?'1':'0')}catch(e){}}
  // 只提交**改动过**的字段：整表提交时，空的文本/枚举控件会被后端校验拒掉
  // （实测 ``default_model: ""`` 让整批保存 400），也会把没动过的键来回写文件。
  const raw=collectSettings();
