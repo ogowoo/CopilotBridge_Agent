@@ -68,6 +68,9 @@ AGENT_ACTION_SCHEMA: dict[str, Any] = {
 }
 
 
+_PRODUCTIVE_TOOLS = ("write_text", "write_text_b64", "append_text", "append_text_b64", "replace_text", "apply_patch", "exec", "pwsh", "copilot_file", "create_goal", "write_office", "edit_office", "send_outlook", "post_web", "subagent_many", "create_skill", "self_write_text_b64", "self_replace_text", "self_append_text_b64")
+
+
 class AgentPaused(Exception):
     """回合等待期间用户请求暂停，由桥接层抛出，用于立即中断并停放。"""
 
@@ -462,7 +465,8 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
         # 实测两个缺口：① 模型幻觉式宣称"已记录/已完成"（零工具调用）；
         # ② 先读一堆文件、再直接 final 不写任何产出——原先只拦 total==0，
         #    这种"读完了就宣布完成"完全不被拦（用户实测：能读，没有写步骤）。
-        noop_strikes = 0   # 允许连续拒绝的次数，超限放行，避免小模型无限重试烧 token
+        noop_strikes = 0
+        _memory_nudged = False   # 记忆提醒只拦一次（fail-open），不无限拦
         # 实例级标记：换会话（rollover）发生在同一次 run() 内，而 history 会被
         # 截断；用实例标记记住"本次运行有没有真的产出/尝试过产出"。
         self._action_done = False
@@ -1000,6 +1004,30 @@ class AgentRunner(PromptMixin, ParseMixin, TextMixin):
                                 "error": f"任务要求实际动手（创建/修改/写入/运行），但你{_where}"
                                          f"就宣布完成。请先用工具落地结果{_how}，"
                                          "再返回 final；若确实无需任何改动，请明确说明原因后再次 final。"}
+                        history.append(warn); all_steps.append(warn); self.step_saver(warn)
+                        total += 1
+                        self.state_saver(total_steps=total, recent_steps=history[-self.keep_recent:],
+                                         last_error=warn["error"])
+                        continue
+                    # 记忆提醒（软钩子，与 noop_guard 同模式）：做了实质工作却一条
+                    # memory_write 都没记过时，拦一次 final 提醒它——实测历史里 memory_write
+                    # 全库只被调 1 次，软提示对模型等于不存在。拦一次就放行（不无限拦）。
+                    _mem_enabled = str(self.config.get("memory_nudge", "1")) not in ("0", "false", "False")
+                    _did_memory_write = any(
+                        (s2.get("tool") == "memory_write") and (s2.get("status") == "ok")
+                        for s2 in all_steps)
+                    _productive_n = sum(
+                        1 for s2 in all_steps
+                        if (s2.get("status") == "ok") and (s2.get("tool") in _PRODUCTIVE_TOOLS))
+                    # 阈值 ≥3：写 1~2 个文件的小任务不打扰（批量测试/日常小改就是这么挂的），
+                    # 真正做了一段活才提醒收尾记一条。
+                    if (_mem_enabled and _productive_n >= 3 and not _did_memory_write
+                            and not _memory_nudged):
+                        _memory_nudged = True
+                        warn = {"step": total + 1, "status": "memory_nudge",
+                                "error": "本次任务若有**跨任务仍有价值**的事实（用户偏好、环境特征、"
+                                         "某个接口的坑、已验证的结论），先用 memory_write 记一条再 final；"
+                                         "确实没有可记的，就明说「没有」然后再次 final（只提醒这一次）。"}
                         history.append(warn); all_steps.append(warn); self.step_saver(warn)
                         total += 1
                         self.state_saver(total_steps=total, recent_steps=history[-self.keep_recent:],

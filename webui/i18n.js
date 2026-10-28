@@ -931,6 +931,7 @@ Object.assign(I18N_EN, {
   "已载入自升级模板：把 <…> 部分填掉即可": "Self-upgrade template loaded — fill in the <…> parts",
   "自升级": "Self-upgrade",
   "代码明文单次写入上限（字符，超出改用 Base64 分块）": "Plain-code write limit per call (chars; larger writes must use Base64 chunks)",
+  "收尾提醒写记忆（做了实质工作却没记过时，拦一次 final）": "Remind to write memory at task end (blocks final once when ≥3 productive steps but no memory_write)",
 });
 
 /* 动态渲染出来的**属性**在 DOM 层翻译（title / placeholder / aria-label）。
