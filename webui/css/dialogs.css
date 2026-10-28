@@ -49,3 +49,20 @@
 .manual code{background:var(--term-bg);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-family:Consolas,monospace;font-size:12px;color:var(--nm)}
 .manual kbd{border:1px solid var(--line2);border-radius:5px;padding:1px 6px;font-size:12px;background:var(--panel2)}
 
+/* ── 并入（原 refinements.css 的 5 条规则，保持原相对顺序）── */
+/* TOAST-TOP: 提示信息统一在**顶部居中**显示（像 DSH 的通知条）。
+   顶部可能还有"连接异常"横幅与"浏览器未就绪"细横条，用 --banner-h/--boot-h 让开；
+   多条提示向下堆叠，窄屏限宽。提示不再占底部空间（--toast-h 从底部内边距里移除）。 */
+.toasts{position:fixed;top:calc(10px + var(--boot-h,0px) + var(--banner-h,0px));
+  left:50%;right:auto;bottom:auto;transform:translateX(-50%);
+  z-index:120;display:flex;flex-direction:column;align-items:center;gap:8px;
+  max-width:min(560px,92vw);pointer-events:none}
+.toast{background:var(--panel);border:1px solid var(--line2);border-radius:10px;
+  padding:9px 16px;font-size:13px;line-height:1.5;color:var(--text);
+  box-shadow:0 10px 28px -10px var(--menu-shadow);max-width:100%;
+  white-space:pre-wrap;word-break:break-word;pointer-events:none;
+  animation:dlgIn .16s ease-out}
+.toast.err{border-color:var(--red);color:var(--danger-text)}
+.toast.ok{border-color:var(--green);color:var(--green)}
+@media(max-width:860px){.toasts{top:calc(6px + var(--boot-h,0px) + var(--banner-h,0px));
+  max-width:94vw}}

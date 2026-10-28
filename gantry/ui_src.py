@@ -43,7 +43,7 @@ def ui_js(root: str | None = None) -> str:
 CSS_ORDER = [
     "tokens.css", "shell.css", "chat.css", "dialogs.css", "themes.css",
     "overlays.css", "composer.css", "layout.css", "settings.css",
-    "alerts.css", "refinements.css",
+    "alerts.css", "rows.css", "changes.css",
 ]
 
 

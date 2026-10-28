@@ -198,3 +198,42 @@ mark.gantry-hit.cur{background:var(--accent);color:#fff;box-shadow:0 0 0 2px var
 /* 限流倒计时：居中卡片（可收起为右下角小标——原先贴右上角会挡住模型选择器） */
 /* 收起后的小标（右下角，不挡顶部控件） */
 
+/* ── 并入（原 refinements.css 的 25 条规则，保持原相对顺序）── */
+/* MD-READABLE: 让"报告类"回答好读。
+   之前只有 .md-h/.md-hr 几条，段落之间几乎没间距、列表贴边、正文宽度吃满整屏，
+   一屏 100+ 字的行宽读起来很累（用户："markdown 相当于没有，一点都不易读"）。 */
+.md-body{line-height:1.78;font-size:13.5px}
+.md-body > *:first-child{margin-top:0}
+.md-body > *:last-child{margin-bottom:0}
+.md-body p{margin:.6em 0}
+.md-body p + p{margin-top:.75em}
+/* 正文限宽：超宽屏上不要一行 200 字（表格/代码块不受限，自己滚） */
+.md-body > p, .md-body > ul, .md-body > ol, .md-body > blockquote,
+.md-body > .md-h, .md-body > .md-hr{max-width:76ch}
+.md-body ul, .md-body ol{margin:.5em 0 .6em;padding-left:1.35em}
+.md-body li{margin:.22em 0}
+.md-body li > ul, .md-body li > ol{margin:.2em 0}
+.md-body .md-h{margin:1.1em 0 .45em;letter-spacing:.01em}
+.md-body .md-h2{border-bottom:1px solid var(--line);padding-bottom:.25em}
+.md-body blockquote{margin:.7em 0;padding:.15em 0 .15em .9em;
+  border-left:3px solid var(--line2);color:var(--muted)}
+.md-body .md-hr{margin:1.1em 0}
+.md-body .md-tablewrap{margin:.8em 0}
+.md-body strong, .md-body b{color:var(--text)}
+/* FILECARD: 「给我看这个文件」的卡片（文本带行号 / 图片直显 / 二进制给下载）。 */
+.filecard{margin:8px 0;border:1px solid var(--line2);border-radius:10px;
+  background:var(--panel);overflow:hidden}
+.filecard .fc-head,.filecard .fc-img-cap{display:flex;align-items:center;gap:8px;
+  padding:7px 10px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:12.5px}
+.filecard .fc-name{flex:1 1 auto;min-width:0;font-weight:600;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filecard .fc-meta{flex:none;color:var(--faint);font-size:11.5px;font-variant-numeric:tabular-nums}
+.filecard .fc-btn{flex:none;font-size:11.5px;color:var(--accent);background:none;border:0;
+  padding:0 4px;cursor:pointer;text-decoration:none}
+.filecard .fc-btn:hover{text-decoration:underline}
+.filecard .fc-body{margin:0;max-height:420px;overflow:auto;padding:8px 10px;
+  font-size:12px;line-height:1.65;white-space:pre;tab-size:4}
+.filecard .fc-body .fc-ln{display:inline-block;width:3.2em;text-align:right;margin-right:10px;
+  color:var(--faint);user-select:none}
+.filecard .fc-img{display:block;max-width:100%;height:auto;background:var(--panel2)}
+.filecard img{cursor:zoom-in}

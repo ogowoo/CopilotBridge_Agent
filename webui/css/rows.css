@@ -1,144 +1,12 @@
-/* refinements.css — 收尾打磨（按时间累积）：任务完成卡片、diff 浮层、离屏跳过、侧栏页脚、toast 置顶、正文可读性、四条横条（待办/子代理/调用记录/状态）的统一与 hover。
+/* rows.css — 底部四条横条的统一规范（待办 / 子代理 / 调用记录 / 状态）。
  *
- * 样式已按块拆分（原 style.css 2341 行 → 11 个文件）。
- * ⚠ 加载顺序 = 层叠顺序：11/11，由 index.html 里的 <link> 顺序决定，
- * 不要用 CSS 的 import 指令（会串行阻塞首屏）。新增规则请放进语义对应的文件。
+ * 这四行是「一屏看清在干什么」的核心：同一套行高（36）、同样的内边距/字号/hover，
+ * 展开区也共用一套（左缩进 12px、限高 vh、内部滚动）。历史上它们是十几轮迭代逐条
+ * 压出来的，文件里确实存在「后写覆盖先写」，所以**顺序有语义**：新的覆盖规则追加到
+ * 本文件末尾，不要插到中间。
  */
-/* ── 任务完成卡片：本次改动 / 交付物（对齐 DSH 的 Edited N files）── */
-.chgcard{margin:10px 0 4px;border:1px solid var(--line2);border-radius:12px;
-  background:var(--panel);overflow:hidden;flex:none}
-.chg-head{display:flex;align-items:center;gap:10px;padding:9px 12px;
-  background:var(--panel2);border-bottom:1px solid var(--line);font-size:12.5px}
-.chg-head b{font-weight:600;color:var(--text)}
-.chg-stat{margin-left:auto;display:flex;gap:9px;font-family:ui-monospace,Consolas,monospace}
-.chg-add{color:var(--green);font-style:normal}
-.chg-del{color:var(--red);font-style:normal}
-.chg-list{display:flex;flex-direction:column}
-.chg-row{display:flex;align-items:center;gap:9px;padding:6px 12px;font-size:12.5px;
-  border-top:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
-.chg-row:first-child{border-top:0}
-.chg-row.click{cursor:pointer}
-.chg-row:hover{background:color-mix(in srgb,var(--accent) 7%,var(--panel))}
-.chg-ico{flex:none;min-width:26px;text-align:center;font-size:10px;font-weight:700;
-  border-radius:5px;padding:1px 4px;border:1px solid var(--line2);color:var(--muted);
-  font-family:ui-monospace,Consolas,monospace}
-.chg-ico.added{color:var(--green);border-color:color-mix(in srgb,var(--green) 45%,var(--line2))}
-.chg-ico.modified{color:var(--blue);border-color:color-mix(in srgb,var(--blue) 45%,var(--line2))}
-.chg-ico.deleted{color:var(--red);border-color:color-mix(in srgb,var(--red) 45%,var(--line2))}
-.chg-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-family:ui-monospace,Consolas,monospace;color:var(--text)}
-.chg-num{flex:none;display:flex;gap:8px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
-.chg-bin{color:var(--faint);font-style:normal;font-size:11.5px}
-.chg-more{margin:7px 12px 10px;align-self:flex-start}
-.chg-deliv{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 12px;
-  border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
-.chg-deliv b{font-weight:600;color:var(--text);margin-right:2px}
-.chg-dchip{border:1px solid var(--line2);border-radius:999px;padding:1px 9px;
-  background:var(--panel2);font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
-  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chg-empty{color:var(--muted)}
-/* diff 浮层（复用 liveMask 的 <pre>）*/
-.dline{display:block;white-space:pre-wrap;word-break:break-word;padding:0 2px}
-.dline.d-add{color:var(--green);background:color-mix(in srgb,var(--green) 10%,transparent)}
-.dline.d-del{color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}
-.dline.d-hunk{color:var(--accent2)}
-.dline.d-head{color:var(--faint)}
 
-/* 长会话：离屏消息/步骤跳过布局与绘制（不改 DOM 结构，滚动到哪渲染到哪） */
-.chatlog .msg{content-visibility:auto;contain-intrinsic-size:auto 96px}
-#steps .step{content-visibility:auto;contain-intrinsic-size:auto 72px}
-
-/* RAIL-FOOTER: 侧栏底部一行「⚙ 设置 …… 版本号」，像 DSH。
-   它是 flex 列里的最后一个子项（flex:none），会话列表在它上方内部滚动，
-   所以列表**不可能**再滚到设置/版本号那一带。 */
-.rail{display:flex;flex-direction:column}
-#sessions{flex:1 1 auto;min-height:0;overflow:auto}
-.railfoot{flex:none;position:relative;display:flex;align-items:center;gap:8px;
-  padding:8px 12px;border-top:0;background:var(--panel);
-  min-height:34px;box-sizing:content-box}
-/* 分隔线：中间实、两端渐隐（1px 渐变，不吃布局） */
-.railfoot::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;
-  background:linear-gradient(90deg,
-    transparent 0%, color-mix(in srgb, var(--line) 55%, transparent) 14%,
-    var(--line) 34%, var(--line) 66%,
-    color-mix(in srgb, var(--line) 55%, transparent) 86%, transparent 100%);
-  pointer-events:none}
-.railgear{display:inline-flex;align-items:center;gap:7px;
-  border:0;background:none;padding:4px 6px;border-radius:8px;cursor:pointer;
-  color:var(--muted);font:inherit;font-size:12.5px;line-height:1;flex:none}
-.railgear svg{width:15px;height:15px;flex:none}
-.railgear:hover{background:var(--panel2);color:var(--accent)}
-.railgear:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.btmver{flex:1 1 auto;min-width:0;text-align:right;color:var(--faint);
-  font-size:11.5px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;user-select:none}
-.btmver[hidden]{display:none}
-/* 侧栏收起（桌面只剩 34px 图标条）：只留齿轮图标，标签与版本号藏起来 */
-:root[data-rail="closed"] .railfoot{padding:8px 0;justify-content:center}
-:root[data-rail="closed"] .railfoot::before{display:none}
-:root[data-rail="closed"] .railgear .raillabel{display:none}
-:root[data-rail="closed"] .railfoot .btmver{display:none}
-/* 窄屏抽屉收起时侧栏整体不显示 → 保留一个浮在左下角的齿轮兜底入口 */
-@media(max-width:860px){
-  :root:not([data-rail="open"]) .railfoot{position:fixed;left:8px;bottom:10px;z-index:56;
-    border:1px solid var(--line2);border-radius:50%;padding:0;background:var(--panel);
-    width:34px;height:34px;justify-content:center;box-shadow:0 6px 18px -8px var(--menu-shadow)}
-  :root:not([data-rail="open"]) .railgear{padding:0;width:34px;height:34px;justify-content:center}
-  :root:not([data-rail="open"]) .railfoot .btmver{display:none}
-  .railfoot{padding:8px 12px}
-}
-
-/* RAIL-FOOTER-NARROW: 窄屏抽屉展开时，侧栏也按 flex 列排：
-   顶部工具行/筛选/列表（列表内部滚动）+ 底部固定 footer。 */
-@media(max-width:860px){
-  :root[data-rail="open"] .rail{display:flex;flex-direction:column;
-    overflow:hidden;padding:52px 0 0}
-  :root[data-rail="open"] .rail > .railtop,
-  :root[data-rail="open"] .rail > .listhead,
-  :root[data-rail="open"] .rail > #gSearch{flex:none}
-  :root[data-rail="open"] .rail > #sessions{flex:1 1 auto;min-height:0;overflow:auto}
-  :root[data-rail="open"] .railfoot{flex:none}
-}
-
-/* TOAST-TOP: 提示信息统一在**顶部居中**显示（像 DSH 的通知条）。
-   顶部可能还有"连接异常"横幅与"浏览器未就绪"细横条，用 --banner-h/--boot-h 让开；
-   多条提示向下堆叠，窄屏限宽。提示不再占底部空间（--toast-h 从底部内边距里移除）。 */
-.toasts{position:fixed;top:calc(10px + var(--boot-h,0px) + var(--banner-h,0px));
-  left:50%;right:auto;bottom:auto;transform:translateX(-50%);
-  z-index:120;display:flex;flex-direction:column;align-items:center;gap:8px;
-  max-width:min(560px,92vw);pointer-events:none}
-.toast{background:var(--panel);border:1px solid var(--line2);border-radius:10px;
-  padding:9px 16px;font-size:13px;line-height:1.5;color:var(--text);
-  box-shadow:0 10px 28px -10px var(--menu-shadow);max-width:100%;
-  white-space:pre-wrap;word-break:break-word;pointer-events:none;
-  animation:dlgIn .16s ease-out}
-.toast.err{border-color:var(--red);color:var(--danger-text)}
-.toast.ok{border-color:var(--green);color:var(--green)}
-@media(max-width:860px){.toasts{top:calc(6px + var(--boot-h,0px) + var(--banner-h,0px));
-  max-width:94vw}}
-
-/* MD-READABLE: 让"报告类"回答好读。
-   之前只有 .md-h/.md-hr 几条，段落之间几乎没间距、列表贴边、正文宽度吃满整屏，
-   一屏 100+ 字的行宽读起来很累（用户："markdown 相当于没有，一点都不易读"）。 */
-.md-body{line-height:1.78;font-size:13.5px}
-.md-body > *:first-child{margin-top:0}
-.md-body > *:last-child{margin-bottom:0}
-.md-body p{margin:.6em 0}
-.md-body p + p{margin-top:.75em}
-/* 正文限宽：超宽屏上不要一行 200 字（表格/代码块不受限，自己滚） */
-.md-body > p, .md-body > ul, .md-body > ol, .md-body > blockquote,
-.md-body > .md-h, .md-body > .md-hr{max-width:76ch}
-.md-body ul, .md-body ol{margin:.5em 0 .6em;padding-left:1.35em}
-.md-body li{margin:.22em 0}
-.md-body li > ul, .md-body li > ol{margin:.2em 0}
-.md-body .md-h{margin:1.1em 0 .45em;letter-spacing:.01em}
-.md-body .md-h2{border-bottom:1px solid var(--line);padding-bottom:.25em}
-.md-body blockquote{margin:.7em 0;padding:.15em 0 .15em .9em;
-  border-left:3px solid var(--line2);color:var(--muted)}
-.md-body .md-hr{margin:1.1em 0}
-.md-body .md-tablewrap{margin:.8em 0}
-.md-body strong, .md-body b{color:var(--text)}
-
+/* ── 并入（原 refinements.css 的 226 条规则，保持原相对顺序）── */
 /* UROW-UNIFIED: 待办 / 子代理 / 调用记录 / 状态 四条横条用**同一款行**。
    高度 36、左右内边距 12、字号 12.5、顶部一条分隔线、hover 同色；
    左边图标 + 粗体标签 + 计数，中间单行省略的摘要，右边时间/步数/Token + 折叠箭头。
@@ -160,7 +28,6 @@
   width:14px;height:14px;color:var(--faint)}
 .urow .urow-chev svg{width:12px;height:12px;display:block;transition:transform .15s ease}
 .urow.open .urow-chev svg{transform:rotate(180deg)}
-
 /* 待办条：🎯目标 + 待办按钮都在同一行里，摘要单行省略，按钮靠右 */
 #goalBar.goalbar{flex-wrap:wrap}
 #goalBar.goalbar > .gb-goal{flex:0 1 auto;min-width:0;max-width:none;overflow:hidden;
@@ -173,14 +40,12 @@
 /* 待办展开区：整行宽、缩进对齐，不挤在横条里 */
 #goalBar.goalbar > .todolist{flex:1 1 100%;margin:0;border-left:0;
   padding:2px 12px 8px;max-height:34vh;overflow:auto}
-
 /* 子代理条：图标/标签/计数/右侧箭头，和状态条同一行样式 */
 #subagentBar > .chead.urow{padding:2px 12px;min-height:36px}
 #subagentBar .chead .subcount{margin-left:0;font-size:12px;color:var(--faint)}
 #subagentBar .chead .dot-on{font-size:9px}
 #subagentBar .chead .cardchev{width:14px;height:14px;color:var(--faint);background:none;border:0;padding:0}
 #subagentBar.collapsed > .chead .cardchev svg{transform:rotate(-90deg)}
-
 /* 调用记录条：计数不再是胶囊，摘要单行省略，右侧时间 + 展开入口 */
 #toolLog .toolloglatest.urow{padding:2px 12px;gap:8px}
 #toolLog .toollogcount{flex:none;color:var(--faint);font-size:12px;border:0;background:none;padding:0}
@@ -188,7 +53,6 @@
   text-overflow:ellipsis;color:var(--muted)}
 #toolLog .toollogclock{flex:none;color:var(--faint);font-size:11.5px}
 #toolLog .tolexpandhint{flex:none;color:var(--accent);font-size:11.5px;padding-left:0}
-
 /* 状态条：相位当标签、摘要单行省略、步数/Token 靠右，并给一个折叠箭头位 */
 #streamStatus.streamstatus.urow{flex-wrap:nowrap;padding:2px 12px;min-height:36px;gap:8px}
 #streamStatus .ss-phase{flex:none;font-size:12.5px;font-weight:600}
@@ -198,7 +62,6 @@
 #streamStatus .ss-err{flex:none;max-width:38ch;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;color:var(--amber, #d97706);font-size:11.5px}
 #streamStatus .ss-sep{color:var(--line2)}
-
 /* UROW-HEIGHT: 四条横条等高（36）；待办展开清单时才变高（内容要往下长）。 */
 .urow{height:36px}
 #goalBar.goalbar{height:36px;align-items:center}
@@ -211,7 +74,6 @@
   overflow:hidden;text-overflow:ellipsis}
 .subagentrow .sa-meta{flex:none;margin-left:auto;color:var(--faint);font-size:11.5px;
   white-space:nowrap;font-variant-numeric:tabular-nums}
-
 /* UROW-EXPANDED: 四条横条展开后的内容区用同一套规范——
    左侧缩进对齐行首（12px）、上下内边距 4/8、限高 34vh 内部滚动、
    行高 1.6、字号 12.5、hover 同色；列表项统一 5px 6px + 圆角。 */
@@ -220,9 +82,6 @@
 #subagentList{padding:2px 12px 8px}
 #activity.streamdetail{padding:10px 12px;background:var(--panel2);
   border-top:1px solid var(--line);font-size:12.5px;line-height:1.6}
-
-
-
 /* 列表项（待办 / 子代理）同一套：同样的内边距、圆角、hover、字号 */
 .todoitem, .subagentrow{padding:5px 6px;border-radius:7px;font-size:12.5px;line-height:1.6;
   gap:8px;transition:background-color .12s ease}
@@ -230,7 +89,6 @@
 .todoitem .tic, .subagentrow > span:first-child{flex:none;width:14px;text-align:center}
 .todoitem .tst{flex:none;margin-left:auto;font-size:11px;color:var(--faint);
   border:1px solid var(--line2);border-radius:999px;padding:0 7px;line-height:1.65}
-
 /* UROW-EXPANDED2: 展开区的统一规范（id 级选择器，压过历史规则）。
    对齐线：左缩进 12px（和行首文字对齐）；上下 2/8；限高 34vh 内部滚动；12.5px。 */
 #goalBar .todolist,
@@ -242,7 +100,6 @@
 #goalBar .todoitem,
 #subagentBar .subagentrow{padding:5px 6px;border-radius:7px;font-size:12.5px;line-height:1.6;gap:8px}
 #goalBar .todoitem .tst{margin-left:auto}
-
 /* KVPANE: 状态条展开后的键值行。与待办/子代理的展开区同一规范：
    12px 左内边距、12.5px、行高 1.6、限高 34vh 内部滚动、不染色 hover。 */
 #activity.kvpane{max-height:34vh;overflow:auto;padding:10px 12px;background:var(--panel2);
@@ -253,7 +110,6 @@
 #activity.kvpane .kvv{flex:1 1 auto;min-width:0;color:var(--text);
   white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:760px){#activity.kvpane .kvk{flex-basis:80px}}
-
 /* DOT-FIX: 状态圆点必须固定 9×9 正圆，不能被行布局拉成椭圆。
    之前 `.urow-ic{width:14px}` + `.subagentrow > span:first-child{width:14px}`
    把 9px 的点撑成 14×9 的扁椭圆（用户截图）。 */
@@ -262,10 +118,8 @@
 #subagentBar .chead .dot-on{width:9px;height:9px}
 .subagentrow > span:first-child{flex:none;width:9px !important;height:9px !important;
   padding:0;font-size:0;line-height:0;align-self:center}
-
 /* TOOLLOG-COMPACT: 调用记录浮层里的步骤行改成紧凑行（与待办/子代理展开区同款）：
    无边框、无底色块、12.5px、行内 5px 6px、hover 高亮；详情折叠成一行小字。 */
-
 /* TOOLLOG-INLINE: 调用记录改成**行内展开**（与待办/子代理/状态同一种展开方式，
    不再浮层弹出）。展开区与其它三块同一规范：12px 内边距、限高 34vh 内部滚动。 */
 #toolLog{flex:none;border-top:1px solid var(--line);background:var(--panel)}
@@ -291,7 +145,6 @@
 #toolLog > #toolLogBody .streamstep .ss-det[open] summary::before{content:"▾ "}
 #toolLog > #toolLogBody .streamstep .ss-det pre{margin:4px 0 0;max-height:220px;overflow:auto;
   padding:7px 9px;font-size:12px;line-height:19px}
-
 /* TODO-HOVER-VISIBLE: 待办条目 hover 必须一眼看出"鼠标在哪一条"（用户：看不出来，
    子代理那边反而清楚）。用 id 级选择器压过 .todo-completed / .todo-in_progress
    的底色规则，hover 时统一加一层强调色。 */
@@ -303,7 +156,6 @@
 #goalBar .todoitem:hover .tic{color:var(--accent)}
 /* 子代理行同样用强调色的 hover（与待办一致，不只是 --panel2 那一点点） */
 #subagentBar .subagentrow:hover{background:color-mix(in srgb, var(--accent) 10%, var(--panel))}
-
 /* ROW-HOVER-ONE: 所有行的 hover 底色统一成一个变量（之前待办 16%、子代理 10%，
    肉眼一看就是两个色）。`--row-hover` 引用主题变量，切主题自动跟随。 */
 :root{--row-hover:color-mix(in srgb, var(--accent) 13%, var(--panel))}
@@ -314,19 +166,16 @@
 #subagentBar .subagentrow:hover{background:var(--row-hover)}
 #toolLog > #toolLogBody .streamstep:hover{background:var(--row-hover)}
 .toollogpop .streamstep:hover{background:var(--row-hover)}
-
 /* HOVER-SCOPE: hover 只高亮**被指的那一行**。
    问题：展开的待办清单 `.todolist` 是 `#goalBar` 的子元素，鼠标移到条目上时
    父级 `#goalBar:hover` 也被命中 → 整块（横条 + 清单）一起变色（用户："应该不会整体变"）。
    这里在"鼠标位于清单内"时把父级底色撤掉，只留条目自己的高亮。 */
 /* 横条本身（含目标信息）仍可 hover 高亮 */
-
 /* HOVER-SCOPE2: 压掉 `#chat > #teamCard > .goalbar:hover{background:var(--panel2)}`
    （它让 hover 待办条目时整块变成 #f4f6fa）。同一条选择器链上补 id，优先级更高：
    ① 鼠标在展开清单内 → 父级不画底色（保持 --panel 的白）；
    ② 鼠标在横条本身 → 用统一的 --row-hover。 */
 /* 子代理条同理：鼠标在列表里时横条不高亮 */
-
 /* HOVER-ITEM-ONLY: 待办块（#goalBar）本身 hover 时**不变色**。
    之前只有"鼠标在清单里"才排除父级，于是横条、分组边缘、底部提示行 hover 时
    整块仍会变色（用户截图：上下两端移动上去就变）。现在父级恒定用面板底色，
@@ -335,7 +184,6 @@
 #chat > #teamCard > #goalBar.goalbar:hover,
 #goalBar.goalbar,
 #goalBar.goalbar:hover{background:transparent}
-
 /* ROW-HOVER-FINAL: 所有"行"的 hover 用同一条规则、同一个颜色。
    之前：待办 16%、子代理 10%、`#goalBar:hover` 用 --panel2（偏灰蓝）——三者肉眼可辨。
    现在：统一 `--row-hover`（accent 14% 兑 panel），并用 id 级选择器覆盖
@@ -353,7 +201,6 @@
 #goalBar.goalbar:hover,
 #chat > #teamCard > #goalBar.goalbar,
 #chat > #teamCard > #goalBar.goalbar:hover{background:var(--panel)}
-
 /* GOALHEAD: 待办块拆成"行 + 清单"两层后的结构样式。
    `#goalBar` 只是容器（不参与 hover，恒定面板底色）；
    `.goalhead` 才是那一行（与其它三条横条同款 .urow）；`.todolist` 是它的兄弟。 */
@@ -363,7 +210,6 @@
 #goalBar .goalhead{width:100%}
 #goalBar .goalhead:hover{background:var(--row-hover)}
 #goalBar .todolist{padding:2px 12px 8px;margin:0;border-left:0}
-
 /* ROWS-ONE-SECTION: 四条行同属 #teamCard（分隔线已去掉，示波器浮层代替） */
 #chat > #teamCard > .goalbar{padding:0;margin:0;border:0;background:var(--panel)}
 #chat > #teamCard > #subagentBar{border-top:0}
@@ -373,7 +219,6 @@
 #chat > #teamCard .urow{border-top:0}
 /* 行自身左右到边：内容仍由 .urow 的 12px 内边距控制 */
 #chat > #teamCard > *{width:100%;box-sizing:border-box}
-
 /* SVG-ICON-SIZE: 四条横条与步骤行统一用内联 SVG 图标（14×14，颜色跟随文字/状态）。 */
 .urow .urow-ic{display:inline-flex;align-items:center;justify-content:center;
   flex:none;width:14px;height:14px;color:var(--faint)}
@@ -389,14 +234,12 @@
 /* 子代理状态点：SVG 圆，宽高固定不拉伸 */
 #subagentDot{width:10px !important;height:10px !important;color:var(--green)}
 #subagentDot svg{width:10px;height:10px}
-
 /* TURN-FLOW: 调用记录里的"发送 / 回答"行。与工具步骤同一套行样式，
    只用左图标颜色区分：发送=强调色、回答=绿色。 */
 #toolLogBody .turnrow .ss-tool{color:var(--muted);font-weight:600}
 #toolLogBody .turnrow.tbody-send .ss-ic{color:var(--accent)}
 #toolLogBody .turnrow.tbody-answer .ss-ic{color:var(--green)}
 #toolLogBody .turnrow .ss-reason{font-style:normal}
-
 /* TOOLLOG-CHAT: 调用记录按**对话形式**展示（左/右）。
    发送 → 右侧气泡（强调色淡底，像"你"说的话）；
    回答 / 工具调用 → 左侧气泡（面板底，像助手）。
@@ -420,7 +263,6 @@
 /* summary 只留语义，不显示 */
 #toolLogBody summary.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
   overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-
 /* TOOLLOG-CHAT2: 对话式左右分栏（同一条选择器链上覆盖，避免被旧规则压掉）。
    发送=右侧强调底气泡；回答/工具=左侧面板底气泡；宽度最多 78%，圆角 12。 */
 #toolLog > #toolLogBody{display:flex;flex-direction:column;gap:6px;padding:8px 12px 10px}
@@ -439,7 +281,6 @@
   text-overflow:ellipsis}
 #toolLog > #toolLogBody .ss-det{flex:1 1 100%;order:5}
 #toolLog > #toolLogBody .ss-det[open]{margin-top:4px}
-
 /* TOOLLOG-CHAT3: 左右分栏用 flex 的 align-self 明确贴边（不再依赖 margin auto）：
    发送 = 右侧（flex-end），回答/工具 = 左侧（flex-start）+ 24px 缩进（像助手气泡）。 */
 #toolLog > #toolLogBody{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
@@ -451,7 +292,6 @@
 #toolLog > #toolLogBody .turnfull{margin:6px 0 0;padding:8px 10px;max-height:220px;overflow:auto;
   font-size:12px;line-height:19px;background:var(--bg);border:1px solid var(--line2);border-radius:8px;
   white-space:pre-wrap;overflow-wrap:anywhere}
-
 /* CHAT-KEEP-ROOM: 对话区保底高度。
    待办/子代理/调用记录展开后会把 #chatlog 压到 300px 以下，新发的消息"看不见"
    （用户实测："已发送的信息看不到"）。这里给对话区保底、给下面几块加最大高度。 */
@@ -459,7 +299,6 @@
 #chat > #teamCard{max-height:38vh;overflow:auto}
 #chat > #teamCard > #toolLog > #toolLogBody{max-height:26vh}
 #chat > #teamCard #subagentList{max-height:24vh}
-
 /* SCROLL-TWO-LEVELS: 只允许两层滚动——对话区 + 底部整块。
    展开区内部不再各自限高滚动（之前嵌套 5 层，滚轮落哪都不对）。 */
 #chat > #teamCard{max-height:44vh;overflow:auto;overscroll-behavior:contain}
@@ -469,27 +308,23 @@
 #chat > #teamCard > #activity,
 #chat > #teamCard .streamstep{max-height:none;overflow:visible}
 #chat > #chatlog{overscroll-behavior:contain}
-
 /* TURN-MORE: 调用记录顶部的「显示更早的 N 个回合」（默认只画最近 20 个回合，
    否则 388 步的会话展开就是 4.3 万像素的一条流）。 */
 #toolLogBody > .turnmore{align-self:center;background:none;border:1px dashed var(--line2);
   border-radius:999px;padding:3px 12px;margin:2px auto 4px}
 #toolLogBody > .turnmore .ss-tool{color:var(--accent);font-weight:600}
 #toolLogBody > .turnmore:hover{background:color-mix(in srgb, var(--accent) 6%, var(--panel))}
-
 /* FIT-CHAT-FLEX: 对话区与底部四条行必须一起装进 #chat（它 overflow:hidden）。
    之前 teamCard 是 flex:none 不能收缩、chatlog 又固定 40vh，合计超过容器 →
    四条行下半截被裁掉，看起来"什么都看不见"。 */
 #chat > #chatlog{flex:1 1 auto;min-height:120px}
 #chat > #teamCard{flex:0 1 auto;min-height:0;max-height:46vh;overflow:auto}
 #chat > #teamCard > *{flex:none}
-
 /* STATUS-STICKY: 状态行（completed/failed · 步 · Token）吸附在滚动块底部，
    展开调用记录往上翻时它依然可见。 */
 #chat > #teamCard > .streamstatus{position:sticky;bottom:0;z-index:2;
   background:var(--panel);border-top:1px solid var(--line)}
 #chat > #teamCard > .streamstatus:hover{background:var(--row-hover)}
-
 /* LAYOUT-FINAL-CLEAN: 底部四行的布局定稿。
    之前让整块 `#teamCard` 滚动，会把某一行切一半（用户："成了不可用了"）。
    现在：块本身不滚、不裁剪；只有"展开的内容区"各自限高滚动，行永远完整。 */
@@ -500,7 +335,6 @@
 #chat > #teamCard > #goalBar .todolist{max-height:30vh;overflow:auto}
 #chat > #teamCard #subagentList{max-height:24vh;overflow:auto}
 #chat > #teamCard > #activity{max-height:28vh;overflow:auto}
-
 /* BOTTOM-BLOCK-OK: 底部四行定稿——整块可滚动但绝不被压成一条缝，
    四行（36 + 子代理列表 + 36 + 36）总能在 52vh 内完整呈现；状态行吸底。 */
 #chat > #chatlog{flex:1 1 auto;min-height:120px;overflow:auto}
@@ -512,12 +346,10 @@
 #chat > #teamCard #subagentList{max-height:24vh;overflow:auto}
 #chat > #teamCard > #goalBar .todolist{max-height:28vh;overflow:auto}
 #chat > #teamCard > #activity{max-height:26vh;overflow:auto}
-
 /* FLEX-ORDER-FIX: 对话区只在"剩余空间"里长大（flex-basis:0），
    底部块保持自然高度（≥180px，≤52vh），四行永不被压成一条缝。 */
 #chat > #chatlog{flex:1 1 0;min-height:120px;overflow:auto}
 #chat > #teamCard{flex:0 1 auto;min-height:180px;max-height:52vh;overflow:auto}
-
 /* TOOLLOG-STICKY-HEAD: 调用记录"行"固定在顶部，只有下面的流滚动
    （用户："最后一条保持在最上面不动，其它的滚动，这样我就可以点击折叠回来了"）。 */
 #chat > #teamCard > #toolLog{display:flex;flex-direction:column;min-height:0}
@@ -530,17 +362,12 @@
 #chat > #teamCard > #goalBar .todolist{max-height:min(26vh, 260px);overflow:auto}
 #chat > #teamCard #subagentList{max-height:min(22vh, 220px);overflow:auto}
 #chat > #teamCard > #activity{max-height:min(24vh, 240px);overflow:auto}
-
 /* SR-ONLY-DISPLAY-NONE: 折叠用的 summary 不参与布局——用 `position:absolute` 时
    它是按 `#teamCard`（position:relative）定位的，会逃出 `#toolLogBody` 的滚动裁剪，
    把卡片 scrollHeight 撑到 2600+（实测 2643，可见内容只有 604）。 */
 #toolLogBody summary.sr-only,
 #teamCard summary.sr-only{display:none !important}
 #toolLogBody .ss-det{position:relative}
-
-/* ONE-SCROLLER: 右栏只留一个滚动条（对话 + 四行 + 展开内容一起滚）。
-   去掉所有 sticky —— 那正是"状态行下面多一行空白"的来源。 */
-#chat{overflow-y:auto;overflow-x:hidden;min-height:0}
 #chat > #chatlog{flex:none;min-height:0;overflow:visible;padding-bottom:8px}
 #chat > #teamCard{flex:none;max-height:none;overflow:visible;background:var(--panel)}
 #chat > #teamCard > .streamstatus{position:static;border-top:1px solid var(--line)}
@@ -550,10 +377,6 @@
 #chat > #teamCard #subagentList{max-height:min(18vh,180px);overflow:auto}
 #chat > #teamCard > #activity{max-height:min(22vh,220px);overflow:auto}
 #chat > #teamCard > *{flex:none}
-
-/* FINAL-TWO-PANE: 定稿——上（对话）自己滚、下（四行）钉底，谁都不 sticky。
-   `#chat` 回到 overflow:hidden，避免"整栏一起滚"导致四行被推到消息下面。 */
-#chat{overflow:hidden;min-height:0}
 #chat > #chatlog{flex:1 1 0;min-height:120px;overflow:auto;padding-bottom:8px}
 #chat > #teamCard{flex:0 1 auto;min-height:180px;max-height:min(58vh, 620px);
   overflow:auto;background:var(--panel)}
@@ -563,62 +386,31 @@
 #chat > #teamCard > #goalBar .todolist{max-height:min(20vh,200px);overflow:auto}
 #chat > #teamCard #subagentList{max-height:min(16vh,160px);overflow:auto}
 #chat > #teamCard > #activity{max-height:min(20vh,200px);overflow:auto}
-
 /* CAPS-TIGHT: 展开区上限收紧，确保 行(36+子代理+调用记录+36) 总和 ≤ 底部块高度，
    状态行默认就在可视范围内（不用滚动）。 */
 #chat > #teamCard > #toolLog > #toolLogBody{max-height:min(24vh, 260px);overflow:auto}
 #chat > #teamCard #subagentList{max-height:min(14vh, 140px);overflow:auto}
 #chat > #teamCard > #goalBar .todolist{max-height:min(18vh, 180px);overflow:auto}
 #chat > #teamCard > #activity{max-height:min(18vh, 180px);overflow:auto}
-
 /* CAPS-FIT-VH: 展开区高度全部用 vh，随窗口一起缩，保证整块装得下四行 + 展开内容。 */
 #chat > #teamCard > #toolLog > #toolLogBody{max-height:min(18vh, 220px);overflow:auto}
 #chat > #teamCard #subagentList{max-height:min(12vh, 140px);overflow:auto}
 #chat > #teamCard > #goalBar .todolist{max-height:min(14vh, 180px);overflow:auto}
 #chat > #teamCard > #activity{max-height:min(14vh, 180px);overflow:auto}
-
 /* CAPS-FIT-VH2: 小屏（768）也装得下——body 16vh / 子代理 11vh。 */
 #chat > #teamCard > #toolLog > #toolLogBody{max-height:min(34vh, 380px);overflow:auto}
 #chat > #teamCard #subagentList{max-height:min(11vh, 132px);overflow:auto}
-
 /* CHATLOG-MIN-96: 小屏时把对话区下限让出 24px，底部四行 + 展开内容不必再滚动。 */
 #chat > #chatlog{flex:1 1 0;min-height:96px;overflow:auto}
-
 /* CARD-HUG-CONTENT: 底部块按内容高度（收起时 = 四行 108px），不再强制 180px，
    否则收起调用记录后底下会留一条空白。 */
 #chat > #teamCard{flex:0 1 auto;min-height:0;max-height:min(74vh, 860px);overflow:auto}
-
-/* FILECARD: 「给我看这个文件」的卡片（文本带行号 / 图片直显 / 二进制给下载）。 */
-.filecard{margin:8px 0;border:1px solid var(--line2);border-radius:10px;
-  background:var(--panel);overflow:hidden}
-.filecard .fc-head,.filecard .fc-img-cap{display:flex;align-items:center;gap:8px;
-  padding:7px 10px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:12.5px}
-.filecard .fc-name{flex:1 1 auto;min-width:0;font-weight:600;color:var(--text);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.filecard .fc-meta{flex:none;color:var(--faint);font-size:11.5px;font-variant-numeric:tabular-nums}
-.filecard .fc-btn{flex:none;font-size:11.5px;color:var(--accent);background:none;border:0;
-  padding:0 4px;cursor:pointer;text-decoration:none}
-.filecard .fc-btn:hover{text-decoration:underline}
-.filecard .fc-body{margin:0;max-height:420px;overflow:auto;padding:8px 10px;
-  font-size:12px;line-height:1.65;white-space:pre;tab-size:4}
-.filecard .fc-body .fc-ln{display:inline-block;width:3.2em;text-align:right;margin-right:10px;
-  color:var(--faint);user-select:none}
-.filecard .fc-img{display:block;max-width:100%;height:auto;background:var(--panel2)}
-.filecard img{cursor:zoom-in}
-
 /* EMPTY-ROW-FIX: `#goalBar.goalbar{display:block}` 盖掉了 `[hidden]`，
    没有待办时仍留一条 36px 空白行（还会响应 hover）。强制隐藏。 */
 #chat > #teamCard > #goalBar[hidden],
 #chat > #teamCard > #subagentBar[hidden],
 #chat > #teamCard > #toolLog[hidden],
 #chat > #teamCard > #activity[hidden]{display:none !important}
-
-
-/* TOOLCARD-BUSY-LINE: 任务进行中，卡片上沿浮着一条**示波器波形**。
-   - canvas 绝对定位在 #chat 里（`bottom: var(--teamcard-h)`），鼠标穿透、不占布局；
-   - **没有背景**（clearRect 全透明），只有那一条渐变描边；
-   - 高度 84px，可以叠在对话区上方；空闲时 opacity:0 且停止 rAF。 */
-#chat{position:relative}
 #chat > #teamCard{position:relative;overflow-x:hidden;overflow-y:auto;background:var(--panel);isolation:isolate}
 #chat > #teamCard.busy{padding-top:0}
 #chat > #teamCard > .teamscope{position:absolute;inset:0;width:100%;height:100%;
@@ -626,31 +418,9 @@
   background:none;border:0;outline:0}
 #chat > #teamCard.busy > .teamscope{opacity:.20}
 #chat > #teamCard > :not(.teamscope){position:relative;z-index:1}
-
 /* ROWS-TALLER: 四行展开高度（用户实测"太矮"）。级联底部有十几条一路压小的旧规则
    （min(11vh,132px) 等），这条放在最末尾统一抬起来；仍保留内部滚动，不撑破卡片。 */
 #chat > #teamCard > #goalBar .todolist{max-height:min(38vh, 400px);overflow:auto}
 #chat > #teamCard #subagentList{max-height:min(38vh, 400px);overflow:auto}
 #chat > #teamCard > #activity{max-height:min(38vh, 400px);overflow:auto}
 #chat > #teamCard > #toolLog > #toolLogBody{max-height:min(38vh, 420px);overflow:auto}
-
-/* SEND-STOP + AT-MENU：运行中发送键变"强行停止"（红方块），聊天框 @ 唤起文件弹层 */
-.btn.sendRound.stop{background:var(--panel2);color:var(--accent);border:1px solid color-mix(in srgb, var(--accent) 45%, var(--line));box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent)}
-.btn.sendRound.stop:hover{background:color-mix(in srgb, var(--accent) 10%, var(--panel2));border-color:var(--accent)}
-.btn.sendRound.stop #sendIcon{width:16px;height:16px;padding:4px;box-sizing:border-box;border-radius:3px;background:currentColor}
-.composer{position:relative}
-@keyframes composer-breathe{
-  0%,100%{border-color:color-mix(in srgb,var(--accent) 32%,var(--line));box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 0%,transparent)}
-  50%{border-color:color-mix(in srgb,var(--accent) 88%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent),0 0 18px color-mix(in srgb,var(--accent) 22%,transparent)}
-}
-.main > .composer.agent-busy{animation:composer-breathe 1.8s ease-in-out infinite}
-@media (prefers-reduced-motion:reduce){
-  .main > .composer.agent-busy{animation:none;border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 16%,transparent)}
-}
-.atmenu{position:absolute;left:12px;bottom:calc(100% + 6px);min-width:320px;max-width:min(560px,80vw);
-  z-index:40;box-shadow:0 8px 30px rgba(0,0,0,.18)}
-.atmenu .atrow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;
-  cursor:pointer;font-size:12.5px}
-.atmenu .atrow.on,.atmenu .atrow:hover{background:var(--menu-hover)}
-.atmenu .atrow code{flex:none;color:var(--accent2);font-size:12.5px}
-

@@ -271,3 +271,55 @@ details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select
 .msg-copy{margin-left:auto;border:0;background:transparent;color:var(--faint);font-size:11px;cursor:pointer;padding:1px 6px;border-radius:5px;opacity:0;transition:opacity .12s}
 .msg:hover .msg-copy{opacity:1}
 .msg-copy:hover{color:var(--text);background:var(--menu-hover)}
+
+/* ── 并入（原 refinements.css 的 16 条规则，保持原相对顺序）── */
+/* RAIL-FOOTER: 侧栏底部一行「⚙ 设置 …… 版本号」，像 DSH。
+   它是 flex 列里的最后一个子项（flex:none），会话列表在它上方内部滚动，
+   所以列表**不可能**再滚到设置/版本号那一带。 */
+.rail{display:flex;flex-direction:column}
+#sessions{flex:1 1 auto;min-height:0;overflow:auto}
+.railfoot{flex:none;position:relative;display:flex;align-items:center;gap:8px;
+  padding:8px 12px;border-top:0;background:var(--panel);
+  min-height:34px;box-sizing:content-box}
+/* 分隔线：中间实、两端渐隐（1px 渐变，不吃布局） */
+.railfoot::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;
+  background:linear-gradient(90deg,
+    transparent 0%, color-mix(in srgb, var(--line) 55%, transparent) 14%,
+    var(--line) 34%, var(--line) 66%,
+    color-mix(in srgb, var(--line) 55%, transparent) 86%, transparent 100%);
+  pointer-events:none}
+.railgear{display:inline-flex;align-items:center;gap:7px;
+  border:0;background:none;padding:4px 6px;border-radius:8px;cursor:pointer;
+  color:var(--muted);font:inherit;font-size:12.5px;line-height:1;flex:none}
+.railgear svg{width:15px;height:15px;flex:none}
+.railgear:hover{background:var(--panel2);color:var(--accent)}
+.railgear:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btmver{flex:1 1 auto;min-width:0;text-align:right;color:var(--faint);
+  font-size:11.5px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;user-select:none}
+.btmver[hidden]{display:none}
+/* 侧栏收起（桌面只剩 34px 图标条）：只留齿轮图标，标签与版本号藏起来 */
+:root[data-rail="closed"] .railfoot{padding:8px 0;justify-content:center}
+:root[data-rail="closed"] .railfoot::before{display:none}
+:root[data-rail="closed"] .railgear .raillabel{display:none}
+:root[data-rail="closed"] .railfoot .btmver{display:none}
+/* 窄屏抽屉收起时侧栏整体不显示 → 保留一个浮在左下角的齿轮兜底入口 */
+@media(max-width:860px){
+  :root:not([data-rail="open"]) .railfoot{position:fixed;left:8px;bottom:10px;z-index:56;
+    border:1px solid var(--line2);border-radius:50%;padding:0;background:var(--panel);
+    width:34px;height:34px;justify-content:center;box-shadow:0 6px 18px -8px var(--menu-shadow)}
+  :root:not([data-rail="open"]) .railgear{padding:0;width:34px;height:34px;justify-content:center}
+  :root:not([data-rail="open"]) .railfoot .btmver{display:none}
+  .railfoot{padding:8px 12px}
+}
+/* RAIL-FOOTER-NARROW: 窄屏抽屉展开时，侧栏也按 flex 列排：
+   顶部工具行/筛选/列表（列表内部滚动）+ 底部固定 footer。 */
+@media(max-width:860px){
+  :root[data-rail="open"] .rail{display:flex;flex-direction:column;
+    overflow:hidden;padding:52px 0 0}
+  :root[data-rail="open"] .rail > .railtop,
+  :root[data-rail="open"] .rail > .listhead,
+  :root[data-rail="open"] .rail > #gSearch{flex:none}
+  :root[data-rail="open"] .rail > #sessions{flex:1 1 auto;min-height:0;overflow:auto}
+  :root[data-rail="open"] .railfoot{flex:none}
+}

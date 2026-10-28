@@ -223,3 +223,18 @@ html,body{overflow:hidden}
 #chat > #teamCard > #subagentBar > .chead .hint{font-size:12px;color:var(--faint)}
 #chat > #teamCard > .goalbar .gb-meta{color:var(--faint);font-size:12px}
 
+/* ── 并入（原 refinements.css 的 5 条规则，保持原相对顺序）── */
+/* 长会话：离屏消息/步骤跳过布局与绘制（不改 DOM 结构，滚动到哪渲染到哪） */
+.chatlog .msg{content-visibility:auto;contain-intrinsic-size:auto 96px}
+#steps .step{content-visibility:auto;contain-intrinsic-size:auto 72px}
+/* ONE-SCROLLER: 右栏只留一个滚动条（对话 + 四行 + 展开内容一起滚）。
+   去掉所有 sticky —— 那正是"状态行下面多一行空白"的来源。 */
+#chat{overflow-y:auto;overflow-x:hidden;min-height:0}
+/* FINAL-TWO-PANE: 定稿——上（对话）自己滚、下（四行）钉底，谁都不 sticky。
+   `#chat` 回到 overflow:hidden，避免"整栏一起滚"导致四行被推到消息下面。 */
+#chat{overflow:hidden;min-height:0}
+/* TOOLCARD-BUSY-LINE: 任务进行中，卡片上沿浮着一条**示波器波形**。
+   - canvas 绝对定位在 #chat 里（`bottom: var(--teamcard-h)`），鼠标穿透、不占布局；
+   - **没有背景**（clearRect 全透明），只有那一条渐变描边；
+   - 高度 84px，可以叠在对话区上方；空闲时 opacity:0 且停止 rAF。 */
+#chat{position:relative}

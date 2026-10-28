@@ -367,3 +367,24 @@ section.card.collapsed .cardchev svg{transform:rotate(-90deg)}
 .kpi.kpi-state[data-state="paused"]{background:color-mix(in srgb, var(--amber, #d97706) 10%, var(--panel));
   border-color:color-mix(in srgb, var(--amber, #d97706) 35%, var(--line))}
 .kpi.kpi-state[data-state="paused"]::before{background:var(--amber, #d97706)}
+
+/* ── 并入（原 refinements.css 的 11 条规则，保持原相对顺序）── */
+/* SEND-STOP + AT-MENU：运行中发送键变"强行停止"（红方块），聊天框 @ 唤起文件弹层 */
+.btn.sendRound.stop{background:var(--panel2);color:var(--accent);border:1px solid color-mix(in srgb, var(--accent) 45%, var(--line));box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent)}
+.btn.sendRound.stop:hover{background:color-mix(in srgb, var(--accent) 10%, var(--panel2));border-color:var(--accent)}
+.btn.sendRound.stop #sendIcon{width:16px;height:16px;padding:4px;box-sizing:border-box;border-radius:3px;background:currentColor}
+.composer{position:relative}
+@keyframes composer-breathe{
+  0%,100%{border-color:color-mix(in srgb,var(--accent) 32%,var(--line));box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 0%,transparent)}
+  50%{border-color:color-mix(in srgb,var(--accent) 88%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent),0 0 18px color-mix(in srgb,var(--accent) 22%,transparent)}
+}
+.main > .composer.agent-busy{animation:composer-breathe 1.8s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){
+  .main > .composer.agent-busy{animation:none;border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 16%,transparent)}
+}
+.atmenu{position:absolute;left:12px;bottom:calc(100% + 6px);min-width:320px;max-width:min(560px,80vw);
+  z-index:40;box-shadow:0 8px 30px rgba(0,0,0,.18)}
+.atmenu .atrow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;
+  cursor:pointer;font-size:12.5px}
+.atmenu .atrow.on,.atmenu .atrow:hover{background:var(--menu-hover)}
+.atmenu .atrow code{flex:none;color:var(--accent2);font-size:12.5px}
