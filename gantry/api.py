@@ -69,9 +69,10 @@ async def boot_browser() -> None:
         if gen != BOOT["generation"]:
             return                      # 已被更新的启动请求取代
         BOOT["browser_state"] = "browser_up"
-        applied = b.mark_self_upgrade_applied()
-        if applied:
-            b.log(f"[自升级] 已加载上一轮自升级改动（{len(applied)} 条记录），待重启标记归档")
+        res = b.mark_self_upgrade_applied()
+        if res.get("applied"):
+            b.log(f"[自升级] 已加载上一轮自升级改动（{len(res['applied'])} 条记录），待重启标记归档")
+        # issues 非空时标记**故意**保留：半成品改动不该被当成"已生效"（见 bridge 注释）
         if await b.wait_copilot_ready():
             BOOT["copilot_ready"] = True
             BOOT["browser_state"] = "ready"

@@ -349,7 +349,7 @@ class ToolsCoreMixin:
             })
 
     def clone(self) -> "ToolRegistry":
-        """复制一份注册表给**并行任务**用（root / 沙箱 / 计划模式 / 记忆作用域互不干扰）。
+        r"""复制一份注册表给**并行任务**用（root / 沙箱 / 计划模式 / 记忆作用域互不干扰）。
 
         浅拷贝 __dict__ 即可：钩子（state_getter / subagent_fn / snapshot_hook…）
         都是无状态的函数，共享安全；可变容器在任务启动时会重新赋值。
@@ -601,10 +601,10 @@ class ToolsCoreMixin:
             items += [
                 {"name": "self_find_files", "description": "【自升级】列举**服务安装目录**下的文件（排查本服务的问题时用它定位；工作区里没有服务代码）", "arguments": {"pattern": "glob，如 gantry/*.py，默认 **/*.py"}},
                 {"name": "self_search_text", "description": "【自升级】在**服务安装目录**里搜文本/正则（用户报的是本服务的按钮/功能/报错时，先用它定位；工作区工具搜不到服务代码）", "arguments": {"query": "文本或正则", "path": "目录，默认 .", "max_results": "默认 50"}},
-                {"name": "self_read_text", "description": "【自升级】读取服务自身代码（安装目录相对路径，白名单内）", "arguments": {"path": "如 gantry/agent.py", "offset": "字符偏移，默认0", "limit": "默认全文件"}},
+                {"name": "self_read_text", "description": "【自升级】读取服务自身代码（安装目录相对路径，白名单内）；要看第几行就用 line_start/line_count（返回带行号）", "arguments": {"path": "如 gantry/agent.py", "line_start": "按行读的起始行，1 起（推荐）", "line_count": "读多少行", "offset": "字符偏移（老接口，与 line_start 二选一）", "limit": "字符数上限，默认全文件"}},
                 {"name": "self_write_text_b64", "description": "【自升级】覆盖写入服务自身文件；代码必须 Base64 分块（每块≤3000字符），全部写完后用 self_validate + self_unittest 验证", "arguments": {"path": "安装目录相对路径", "content_b64": "Base64"}},
                 {"name": "self_append_text_b64", "description": "【自升级】追加写入服务自身文件（分块续写用）", "arguments": {"path": "安装目录相对路径", "content_b64": "Base64"}},
-                {"name": "self_replace_text", "description": "【自升级】修改服务自身代码时优先用精确替换", "arguments": {"path": "安装目录相对路径", "old": "原文本", "new": "新文本", "count": "默认1"}},
+                {"name": "self_replace_text", "description": "【自升级】修改服务自身代码时优先用精确替换；old 必须与文件逐字一致（找不到时返回值里会附最接近的原文与行号）", "arguments": {"path": "安装目录相对路径", "old": "原文本（逐字，含缩进/换行）", "new": "新文本", "count": "默认1"}},
                 {"name": "self_validate", "description": "【自升级】对整个服务安装目录做语法检查；自升级必须通过", "arguments": {}},
                 {"name": "self_unittest", "description": "【自升级】在服务安装目录跑单元测试；自升级必须通过", "arguments": {"pattern": "默认 test_*.py"}},
                 {"name": "self_rollback", "description": "【自升级】回滚本次任务对服务自身代码的改动（恢复到任务开始前）", "arguments": {}},
@@ -654,6 +654,15 @@ class ToolsCoreMixin:
             "② 若确实需要改服务自身代码，请让用户在 config.json 打开 agent.allow_self_upgrade 后重试；"
             "③ 只需要内容时用只读工具读取，或请用户把文件放进工作区。",
         ]
+        if self.allow_self_upgrade:
+            # 自升级模式下普通文件工具**仍然**被锁在工作区里（这正是护栏的本意），
+            # 但模型会拿 list_directory('..') 去摸服务目录——task-mvs4un2x 第 38 步就这样
+            # 撞了一次墙。直接把"该用哪套工具"写进报错，别让它自己试。
+            lines.append(
+                "④ 自升级模式：服务安装目录（" + str(self.global_root or "见 config") +
+                "）要用 self_* 工具操作——self_find_files / self_search_text / self_read_text "
+                "/ self_replace_text / self_write_text_b64；普通 list_directory/read_text"
+                "/grep 只在工作区内有效。")
         return "\n".join(lines)
 
     def _covers_install(self, candidate: Path) -> bool:

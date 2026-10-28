@@ -132,18 +132,60 @@ class SelfUpgradeMixin:
         return {"query": q, "count": len(hits), "hits": hits,
                 "truncated": len(hits) >= cap}
 
-    async def self_read_text(self, path: str, offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    async def self_read_text(self, path: str, offset: int = 0, limit: int = 0,
+                             line_start: int = 0, line_count: int = 0,
+                             reveal_whitespace: bool = False) -> dict[str, Any]:
+        """读服务自身文件。
+
+        两种读法（与普通 `read_text` 对齐——实测模型会**默认** self_read_text 也支持
+        `line_start`/`line_count`，传了就直接 TypeError 丢掉一步，task-mvs4un2x 第 6 步）：
+          · `line_start` + `line_count`：按**行**读（1 起），返回带行号的 `lines`；
+          · `offset` + `limit`：按**字符**读（老接口，保持兼容）。
+        """
         target = self._self_path(path)
         if not target.is_file():
             raise ToolError(f"文件不存在: {path}")
-        text = target.read_text(encoding="utf-8", errors="replace")
+        try:
+            with target.open("r", encoding="utf-8", errors="replace", newline="") as f:
+                text = f.read()
+        except UnicodeDecodeError as exc:
+            raise ToolError(f"文件不是有效的 UTF-8 文本: {exc}")
         offset = max(0, self._int_arg(offset, 0, "offset"))
         limit = max(0, self._int_arg(limit, 0, "limit"))
+        line_start = max(0, self._int_arg(line_start, 0, "line_start"))
+        line_count = max(0, self._int_arg(line_count, 0, "line_count"))
+        lines = text.replace("\r\n", "\n").split("\n")
+        total_lines = len(lines) - (1 if lines and lines[-1] == "" else 0)
+
+        if line_start:
+            if line_start > total_lines:
+                return {"path": path, "lines": "", "line_start": line_start,
+                        "line_count": 0, "total_lines": total_lines, "truncated": False,
+                        "note": f"文件只有 {total_lines} 行"}
+            want = line_count or (total_lines - line_start + 1)
+            want = max(1, min(want, 2000, self.max_read // 40 or 1))
+            lo = line_start - 1
+            hi = min(total_lines, lo + want)
+
+            def _vis(t: str) -> str:
+                return t.replace("\t", "→").replace(" ", "·")
+
+            body = "\n".join(
+                ((f"{i + 1}: " + _vis(lines[i])) if reveal_whitespace else f"{i + 1}: {lines[i]}")
+                for i in range(lo, hi))
+            res = {"path": path, "lines": body, "line_start": line_start,
+                   "line_count": hi - lo, "total_lines": total_lines,
+                   "truncated": hi < total_lines, "numbered": True}
+            if reveal_whitespace:
+                res["whitespace"] = "空格=·  制表符=→"
+            return res
+
         total = len(text)
         cap = min(limit, self.max_read) if limit else self.max_read
         end = min(total, offset + cap)
         return {"path": path, "content": text[offset:end], "offset": offset,
-                "total_chars": total, "truncated": end < total,
+                "total_chars": total, "total_lines": total_lines,
+                "truncated": end < total,
                 "next_offset": end if end < total else None}
 
     async def _self_write(self, path: str, content: str, overwrite: bool) -> dict[str, Any]:
@@ -169,6 +211,40 @@ class SelfUpgradeMixin:
     async def self_append_text_b64(self, path: str, content_b64: str) -> dict[str, Any]:
         return await self._self_write(path, self._decode_b64(content_b64), False)
 
+    def _nearest_block(self, text: str, old: str) -> dict[str, Any]:
+        """找与 `old` 最相近的连续行窗口：替换失败时把**真实原文**递回给模型。
+
+        真事（task-mvs4un2x 第 68/70/71/74/76 步）：模型凭记忆拼 `old`，差一个空格就
+        "未找到要替换的原文本"，它只能再 self_read_text 一次再拼——一连烧 5 步。
+        这里直接把最接近的行区间与原文给它，一步就能改对。
+        """
+        lines = text.replace("\r\n", "\n").split("\n")
+        old_lines = old.replace("\r\n", "\n").split("\n")
+        target = "\n".join(x.strip() for x in old_lines if x.strip())
+        if not target:
+            return {}
+        best = (0.0, 0, 0)
+        n = len(lines)
+        max_take = min(max(len(old_lines) + 3, 3), 60)
+        for start in range(n):
+            for take in range(1, max_take + 1):
+                if start + take > n:
+                    break
+                cand = "\n".join(x.strip() for x in lines[start:start + take] if x.strip())
+                if not cand:
+                    continue
+                r = difflib.SequenceMatcher(None, cand, target).ratio()
+                if r > best[0]:
+                    best = (r, start, take)
+            if best[0] > 0.95:
+                break
+        ratio, start, take = best
+        if ratio <= 0:
+            return {}
+        snippet = "\n".join(f"{start + 1 + i}: {lines[start + i]}" for i in range(take))
+        return {"ratio": round(ratio, 3), "line_start": start + 1,
+                "line_count": take, "snippet": snippet[:1500]}
+
     async def self_replace_text(self, path: str, old: str, new: str, count: int = 1) -> dict[str, Any]:
         if not old:
             raise ToolError("old 不能为空")
@@ -183,10 +259,52 @@ class SelfUpgradeMixin:
                 text = f.read()
         except UnicodeDecodeError as exc:
             raise ToolError(f"文件不是有效的 UTF-8 文本: {exc}")
-        found = text.count(old)
-        if found == 0:
-            raise ToolError("未找到要替换的原文本，请先 self_read_text 确认原文")
         rel = self._self_rel(target)
+        found = text.count(old)
+        matched = old
+        if found == 0:
+            # 宽容匹配：换行符（CRLF/LF）与行首行尾空白差异不该让替换失败——
+            # 模型读到的片段常被 JSON 转义/缩进重排过。
+            normalized = text.replace("\r\n", "\n")
+            cand = old.replace("\r\n", "\n")
+            if normalized.count(cand):
+                matched = cand
+                text = normalized
+                found = normalized.count(cand)
+            else:
+                stripped = [ln.strip() for ln in cand.split("\n") if ln.strip()]
+                if stripped:
+                    pat = "\r?\n".join(
+                        r"[ \t]*" + re.escape(ln) + r"[ \t]*" for ln in stripped)
+                    hits = list(re.finditer(pat, text))
+                    if len(hits) == 1:
+                        found = 1
+                        matched = hits[0].group(0)
+        if found == 0:
+            near = self._nearest_block(text, old)
+            hint = ""
+            if near:
+                hint = (f"\n最接近的原文在第 {near['line_start']}–"
+                        f"{near['line_start'] + near['line_count'] - 1} 行"
+                        f"（相似度 {near['ratio']}）：\n{near['snippet']}\n"
+                        f"请照抄上面这段当作 old（可先 self_read_text "
+                        f"line_start={near['line_start']} line_count={near['line_count']} 确认）")
+            raise ToolError(
+                "未找到要替换的原文本。" + hint + "\n"
+                "提示：old 必须与文件内容**逐字一致**（含空白与换行）；不确定就先用 "
+                "self_read_text 的 line_start/line_count 看带行号的原文。")
+        if matched != old and found:
+            self._snap("self_replace_text", rel, target)
+            before = self._hash(target)
+            with target.open("w", encoding="utf-8", newline="") as f:
+                f.write(text.replace(matched, new, count))
+            self._mark_self_upgrade(rel)
+            return {"path": path, "replaced": min(found, count),
+                    "note": "服务自身代码已改动，需重启服务生效",
+                    "match": "宽容匹配（空白/换行差异）",
+                    "file_event": {"tool": "self_replace_text", "path": rel,
+                                   "before_hash": before, "after_hash": self._hash(target),
+                                   "result": "ok"}}
         self._snap("self_replace_text", rel, target)
         before = self._hash(target)
         with target.open("w", encoding="utf-8", newline="") as f:

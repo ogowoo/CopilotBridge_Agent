@@ -229,7 +229,7 @@ WriteAllText to edit files.""",
         "first with self_search_text / self_find_files (the workspace find_files/list_directory "
         "cannot see the service code); report the located file/line to the user for confirmation "
         "BEFORE editing.\n"
-        "1. Read the current code with self_read_text first; prefer self_replace_text for edits; "
+        "1. Read the current code with self_read_text first (pass line_start/line_count to see numbered lines); prefer self_replace_text for edits (old must match verbatim); "
         "write files with self_write_text_b64/self_append_text_b64 (Base64, <=3000 chars per "
         "chunk, chunked continuation).\n"
         "2. After all edits, run self_validate (syntax check of the whole install dir) and "

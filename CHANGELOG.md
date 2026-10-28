@@ -14,6 +14,41 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.25] - 2026-10-29
+
+### Fixed
+
+- **自升级任务 task-mvs4un2x 的失败复盘 → 四类根因逐个修掉**（用户："检查一下失败原因，修正"）。
+  那次任务 120 步里 44 步是异常，逐条看过原始 raw_tail 后，**没有一条**是"模型不会用工具"：
+
+  | 现象 | 次数 | 真因 | 修法 |
+  | --- | --- | --- | --- |
+  | `self_read_text() got an unexpected keyword argument 'line_start'` | 1 | 普通 `read_text` 支持按行读，`self_read_text` 只支持字符偏移 | 加 `line_start`/`line_count`（返回带行号 + `total_lines`），`offset`/`limit` 保留 |
+  | `invalid_action`（动作解析失败） | 10 | ① 字符串值里未转义的 `"`（`type==="bool"`）；② 正则里的 `\(` 不是合法 JSON 转义 | 新增 `_escape_inner_quotes`（按"结束引号后必须紧跟 `,}]:`"判定），`_repair_json_escapes` 扩到所有非法转义（`\(` `\[` `\d` `\s` `\w` `\|` …，补一个反斜杠以保留正则语义） |
+  | `self_replace_text 未找到要替换的原文本` | 6 | 模型凭记忆拼 `old`，差一个空格就失败，只能反复重读 | 宽容匹配（CRLF/LF、行首尾空白差异）；失败时用 difflib 返回**最接近的真实行 + 行号**，让它一步改对 |
+  | `list_directory('..') [sandbox: FS_SANDBOX_ESCAPE]` | 1 | 自升级模式下普通文件工具仍锁在工作区，报错没告诉它该用哪套工具 | 沙箱报错补第 ④ 条：服务安装目录请用 `self_*` 工具（并列出具体名字） |
+
+- **启动时的"待生效自升级"自检门**（这次事故的直接来源）：任务被取消后，半成品改动留在盘上
+  ——`webui/js/settings.js` 多了 4 行读 `setTeamScopeAmp`/`setTeamScopeLine`/`setTeamScopeOpacity`/
+  `setComposerBreatheDur`，而这 4 个元素从没被加进设置页；旧逻辑在启动时只把
+  `data/.self_upgrade_pending` 改名 `.applied` 并打印"已加载上一轮自升级改动"，
+  **等于把坏代码无声当成成功**，之后"前端 id 引用完整性"不变量直接报红。
+  现在 `mark_self_upgrade_applied()` 先跑确定性自检（文件存在性 / `.py` 编译 / ui_refs），
+  不过就**保留**待办标记并在 `GET /v1/agent/self/status` 的 `pending_invalid` 里说明原因。
+  本次已把那份半成品改动回滚（`webui/js/settings.js` 复原）并把旧标记归档为
+  `.self_upgrade_pending.abandoned`。
+
+### Added
+
+- `tests/test_self_upgrade_recovery.py`（12 条）：用该会话**真实的失败原文**做用例——
+  未转义引号、正则反斜杠、合法 JSON 不被改坏、按行读、CRLF+缩进宽容替换、失败时给最近原文、
+  沙箱提示只出现在自升级模式、待生效标记的自检门（语法错/文件缺失/元素 id 缺失都不许归档）。
+
+### 实测
+
+- 单测 **1246**（skipped=1）OK（新增 12 条）；不变量 25 条全绿（此前因半成品改动红了一条）。
+- 两条真实样本现在都能解析：`type==="bool"` 与 `startScope\(|stopScope\(` 均恢复为可执行动作。
+
 ## [11.0.0-preview.24] - 2026-10-29
 
 ### Changed

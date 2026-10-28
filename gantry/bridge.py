@@ -763,19 +763,84 @@ def self_scope(sid: str) -> str:
     return f"_self_{sid}"
 
 
-def mark_self_upgrade_applied() -> list[str]:
-    """服务启动时调用：上一轮自升级的代码已被加载，把待重启标记归档。"""
+def pending_self_upgrade_entries() -> list[tuple[str, str]]:
+    """读待生效标记：返回 [(tool, 相对路径)]。标记格式 `时间戳\t相对路径`。"""
     if not SELF_UPGRADE_MARKER.is_file():
         return []
     try:
         lines = [x for x in SELF_UPGRADE_MARKER.read_text(encoding="utf-8").splitlines() if x.strip()]
     except Exception:
-        lines = []
+        return []
+    out: list[tuple[str, str]] = []
+    for line in lines:
+        parts = line.split("\t")
+        rel = parts[-1].strip()
+        if rel:
+            out.append((parts[0].strip() if len(parts) > 1 else "", rel))
+    return out
+
+
+def validate_pending_self_upgrade() -> list[str]:
+    """检查"已写入但还没重启"的自升级改动是否真的可用。
+
+    真事（2026-10-29 07:06）：自升级任务被取消，半成品改动留在盘上——`webui/js/settings.js`
+    多了 4 行读 `setTeamScopeAmp` 等元素，而那些元素从没被加进设置页；启动时只把标记
+    改名为 `.applied` 并打一行"已加载上一轮自升级改动"，等于**把坏代码无声当成成功**。
+    之后任何"前端 id 引用完整性"检查都会红，但用户看到的是"自升级成功了"。
+
+    这里只做**确定性**检查（不联网、不跑浏览器）：
+      · 列出的文件必须存在（防止"记录里有、盘上没有"）；
+      · .py 必须能编译（语法错=必然起不来）；
+      · 前端 JS 的元素 id 引用必须完整（ui_refs 静态检查，正是上面那次事故）。
+    返回问题清单；空 = 可以归档。
+    """
+    entries = pending_self_upgrade_entries()
+    if not entries:
+        return []
+    problems: list[str] = []
+    for _tool, rel in entries:
+        target = (BASE / rel)
+        if not target.is_file():
+            problems.append(f"{rel}: 记录里有但文件不存在")
+            continue
+        if target.suffix.lower() != ".py":
+            continue
+        try:
+            compile(target.read_text(encoding="utf-8"), str(target), "exec")
+        except SyntaxError as exc:
+            problems.append(f"{rel}: 语法错误 第 {exc.lineno} 行 {exc.msg}")
+        except Exception as exc:                        # noqa: BLE001
+            problems.append(f"{rel}: 无法读取 ({exc})")
+    try:
+        from .ui_refs import check_ui_id_refs
+        refs = check_ui_id_refs(BASE)
+        for miss in (refs.get("missing") or []):
+            where = ", ".join(str(x) for x in (miss.get("lines") or [])[:2])
+            problems.append(f"前端引用了不存在的元素 #{miss.get('id')}（{where}）")
+    except Exception as exc:                            # noqa: BLE001
+        problems.append(f"前端 id 检查自身失败: {exc}")
+    return problems
+
+
+def mark_self_upgrade_applied() -> dict:
+    """服务启动时调用：上一轮自升级的代码已被加载，把待重启标记归档。
+
+    返回 `{"applied": [...], "issues": [...]}`；**issues 非空就不归档**——宁可让
+    `restart_pending` 一直亮着，也不要把半成品标记成"已生效"（见 validate 的注释）。
+    """
+    entries = pending_self_upgrade_entries()
+    if not entries:
+        return {"applied": [], "issues": []}
+    lines = [f"{tool}\t{rel}" if tool else rel for tool, rel in entries]
+    issues = validate_pending_self_upgrade()
+    if issues:
+        log(f"[自升级] 待生效改动未通过启动自检，保留待办标记：{issues[:3]}")
+        return {"applied": [], "issues": issues}
     try:
         SELF_UPGRADE_MARKER.replace(SELF_UPGRADE_MARKER.with_suffix(".applied"))
     except Exception:
         pass
-    return lines
+    return {"applied": lines, "issues": []}
 
 
 def self_snapshot_hook(sid: str):
@@ -842,6 +907,7 @@ def self_upgrade_status() -> dict:
     scopes = SNAPSHOTS.scopes("_self_")
     return {"enabled": bool(getattr(AGENT_TOOLS, "allow_self_upgrade", False)),
             "base": str(BASE), "restart_pending": bool(pending),
+            "pending_invalid": validate_pending_self_upgrade() if pending else [],
             "pending_entries": pending[-20:], "snapshot_scopes": scopes,
             "whitelist": list(getattr(AGENT_TOOLS, "self_whitelist", ()) or ())}
 

@@ -265,6 +265,52 @@ class ParseMixin:
 
 
     @staticmethod
+    def _escape_inner_quotes(text: str) -> str:
+        """给字符串值里**未转义**的双引号补上反斜杠。
+
+        真事（task-mvs4un2x 第 16 步）：模型写
+        `"query":"function _cfgInput|...|type==="bool""` —— 内层 `"` 没转义，
+        整条 JSON 解析失败，白烧一个 Copilot 回合（这类失败在那次任务里重复 10 次）。
+        判据：字符串内的 `"` 往后跳过空白，若紧跟 `,` `}` `]` `:` `{`（或文本结束）
+        才算真正的结束引号；否则它是内容，转义掉。
+
+        对合法 JSON 无副作用：合法的内层引号本来就写成 `\\"`，扫描时会整对跳过。
+        """
+        if '"' not in text:
+            return text
+        out: list[str] = []
+        i, n = 0, len(text)
+        in_str = False
+        while i < n:
+            ch = text[i]
+            if not in_str:
+                if ch == '"':
+                    in_str = True
+                out.append(ch)
+                i += 1
+                continue
+            if ch == "\\" and i + 1 < n:
+                out.append(text[i:i + 2])
+                i += 2
+                continue
+            if ch == '"':
+                j = i + 1
+                while j < n and text[j] in " \t\r\n":
+                    j += 1
+                nxt = text[j] if j < n else ""
+                if nxt in ",}]:{}" or nxt == "":
+                    in_str = False
+                    out.append(ch)
+                    i += 1
+                    continue
+                out.append('\\"')
+                i += 1
+                continue
+            out.append(ch)
+            i += 1
+        return "".join(out)
+
+    @staticmethod
     def _repair_json_escapes(text: str) -> str:
         """修复模型常见的**非法 JSON 转义**，避免整条动作作废。
 
@@ -274,36 +320,51 @@ class ParseMixin:
         整条 JSON 直接解析失败，于是白烧一个 Copilot 回合（那次任务因此耗了
         377 步、7 个会话）。
 
-        只改"确定非法"的转义：反斜杠+单引号 → 单引号、反斜杠+反引号 → 反引号；
-        `\\uXXXX` 等合法转义一律不动。注意 `\\'`（转义反斜杠后跟引号）是合法的，
-        不能误改，所以按反斜杠奇偶判断。
+        同族的另一批（task-mvs4un2x 第 56 步）：`"query":"startScope\\(|stopScope\\("`
+        ——正则里的 `\\(` 也不是合法 JSON 转义，整条同样报废。
+
+        规则：
+          · 单引号/反引号前的那种转义 → 去掉反斜杠（模型想写的就是引号本身）；
+          · 其他**非法**转义（`\\(` `\\[` `\\d` `\\s` `\\w` `\\|` …）→ 再补一个反斜杠，
+            让解码后的字符串保留那个反斜杠（模型要的是正则字面量）；
+          · `\\\\` `\\"` `\\/` `\\b` `\\f` `\\n` `\\r` `\\t` `\\uXXXX` 一律不动。
         """
-        if "\\'" not in text and "\\`" not in text:
+        if "\\" not in text:
             return text
-        out, i, n = [], 0, len(text)
+        legal = set('"\\/bfnrtu')
+        out: list[str] = []
+        i, n = 0, len(text)
         while i < n:
             ch = text[i]
             if ch != "\\":
-                out.append(ch); i += 1; continue
-            # 数连续反斜杠：奇数个才是转义起点
+                out.append(ch)
+                i += 1
+                continue
             j = i
             while j < n and text[j] == "\\":
                 j += 1
             run = j - i
             nxt = text[j] if j < n else ""
-            if run % 2 == 1 and nxt in ("'", "`"):
-                # 丢掉一个反斜杠：\' -> '
-                out.append("\\" * (run - 1))
-                out.append(nxt)
+            if run % 2 == 1 and nxt and nxt not in legal:
+                if nxt in ("'", "`"):
+                    out.append("\\" * (run - 1))
+                    out.append(nxt)
+                else:
+                    out.append("\\" * (run + 1))
+                    out.append(nxt)
                 i = j + 1
                 continue
-            out.append("\\" * run); i = j
+            out.append("\\" * run)
+            i = j
         return "".join(out)
 
     @classmethod
     def _parse(cls, text: str) -> dict[str, Any]:
-        # 先修非法转义再解析：模型常带 `\'` 这类 JSON 不认的转义进来
+        # 先修两类"模型写法合法但 JSON 不认"的毛病，再解析：
+        #   ① 非法转义（\' 、\( 这些）；
+        #   ② 字符串值里没转义的 "（如 type==="bool"）。
         text = cls._repair_json_escapes(text or "")
+        text = cls._escape_inner_quotes(text)
         candidates = list(cls._objects(text))
         # Copilot may print the same action twice. Deduplicate identical actions,
         # but never silently choose between distinct actions in one response.
