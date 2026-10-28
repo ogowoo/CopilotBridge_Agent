@@ -14,16 +14,20 @@
 ### Fixed
 - 
 
-## [11.0.0-preview.15] - 2026-10-28
+## [11.0.0-preview.15] - 2026-10-27
 
 ### Added
-- 
 
-### Changed
-- 
-
-### Fixed
--
+- **Telegram 插件**（用户想要"手机端操作 Gantry"，类似 Hermes 的 bot 交互）：
+  `plugins/telegram/`（manifest + plugin.py + README + 15 条测试）。
+  - 长轮询 `getUpdates`，不需要公网地址（@BotFather 建 bot 拿 token 即可）；
+  - **白名单 chat_id 才受理**（bot 是公开的，必须限制）；token/白名单从 `.env`
+    （`TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`）或插件配置读；
+  - 一个 chat 映射一个会话 sid（`/new` 强制开新），普通文字继续当前会话（agent 跑），
+    完成把回答整段发回，进行中按节流发进度；
+  - 命令：`/new /status /sessions /todo /cancel /pause /resume /model [id] /answer /help`；
+  - `GET /v1/plugins/telegram/api/status` 面板看健康状态；
+  - 无 token 时插件待命不报错。
 
 ## [11.0.0-preview.14] - 2026-10-27
 
