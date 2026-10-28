@@ -17,13 +17,19 @@
 ## [11.0.0-preview.20] - 2026-10-28
 
 ### Added
-- 
 
-### Changed
-- 
+- **前端 id 引用完整性检查**（用户："加上"）：`gantry/ui_refs.py` —— 扫
+  `webui/index.html` 与 `webui/app.js`，JS 里 `getElementById/querySelector` 引用的
+  元素 id 必须在 index.html 的 `id=…` 或 JS 动态生成（innerHTML 模板/`el.id=…`）里真实存在。
+  - 进了 `self_validate`（自升级验收硬门之一，结果带 `ui_refs` 字段）；
+  - 也进了不变量（`invariants.py`，现在 24 条）；
+  - 白名单 `ALLOWED_MISSING` 只有 `sid`（旧字段的防御性兜底），不许静默膨胀。
+  专门拦"改了 JS 逻辑却忘了加元素"这类假完成（task-mvs4un2x 实测的坑）。
 
-### Fixed
--
+### Added（测试）
+
+- `tests/test_ui_id_refs.py`（7 条）：缺漏检出、动态生成 id 认可、行号回报、
+  现网零缺漏、白名单不膨胀、`self_validate` 包含本检查。
 
 ## [11.0.0-preview.19] - 2026-10-28
 
