@@ -311,12 +311,15 @@ async def web_ui_index():
     return FileResponse(b.BASE / "webui" / "index.html", headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
-@router.get("/ui/{asset}", include_in_schema=False)
+@router.get("/ui/{asset:path}", include_in_schema=False)
 async def web_ui_asset(asset: str):
     # 静态资产白名单，禁止路径穿越
-    if asset not in ("style.css", "app.js", "boot.js", "i18n.js"):
-        raise HTTPException(404, "Not Found")
-    return FileResponse(b.BASE / "webui" / asset, headers={"Cache-Control": "no-cache, must-revalidate"})
+    if asset in ("style.css", "app.js", "boot.js", "i18n.js"):
+        return FileResponse(b.BASE / "webui" / asset, headers={"Cache-Control": "no-cache, must-revalidate"})
+    # ES 模块（app.js 解耦）：只允许 js/<名字>.js，不许 ".."、不许子目录再嵌套
+    if re.fullmatch(r"js/[0-9A-Za-z._-]+\.js", asset):
+        return FileResponse(b.BASE / "webui" / asset, headers={"Cache-Control": "no-cache, must-revalidate"})
+    raise HTTPException(404, "Not Found")
 
 
 @router.get("/v1/search")

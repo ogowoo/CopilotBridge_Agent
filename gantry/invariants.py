@@ -460,20 +460,30 @@ def _ui_assets_whitelisted() -> None:
     html = (web / "index.html").read_text(encoding="utf-8")
     api = "".join((HERE / f).read_text(encoding="utf-8") for f in
                 ("api.py", "routes_core.py"))  # /ui/{asset} 端点已拆到 routes_core.py
-    m = re.search(r'if asset not in \(([^)]*)\):', api)
+    m = re.search(r'if asset in \(([^)]*)\):', api) or re.search(r'if asset not in \(([^)]*)\):', api)
     if not m:
         raise InvariantError("api.py 里找不到 /ui/{asset} 白名单")
     allowed = {x.strip().strip('"\'') for x in m.group(1).split(",") if x.strip()}
+    # ES 模块解耦后，路由还按正则放行 `js/<名字>.js`（等价于"webui/js/ 下的任何 .js 文件"）
+    js_glob = bool(re.search(r're\.fullmatch\(r"js/', api))
     refs = set(re.findall(r'<(?:script|link)[^>]*?(?:src|href)="([^"]+)"', html))
     local = {r.split("?")[0] for r in refs
              if not r.startswith(("http://", "https://", "data:", "//"))}
-    missing = sorted(x for x in local if x not in allowed)
+    def _ok(x):
+        if x in allowed:
+            return True
+        # js/main.js 这类按 `js/<名字>.js` 正则放行的资产
+        if js_glob and re.fullmatch(r"js/[0-9A-Za-z._-]+\.js", x):
+            return True
+        return False
+    missing = sorted(x for x in local if not _ok(x))
     if missing:
         raise InvariantError(f"index.html 引用了未加白名单的资源（会 404）: {missing}")
     absent = sorted(x for x in local if not (web / x).is_file())
     if absent:
         raise InvariantError(f"index.html 引用了不存在的文件: {absent}")
-    stale = sorted(a2 for a2 in allowed if a2 not in local)
+    # tuple 里的精确名必须仍被页面引用；js/*.js 正则没有具体文件名，不参与 stale 判定
+    stale = sorted(a2 for a2 in allowed if a2 not in local and not a2.startswith("js/"))
     if stale:
         raise InvariantError(f"白名单里有页面未引用的条目（可能已废弃）: {stale}")
 

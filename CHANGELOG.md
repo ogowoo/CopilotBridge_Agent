@@ -14,6 +14,20 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.21] - 2026-10-28
+
+### Added
+
+- **app.js 拆成 ES 模块（第 1 步）**（用户选了真模块化）：脚手架 webui/js/ —
+  state.js（共享可变状态的家）、main.js（入口，把拆出去的全局函数绑到 window）、
+  第一块 **scope.js**（示波器浮层，约 131 行、零跨块依赖，整体搬出）。
+  - 增量策略：拆出去的块把老代码仍在调用的函数绑到 window，事件路径的调用点不用动；
+  - 路由 /ui/{asset:path} 放行 js/<名字>.js（带穿越防护）；
+  - 顺手修了两个积压：oot.js（localStorage 迁移）**从没被加载**（死代码）→ 现在
+    index.html 里第一个加载；白名单不变量适配新路由形态（精确名单 + js/*.js 正则）。
+  - 实测：浏览器里 startScope/stopScope/scopeFrame 都是 function、无 JS 错误、
+    boot.js 迁移真的跑了；单测 1226（skipped=1）OK。
+
 ## [11.0.0-preview.20] - 2026-10-28
 
 ### Added
