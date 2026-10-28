@@ -29,6 +29,13 @@
      修：`_dir()` 只拦危险开头（`.`/空），`_` 开头原样保留；前缀匹配处**两套都认**
      （`_self_` 与旧 `s_self_`）；CLI 的空提示补一句"只读排查不会留快照"。
 
+- **单测卡死（真机实测）**：上游"修重启"把 `exec_restart` 从 `os.execv` 改成
+  `Popen + os._exit(0)`，但 `tests/test_restart_service.py` 仍按旧契约（patch execv、
+  期待 SystemExit）写 → 测试里**真的 spawn 了** `python start.py -s -v`，
+  父进程 `os._exit(0)` 立刻退出、spawn 的服务还活着 → 外部看起来"跑不完/卡住"。
+  修：测试改成新契约（patch Popen + os._exit）；`_entry_argv()` 不再透传任何参数
+  （start.py 不解析 argv，透传只会把 `-s -v`/`discover`/`tests` 带进去）。
+
 ### Verified
 
 受控实验（只在 `docs/` 下建临时文件，不碰真实代码）：
