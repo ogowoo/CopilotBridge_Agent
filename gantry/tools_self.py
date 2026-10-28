@@ -208,7 +208,12 @@ class SelfUpgradeMixin:
         return sorted(out)
 
     async def self_validate(self) -> dict[str, Any]:
-        """对服务安装目录做全量语法检查（py_compile），是自升级的硬门之一。"""
+        """全量校验：py_compile + 前端 id 引用完整性，是自升级的硬门之一。
+
+        第二条是为了拦"改了 JS 逻辑却没加对应元素"这类假完成（task-mvs4un2x 实测：
+        自升级代理加了读 `setTeamScopeHeartbeat` 的代码，却忘了把复选框加进设置页，
+        py_compile/unittest 全绿照样宣布完成）。
+        """
         if not self.allow_self_upgrade:
             raise ToolError("自升级已在 config.json 中禁用")
         files = self._self_py_files()
@@ -223,7 +228,21 @@ class SelfUpgradeMixin:
             if proc.returncode:
                 failures.append({"path": str(item.relative_to(self.global_root)),
                                  "error": stderr.decode("utf-8", "replace")[-2000:]})
-        return {"passed": not failures, "checked": len(files), "failures": failures}
+        ui_refs = {"skipped": True, "missing": []}
+        try:
+            from .ui_refs import check_ui_id_refs
+            ui_refs = check_ui_id_refs(self.global_root)
+            for miss in ui_refs.get("missing") or []:
+                failures.append({
+                    "path": "webui/app.js",
+                    "error": (f"引用了不存在的元素 id #{miss['id']}（行 {miss['lines']}）——"
+                              "JS 里 getElementById/querySelector 的元素必须在 index.html "
+                              "或动态生成里真实存在（见 gantry/ui_refs.py）")})
+        except Exception as exc:                         # noqa: BLE001
+            failures.append({"path": "webui/ui_refs",
+                             "error": f"前端 id 引用检查自身失败: {exc}"})
+        return {"passed": not failures, "checked": len(files), "failures": failures,
+                "ui_refs": ui_refs}
 
     async def self_unittest(self, pattern: str = "test_*.py") -> dict[str, Any]:
         """在服务安装目录跑单元测试，是自升级的第二个硬门。"""

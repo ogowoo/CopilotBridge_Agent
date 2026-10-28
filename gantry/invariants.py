@@ -433,6 +433,21 @@ def _ui_actions_wired() -> None:
         raise InvariantError(f"ACTIONS 里有未被引用的条目（死代码或拼错）: {extra}")
 
 
+@invariant("前端 JS 引用的元素 id 必须存在")
+def _ui_id_refs() -> None:
+    """自升级代理曾加了读 setTeamScopeHeartbeat 的逻辑，却**忘了把复选框加进设置页**
+    就宣布完成（task-mvs4un2x 实测）。py_compile + unittest 都覆盖不了"元素存不存在"，
+    这条静态检查专门拦它。"""
+    from .ui_refs import check_ui_id_refs
+    r = check_ui_id_refs(ROOT)
+    if r.get("skipped"):
+        return
+    if r.get("missing"):
+        raise InvariantError(
+            "JS 引用了不存在的元素 id（补上元素，或说明理由后在 ui_refs.ALLOWED_MISSING 白名单）: "
+            + str(r["missing"][:5]))
+
+
 @invariant("页面引用的静态资源都在白名单内")
 def _ui_assets_whitelisted() -> None:
     """防止"新增前端文件但忘了加白名单"。
