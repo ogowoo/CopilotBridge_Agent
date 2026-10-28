@@ -1,0 +1,20 @@
+{
+  "name": "telegram",
+  "version": "0.1.0",
+  "description": "Telegram 机器人接口：在手机上给 Gantry 下任务、看进度、收回答。长轮询 getUpdates，不需要公网地址；白名单 chat_id 才受理。",
+  "gantry": {
+    "entry": "plugin.py",
+    "permissions": ["events", "api", "storage"],
+    "contributes": {
+      "api": ["GET api/status"]
+    },
+    "config": {
+      "token": "",
+      "allowed_chat_ids": [],
+      "poll_interval": 2,
+      "progress_every_seconds": 10,
+      "default_model": "copilot-auto",
+      "agent_mode": true
+    }
+  }
+}
