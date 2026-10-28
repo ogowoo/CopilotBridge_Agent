@@ -126,10 +126,10 @@ def _entry_argv() -> list[str]:
     root = _project_root()
     entry = root / "start.py"
     if entry.is_file():
-        # 只保留选项参数（`--port 9000`）：`serve` 这类子命令、脚本名都丢掉，
-        # 免得 `-m gantry.cli serve` 启动时把 "serve" 当成 start.py 的参数重跑。
-        extra = [a for a in sys.argv[1:] if a.startswith("-")]
-        return [str(entry)] + extra
+        # **不透传任何参数**：start.py 不解析 argv（端口走 config.json / 环境变量），
+        # 透传只会把 `-s -v`、`discover`、`tests` 这类无关参数带进去——实测重启一个
+        # 跑着单测的进程时，会 spawn 出 `python start.py -s -v`（多余且误导）。
+        return [str(entry)]
     if (root / "gantry" / "cli.py").is_file():
         return ["-m", "gantry.cli", "serve"]
     raise RuntimeError(f"找不到重启入口：{root} 下既没有 start.py 也没有 gantry/cli.py")

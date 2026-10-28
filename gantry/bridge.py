@@ -798,7 +798,8 @@ async def rollback_self_upgrade(sid: str | None = None, use_last: bool = False) 
     scope = self_scope(sid) if sid else ""
     if use_last or not scope:
         # 取最近修改的自升级快照作用域（只认有 manifest 的，且容忍被并发 prune）
-        cands = SNAPSHOTS.scopes("_self_")
+        # 两套前缀都认：新名字 `_self_x`，以及旧消毒逻辑产生的 `s_self_x`
+        cands = SNAPSHOTS.scopes("_self_") + SNAPSHOTS.scopes("s_self_")
         if not cands:
             return {"restored": 0, "deleted": 0, "failed": 0, "results": [],
                     "message": "没有自升级快照记录"}

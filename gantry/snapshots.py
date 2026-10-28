@@ -59,9 +59,10 @@ class SnapshotStore:
     def _dir(self, sid: str) -> Path:
         safe = re.sub(r"[^0-9A-Za-z._-]+", "-", str(sid)).strip("-")[:80] or "session"
         # "." / ".." / "..." 这类名字会被 _dir 原样保留，使 clear()/restore()
-        # 直接作用到 snapshots 根或其父目录（rmtree 掉 data/ 整个目录）：
-        # 必须以字母数字开头，并用 resolve 再确认结果是 base 的直接子目录。
-        if not re.match(r"^[0-9A-Za-z]", safe):
+        # 直接作用到 snapshots 根或其父目录（rmtree 掉 data/ 整个目录）。
+        # 只拦**危险开头**（点/空）；`_` 开头是合法名字（`_self_<sid>` = 自升级作用域），
+        # 以前一律加 `s` 前缀，导致自升级快照落盘成 `s_self_*` 而按 `_self_` 找不到。
+        if safe in (".", "..") or safe.startswith(".") or not re.match(r"^[0-9A-Za-z_-]", safe):
             safe = "s" + safe
         candidate = (self.base / safe).resolve()
         if candidate.parent != self.base.resolve() or candidate == self.base.resolve():

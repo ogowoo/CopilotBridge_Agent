@@ -11,6 +11,7 @@
 import os
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -159,45 +160,71 @@ class ScheduleTests(unittest.TestCase):
 
 
 class ExecRestartTests(unittest.TestCase):
-    """exec 真的会用同一解释器重跑入口脚本（用桩替换 os.execv 观察参数）。"""
+    """exec_restart 的**当前契约**：spawn 新进程（同一解释器 + 绝对 start.py）后 os._exit(0)。
+
+    历史：早先实现是 `os.execv`（本进程被替换），测试按"patch execv 期待 SystemExit"写；
+    上游"修重启"改成 `Popen + os._exit`（Windows 上 execv 其实是新建进程再退旧的），
+    测试没跟上 → 真的 spawn 了一个服务，把测试进程干掉，看起来像"卡死"。
+    """
 
     def setUp(self):
-        self._orig_execv = os.execv
         self._orig_argv = list(sys.argv)
+        self._orig_exit = os._exit
         lifecycle._restarting = True
+        self.calls = {}
+
+        def fake_exit(code=0):
+            self.calls["exit"] = code
+            raise SystemExit(code)      # 让测试能继续（真实现会立刻结束进程）
+
+        os._exit = fake_exit
 
     def tearDown(self):
-        os.execv = self._orig_execv
+        os._exit = self._orig_exit
         sys.argv[:] = self._orig_argv
         lifecycle.disarm()
         lifecycle.set_force_exit(True)
         lifecycle._atexit.clear()
 
-    def test_exec_restart_execs_entry_script(self):
+    def test_exec_restart_spawns_entry_script(self):
+        """必须 spawn `python <绝对路径>/start.py`，cwd 是项目根，且随后 os._exit(0)。"""
         seen = {}
 
-        def fake_execv(program, args):
-            seen["program"] = program
+        def fake_popen(args, **kw):
             seen["args"] = list(args)
-            raise SystemExit(0)          # 模拟 exec 成功（不会返回）
+            seen["cwd"] = kw.get("cwd")
+            class _P:
+                pass
+            return _P()
 
-        os.execv = fake_execv
-        with self.assertRaises(SystemExit):
-            lifecycle.exec_restart()
-        self.assertEqual(seen["program"], sys.executable)
-        self.assertEqual(seen["args"][0], sys.executable)
-        self.assertTrue(Path(seen["args"][1]).is_file(), "第 2 个参数应是入口脚本")
+        with mock.patch("subprocess.Popen", fake_popen):
+            with self.assertRaises(SystemExit):
+                lifecycle.exec_restart()
 
-    def test_restart_hooks_run_before_exec(self):
+        self.assertEqual(Path(seen["args"][0]), Path(sys.executable))
+        entry = Path(seen["args"][1])
+        self.assertTrue(entry.is_file(), "第 2 个参数应是入口脚本")
+        self.assertEqual(entry.name, "start.py")
+        self.assertEqual(Path(seen["cwd"]).resolve(), lifecycle._project_root().resolve())
+        self.assertEqual(self.calls.get("exit"), 0, "spawn 后必须 os._exit(0)")
+
+    def test_entry_argv_does_not_leak_extra_args(self):
+        """不传任何参数：start.py 不解析 argv，透传只会把 unittest 参数带进去。"""
+        old = list(sys.argv)
+        try:
+            sys.argv = ["-m", "unittest", "discover", "-s", "tests", "-v"]
+            argv = lifecycle._entry_argv()
+        finally:
+            sys.argv = old
+        self.assertEqual(len(argv), 1, f"只应有入口脚本，实际 {argv}")
+        self.assertTrue(argv[0].endswith("start.py"))
+
+    def test_restart_hooks_run_before_spawn(self):
         ran = []
         lifecycle.on_restart(lambda: ran.append("close-db"))
-
-        def fake_execv(*_a):
-            raise SystemExit(0)
-
-        os.execv = fake_execv
-        with self.assertRaises(SystemExit):
-            lifecycle.exec_restart()
+        with mock.patch("subprocess.Popen", lambda *a, **k: object()):
+            with self.assertRaises(SystemExit):
+                lifecycle.exec_restart()
         self.assertEqual(ran, ["close-db"], "重启前收尾应执行")
 
 

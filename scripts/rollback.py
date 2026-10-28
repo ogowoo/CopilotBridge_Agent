@@ -57,7 +57,9 @@ def main():
     all_scopes = ([d.name for d in sorted(store.base.iterdir()) if d.is_dir()]
                   if store.base.is_dir() else [])
     if args.scope == "self":
-        sessions = [s for s in all_scopes if s.startswith(SELF_PREFIX)]
+        # 两套前缀都认（`_self_x` 新名字 / `s_self_x` 旧消毒产物）
+        sessions = [s for s in all_scopes
+                    if s.startswith(SELF_PREFIX) or s.startswith("s" + SELF_PREFIX)]
         target_root = BASE
         label = "服务自身代码"
     else:
@@ -67,7 +69,11 @@ def main():
 
     if args.list or not (args.sid or args.last):
         if not sessions:
-            print(f"没有可回滚的{label}快照记录。")
+            hint = ""
+            if args.scope == "self":
+                hint = ("\n（自升级快照只在 Agent 真正用 self_replace_text / "
+                        "self_write_text_b64 改过服务代码时才生成；只读排查不会留快照）")
+            print(f"没有可回滚的{label}快照记录。{hint}")
             return 0
         print(f"含快照的{label}作用域：")
         for sid in sessions:

@@ -14,6 +14,32 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.18] - 2026-10-28
+
+### Fixed
+
+- **自升级回滚列不出快照**（用户：`python scripts/rollback.py --list --scope self`
+  只得到"没有可回滚的服务自身代码快照记录"）。两个原因：
+  1. **从来没写过**：agent.db 里 `self_replace_text` / `self_write_text_b64` 的历史
+     调用是 **0 次**（只有 self_read_text / self_search_text），没有写操作自然没有原像；
+  2. **真 bug**：`snapshots._dir()` 为防 `.`/`..` 把"非字母数字开头"的名字加了 `s`
+     前缀，连带把自升级作用域 `_self_<sid>` 改成 **`s_self_<sid>`** —— 而
+     `rollback.py --scope self` 与 `rollback_self_upgrade(use_last)` 都按 `_self_`
+     前缀找 → 永远匹配不到（只有 `--sid` 能恢复，因为它走 `_dir` 同一条路）。
+     修：`_dir()` 只拦危险开头（`.`/空），`_` 开头原样保留；前缀匹配处**两套都认**
+     （`_self_` 与旧 `s_self_`）；CLI 的空提示补一句"只读排查不会留快照"。
+
+### Verified
+
+受控实验（只在 `docs/` 下建临时文件，不碰真实代码）：
+`self_replace_text` → 快照目录 `_self_probe-self-snap2` → CLI `--list --scope self`
+列出 → CLI `--sid … --yes` 回滚成功（还原 1、失败 0）→ 文件回到原内容。
+
+### Added（测试）
+
+- `tests/test_self_snapshot_scope.py`（5 条）：`_self_` 不加前缀、`scopes("_self_")`
+  能列出、`.`/`..` 仍被挡、旧 `s_self_` 仍被认、CLI 两套前缀。
+
 ## [11.0.0-preview.17] - 2026-10-27
 
 ### Added
