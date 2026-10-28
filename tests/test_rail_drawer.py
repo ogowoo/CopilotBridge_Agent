@@ -13,13 +13,13 @@
 - 只有 ≤860px 且 `data-rail="open"` 时才显示；
 - 窄屏抽屉展开时，把手 ☰ 不能压住抽屉第一行（padding-top 让位）。
 """
-from gantry.ui_src import ui_js
+from gantry.ui_src import ui_css, ui_js
 import re
 import unittest
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-_RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+_RAW = ui_css()
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
 HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
 APP = ui_js()

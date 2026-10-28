@@ -424,7 +424,7 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 交付：告诉我改了哪些行、验证结果、需要重启、以及回滚命令</pre>
 <p>也可以直接说短句，效果一样：</p>
 <ul>
-<li>「把 <code>webui/style.css</code> 里侧栏默认宽度 318px 改成 300px，改完跑 self_validate 和 self_unittest」</li>
+<li>「把 <code>webui/css/tokens.css</code> 里 <code>.app</code> 的侧栏宽度 318px 改成 300px，改完跑 self_validate 和 self_unittest」</li>
 <li>「看 <code>gantry/api.py</code> 的 <code>/v1/shutdown</code>，把优雅停机超时从 8 秒改成 15 秒，其他别动」</li>
 </ul>
 <p>先确认开关真的生效：问它一句「你有哪些 self_ 开头的工具」，应该能列出
@@ -640,7 +640,7 @@ Accept: self_validate + self_unittest both pass
 Deliver: which lines changed, verification result, restart needed, and the rollback command</pre>
 <p>Short one-liners work just as well:</p>
 <ul>
-<li>"Change the default sidebar width in <code>webui/style.css</code> from 318px to 300px, then run
+<li>"Change the default sidebar width in <code>webui/css/tokens.css</code> (<code>.app</code>) from 318px to 300px, then run
 self_validate and self_unittest"</li>
 <li>"Look at <code>/v1/shutdown</code> in <code>gantry/api.py</code> and raise the graceful-shutdown timeout
 from 8s to 15s; change nothing else"</li>

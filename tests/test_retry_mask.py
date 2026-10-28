@@ -21,7 +21,7 @@
 - 标题/按钮/静态文案全部走 `tr()`,i18n.js 补齐词条；
 - `updateRetryCountdown` 增加**局部快照守卫**:SSE 只带部分字段时不再把遮罩收掉。
 """
-from gantry.ui_src import ui_js
+from gantry.ui_src import ui_css, ui_js
 import re
 import unittest
 from pathlib import Path
@@ -31,7 +31,7 @@ HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
 API = ((BASE / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 APP = ui_js()
 I18N = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
-_RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+_RAW = ui_css()
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
 KEYS = [
     "服务限流/不可用，预计恢复",

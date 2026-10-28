@@ -844,7 +844,7 @@ python scripts/rollback.py --list            # 查看可回滚的任务与自升
    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`。
    **`script-src` 不含 `'unsafe-inline'`，这是硬约束**：
    - 页面里**不允许**再写内联事件处理器（`onclick="..."`）：一律用 `data-act="名称"`（输入类用 `data-act-input`，键盘类用 `data-act-key`），并在 `webui/js/settings.js` 的 `ACTIONS` 表里注册实现——分发器会按 `data-act` 调用。写错名字不会报错、只是"点了没反应"，所以有第 14 条不变量**双向核对** `data-act` ↔ `ACTIONS`（缺实现 / 有死条目都会失败）。
-   - 也**不允许**内联 `<script>`：首屏主题初始化已外置为 `webui/boot.js`；新增静态资源必须加进 `gantry/routes_core.py` 里 `/ui/{asset}` 的白名单（目前是 `style.css` / `boot.js` / `i18n.js`，以及任意 `js/<名字>.js`）。第 15 条不变量会核对"页面引用 ⊂ 白名单"，漏加会立刻失败。
+   - 也**不允许**内联 `<script>`：首屏主题初始化已外置为 `webui/boot.js`；新增静态资源必须加进 `gantry/routes_core.py` 里 `/ui/{asset}` 的白名单（目前是 `boot.js` / `i18n.js`，以及任意 `js/<名字>.js`、`css/<名字>.css`）。第 15 条不变量会核对"页面引用 ⊂ 白名单"，漏加会立刻失败。
    - `style-src` 仍保留 `'unsafe-inline'`：页面大量使用 `style="..."` 属性与动态注入的 `<style>`，影响面小于脚本，暂不收紧。
 
 ## 界面多语言（简 / 繁 / EN）
@@ -927,7 +927,7 @@ gantry/              核心包
   providers.py      API 提供商接入层（OpenAI/DeepSeek/Kimi/Grok 等）
   session_store.py  SQLite 会话持久化、中断恢复、会话实测统计
   snapshots.py      改动前原像快照与任务级回滚（自我升级 failback）
-webui/            零依赖 Web 管理台（index.html 结构 + style.css + js/*.js ES 模块）
+webui/            零依赖 Web 管理台（index.html 结构 + css/*.css + js/*.js ES 模块）
 AGENT.md          项目级 Agent 约定（工作区根目录存在时自动注入系统提示）
 skills/           目录式技能库（每个技能一个 SKILL.md，按需加载）
 scripts/          工具脚本（login.py 登录向导、calibrate.py 阈值校准、

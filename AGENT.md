@@ -27,7 +27,7 @@ gantry/                             库代码包
                                  providers.py         API 提供商接入
                                  copilot_delete.py    Copilot 侧栏会话删除
                                  owa.py               Outlook 网页自动化
-webui/                           管理台：index.html(结构) style.css js/*.js(ES 模块, globals.js 存共享状态)
+webui/                           管理台：index.html(结构) css/*.css(样式) js/*.js(ES 模块, globals.js 存共享状态)
 scripts/                         login.py / calibrate.py / outlook_selftest.py
 tests/                           unittest(test_agent_parse.py)
 docs/                            技术文档
@@ -51,7 +51,7 @@ python start.py                        # 启动服务(默认 127.0.0.1:8765)
 
 1. **改代码后必须闭环**：`.py/.json/.html` 被修改后，validate_python + run_unittest 双 passed 前不得宣称完成(系统提示层有同样的门)。
 2. **写文件用 b64 分块**：`write_text_b64`/`append_text_b64`，每块 ≤3000 字符；写完再验证，禁止边写边验。
-3. **WebUI 是 ES 模块结构**（app.js 已退役）：结构改 `index.html`、样式改 `style.css`、逻辑改 `webui/js/<块>.js`；**跨模块共享的可变状态只能放 `webui/js/globals.js`**（模块顶层 var 是私有的，别的模块裸名读会 ReferenceError，还会被 try/catch 吞成"界面空白"），函数照旧 `export` 并由 `js/main.js` 绑到 window。改完跑 `python scripts/cross_module_refs.py`、`node --check`、Playwright 冒烟；`/ui/{asset}` 白名单 = `style.css`/`boot.js`/`i18n.js` + `js/<名字>.js`。
+3. **WebUI 是 ES 模块结构**（app.js 已退役）：结构改 `index.html`、样式改 `webui/css/<块>.css`、逻辑改 `webui/js/<块>.js`；**跨模块共享的可变状态只能放 `webui/js/globals.js`**（模块顶层 var 是私有的，别的模块裸名读会 ReferenceError，还会被 try/catch 吞成"界面空白"），函数照旧 `export` 并由 `js/main.js` 绑到 window。改完跑 `python scripts/cross_module_refs.py`、`node --check`、Playwright 冒烟；`/ui/{asset}` 白名单 = `boot.js`/`i18n.js` + `js/<名字>.js` + `css/<名字>.css`。样式也按块拆了（`webui/css/*.css`，**加载顺序就是层叠顺序**，见 docs/CSS-SPLIT.md，别用 CSS 的 import 指令）。
 4. **系统提示词在 `gantry/agent_prompt.py` 的 `PromptMixin._system_prompt()`**：改 Agent 行为优先改这里；其中有对抗 Copilot 输出上限/截断的成熟条款，删除前读注释。
 5. **Outlook COM 必须走 `_ComWorker`**(gantry/tools.py)：专用消息泵线程，勿改回 asyncio.to_thread——后台线程无消息泵会导致 0x80004004 E_ABORT。
 6. **正则容错解析在 `gantry/agent_parse.py` 的 `ParseMixin._parse()`**：新增容错路径必须同步在 tests/test_agent_parse.py 加回归用例。

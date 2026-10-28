@@ -1,0 +1,140 @@
+/* themes.css — 主题令牌：7 套配色（amber/jade/light/solarized/mint/roufen/nord 等）与原生控件跟随。
+ *
+ * 样式已按块拆分（原 style.css 2341 行 → 11 个文件）。
+ * ⚠ 加载顺序 = 层叠顺序：5/11，由 index.html 里的 <link> 顺序决定，
+ * 不要用 CSS 的 import 指令（会串行阻塞首屏）。新增规则请放进语义对应的文件。
+ */
+/* ── 主题：浅色 ── */
+:root[data-theme="amber"]{
+  --bg:#14161a;--panel:#1b1e24;--panel2:#22262d;--line:#2c313a;--line2:#3a404b;
+  --text:#e7e9ee;--muted:#98a0ad;--faint:#87909c;--sid-fg:#8d96a3;--accent-fg:#14161a;
+  --accent:#f0a02c;--accent2:#ffb84d;
+  --green:#57b26a;--amber:#e0a02c;--red:#e5534b;--blue:#6aa8ff;--purple:#b892ff;
+  --scrollbar:#3a404b;--input-bg:#101216;--btn-bg:#232830;--btn-hover-text:#fff;
+  --sess-hover:#1e2229;--sess-sel:#262b34;--dot-off:#3f4650;
+  --menu-shadow:rgba(0,0,0,.65);--menu-hover:#2a3039;--meter:#101216;
+  --term-bg:#0e1013;--term-text:#c9ced8;--step-line:#1e2229;
+  --jv-bg:#0e1013;--jv-text:#dde1e8;--jv-border:#242a32;--jv-ind:#39404b;
+  --ky:#d0b3ff;--st:#8fdca0;--nm:#9dc2ff;--bl:#ffc466;--nl:#7a828e;
+  --msg-user-bg:#3b2f1d;--msg-user-border:#5b4a2c;--big:#6f7683;
+  --danger-bg:#2a1618;--danger-border:#5f2b2a;--danger-text:#ff8f85;--danger-hover-text:#ffb3ac;
+  --mask-bg:rgba(6,8,11,.68);--dlg-shadow:rgba(0,0,0,.8);
+}
+:root[data-theme="jade"]{
+  --bg:#0c1416;--panel:#131c1f;--panel2:#1a2428;--line:#233035;--line2:#2e3f45;
+  --text:#e3efee;--muted:#93a8a6;--faint:#84999a;--sid-fg:#8ba0a0;--accent-fg:#08110f;
+  --accent:#2dd4bf;--accent2:#5eead4;
+  --green:#4ade80;--amber:#fbbf24;--red:#f87171;--blue:#60a5fa;--purple:#c084fc;
+  --scrollbar:#2e3f45;--input-bg:#0a1113;--btn-bg:#1d2a2e;--btn-hover-text:#fff;
+  --sess-hover:#172124;--sess-sel:#1f2d2c;--dot-off:#364a48;
+  --menu-shadow:rgba(0,0,0,.62);--menu-hover:#24332f;--meter:#0a1113;
+  --term-bg:#080e10;--term-text:#c5d6d4;--step-line:#172124;
+  --jv-bg:#080e10;--jv-text:#d8e6e4;--jv-border:#1c2a2d;--jv-ind:#2e3f45;
+  --ky:#c4b5fd;--st:#86efac;--nm:#7dd3fc;--bl:#fbbf24;--nl:#6b8480;
+  --msg-user-bg:#153b39;--msg-user-border:#215a55;--big:#5e7a78;
+  --danger-bg:#26181a;--danger-border:#5a2c2e;--danger-text:#ff8f85;--danger-hover-text:#ffb3ac;
+  --mask-bg:rgba(4,9,10,.68);--dlg-shadow:rgba(0,0,0,.8);
+}
+:root[data-theme="light"]{
+  --bg:#eef1f6;--panel:#ffffff;--panel2:#f4f6fa;--line:#e2e8f0;--line2:#cbd5e1;
+  --text:#17202c;--muted:#5b6b7e;--faint:#687888;--sid-fg:#5d6c7a;--accent-fg:#ffffff;
+  --accent:#2563eb;--accent2:#1d4ed8;
+  --green:#16a34a;--amber:#b45309;--red:#dc2626;--blue:#2563eb;--purple:#7c3aed;
+  --scrollbar:#c3ccd8;--input-bg:#fff;--btn-bg:#fff;--btn-hover-text:var(--text);
+  --sess-hover:#eef2f8;--sess-sel:#e7eef9;--dot-off:#b9c4d1;
+  --menu-shadow:rgba(15,23,42,.16);--menu-hover:#edf1f7;--meter:#e2e8f0;
+  --term-bg:#f7f9fc;--term-text:#3b4859;--step-line:#e8edf3;
+  --jv-bg:#f7f9fc;--jv-text:#3b4859;--jv-border:#dfe6ee;--jv-ind:#d5dde7;
+  --ky:#7c3aed;--st:#15803d;--nm:#1d4ed8;--bl:#b45309;--nl:#8e9ca9;
+  --msg-user-bg:#dbeafe;--msg-user-border:#bfdbfe;--big:#7387a4;
+  --danger-bg:#fef2f2;--danger-border:#f3c1bd;--danger-text:#b91c1c;--danger-hover-text:#7f1d1d;
+  --mask-bg:rgba(30,41,59,.32);--dlg-shadow:rgba(15,23,42,.25);
+}
+/* ── 主题：Nord（极地蓝灰） ── */
+/* ── 主题：护眼（Solarized 米白） ── */
+:root[data-theme="solarized"]{
+  --bg:#fdf6e3;--panel:#fffdf5;--panel2:#f5efdd;--line:#e4dcc4;--line2:#d5cdb4;
+  --text:#586e75;--muted:#54686f;--faint:#687878;--sid-fg:#5a6868;--accent-fg:#11161d;
+  /* --muted 原为 #61777e：11px 标签在米白底上只有 4.15（<4.5），压深一档到 #54686f */
+  --accent:#268bd2;--accent2:#2176b8;
+  --green:#859900;--amber:#b58900;--red:#dc322f;--blue:#268bd2;--purple:#6c71c4;
+  --scrollbar:#d5cdb4;--input-bg:#fffdf5;--btn-bg:#fffdf5;--btn-hover-text:#073642;
+  --sess-hover:#f4eedd;--sess-sel:#ece5cf;--dot-off:#c6bd9f;
+  --menu-shadow:rgba(101,123,131,.2);--menu-hover:#f1ead6;--meter:#eee8d5;
+  --term-bg:#f8f2e2;--term-text:#586e75;--step-line:#eee8d5;
+  --jv-bg:#f8f2e2;--jv-text:#586e75;--jv-border:#e4dcc4;--jv-ind:#ddd4ba;
+  --ky:#6c71c4;--st:#859900;--nm:#268bd2;--bl:#b58900;--nl:#93a1a1;
+  --msg-user-bg:#e8f3fb;--msg-user-border:#cfe5f5;--big:#998952;
+  --danger-bg:#fdf0ef;--danger-border:#f3cfcd;--danger-text:#b33431;--danger-hover-text:#8f2825;
+  --mask-bg:rgba(101,123,131,.25);--dlg-shadow:rgba(101,123,131,.3);
+}
+/* ── 主题：Dracula（暗夜紫） ── */
+/* ── 主题：柔粉 ── */
+/* ── 主题：薄荷 ── */
+:root[data-theme="mint"]{
+  --bg:#eef7f3;--panel:#ffffff;--panel2:#f2faf6;--line:#d9ece2;--line2:#c2ddd0;
+  --text:#1e3d32;--muted:#52766a;--faint:#5e7d70;--sid-fg:#536f63;--accent-fg:#11161d;
+  --accent:#10b981;--accent2:#0d9e70;
+  --green:#059669;--amber:#b45309;--red:#dc2626;--blue:#2563eb;--purple:#7c3aed;
+  --scrollbar:#c2ddd0;--input-bg:#fff;--btn-bg:#fff;--btn-hover-text:var(--text);
+  --sess-hover:#e8f5ee;--sess-sel:#dff0e7;--dot-off:#a9c8ba;
+  --menu-shadow:rgba(16,185,129,.15);--menu-hover:#e6f4ec;--meter:#d9ece2;
+  --term-bg:#f4faf7;--term-text:#2b4a3e;--step-line:#e2f0e8;
+  --jv-bg:#f4faf7;--jv-text:#2b4a3e;--jv-border:#d9ece2;--jv-ind:#c2ddd0;
+  --ky:#7c3aed;--st:#059669;--nm:#1d4ed8;--bl:#b45309;--nl:#8aa79b;
+  --msg-user-bg:#d9f2e5;--msg-user-border:#bee5d2;--big:#539676;
+  --danger-bg:#fef2f2;--danger-border:#f3c1bd;--danger-text:#b91c1c;--danger-hover-text:#7f1d1d;
+  --mask-bg:rgba(30,61,50,.25);--dlg-shadow:rgba(30,61,50,.2);
+}
+/* 浅色系（light / solarized / roufen / mint）的状态色覆写 */
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .pill.run{color:#15803d;border-color:#16a34a55;background:#16a34a12}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .pill.warn{color:#92400e;border-color:#d9770655;background:#d9770612}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .pill.bad{color:#b91c1c;border-color:#dc262655;background:#dc262612}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .pill.done{color:#1d4ed8;border-color:#2563eb55;background:#2563eb12}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .step.error .schip{color:#b91c1c}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .step.ok .schip{color:#15803d}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .demo{background:#fef3c7;border-color:#d97706;color:#92400e}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres .err{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .toast.ok{color:#15803d}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres.ok .ric{background:#16a34a1a;color:#15803d;border-color:#16a34a55}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]) .dres.fail .ric{background:#dc26261a;color:#b91c1c;border-color:#dc262655}
+/* 注意：这里**不能**改回 overflow:auto —— 那会让整列又变成滚动、内部不再收缩，
+   对话区被压到几十像素（实测 1024×600 时 chatlog 只有 28px）。 */
+@media(max-width:1100px){.main{display:flex;flex-direction:column;overflow:hidden}.content{grid-template-columns:1fr;min-height:0;flex:none}.steps,.livepane{flex:none;max-height:60vh}}
+/* 左侧栏折叠（仅宽屏生效）：侧栏宽度归零，只剩边缘拉手 */
+@media(min-width:861px){
+  :root[data-rail="closed"] .app{grid-template-columns:0 1fr}
+  :root[data-rail="closed"] .rail>*:not(#railBtn){display:none}
+  :root[data-rail="closed"] .rail{border-right:0}
+}
+@media(max-width:860px){#railBtn{display:none}}
+/* 手机：彻底回退为自然文档流，页面整体滚动，禁用填满窗口的 flex 布局 */
+@media(max-width:860px){
+  .app{grid-template-columns:1fr}
+  /* 侧栏高度受限时必须截断溢出；新任务改为按钮+弹窗后侧栏只剩会话列表，
+     溢出约束保留防止极端情况下的元素干涉 */
+  .rail{max-height:56vh;border-right:0;border-bottom:1px solid var(--line);overflow:hidden;min-height:0}
+  .railtop{flex:none}
+  .listhead{flex:none}
+  .sesslist{min-height:0}
+  .kpis .kpi:last-child{grid-column:auto}
+  .main{display:block}
+  #sessionView{display:block;flex:none}
+  .content{display:block;min-height:0}
+  .content>.card{display:block}
+    .steps,.livepane{max-height:55vh}
+  .tabs .tab{padding:3px 9px;font-size:11.5px}
+}
+
+
+/* ── 原生控件跟随主题 ──────────────────────────────────────────────
+   下拉弹层是浏览器原生渲染，只有 color-scheme 能让它变暗；否则在深色
+   主题下永远是系统白底（对比刺眼）。浅色主题显式声明 light。 */
+:root{color-scheme:dark;--banner-h:0px;--boot-h:0px;--retry-h:0px;--toast-h:0px}
+:root:is([data-theme="light"],[data-theme="solarized"],[data-theme="roufen"],[data-theme="mint"]){color-scheme:light}
+select{background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:6px;
+ padding:4px 8px;font:inherit}
+select:hover{border-color:var(--line2)}
+select option{background:var(--panel);color:var(--text)}
+input,textarea{font:inherit}
+

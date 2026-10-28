@@ -5,7 +5,7 @@
 ```
 webui/
 ├── index.html      结构
-├── style.css       样式
+├── css/*.css       样式（11 个文件，加载顺序 = 层叠顺序，见 docs/CSS-SPLIT.md）
 ├── boot.js         经典脚本：首屏主题 / localStorage 键迁移（cbp-* → gantry-*）
 ├── i18n.js         经典脚本：三语言（zh / tw / en）+ applyI18n/tr
 └── js/

@@ -27,7 +27,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from gantry.ui_src import ui_js
+from gantry.ui_src import ui_css, ui_js
 
 APP = ui_js()
 API = ((BASE / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
@@ -111,7 +111,7 @@ class FrontendKpiTests(unittest.TestCase):
         self.assertIn('id="kpiSubNote"', html)
 
     def test_css_marks_subagent_numbers(self):
-        css = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+        css = ui_css()
         self.assertIn(".kpi .kpisub", css)
         self.assertIn('b[data-sub="1"]', css)
 

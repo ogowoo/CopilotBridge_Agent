@@ -18,13 +18,14 @@
 并把 `#sessionView` 的 `flex-basis` 从 `auto` 改成 `0%`（auto 会按内容撑高）。
 KPI 压缩断点同步提到 1100px（1024 宽时 5 张卡原本排两行、白占 167px）。
 """
+from gantry.ui_src import ui_css
 import re
 import unittest
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
-_RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+_RAW = ui_css()
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
 
 

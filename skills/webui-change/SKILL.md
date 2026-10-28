@@ -8,12 +8,12 @@ description: 修改 WebUI 时的结构与验证规范——三文件职责划分
 管理台在 `webui/`，三文件职责严格分离：
 
 - `index.html`：纯 DOM 结构 + head 里 2 行防闪烁启动脚本(主题/侧栏 localStorage 读取，勿外置)
-- `style.css`：全部样式(7 套主题令牌在 `:root` 与各 `data-theme` 段)
+- `css/*.css`：样式按块拆（令牌在 tokens.css，主题在 themes.css；**加载顺序 = 层叠顺序**）
 - `js/*.js`：全部业务逻辑（ES 模块，一块一个文件；共享可变状态放 `js/globals.js`）
 
 ## 服务端配套
 
-`gantry/routes_core.py` 里 `/ui` 307 到 `/ui/`，`/ui/{asset}` 白名单放行 `style.css`/`boot.js`/`i18n.js` 与 `js/<名字>.js`。
+`gantry/routes_core.py` 里 `/ui` 307 到 `/ui/`，`/ui/{asset}` 白名单放行 `boot.js`/`i18n.js` 与 `js/<名字>.js`、`css/<名字>.css`。
 新增静态资源要同时改白名单集合。
 
 ## 验证清单(改完必做)

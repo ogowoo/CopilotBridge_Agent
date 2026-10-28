@@ -18,7 +18,7 @@
 - 标签标题闪烁「⚠ 需要授权…」,处理完（横幅消失）由 `clearInterruptPing()` 恢复；
 - 页面在后台时轻响一声（WebAudio，失败静默、不需要权限）。
 """
-from gantry.ui_src import ui_js
+from gantry.ui_src import ui_css, ui_js
 import re
 import unittest
 from pathlib import Path
@@ -26,7 +26,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 APP = ui_js()
 I18N = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
-_RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+_RAW = ui_css()
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
 
 APPROVAL_KEYS = [

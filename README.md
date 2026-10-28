@@ -8,7 +8,7 @@
 
 > **Works without Copilot**: the browser starts on demand — service startup never touches the browser, and the WebUI plus provider models (DeepSeek/Kimi/OpenAI, etc.) are usable immediately; the browser is only launched when Copilot is actually needed, and a status with a "Retry browser" button is shown at the top of the UI. **Note**: in lazy mode, the first Copilot task after a restart must wait for the browser to launch and for SSO (can take several minutes on enterprise tenants); that waiting time does not count toward the task timeout. Provider models are unaffected.
 
-> **Version**: the `main` branch is currently **11.0.0-preview.22** (the multi-window parallel preview line has been merged in).
+> **Version**: the `main` branch is currently **11.0.0-preview.23** (the multi-window parallel preview line has been merged in).
 > The old stable line is archived at tag `v10.2.1-archive` / branch `archive/10.2.1-stable`.
 > For versioning rules, release process, and multi-machine collaboration conventions, see [docs/VERSIONING.md](docs/VERSIONING.md);
 > for changes in each release, see [CHANGELOG.md](CHANGELOG.md).
@@ -845,7 +845,7 @@ python scripts/rollback.py --list            # View rollbackable tasks and self-
    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`.
    **`script-src` does not include `'unsafe-inline'` — this is a hard constraint**:
    - Pages **must not** contain inline event handlers (`onclick="..."`): always use `data-act="name"` (`data-act-input` for input-type controls, `data-act-key` for keyboard-type ones), and register the implementation in the `ACTIONS` table in `webui/js/settings.js` (`ACTIONS`) — the dispatcher invokes by `data-act`. A wrong name does not raise an error, it just "does nothing when clicked", so invariant #14 **cross-checks both directions** between `data-act` ↔ `ACTIONS` (missing implementations or dead entries both fail).
-   - Inline `<script>` is also **not allowed**: first-paint theme initialization has been externalized to `webui/boot.js`; new static assets must be added to the `/ui/{asset}` whitelist in `gantry/routes_core.py` (currently `style.css` / `boot.js` / `i18n.js` plus every `js/<name>.js`). Invariant #15 checks that "page references ⊂ whitelist" — a missing entry fails immediately.
+   - Inline `<script>` is also **not allowed**: first-paint theme initialization has been externalized to `webui/boot.js`; new static assets must be added to the `/ui/{asset}` whitelist in `gantry/routes_core.py` (currently `boot.js` / `i18n.js`, every `js/<name>.js` and every `css/<name>.css`). Invariant #15 checks that "page references ⊂ whitelist" — a missing entry fails immediately.
    - `style-src` still keeps `'unsafe-inline'`: pages heavily use `style="..."` attributes and dynamically injected `<style>` tags; the impact surface is smaller than scripts, so it is not tightened for now.
 
 ## UI Multilingual (Simplified / Traditional / EN)
@@ -928,7 +928,7 @@ gantry/              Core package
   providers.py      API provider integration layer (OpenAI/DeepSeek/Kimi/Grok etc.)
   session_store.py  SQLite session persistence, interruption recovery, session runtime statistics
   snapshots.py      Pre-change original snapshots and task-level rollback (self-upgrade failback)
-webui/            Zero-dependency web console (index.html + style.css + js/*.js ES modules)
+webui/            Zero-dependency web console (index.html + css/*.css + js/*.js ES modules)
 AGENT.md          Project-level Agent conventions (auto-injected into the system prompt when present at the workspace root)
 skills/           Directory-based skill library (one SKILL.md per skill, loaded on demand)
 scripts/          Utility scripts (login.py login wizard, calibrate.py threshold calibration,

@@ -1,0 +1,223 @@
+/* settings.css — 设置页与后续打磨（分组卡片、控件尺寸、行内计数）。
+ *
+ * 样式已按块拆分（原 style.css 2341 行 → 11 个文件）。
+ * ⚠ 加载顺序 = 层叠顺序：9/11，由 index.html 里的 <link> 顺序决定，
+ * 不要用 CSS 的 import 指令（会串行阻塞首屏）。新增规则请放进语义对应的文件。
+ */
+/* SETTINGS-DIALOG: 设置页（齿轮入口）。分组标题 + 一行一个设置项，
+   标签在左、控件在右；危险区分隔并染红。 */
+.settingsbody{max-height:64vh;overflow:auto;padding:4px 2px 10px}
+.setgroup{margin:0 0 12px;padding:0 0 8px;border-bottom:1px solid var(--line)}
+.setgroup:last-child{border-bottom:0}
+.setgroup h4{margin:8px 0 6px;font-size:12px;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--faint);font-weight:600}
+.setgroup.danger h4{color:var(--red)}
+.setrow{display:flex;align-items:center;gap:10px;padding:6px 4px;border-radius:7px;
+  font-size:13px;color:var(--text);cursor:pointer}
+.setrow:hover{background:var(--menu-hover)}
+.setrow > span:first-child{flex:1 1 auto;min-width:0}
+.setrow input[type="checkbox"]{flex:none;width:15px;height:15px;accent-color:var(--accent)}
+.setrow select,.setrow input[type="number"],.setrow input[type="text"]{
+  flex:none;width:200px;max-width:48%;height:30px;padding:0 8px;font-size:12.5px;
+  border:1px solid var(--line2);border-radius:8px;background:var(--input-bg);color:var(--text)}
+.setbtns{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 6px}
+.sethint{margin:2px 0 0;font-size:12px;color:var(--faint)}
+
+/* SUBCOUNT-INLINE: 子代理数量紧贴标题（原来作为 .hint 被居中挤到中间，看着像"卡在中间的数字"）。
+   刷新按钮仍然靠右。 */
+#subagentBar .chead .subcount{flex:none;font-size:12px;color:var(--faint);margin-left:2px}
+#subagentBar .chead > .hint{margin-left:auto}
+
+/* TODO-CALM: 已完成的条目别再"灰字 + 删除线 + 绿胶囊"三重叠加（整列看着一个色）。
+   改为：文字常态色、不加删除线，只靠绿色对勾表示完成；进行中的才有底色与胶囊。 */
+.todoitem.todo-completed .ttxt{color:var(--text);text-decoration:none;opacity:.92}
+.todoitem.todo-completed .tic{color:var(--green)}
+
+/* SESS-ALIGN: 会话行去掉前导位后，状态图标/标题再右移一点，与工作区分组头的
+   文件夹图标（x≈34）/组名（x≈53）对齐，避免会话行看起来比组头更靠左或更靠右。 */
+#sessions .sess{padding-left:22px}
+
+
+/* KPI-RESPONSIVE: KPI 只占按钮行的剩余宽度，**绝不撑破**那一行——
+   按重要性从低到高依次隐藏：会话切换 → 当前会话步骤 → 总步骤 → token 条。
+   状态永远留着（它是判断任务死活的关键）。 */
+.kpis.kpis-inline{flex-wrap:nowrap;overflow:hidden;justify-content:flex-end}
+.kpis-inline .kpi{flex:0 0 auto}
+@media(max-width:1320px){
+  .kpis-inline .kpi[data-kpi="roll"]{display:none}
+}
+@media(max-width:1180px){
+  .kpis-inline .kpi[data-kpi="conv"]{display:none}
+}
+@media(max-width:1040px){
+  .kpis-inline .kpi[data-kpi="steps"]{display:none}
+}
+@media(max-width:900px){
+  .kpis-inline .kpi[data-kpi="token"] .meter{display:none}
+  .kpis-inline .kpi[data-kpi="token"] small{display:none}
+}
+@media(max-width:760px){
+  .kpis-inline .kpi[data-kpi="token"]{display:none}
+}
+
+/* SETTINGS-POLISH: 设置页重做——分组做成卡片、标题小而弱、控件统一 220px、
+   开关行整行可点、危险区红框、footer 粘底。 */
+.settingsdlg .dbody{padding:0}
+.settingsbody{max-height:66vh;overflow:auto;padding:10px 14px 4px;
+  background:var(--bg)}
+.setgroup{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:10px 12px 6px;margin:0 0 12px}
+.setgroup h4{margin:2px 0 8px;font-size:11px;letter-spacing:1px;text-transform:uppercase;
+  color:var(--faint);font-weight:700}
+.setrow{display:flex;align-items:center;gap:12px;padding:7px 6px;border-radius:8px;
+  font-size:13px;color:var(--text);cursor:pointer}
+.setrow + .setrow{border-top:1px solid color-mix(in srgb, var(--line) 60%, transparent)}
+.setrow:hover{background:var(--menu-hover)}
+.setrow > span:first-child{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.setrow input[type="checkbox"]{order:2;flex:none;width:16px;height:16px;accent-color:var(--accent)}
+.setrow select,.setrow input[type="number"],.setrow input[type="text"]{
+  flex:none;width:220px;max-width:46%;height:32px;padding:0 9px;font-size:12.5px;
+  border:1px solid var(--line2);border-radius:8px;background:var(--input-bg);color:var(--text)}
+.setrow select:focus,.setrow input:focus{outline:2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset:1px;border-color:var(--accent)}
+.setbtns{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 8px}
+.sethint{margin:2px 0 8px;font-size:12px;color:var(--faint);line-height:1.6}
+.setgroup.danger{border-color:color-mix(in srgb, var(--red) 40%, var(--line));
+  background:color-mix(in srgb, var(--red) 5%, var(--panel))}
+.setgroup.danger h4{color:var(--red)}
+.setgroup.danger .btn.danger{color:var(--red);
+  border-color:color-mix(in srgb, var(--red) 45%, var(--line2))}
+.settingsdlg .dfoot{border-top:1px solid var(--line);background:var(--panel);
+  padding:10px 14px;gap:8px;display:flex;align-items:center}
+
+/* SETTINGS-GROUP-CARD: 让分组真的像"卡片"（原来的 --line 太淡，看出一片平）。
+   同时给标题加一条左侧色条，扫一眼就知道换组了。 */
+.settingsbody{background:var(--bg);padding:12px 14px 6px}
+.setgroup{background:var(--panel);border:1px solid var(--line2);border-radius:12px;
+  padding:12px 14px 8px;margin:0 0 14px;
+  box-shadow:0 1px 2px color-mix(in srgb, var(--menu-shadow) 55%, transparent)}
+.setgroup h4{display:flex;align-items:center;gap:7px;margin:0 0 10px;padding:0 0 8px;
+  border-bottom:1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  font-size:11px;letter-spacing:1.2px;color:var(--faint);font-weight:700}
+.setgroup h4::before{content:"";width:3px;height:11px;border-radius:2px;
+  background:var(--accent);opacity:.75}
+.setgroup.danger{border-color:color-mix(in srgb, var(--red) 42%, var(--line2))}
+.setgroup.danger h4::before{background:var(--red)}
+
+/* SETTINGS-TWOCOL: 设置页做成「左分组导航 + 右内容」两栏（像正经设置页，而不是一长条表单）。
+   开关改用拨杆（checkbox 换 appearance），布尔项与文本项都用一致的右对齐控件。 */
+.settingsbody{display:flex;flex-direction:row;align-items:stretch;gap:0;padding:0;
+  max-height:68vh;overflow:hidden;background:var(--bg)}
+.setnav{flex:0 0 148px;display:flex;flex-direction:column;gap:2px;padding:12px 8px;
+  border-right:1px solid var(--line);background:var(--panel2);overflow:auto}
+.setnavbtn{display:block;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:8px;
+  background:transparent;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit}
+.setnavbtn:hover{background:var(--menu-hover);color:var(--text)}
+.setnavbtn.on{background:color-mix(in srgb, var(--accent) 12%, var(--panel));color:var(--text);
+  font-weight:600;box-shadow:inset 2px 0 0 var(--accent)}
+.setnavbtn.danger{color:var(--red)}
+.setnavbtn.danger.on{background:color-mix(in srgb, var(--red) 12%, var(--panel));
+  box-shadow:inset 2px 0 0 var(--red)}
+.setpane{flex:1 1 auto;min-width:0;overflow:auto;padding:14px 16px 6px}
+.setgroup{background:transparent;border:0;border-radius:0;padding:0;margin:0;
+  box-shadow:none}
+.setgroup h4{display:flex;align-items:center;gap:8px;margin:0 0 6px;padding:0;
+  border:0;font-size:11px;letter-spacing:1.2px;color:var(--faint);font-weight:700}
+.setgroup h4::before{content:"";width:3px;height:11px;border-radius:2px;
+  background:var(--accent);opacity:.8}
+.setgroup.danger h4::before{background:var(--red)}
+.setgroup.danger h4{color:var(--red)}
+.setrow{display:flex;align-items:center;gap:14px;padding:9px 6px;border-radius:8px;
+  font-size:13px;color:var(--text);cursor:pointer;
+  border-bottom:1px solid color-mix(in srgb, var(--line) 65%, transparent)}
+.setrow:last-child{border-bottom:0}
+.setrow:hover{background:var(--menu-hover)}
+.setrow > span{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.setrow select,.setrow input[type="number"],.setrow input[type="text"]{
+  flex:none;width:220px;max-width:48%;height:32px;padding:0 9px;font-size:12.5px;
+  border:1px solid var(--line2);border-radius:8px;background:var(--input-bg);color:var(--text);
+  order:2}
+.setrow select:focus,.setrow input:focus{outline:2px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  outline-offset:1px;border-color:var(--accent)}
+/* 拨杆开关：36×20 圆角槽 + 白点，选中变主题色（比裸 checkbox 更像成品） */
+.setrow input[type="checkbox"]{order:2;flex:none;appearance:none;-webkit-appearance:none;
+  width:36px;height:20px;border-radius:999px;background:var(--line2);position:relative;
+  cursor:pointer;transition:background-color .16s ease}
+.setrow input[type="checkbox"]::after{content:"";position:absolute;top:2px;left:2px;
+  width:16px;height:16px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 2px rgba(16,24,40,.25);transition:left .16s ease}
+.setrow input[type="checkbox"]:checked{background:var(--accent)}
+.setrow input[type="checkbox"]:checked::after{left:18px}
+.setrow input[type="checkbox"]:focus-visible{outline:2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset:2px}
+.setbtns{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 10px}
+.sethint{margin:0 0 10px;font-size:12px;color:var(--faint);line-height:1.6}
+.settingsdlg{max-width:780px}
+.settingsdlg .dbody{padding:0}
+.settingsdlg .dfoot{border-top:1px solid var(--line);background:var(--panel);
+  padding:10px 14px;display:flex;align-items:center;gap:8px}
+@media(max-width:760px){
+  .settingsbody{flex-direction:column}
+  .setnav{flex:none;flex-direction:row;flex-wrap:wrap;border-right:0;
+    border-bottom:1px solid var(--line);padding:8px}
+  .setnavbtn{width:auto;padding:6px 10px}
+}
+
+/* TODO-HOVER: 待办条目逐行加 hover 高亮 + 按状态分色。
+   之前"已完成"统一用 --text 同色、无 hover，9 条看上去一模一样（用户反馈不好看）。 */
+.todoitem{padding:3px 7px;border-radius:7px;transition:background-color .12s ease,color .12s ease}
+.todoitem:hover{background:color-mix(in srgb, var(--accent) 9%, var(--panel))}
+/* 已完成：文字略淡（仍满足对比度），对勾用绿；hover 时提亮文字 */
+.todoitem.todo-completed .ttxt{color:var(--muted);opacity:1}
+.todoitem.todo-completed:hover .ttxt{color:var(--text)}
+.todoitem.todo-completed .tic{color:color-mix(in srgb, var(--green) 72%, var(--text))}
+/* 待办：正常文字 + 空心点 */
+.todoitem.todo-pending .ttxt{color:var(--text)}
+.todoitem.todo-pending .tic{color:var(--faint)}
+/* 进行中：整行底色 + 左侧色条 + 加粗 */
+.todoitem.todo-in_progress{background:color-mix(in srgb, var(--accent) 12%, var(--panel));
+  box-shadow:inset 2px 0 0 var(--accent)}
+.todoitem.todo-in_progress:hover{background:color-mix(in srgb, var(--accent) 18%, var(--panel))}
+.todoitem.todo-in_progress .tic{color:var(--accent)}
+.todoitem.todo-in_progress .ttxt{color:var(--text);font-weight:600}
+/* 未同步（会话已结束但没勾完）：琥珀，提示"该更新了" */
+.todoitem.todo-stale{background:color-mix(in srgb, var(--amber, #d97706) 10%, var(--panel))}
+.todoitem.todo-stale .tic{color:var(--amber, #d97706)}
+.todoitem.todo-stale .ttxt{color:var(--text)}
+.todoitem.todo-stale:hover{background:color-mix(in srgb, var(--amber, #d97706) 16%, var(--panel))}
+
+/* RC-SWAP: 挂起卡片里的「换提供商模型继续」一行（下拉 + 按钮）。 */
+.rc-swap{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.rc-swap select{flex:1 1 140px;min-width:0;height:28px;font-size:12px;padding:0 6px;
+  border:1px solid var(--line2);border-radius:7px;background:var(--input-bg);color:var(--text)}
+.rc-swap .btn{height:28px;padding:0 10px;font-size:12px}
+
+/* SANDBOX-PICK: 输入框上方的权限档位 chip（仿 DSH）。
+   chip 常驻可见；菜单里三档各带图标 + 一行说明 + 勾选态。 */
+.sandboxpick{position:relative;display:flex;align-items:center}
+.sandboxchip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;
+  font-size:12px;border-radius:999px;border:1px solid var(--line2);background:var(--panel2);
+  color:var(--muted);cursor:pointer;white-space:nowrap}
+.sandboxchip:hover{color:var(--text);border-color:color-mix(in srgb, var(--accent) 40%, var(--line2))}
+.sandboxchip .sb-ico{font-size:13px;line-height:1}
+.sandboxchip.warn{color:var(--red);
+  border-color:color-mix(in srgb, var(--red) 45%, var(--line2));
+  background:color-mix(in srgb, var(--red) 8%, var(--panel))}
+/* 右对齐到 chip 右边，避免靠右时溢出视口；宽度固定 320，说明不折成三行 */
+.sandboxmenu{width:320px;min-width:320px;padding:6px;left:auto;right:0}
+.sandboxmenu .sbopt{display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;
+  padding:8px 9px;border:0;background:transparent;border-radius:8px;cursor:pointer;
+  color:var(--text);font-family:inherit}
+.sandboxmenu .sbopt:hover{background:var(--menu-hover)}
+.sandboxmenu .sbopt.on{background:color-mix(in srgb, var(--accent) 10%, transparent)}
+.sandboxmenu .sbopt .sb-ico{flex:none;width:16px;text-align:center;font-size:13px;line-height:1.4}
+.sandboxmenu .sbopt .sb-txt{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.sandboxmenu .sbopt .sb-txt b{font-size:12.5px;font-weight:600}
+.sandboxmenu .sbopt .sb-txt small{font-size:11.5px;color:var(--faint);line-height:1.5}
+.sandboxmenu .sbopt .sb-check{flex:none;width:14px;text-align:center;color:var(--accent);font-weight:700}
+/* composer 是纵向排列：chip 放顶部一行 */
+/* chip 放在 chatbar 行里，不再绝对定位（那条会压到侧栏上） */
+/* 子代理面板里的"← 返回父会话"行：与普通子代理行区分开（虚线分隔 + 强调色） */
+.subagentrow.subagentback{border-bottom:1px dashed var(--line2);margin-bottom:4px;
+  padding-bottom:6px;color:var(--accent);cursor:pointer}
+.subagentrow.subagentback:hover{background:var(--hover,rgba(0,0,0,.04))}

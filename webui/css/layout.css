@@ -1,0 +1,225 @@
+/* layout.css — 主列布局：header/kpis/内容区的 flex 结构、输入框浮动层、窄屏侧栏抽屉、会话行状态图标、步骤页铺满高度。
+ *
+ * 样式已按块拆分（原 style.css 2341 行 → 11 个文件）。
+ * ⚠ 加载顺序 = 层叠顺序：8/11，由 index.html 里的 <link> 顺序决定，
+ * 不要用 CSS 的 import 指令（会串行阻塞首屏）。新增规则请放进语义对应的文件。
+ */
+/* ── 主列结构对齐 DSH：header/kpis/内容区 + 输入框（flex 子项，不是浮层）─────
+   以前 composer 藏在 #chat 内部，短视口下整张对话卡掉到折叠线以下，只能靠
+   position:fixed + padding 硬顶（会压住内容、还要按视口调数值）。
+   现在 composer 是 .main 的最后一个子项：内容区自己滚，输入框永远在底部。 */
+.main{display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+/* 输入条的"常态位置"（用户："不能完全浮动，只是长高时盖住上面的内容"）：
+   布局里按**常态高度**给它留出底部空间（卡片止于它上方，看起来就是个普通贴底输入框），
+   输入条自己贴着这块空间的下沿绝对定位；只有内容变多、它往上长出来的那部分
+   才会压在对话/时间线内容上 —— 对话区不会被挤小，也不会被常态挡住。
+   --fu-rest 由 JS 校准（常态高度），+54 = 42px 贴底距 + 12px 视觉间距。 */
+#sessionView{padding-bottom:calc(var(--fu-rest,67px) + 18px)}
+/* 输入框被藏起来时（步骤时间线页 / 空状态）不要留它的空位（app.js syncComposer 挂的类） */
+.main.no-composer #sessionView{padding-bottom:0}
+#sessionView > section.card{flex:1 1 auto;min-height:0}
+#sessionView > .content{flex:1 1 auto;min-height:0}
+/* ── 输入框照 DSH 的「框」+「浮动层」（用户："抄完整点，像浮动层那样"）──────
+   DSH 的 composer 不是布局里的一行，而是**浮在内容之上**的一层：
+   消息区滚到它下面、框自己贴底不动，带圆角/描边/投影，聚焦时整框发光。
+   做法：
+     ① `.main` 设 position:relative，输入条改为 absolute 贴底（左右仍与卡片同宽）；
+     ② `#sessionView` 加 padding-bottom，给浮层让出可滚动空间（最后一条消息能滚上来）；
+     ③ 半透明底 + backdrop-filter 模糊 + 投影，于是下面滚动的内容会从框底透出一点；
+     ④ 框上方再压一层从页面底色渐隐的"帘子"，内容滚到框边自然淡出。 */
+.main > .composer{
+  position:absolute;left:22px;right:22px;bottom:12px;z-index:30;
+  margin:0;
+  padding:7px 7px 7px 14px;
+  border:1px solid var(--line2);
+  border-radius:16px;
+  background:color-mix(in srgb, var(--panel) 94%, transparent);
+  -webkit-backdrop-filter:blur(10px);
+  backdrop-filter:blur(10px);
+  box-shadow:0 14px 34px -8px rgba(16,24,40,.20),0 3px 10px -2px rgba(16,24,40,.08);
+  align-items:flex-end;
+  gap:8px;
+  transition:border-color .15s ease,box-shadow .15s ease;
+}
+.main > .composer:focus-within{
+  border-color:var(--accent);
+  box-shadow:0 14px 34px -8px rgba(16,24,40,.20),0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.main > .composer textarea{
+  min-height:50px;max-height:220px;
+  padding:8px 0 5px;
+  border:0;border-radius:0;background:transparent;box-shadow:none;resize:none;
+  overflow-y:hidden;              /* 高度由 JS 按内容设；到顶后 JS 再切成 auto（出现内部滚动条） */
+}
+.main > .composer textarea:focus{border-color:transparent;box-shadow:none}
+/* 发送按钮：药丸，高度 36px（比输入框矮一截才协调；44px 时贴着输入框下沿显得笨重）。
+   底对齐，跟 DSH 一样在框内右下角。 */
+.main > .composer .btn{flex:none;width:32px;height:32px;padding:0;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center}
+/* 发送按钮改成圆形箭头图标（现在流行的样子）：32px 圆、箭头 18px；
+   发送中用 aria-busy 转圈，不再靠换文案（图标按钮换 textContent 会把图标冲掉）。 */
+.main > .composer .btn svg{width:18px;height:18px;display:block}
+.main > .composer .btn[aria-busy="true"] svg{animation:sendsending .9s linear infinite}
+@keyframes sendsending{to{transform:rotate(360deg)}}
+#sessionView{flex:1 1 auto;min-height:0;overflow:auto}
+/* 页面本身永不滚动（宽窄一致）：滚动只发生在 #sessionView / #chatlog / #steps */
+html,body{overflow:hidden}
+@media(max-width:860px){
+  /* 窄屏保留"侧栏在上、主区在下"的堆叠，但主区仍是 flex 列 → 输入框贴主区底部 */
+  .app{height:100vh;overflow:hidden}
+  .main{display:flex;flex-direction:column;overflow:hidden;min-height:0}
+  #sessionView{display:flex;flex-direction:column;flex:1 1 0%;min-height:0;overflow:hidden}
+}
+/* 对话卡撑满 #sessionView 的剩余高度：卡片底边不会再伸到输入框下面。
+   #sessionView 自己也改成 flex 列 + 不滚动（滚动交给 #chatlog / #steps），
+   这样"内容区滚动、输入框固定"才成立（block + overflow:auto 会让卡片溢出）。 */
+/* flex-basis 必须是 0%（不是 auto）：auto 会按内容撑高（实测 1024×600 时
+   #sessionView 撑到 447px、把对话区压成 67px），0% 才只拿剩余空间。 */
+#sessionView{display:flex;flex-direction:column;flex:1 1 0%;min-height:0;overflow:hidden}
+#sessionView > .card:has(> #chat){flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+#sessionView > .card:has(> #chat) > #chat{flex:1 1 auto;min-height:0;max-height:none;overflow:hidden}
+#sessionView > .content{flex:none;min-height:0}
+@media(max-width:860px){
+  #sessionView{display:flex;flex-direction:column;flex:1 1 0%;min-height:0;overflow:hidden}
+}
+/* ── 窄屏(≤860px)：侧栏收成"窄条 + 拉手"，展开时浮在内容上（DSH 式）──
+   原来窄屏把侧栏堆在主区上方，吃掉约 265px：545px 高的窗口里主区只剩 ~280px，
+   顶栏 + KPI + 输入框就把高度占满，对话卡必然溢出。现在收起只留 22px 拉手条，
+   展开时作为浮层盖在内容上（不挤压主区），主区永远拿到整屏高度。 */
+@media(max-width:860px){
+  .app{grid-template-columns:1fr;position:relative;height:100vh;overflow:hidden}
+  /* 收起态就是一条**窄轨道**（无边框、与页面同色），按钮做成居中的药丸，
+     不再是一条空白色竖条夹一个小箭头（用户："侧边栏的把手也搞得诡异"）。 */
+  .rail{position:absolute;left:0;top:0;bottom:0;width:34px;max-height:none;
+    overflow:visible;z-index:60;background:transparent;border:0;
+    display:flex;align-items:center;justify-content:center}
+  /* **只在收起态**隐藏子元素：展开态干脆不写这条，让它们恢复原本的 display */
+  :root:not([data-rail="open"]) .rail>*:not(#railBtn){display:none}
+/* （与下面那条合并：展开态统一在这里定义） */
+  #railBtn{display:flex;position:static;width:26px;height:44px;border-radius:10px;
+    align-items:center;justify-content:center;font-size:16px;line-height:1;
+    background:var(--panel);border:1px solid var(--line2);color:var(--muted);
+    box-shadow:0 2px 8px -2px rgba(0,0,0,.25);cursor:pointer}
+  #railBtn:hover{color:var(--text);border-color:var(--accent)}
+  /* 展开态：顶部留出 ☰ 的位置（否则把手压住"+ 新任务"）；宽度/滚动/阴影都在这一条里 */
+  :root[data-rail="open"] .rail{width:min(320px,84vw);display:block;
+    background:var(--panel);overflow:auto;padding:52px 0 12px;
+    box-shadow:0 0 40px -10px rgba(0,0,0,.45)}
+  :root[data-rail="open"] .railscrim{display:block;position:absolute;inset:0;z-index:55;
+    background:rgba(15,23,42,.35)}
+  /* 抽屉里内容按正常侧栏排布（它是 absolute 的，宽度由 .rail 决定） */
+  :root[data-rail="open"] .rail>.railtop,
+  :root[data-rail="open"] .rail>.listhead{flex:none}
+  :root[data-rail="open"] #railBtn{position:absolute;right:8px;top:10px;left:auto}
+  .main{min-width:0}
+}
+/* ── 窄窗口：KPI 压成一行（对齐 DSH 的"信息不占地方"）────────────────────
+   原来 800px 宽时 auto-fit/minmax(150px) 会排成两行，白占约 230px，
+   把对话区挤没了。窄屏改成一行五列 + 紧凑内边距，信息还在但不抢高度。 */
+@media(max-width:1100px){
+  .kpis{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin:8px 0}
+  .kpi{padding:6px 8px;border-radius:9px}
+  .kpi span{font-size:10.5px}
+  .kpi b{font-size:15px}
+  .kpi .meter{margin-top:4px;height:5px}
+}
+/* 更多菜单里的分组与分隔线（暂停/压缩/继续/切页面/打开会话/深研 都收进来了） */
+.menuList .menugrp{display:flex;flex-direction:column;gap:4px}
+.menuList .mensep{height:1px;background:var(--line);margin:5px 2px}
+/* ── 对话面板头部压缩（对齐"一屏看全"）────────────────────────────────
+   原来四行：页签行（含 3 个次要按钮）+ 状态行 + "与 Copilot 继续…"说明行 +
+   「导出/搜索/强行插入/Agent/普通对话」按钮行 ≈180px。
+   现在：页签行右侧收成 ⋯ 菜单；说明行改 tooltip；按钮行只留模式切换 + ⋯ 菜单。 */
+.padcompact{padding:2px 8px !important;font-size:12px !important;line-height:1.5}
+.chatbar{padding:6px 10px;border-top:1px solid var(--line)}
+.chatbar .btn.seg{height:26px;padding:0 10px;font-size:12px}
+.card .menuList{min-width:190px}/* 对话条的 ⋯ 菜单在页面底部附近：往下弹会超出视口（实测第三项被截），改为向上弹 */
+/* 对话条的 ⋯ 菜单：这里在面板**顶部**了，往下弹即可；往上弹会被顶栏/页签行盖住
+   （原来这条是给「菜单在页面底部」写的，方向反了——用户截图：菜单被上面那行压住）。 */
+.chatbar .menu .menuList{top:calc(100% + 6px);bottom:auto}
+/* ── 窄屏会话列表开关：内联在内容区左上角 ────────────────────────────
+   原来收起态用一个浮在左侧中部的把手，会压住消息区边缘。改成内容区左上角的
+   小按钮：会话打开时在标题行左侧留出的空位里，空状态时就在左上角，
+   既不压内容、也不影响宽屏（宽屏仍用侧栏右缘那条拉手）。 */
+.railmini{display:none}
+@media(max-width:860px){
+  .main{position:relative}
+  .railmini{display:inline-flex;position:absolute;left:8px;top:8px;z-index:70;
+    width:30px;height:30px;padding:0;align-items:center;justify-content:center;font-size:15px}
+  .trow{padding-left:40px}   /* 给 ☰ 让位，别压住标题 */
+  #railBtn{display:none}     /* 弃用浮在左侧的把手 */
+}
+/* 遮罩默认必须**全局** display:none —— 它虽然是 .app 的子元素，但宽屏下
+   .app 是 grid，没这条就会变成一个网格列，把主区挤成一条窄柱
+   （用户实测 1714px 宽时整个界面被挤到左侧 60px 内、文字逐字换行）。 */
+.railscrim{display:none}
+/* ── 会话行的状态图标（替代原来的文字块）──────────────────────────────
+   原来每行右侧有 `completed` / `就绪` 这种文字块，中文两字还行、英文 "completed"
+   很宽，把标题挤得没地方。现在改成 14×14 描边图标：形状区分状态、颜色再强化一次，
+   完整文案放在 title 里（悬停可见 / 读屏可读）。左侧原来的小圆点也一起去掉，
+   只留这一个指示位。 */
+.sess .sstat{flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:16px;height:16px;color:var(--muted)}
+.sess .sstat.run{color:var(--green)}
+.sess .sstat.warn{color:var(--amber)}
+.sess .sstat.bad{color:var(--red)}
+.sess .sstat.done{color:var(--blue)}
+.sess.sel .sstat{color:var(--accent)}
+.sess .sstat svg .spin{transform-origin:8px 8px;animation:spin 1.6s linear infinite}
+/* 侧栏步骤/Token 已含子代理：虚线下划线提示"可悬停看拆分"（与 KPI 卡片一致）*/
+.sess small .ssub{text-decoration:underline dotted rgba(127,127,127,.5);cursor:help}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.sess .sstat svg .spin{animation:none}}
+/* ── 步骤时间线页：铺满父卡片剩余高度并自己滚动 ─────────────────────────
+   实测（1714×961）：卡片 638px 高，但 #timeline 只有 461px —— 因为
+   `.livepane{max-height:38vh}` 之类的上限把它卡在 48vh，而且 overflow:hidden，
+   于是"最大化后时间线还是只显示一小块、还不能滚"。
+   时间线是这一页的主体内容，应该 flex:1 铺满、内容超出时自己滚。 */
+#timeline.timelinepane{flex:1 1 0%;min-height:0;max-height:none;overflow:auto}
+/* 同样按"铺满"处理的还有被合并进来的回答/提示词页（它们是 pre，保持可滚） */
+#answer.livepane,#prompt.livepane{flex:1 1 0%;min-height:0;max-height:none;overflow:auto}
+
+/* TEAMCARD: 待办 + 子代理合并在一张卡里。
+   卡内的待办条不再是独立小卡（去掉自身边框/外边距），子代理块用一条分隔线接在下面。 */
+#sessionView > #teamCard{padding:0;overflow:hidden;flex:0 0 auto}   /* #sessionView 是 flex 列：不设 flex:none 会被压成一条线（实测 6px） */
+#teamCard > .goalbar,
+#teamCard > #subagentBar{flex:none;min-height:0}
+#teamCard[hidden]{display:none}
+#teamCard > .goalbar{margin:0;border:0;border-radius:0;background:transparent;
+  padding:9px 14px}
+#teamCard > #subagentBar{border-top:1px solid var(--line);padding:0}
+#teamCard > #subagentBar .chead{padding:8px 14px;border-bottom:0}
+#teamCard > #subagentBar .subagentlist{padding:2px 12px 8px}
+/* 展开待办时，清单仍在卡内滚动，别把卡撑爆 */
+#teamCard > .goalbar .todolist{max-height:34vh;overflow:auto}
+/* 子代理块收起（自己的 ▾）：不再依赖 .card 祖先 */
+#subagentBar.collapsed > .subagentlist{display:none}
+#subagentBar.collapsed > .chead{border-bottom:0}
+#subagentBar.collapsed .cardchev svg{transform:rotate(-90deg)}
+
+/* TEAMCARD-IN-STREAM: 待办 + 子代理作为**行**放在实时流里（状态条上方），
+   样式与 `.streamstatus` 一致：无卡片边框、只有分隔线、同一内边距。 */
+#chat > #teamCard{flex:none;border:0;border-top:1px solid var(--line);border-radius:0;
+  background:var(--panel);padding:0;overflow:hidden}
+#chat > #teamCard > .goalbar{padding:9px 12px}
+#chat > #teamCard > #subagentBar{border-top:1px solid var(--line)}
+#chat > #teamCard > #subagentBar .chead{padding:9px 12px}
+#chat > #teamCard > #subagentBar .subagentlist{padding:2px 12px 8px}
+
+/* TEAMROW-LIKE-STATUS: 待办条 / 子代理条与底部 `completed · 步 · Token` 状态条**同款**：
+   同一字号（12.5px）、同一内边距（9px 12px）、同一前景色（--muted），
+   标题用 --text + 600 做层级；整条可点（cursor:pointer）。 */
+#chat > #teamCard > .goalbar,
+#chat > #teamCard > #subagentBar > .chead{
+  padding:9px 12px;min-height:36px;box-sizing:border-box;
+  font-size:12.5px;font-weight:400;color:var(--muted);
+  background:var(--panel);border:0;border-radius:0;cursor:pointer;user-select:none}
+#chat > #teamCard > .goalbar:hover,
+#chat > #teamCard > #subagentBar > .chead:hover{background:var(--panel2)}
+#chat > #teamCard > .goalbar .gb-todo{
+  font-size:12.5px;font-weight:600;color:var(--text);padding:0;display:inline-flex;
+  align-items:center;gap:5px}
+#chat > #teamCard > #subagentBar > .chead b{font-size:12.5px;font-weight:600;color:var(--text)}
+#chat > #teamCard > #subagentBar > .chead .hint{font-size:12px;color:var(--faint)}
+#chat > #teamCard > .goalbar .gb-meta{color:var(--faint);font-size:12px}
+

@@ -1,0 +1,34 @@
+/* tokens.css — 设计令牌：颜色 / 字号 / 圆角 / 阴影 / 关键尺寸的唯一来源（`var(--…)` 都出自这里）。
+ *
+ * 样式已按块拆分（原 style.css 2341 行 → 11 个文件）。
+ * ⚠ 加载顺序 = 层叠顺序：1/11，由 index.html 里的 <link> 顺序决定，
+ * 不要用 CSS 的 import 指令（会串行阻塞首屏）。新增规则请放进语义对应的文件。
+ */
+:root{
+  --bg:#0b0f14;--panel:#11161d;--panel2:#151c26;--line:#212b38;--line2:#2b3847;
+  --text:#e6edf3;--muted:#8b98a9;--faint:#708193;--sid-fg:#7e8d9e;--accent-fg:#11161d;--orange:#e8b339;
+  --accent:#4f8ef7;--accent2:#79b0ff;
+  --green:#3fb950;--amber:#d29922;--red:#f85149;--blue:#58a6ff;--purple:#bc8cff;
+  /* 组件级变量：新增主题只需改这里 */
+  --scrollbar:#2b3847;--input-bg:#0d1319;--btn-bg:#1a2230;--btn-hover-text:#fff;
+  --sess-hover:#182030;--sess-sel:#1a2433;--dot-off:#3a4656;
+  --menu-shadow:rgba(0,0,0,.6);--menu-hover:#232e3f;--meter:#0d1319;
+  --term-bg:#0a0e13;--term-text:#c9d4e0;--step-line:#1a2230;
+  --jv-bg:#0a0e13;--jv-text:#dbe4f0;--jv-border:#1d2836;--jv-ind:#2b3847;
+  --ky:#c4b5fd;--st:#86efac;--nm:#93c5fd;--bl:#fbbf24;--nl:#64748b;
+  --msg-user-bg:#1d3a6e;--msg-user-border:#2b4f8f;--big:#5a7493;
+  --danger-bg:#241516;--danger-border:#5a2b28;--danger-text:#ff8a80;--danger-hover-text:#ffb3ad;
+  --mask-bg:rgba(3,7,12,.66);--dlg-shadow:rgba(0,0,0,.8);
+}
+*{box-sizing:border-box}
+/* 页面本身**永不滚动**：滚动只发生在内部面板（chatlog / steps / livepane）。
+   以前没有这条时，`body.bootbar-on .app{margin-top:28px}` 会与 html/body 的
+   height:100% 发生**上外边距折叠**,把整个文档撑高 28px → 页面可以滚 → 一滚
+   就把顶部那一行切掉（用户截图：最上沿露出半个 "AA" 和图标）。 */
+html,body{margin:0;height:100%;overflow:hidden}
+body{font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+button,input,textarea,select{font:inherit;color:inherit}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--scrollbar);border-radius:6px}::-webkit-scrollbar-track{background:transparent}
+
+.app{display:grid;grid-template-columns:318px 1fr;height:100vh;overflow:hidden}
+

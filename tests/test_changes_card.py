@@ -16,11 +16,11 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from gantry.ui_src import ui_js
+from gantry.ui_src import ui_css, ui_js
 
 APP = ui_js()
 HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
-CSS = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+CSS = ui_css()
 I18N = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
 API = ((BASE / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 

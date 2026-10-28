@@ -33,7 +33,7 @@ description: 让 Agent 修改服务自身代码（allow_self_upgrade）时的任
 
 已有的几个短句写法也认（效果一样，只是少了"边界"那行）：
 
-- 「把 `webui/style.css` 里侧栏默认宽度 318px 改成 300px，改完跑 self_validate 和 self_unittest」
+- 「把 `webui/css/tokens.css` 里 `.app` 的侧栏宽度 318px 改成 300px，改完跑 self_validate 和 self_unittest」
 - 「看 `gantry/api.py` 的 `/v1/shutdown`，把优雅停机超时从 8 秒改成 15 秒，其他别动」
 
 ## 硬约束（Agent 会遵守，你也该知道）

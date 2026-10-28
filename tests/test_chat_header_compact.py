@@ -18,7 +18,7 @@
 实测（真服务 + Edge）：头部三行合计 81~130px,1024×600 对话区从 67px 提升到 100px,
 1400×900 从 359→364,输入框始终可见；`⋯` 三项菜单全部在视口内。
 """
-from gantry.ui_src import ui_js
+from gantry.ui_src import ui_css, ui_js
 import re
 import unittest
 from pathlib import Path
@@ -26,7 +26,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
 APP = ui_js()
-_RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+_RAW = ui_css()
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
 
 

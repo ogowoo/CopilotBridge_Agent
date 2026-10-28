@@ -26,7 +26,7 @@
 - **项目上下文**：两级 `AGENT.md` + 两级 `skills/`（渐进式披露），Agent 可用 `skill_create` 自行沉淀技能。
 - **长期记忆**：跨会话累积事实/偏好/结论（`gantry/memory.py`），按相关性检索注入（关键词 + 中文二元组，零依赖）。
 - **M365 集成**：浏览器登录态访问 Copilot；Outlook 默认走 OWA 网页自动化，经典 COM 仅作兜底。
-- **管理界面**：零构建单页 WebUI（`index.html + style.css + js/*.js`，ES 模块，无打包步骤）。
+- **管理界面**：零构建单页 WebUI（`index.html + css/*.css + js/*.js`，ES 模块与分块样式，无打包步骤）。
 
 ### 2.2 明确非目标
 

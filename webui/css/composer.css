@@ -1,0 +1,369 @@
+/* composer.css — 输入与侧栏条目：新会话视图（DSH 式空态）、工作目录选择、工作区分组、斜杠命令、目标/待办条、插件面板、面板折叠与状态条。
+ *
+ * 样式已按块拆分（原 style.css 2341 行 → 11 个文件）。
+ * ⚠ 加载顺序 = 层叠顺序：7/11，由 index.html 里的 <link> 顺序决定，
+ * 不要用 CSS 的 import 指令（会串行阻塞首屏）。新增规则请放进语义对应的文件。
+ */
+/* ── 新会话视图（DSH 式：空态就是编辑器，不套弹窗）────────────────── */
+.newchat{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:12px;width:100%;padding:clamp(20px,5vh,56px) 24px;text-align:center}
+.newchat .nc-head .big{line-height:1}
+.newchat .nc-sub{color:var(--muted);font-size:13px}
+.newchat .nc-box{width:min(820px,94%);border:1px solid var(--line2);border-radius:16px;
+  background:var(--panel2);padding:14px 14px 10px;display:flex;flex-direction:column;
+  gap:10px;text-align:left;box-shadow:0 6px 24px rgba(0,0,0,.06)}
+.newchat textarea#task{width:100%;min-height:104px;max-height:38vh;resize:vertical;
+  border:0;background:transparent;color:var(--text);font:inherit;font-size:14px;
+  line-height:1.7;outline:none;padding:2px 2px 0}
+/* 工具栏：左侧操作区（可内部换行） + 右侧主按钮（永远贴右下，不随换行漂移） */
+.newchat .nc-bar{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;
+  border-top:1px solid var(--line2);padding-top:10px}
+.newchat .nc-left{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;
+  flex-wrap:wrap;row-gap:8px}
+.newchat .nc-right{flex:none;display:flex;align-items:center;gap:6px}
+/* 工具栏控件统一 32px 高、8px 圆角、同一套边框/底色——
+   之前模型 31 / 目录 37 / 图标按钮 26 / 分段 28 混在一起，高度和风格都不齐 */
+.newchat .nc-bar select,
+.newchat .nc-bar input{height:32px;padding:0 10px;font-size:13px;box-sizing:border-box;
+  border-radius:8px;background:var(--input-bg);border:1px solid var(--line2)}
+.newchat .nc-bar select{line-height:30px}
+.newchat .nc-bar .iconbtn{width:32px;height:32px;border-radius:8px;
+  border:1px solid var(--line2);background:var(--input-bg);color:var(--muted)}
+.newchat .nc-bar .iconbtn:hover{border-color:var(--accent);color:var(--text)}
+.newchat .nc-bar .btn.seg{height:32px;border-radius:8px;padding:0 12px;
+  background:transparent;border:1px solid var(--line2);color:var(--muted)}
+.newchat .nc-bar .btn.seg:hover{color:var(--text);border-color:var(--accent)}
+/* 选中的模式用描边高亮：实心强调色只留给「开始」这个唯一主操作 */
+.newchat .nc-bar .btn.seg.on{background:transparent;border-color:var(--accent);
+  color:var(--accent2);font-weight:600}
+.newchat .nc-model{flex:0 1 auto;width:auto;min-width:96px;max-width:168px}
+.newchat .nc-ws{flex:1 1 110px;min-width:90px;max-width:220px}
+.newchat .nc-left .iconbtn{flex:none}
+.newchat .nc-mode{display:flex;gap:4px;flex:none}
+.newchat .nc-send{min-width:88px;height:32px;border-radius:9px;font-weight:600}
+.newchat .nc-hint{color:var(--faint);font-size:11.5px}
+
+/* ── 工作目录选择器（native 优先 / browse 回退）────────────────── */
+.wsbar{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.wspath{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:12px;background:var(--panel2);border:1px solid var(--line2);border-radius:6px;
+  padding:4px 8px}
+.wslist{max-height:54vh;overflow:auto;border:1px solid var(--line2);border-radius:8px;
+  background:var(--panel2)}
+.wsrow{padding:7px 10px;cursor:pointer;font-size:12.5px;border-bottom:1px solid var(--line2)}
+.wsrow:last-child{border-bottom:0}
+.wsrow:hover{background:var(--menu-hover)}
+
+/* 会话列表里的工作区路径（末两段，悬停看全路径） */
+.sessws{color:var(--faint);font-size:11px}
+
+/* 工作区分组头（对齐 DSH：文件夹图标 + 名字 + 会话数） */
+.wshead{display:flex;align-items:center;gap:6px}
+.wshead svg{flex:none;opacity:.75}
+/* 名字不占满：让 .taghead::after 的分隔线去填剩余空间，
+   「＋」因此靠右对齐（之前名字 flex:1 把 ＋ 挤到了中间） */
+.wshead .wsname{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 分隔线（::after）默认排在最后，会把 ＋ 挤在中间：用 order 让它排在 ＋ 之前，
+   ＋ 落到最右（分隔线在 名字/数量 与 ＋ 之间填充） */
+.wshead::after{order:1}
+.wshead .wsadd{flex:none;order:2}
+.wshead .wscount{flex:none;color:var(--faint);font-size:10.5px}
+
+/* 工作区分组：可点击折叠 */
+.wshead{cursor:pointer;user-select:none}
+.wshead .wscaret{flex:none;width:10px;color:var(--faint);font-size:10px}
+.wshead.collapsed{opacity:.8}
+
+/* 窄屏（主区被侧栏吃掉宽度后）：工具栏改两行——操作区一行，模式+开始一行右对齐。
+   不这样做时模型/目录/文件夹会被挤成三行，主按钮位置随机。 */
+@media (max-width: 1050px){
+  .newchat .nc-bar{flex-wrap:wrap}
+  .newchat .nc-left{flex:1 1 100%}
+  .newchat .nc-right{flex:1 1 100%;justify-content:space-between}
+  .newchat .nc-ws{max-width:none}
+}
+
+/* 工作区组头：在此工作区新建会话（DSH 式） */
+.wsadd{flex:none;border:0;background:transparent;color:var(--faint);cursor:pointer;
+  font-size:13px;line-height:1;padding:2px 4px;border-radius:5px;opacity:0;transition:opacity .1s}
+.wshead:hover .wsadd,.wshead:focus-within .wsadd{opacity:1}
+.wsadd:hover{background:var(--menu-hover);color:var(--text)}
+
+/* -- 斜杠命令面板（/）------------------------------------------ */
+.slashmenu{display:flex;flex-direction:column;gap:2px;border:1px solid var(--line2);
+  border-radius:10px;background:var(--panel);padding:6px;max-height:240px;overflow:auto}
+.slashmenu[hidden]{display:none}
+.slashrow{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:7px;
+  cursor:pointer;font-size:12.5px}
+.slashrow.on,.slashrow:hover{background:var(--menu-hover)}
+.slashrow code{flex:none;color:var(--accent2);font-size:12.5px}
+.slashrow .sdesc{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+
+/* -- 目标 / 计划条（goal 模式第几轮、plan 完成度）-------------------- */
+.goalbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px;
+  padding:7px 11px;border:1px solid var(--line2);border-radius:9px;
+  background:var(--panel2);font-size:12px;color:var(--muted)}
+.goalbar[hidden]{display:none}
+.goalbar .gb-goal{color:var(--text);font-weight:600}
+.goalbar .gb-meta{color:var(--faint)}
+.goalbar .gb-todo{color:var(--accent2);background:none;border:0;padding:0 2px;cursor:pointer;font:inherit}
+.goalbar .gb-todo:hover{text-decoration:underline}
+/* 待办清单展开区（点「待办 x/y」展开）：一行一条，左侧状态符号，右侧状态文字 */
+.goalbar{flex-wrap:wrap}
+.todolist{flex:1 1 100%;margin:2px 0 0;display:flex;flex-direction:column;gap:2px;
+  border-left:2px solid var(--line2);padding:4px 0 2px 10px}
+.todoitem{display:flex;align-items:baseline;gap:8px;font-size:12.5px;line-height:1.6}
+
+/* -- 插件面板（声明式渲染 kv/list/table/json/markdown）-------------- */
+.panelwrap{display:flex;gap:10px;min-height:280px}
+.panellist{flex:0 0 150px;display:flex;flex-direction:column;gap:4px;
+  border-right:1px solid var(--line2);padding-right:8px}
+.panelrow{padding:6px 8px;border-radius:7px;cursor:pointer;font-size:12.5px;color:var(--muted)}
+.panelrow:hover{background:var(--menu-hover);color:var(--text)}
+.panelrow.on{background:var(--sess-sel);color:var(--text);font-weight:600}
+.panelbody{flex:1 1 auto;min-width:0;max-height:54vh;overflow:auto;font-size:12.5px}
+.ptable{width:100%;border-collapse:collapse}
+.ptable th,.ptable td{border-bottom:1px solid var(--line2);padding:5px 8px;text-align:left;
+  vertical-align:top;word-break:break-word}
+.ptable th{color:var(--muted);font-weight:600;white-space:nowrap}
+.plist{margin:0;padding-left:18px}
+.plist li{margin:3px 0;word-break:break-word}
+.pjson{margin:0;white-space:pre-wrap;word-break:break-word;color:var(--term-text);
+  background:var(--term-bg);border:1px solid var(--line2);border-radius:8px;padding:8px}
+
+/* 会话来源标记（⏱ 定时任务 / 🔎 深研 / 子 子代理） */
+.skind{display:inline-block;margin-right:4px;font-size:11px;opacity:.85}
+
+/* 子代理会话：归集在父会话下，缩进 + 左侧引导线 */
+.sess-lead{flex:none;width:12px;text-align:center;font-size:10px;line-height:1;
+  color:var(--faint);user-select:none}
+.sess-lead.has{cursor:pointer}
+.sess-lead.has:hover{color:var(--text)}
+/* 子代理会话：固定缩进（不随前导位变化）+ 左侧引导线 + 标题略弱化 */
+.sess.child{margin-left:34px;border-left:2px solid var(--accent);
+  border-left-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  padding-left:10px;
+  background:color-mix(in srgb, var(--panel2) 55%, transparent)}
+.sess.child b{font-weight:600;opacity:.92}
+.sess-exp:hover{color:var(--text)}
+
+/* 顶部细横条：占位在布局里（不是浮层），不遮挡侧栏与主区 */
+/* 顶部细横条让位：用 body 的 padding-top（padding 不折叠），.app 高度相应减掉。
+   不要写成 .app{margin-top:...}——那会和 html/body 的高度折叠，把文档撑高。 */
+body.bootbar-on{padding-top:28px}
+body.bootbar-on .app{height:calc(100vh - 28px)}
+body.bootbar-on .main{padding-top:calc(18px + var(--banner-h,0px))}
+#bootBar #bootText{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bootBar .btn{flex:none}
+
+/* 细横条：压掉历史规则里的 left:50% / max-width（那几条是为"居中浮框"写的） */
+body #bootBar{left:0;right:0;transform:none;max-width:none;width:auto;
+  margin:0;border-radius:0}
+
+/* 顶部两条浮层叠放：细条在上（28px），连接横幅顺延；不让它们压在同一点 */
+body.bootbar-on .connbanner{top:28px}
+/* 折叠态限流小标落在 .main 预留的底部让位带里（高度由 --retry-h 同步，见 app.js
+   updateRetryCountdown 里的 syncFixedLanes 调用）。法则：小标必须整块落在
+   「内容底边」之下，所以 bottom 不能再叠加 --retry-h——之前那样反而把小标抬进内容区
+   （实测 900x700 遮挡 .tabs 19%）。 */
+/* 顶部信息条（最终样式）：左图标 + 左对齐文本 + 右操作，只有一条底部分隔线。
+   之前的居中浮框/全圈琥珀边框在宽屏上像一条空横幅（用户反馈"太丑"）。 */
+body #bootBar{justify-content:flex-start;padding:0 14px;gap:8px;height:28px;
+  border:0;border-bottom:1px solid var(--line2);
+  background:var(--panel2);color:var(--muted);font-size:12px}
+body #bootBar #bootIcon{flex:none;font-size:13px;color:var(--amber);line-height:1}
+body #bootBar #bootText{flex:1 1 auto;min-width:0;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+body #bootBar #bootRetry{flex:none;margin-left:auto;padding:1px 9px;font-size:11.5px}
+/* （原 28px 那条与上面重复且互相冲突，已合并到 body.bootbar-on）*/
+
+/* CHAT-FLEX: 对话标签弹性填充（内部滚动），不再固定 max-height:48vh。
+   布局审计 1280x800 抓到：底部同时有提示条/限流小标时 .main 的 padding-bottom
+   变大，固定高度面板不收缩 → 输入框被挤出 padding 区并被 overflow:hidden 裁掉
+   （报“浮层遮挡 #followup 6%”）。 */
+/* 合并后这里是一条长流（消息+步骤）：必须自己有高度上限并在内部滚动，
+   否则 60~70 行会把整页撑到几千像素（实测 5426px）。 */
+#chat.livepane{flex:1 1 auto;min-height:0;max-height:66vh;overflow:hidden}
+#chat .chatlog{flex:1 1 auto;min-height:0;overflow:auto}
+#chat .composer{flex:none}
+
+/* SESSION-SCROLL: 会话区内部滚动。
+   实测 900x700：三个卡片叠起来比可视区高，而 #sessionView 不滚动 → 卡片溢出
+   .main 的 padding 区，被 fixed 的限流小标压住（布局审计报 .tabs 25%）。
+   让溢出发生在 #sessionView 内部，固定浮层就只压到"预留带"，不压内容。 */
+#sessionView{display:block;flex:1 1 auto;min-height:0;
+  overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+
+/* ICONBTN-CENTER: 图标按钮的盒子必须能真正容纳图标。
+   实测：`.iconbtn{padding:1px 6px}` + width:26px（border-box）把内容区压到 14px，
+   比 16px 的 svg 还窄，grid 的居中对"溢出项"退化成靠左 → 每个图标整体偏右 2px
+   （手册按钮加了 focus 描边后特别明显）。内边距归零，靠 place-items 居中即可。 */
+.iconbtn{padding:0}
+.iconbtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* TIMELINE-TAB: 时间线并入实时面板后，面板内自己滚动（与其他 .livepane 一致）。
+   注意：卡片是 display:block，flex 撑高不生效，必须用 max-height 约束，
+   否则面板会长到内容高度（实测 48 步时 4740px，整页被拉长）。 */
+#timeline{padding:0;max-height:48vh;overflow:hidden;display:flex;flex-direction:column}
+#timeline>.chead{flex:none;padding:8px 12px;border-bottom:1px solid var(--line)}
+#timeline>#steps{flex:1 1 auto;min-height:0;overflow:auto}
+
+/* PANE-CONSISTENT: 五个标签面板统一观感。
+   实测差异：activity/answer/prompt 是 <pre class="term">（等宽字体、浅蓝底、12px 内边距），
+   chat/timeline 是普通 div（无内边距、透明底、由子元素排版）——同一条面板里两套视觉。
+   这里统一：同一背景、同一内边距、同一字体与行高；文本面板保留 pre-wrap 以免丢格式，
+   内部仍可用 tabular-nums 对齐数字。 */
+#activity, #answer, #prompt{
+  background:var(--panel); color:var(--text);
+  font-family:inherit; font-size:13px; line-height:1.75;
+  padding:12px 16px; margin:0;
+  white-space:pre-wrap; word-break:break-word;
+  border-radius:0 0 11px 11px;
+  font-variant-numeric:tabular-nums;
+}
+#chat, #timeline{background:var(--panel)}
+
+/* PANE-BOTTOM-RADIUS: 面板自己做底部圆角。
+   卡片（.card）是 12px 圆角但 overflow:visible，面板的白底会盖住卡片的下半圆角，
+   看起来"底部是方角"（用户截图）。五个面板统一带上底部圆角，配合各自 overflow:hidden
+   把内容裁在圆角内。 */
+#chat, #timeline, #activity, #answer, #prompt{border-radius:0 0 11px 11px}
+#chat, #timeline{overflow:hidden}
+
+/* TODO-PANEL: 待办清单。原样式里有一条**裸** `.ttxt{text-decoration:line-through}`，
+   把所有待办都划掉、整片发灰（用户截图）。这里收敛成只在 `.todo-completed` 内生效，
+   并把状态做成右侧小胶囊，进行中的条目高亮。 */
+.todolist{flex:1 1 100%;margin:4px 0 0;display:flex;flex-direction:column;gap:4px;
+  border-left:2px solid var(--line2);padding:6px 0 4px 10px}
+.todoitem{display:flex;align-items:baseline;gap:8px;font-size:12.5px;line-height:1.6;
+  padding:2px 4px;border-radius:6px}
+.todoitem .tic{flex:none;width:14px;text-align:center;color:var(--faint)}
+.todoitem .ttxt{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;color:var(--text)}
+.todoitem .tst{flex:none;font-size:11px;color:var(--faint);border:1px solid var(--line2);
+  border-radius:999px;padding:0 7px;line-height:1.7;white-space:nowrap}
+.todoitem.todo-completed .tic{color:var(--green)}
+.todoitem.todo-completed .ttxt{color:var(--faint);text-decoration:line-through}
+.todoitem.todo-completed .tst{color:var(--green);border-color:color-mix(in srgb, var(--green) 45%, transparent)}
+.todoitem.todo-in_progress{background:color-mix(in srgb, var(--accent) 10%, transparent)}
+.todoitem.todo-in_progress .tic{color:var(--accent)}
+.todoitem.todo-in_progress .ttxt{color:var(--text);font-weight:600}
+.todoitem.todo-in_progress .tst{color:var(--accent);border-color:color-mix(in srgb, var(--accent) 45%, transparent)}
+
+/* TODO-STALE: 会话已结束但待办没同步——不再假装"进行中"，改用警示色并给一行说明。 */
+.todoitem.todo-stale .tic{color:var(--amber, #d97706)}
+.todoitem.todo-stale .ttxt{color:var(--text)}
+.todoitem.todo-stale .tst{color:var(--amber, #d97706);
+  border-color:color-mix(in srgb, var(--amber, #d97706) 45%, transparent)}
+.todohint{margin-top:4px;font-size:11.5px;color:var(--faint)}
+
+/* TODO-GAP: 待办卡片与上方「任务操作按钮行」零间距，两个卡片贴成一块（用户截图）。
+   间距跟页面其它面板保持一致：`.kpis{margin:14px 0}`、`.card{margin-top:14px}`，
+   所以这里也用 14px（实测页面标准面板间距就是 14）。 */
+#goalBar{margin:14px 0}
+
+/* STREAM-STATUS: 合并后「实时流」的状态条（原来是一整个「当前执行状态」标签页）。
+   一行显示状态/在做什么/步数/Token/错误，点一下展开完整详情。
+   **位置在输入框正上方**（等于 DSH 的「深度求索中…」那一行）：所以分隔线画在上面。 */
+.streamstatus{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  padding:9px 12px;border-top:1px solid var(--line);background:var(--panel);
+  font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
+.streamstatus:hover{background:var(--panel2)}
+.streamstatus .ss-phase{color:var(--text);font-weight:600}
+.streamstatus .ss-phase.ss-running{color:var(--accent)}
+.streamstatus .ss-phase.ss-completed{color:var(--green)}
+.streamstatus .ss-phase.ss-failed,.streamstatus .ss-phase.ss-cancelled{color:var(--red)}
+.streamstatus .ss-detail{color:var(--text);max-width:52ch;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.streamstatus .ss-meta{color:var(--faint);font-variant-numeric:tabular-nums}
+.streamstatus .ss-err{color:var(--amber, #d97706)}
+.streamstatus .ss-sep{color:var(--line2)}
+#activity.streamdetail{max-height:34vh;overflow:auto;border-top:1px solid var(--line);
+  border-bottom:0;padding:10px 12px;background:var(--panel2);font-size:12.5px;line-height:1.6}
+
+/* STREAMSTEP: 实时流里穿插的步骤行（消息气泡之间的一条条"做了什么"）。
+   紧凑一行：图标 · 工具名 · 理由 · 时间；点开 <details> 看参数与结果。 */
+.streamstep{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;
+  margin:6px 0;padding:6px 10px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel2);font-size:12.5px;line-height:1.6}
+.streamstep .ss-ic{flex:none;width:14px;text-align:center;color:var(--faint)}
+.streamstep.ok .ss-ic{color:var(--green)}
+.streamstep.error .ss-ic{color:var(--red)}
+.streamstep .ss-tool{flex:none;font-family:var(--mono, ui-monospace);font-size:12px;
+  color:var(--text);font-weight:600}
+/* 理由**不截断**：省略号会让布局审计判为"文字被裁剪"（实测 6 处），
+   而且用户看不到完整理由。改成换行，靠行数自然控制高度。 */
+.streamstep .ss-reason{flex:1 1 220px;min-width:0;color:var(--muted);
+  white-space:normal;overflow-wrap:anywhere}
+.streamstep .ss-clock{flex:none;color:var(--faint);font-variant-numeric:tabular-nums;font-size:11.5px}
+.streamstep .ss-det{flex:1 1 100%;margin:2px 0 0}
+.streamstep .ss-det summary{cursor:pointer;color:var(--accent2);font-size:11.5px}
+/* 排版对齐聊天里的代码块（.md-codewrap pre：12.5px / 20px 行高 / 细边框）：
+   原来 11.5px + 通用 monospace，看着比合并前的"查看结果"更挤更难读。 */
+.streamstep .ss-det pre{margin:6px 0 0;max-height:260px;overflow:auto;padding:9px 11px;
+  white-space:pre-wrap;overflow-wrap:anywhere;
+  border:1px solid var(--line2);border-radius:8px;
+  background:var(--term-bg);color:var(--term-text);
+  font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New",
+              "Microsoft YaHei Mono","Sarasa Mono SC",monospace;
+  font-size:12.5px;line-height:20px}
+
+/* hidden 属性会被 .livepane/.term 的 display 规则盖掉（作者样式优先于 UA 的 [hidden]），
+   结果「详情」块默认就是展开的。显式补一条。 */
+#activity[hidden], #answer[hidden], #prompt[hidden]{display:none !important}
+
+/* CARD-COLLAPSE: 子代理与实时流两块面板都点标题行/▾ 收起（与 todo 一致）。 */
+section.card.collapsed > .subagentlist,
+section.card.collapsed > .livepane,
+section.card.collapsed > .streamstatus,
+section.card.collapsed > .streamdetail{display:none !important}
+section.card.collapsed > .chead{border-bottom:0}
+.cardchev{flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:16px;height:16px;background:none;border:0;padding:0;cursor:pointer;
+  color:var(--faint);line-height:1}
+.cardchev:hover{color:var(--text)}
+/* 箭头本身是 SVG：以前是文本 "▾"，被 i18n 换成「Collapse / expand」后，
+   收起时旋转 -90° 就成了竖排文字（用户截图）。改成 SVG 后旋转只影响图形。 */
+.cardchev svg{width:12px;height:12px;display:block;transition:transform .15s ease}
+section.card.collapsed .cardchev svg{transform:rotate(-90deg)}
+
+/* SS-DET-OVERFLOW: 实时流里的步骤详情复用了时间线的 jsonview；
+   长字符串（路径/命令）在窄屏会把卡片顶出视口（布局审计：span.st 超宽）。
+   时间线里靠 .stepview 的宽度约束，这里补上同样的约束 + 允许任意断行。 */
+.streamstep .ss-det{min-width:0}
+.streamstep .stepview{min-width:0;max-width:100%;max-height:280px;overflow:auto}
+.streamstep .stepview .jsonview,
+.streamstep .stepview .kvlist{min-width:0;max-width:100%;overflow-wrap:anywhere;white-space:pre-wrap}
+
+/* JSONVIEW-WRAP: JSON 视图里的长字符串（sha/路径）会把卡片顶出视口
+   （布局审计实测：span.st 宽 896px 在 1280 视口外）。只在需要时断词，不影响缩进对齐。 */
+.jsonview{max-width:100%;overflow-wrap:anywhere}
+.jsonview .st,.jsonview .ky,.jsonview .nm{overflow-wrap:anywhere;white-space:pre-wrap}
+
+/* KPI-STATE: 状态卡片按会话状态动态着色。
+   底色用 color-mix 把主题色兑进面板色，深浅主题都自适应；左侧加一条实色竖条
+   做状态指示（不止靠颜色，色弱也能看出来）。
+   running/waiting 用主色、completed 绿、failed/cancelled 红、paused 琥珀。 */
+.kpi.kpi-state{position:relative;transition:background-color .2s ease,border-color .2s ease}
+/* 对比度体检：状态卡自带 accent 着色底，标签再用 --muted 在 mint 下只有 4.31（<4.5）。
+   只把这一张的标签换成正文色，其它卡仍是 --muted。 */
+.kpi.kpi-state>span{color:var(--text)}
+.kpi.kpi-state::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  border-radius:12px 0 0 12px;background:var(--line2);transition:background-color .2s ease}
+.kpi.kpi-state[data-state="running"]{background:color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-color:color-mix(in srgb, var(--accent) 35%, var(--line))}
+.kpi.kpi-state[data-state="running"]::before{background:var(--accent)}
+.kpi.kpi-state[data-state="waiting"]{background:color-mix(in srgb, var(--accent) 6%, var(--panel));
+  border-color:color-mix(in srgb, var(--accent) 25%, var(--line))}
+.kpi.kpi-state[data-state="waiting"]::before{background:var(--accent)}
+.kpi.kpi-state[data-state="completed"]{background:color-mix(in srgb, var(--green) 10%, var(--panel));
+  border-color:color-mix(in srgb, var(--green) 35%, var(--line))}
+.kpi.kpi-state[data-state="completed"]::before{background:var(--green)}
+.kpi.kpi-state[data-state="failed"],
+.kpi.kpi-state[data-state="cancelled"]{background:color-mix(in srgb, var(--red) 10%, var(--panel));
+  border-color:color-mix(in srgb, var(--red) 35%, var(--line))}
+.kpi.kpi-state[data-state="failed"]::before,
+.kpi.kpi-state[data-state="cancelled"]::before{background:var(--red)}
+.kpi.kpi-state[data-state="paused"]{background:color-mix(in srgb, var(--amber, #d97706) 10%, var(--panel));
+  border-color:color-mix(in srgb, var(--amber, #d97706) 35%, var(--line))}
+.kpi.kpi-state[data-state="paused"]::before{background:var(--amber, #d97706)}

@@ -15,12 +15,13 @@
 
 实测修后：铺满率 100%（1714/1400）、99%（1024）；时间线底边在视口内。
 """
+from gantry.ui_src import ui_css
 import re
 import unittest
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-_RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+_RAW = ui_css()
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
 
 

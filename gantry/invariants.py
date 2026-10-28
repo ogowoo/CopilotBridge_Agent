@@ -500,16 +500,22 @@ def _ui_assets_whitelisted() -> None:
     if not m:
         raise InvariantError("api.py 里找不到 /ui/{asset} 白名单")
     allowed = {x.strip().strip('"\'') for x in m.group(1).split(",") if x.strip()}
-    # ES 模块解耦后，路由还按正则放行 `js/<名字>.js`（等价于"webui/js/ 下的任何 .js 文件"）
-    js_glob = bool(re.search(r're\.fullmatch\(r"js/', api))
+    # ES 模块解耦后，路由还按正则放行 `<目录>/<名字>.(js|css)`：js/ 是 ES 模块（由 main.js
+    # import，页面上只出现 js/main.js 一个 <script>），css/ 是拆分后的样式（原 style.css）
+    glob_dirs: set[str] = set()
+    for grp in re.findall(r're\.fullmatch\(r"\(\?:([a-z|]+)\)', api):
+        glob_dirs |= {x for x in grp.split("|") if x}
+    if not glob_dirs:
+        glob_dirs = set(re.findall(r're\.fullmatch\(r"([a-z]+)/', api))
     refs = set(re.findall(r'<(?:script|link)[^>]*?(?:src|href)="([^"]+)"', html))
     local = {r.split("?")[0] for r in refs
              if not r.startswith(("http://", "https://", "data:", "//"))}
     def _ok(x):
         if x in allowed:
             return True
-        # js/main.js 这类按 `js/<名字>.js` 正则放行的资产
-        if js_glob and re.fullmatch(r"js/[0-9A-Za-z._-]+\.js", x):
+        # js/main.js / css/tokens.css 这类按 `<目录>/<名字>.<扩展名>` 正则放行的资产
+        m2 = re.fullmatch(r"([a-z]+)/[0-9A-Za-z._-]+\.(js|css)", x)
+        if m2 and m2.group(1) in glob_dirs:
             return True
         return False
     missing = sorted(x for x in local if not _ok(x))
@@ -518,10 +524,18 @@ def _ui_assets_whitelisted() -> None:
     absent = sorted(x for x in local if not (web / x).is_file())
     if absent:
         raise InvariantError(f"index.html 引用了不存在的文件: {absent}")
-    # tuple 里的精确名必须仍被页面引用；js/*.js 正则没有具体文件名，不参与 stale 判定
-    stale = sorted(a2 for a2 in allowed if a2 not in local and not a2.startswith("js/"))
+    # tuple 里的精确名必须仍被页面引用
+    stale = sorted(a2 for a2 in allowed if a2 not in local)
     if stale:
         raise InvariantError(f"白名单里有页面未引用的条目（可能已废弃）: {stale}")
+    # 反向：css/ 下的样式文件都要被页面引用（否则是死文件或漏加载）。
+    # js/ 不在这里查：模块是被 main.js import 的，页面上只出现 js/main.js 一个入口。
+    if "css" in glob_dirs:
+        cssdir = web / "css"
+        orphans = sorted(f"css/{q.name}" for q in cssdir.glob("*.css")
+                         if f"css/{q.name}" not in local) if cssdir.is_dir() else []
+        if orphans:
+            raise InvariantError(f"css/ 下有页面未引用的样式文件（死文件或漏加载）: {orphans[:6]}")
 
 
 @invariant("子代理面板按父会话过滤")

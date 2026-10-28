@@ -19,13 +19,14 @@
   `.app` 高度 `calc(100vh - 28px)`;
 - 合并重复的 26px / 28px 两条规则。
 """
+from gantry.ui_src import ui_css
 import re
 import sys
 import unittest
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-_RAW_CSS = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+_RAW_CSS = ui_css()
 # 先剥掉注释再匹配：注释里引用过旧写法，直接正则会误判
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW_CSS)
 

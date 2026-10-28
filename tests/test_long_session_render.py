@@ -22,10 +22,10 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from gantry.ui_src import ui_js
+from gantry.ui_src import ui_css, ui_js
 
 APP = ui_js()
-CSS = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+CSS = ui_css()
 
 
 class LazyTimelineTests(unittest.TestCase):

@@ -1,0 +1,273 @@
+/* shell.css — 外壳：左侧栏、主区域、任务条折叠、KPI 内联及其媒体查询。
+ *
+ * 样式已按块拆分（原 style.css 2341 行 → 11 个文件）。
+ * ⚠ 加载顺序 = 层叠顺序：2/11，由 index.html 里的 <link> 顺序决定，
+ * 不要用 CSS 的 import 指令（会串行阻塞首屏）。新增规则请放进语义对应的文件。
+ */
+/* ── 左侧栏 ─────────────────────────────── */
+.rail{display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--line);min-height:0;position:relative}
+/* 折叠拉手：贴在侧栏右缘的细长竖条；折叠后侧栏归零只剩它 */
+#railBtn{position:absolute;right:-16px;top:50%;transform:translateY(-50%);z-index:30;width:16px;height:64px;padding:0;border:1px solid var(--line2);border-left:0;border-radius:0 8px 8px 0;background:var(--panel);color:var(--faint);font-size:13px;line-height:1;cursor:pointer}
+#railBtn:hover{color:var(--accent2);border-color:var(--accent)}
+.iconbtn{width:26px;height:26px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;display:grid;place-items:center;flex:none}
+.iconbtn:hover{background:var(--panel2);color:var(--text);border-color:var(--line2)}
+.railtop{padding:12px 12px 4px;flex:none}
+/* 会话栏两行布局：实测一行放不下——标签 60 + 筛选框 + **7 个图标按钮** 共需 342px，
+   而侧栏可用宽 317px → 溢出 25px 被 .rail{overflow:hidden} 裁掉（截图里筛选框被压成 20px 空椭圆）。
+   现在第 1 行 = 标签 + 筛选框，第 2 行 = 图标右对齐。 */
+.listhead{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;
+  padding:14px 16px 8px;font-size:11px;letter-spacing:1.5px;color:var(--faint)}
+.listhead input{flex:1 1 90px;min-width:0;padding:5px 9px;font-size:12px;letter-spacing:0}
+/* 图标行用**分散对齐**：铺满整行并与下方会话列表的左右边缘对齐
+   （右对齐时 7 个图标挤在右侧、左边留一大片空白）。 */
+.listacts{flex:1 1 100%;display:flex;justify-content:flex-start;align-items:center;
+  gap:5px;row-gap:6px;flex-wrap:wrap;min-width:0}
+.sesslist{flex:1;overflow:auto;padding:0 8px 12px}
+.sess{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;cursor:pointer;border:1px solid transparent}
+.sess:hover{background:var(--sess-hover)}
+.sess.sel{background:var(--sess-sel);border-color:var(--line2)}
+.sess .dot{flex:none;width:8px;height:8px;border-radius:50%;background:#5c6a7a}
+.dot.run{background:var(--green);box-shadow:0 0 0 3px #3fb95022;animation:pulse 1.4s infinite}
+.dot.warn{background:var(--amber);box-shadow:0 0 0 3px #d2992222}
+.dot.bad{background:var(--red);box-shadow:0 0 0 3px #f8514922}
+.dot.done{background:var(--blue)}
+@keyframes pulse{50%{opacity:.35}}
+.smeta{flex:1;min-width:0}
+.smeta b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smeta small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;font-variant-numeric:tabular-nums}
+/* 会话标识：标题可能相似或被 Copilot 改名，删除前要能对上号 */
+.sid{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:11px;color:var(--sid-fg,var(--faint));cursor:copy;border-bottom:1px dotted var(--line2)}
+.sid:hover{color:var(--accent2)}
+.sidbig{flex:none;font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:11.5px;color:var(--sid-fg,var(--faint));border:1px solid var(--line2);border-radius:6px;padding:2px 8px;cursor:copy;white-space:nowrap}
+.sidbig:empty{display:none}
+.sidbig:hover{color:var(--accent2);border-color:var(--accent)}
+/* 会话页模型选择器：宽屏贴右，窄屏随 trow 换行 */
+.sessmodel{margin-left:auto;flex:none;width:auto;max-width:230px;padding:4px 8px;font-size:12px;font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace}
+.stag{flex:none;font-size:10.5px;color:var(--muted);border:1px solid var(--line2);border-radius:20px;padding:2px 8px}
+.sess-empty{color:var(--faint);text-align:center;padding:26px 10px;font-size:12.5px}
+
+/* 只给"文本类"输入框套文本框样式。**必须排除 radio/checkbox**：
+   原先的 `input{...width:100%}` 把单选框撑成整行宽（实测 422px），把标签文字
+   挤成"一个字一行"的竖排——「强行插入」对话框整个变形。 */
+input:not([type=radio]):not([type=checkbox]):not([type=range]):not([type=file]),
+textarea,select{background:var(--input-bg);border:1px solid var(--line2);border-radius:8px;padding:8px 10px;outline:none;width:100%}
+input:not([type=radio]):not([type=checkbox]):not([type=range]):not([type=file]):focus,
+textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4f8ef722}
+/* 选择类控件保持原生尺寸与外观 */
+input[type=radio],input[type=checkbox]{width:auto;height:auto;margin:0;padding:0;
+  background:none;border:0;flex:none;accent-color:var(--accent)}
+textarea{resize:vertical}
+
+.btn{border:1px solid var(--line2);background:var(--btn-bg);border-radius:8px;padding:7px 13px;cursor:pointer;font-size:13px;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;line-height:1.2}
+.btn:hover{border-color:var(--accent);color:var(--btn-hover-text)}
+.btn.accent{background:var(--accent);border-color:var(--accent);color:var(--accent-fg,#fff);font-weight:600}
+.btn.accent:hover{background:var(--accent2)}
+.btn.danger{border-color:var(--danger-border);color:var(--danger-text);background:var(--danger-bg)}
+.btn.danger:hover{border-color:var(--red);color:var(--danger-hover-text)}
+.btn.ghost{background:transparent}
+.btn.block{width:100%}
+.btn:disabled{opacity:.55;cursor:default}
+
+/* ── 主区域 ─────────────────────────────── */
+/* 浮层占位：固定浮层（连接横幅/未就绪条/授权横幅/限流/提示）不参与布局，
+   所以在内容区上下各保留一条 padding 带，让它们只覆盖留白、不遮内容元素——
+   实测过：只挪位置解决不了（顶部浮层必然压住顶栏的标题/状态）。 */
+.main{overflow:hidden;min-width:0;display:flex;flex-direction:column;
+  padding:calc(18px + var(--banner-h,0px) + min(var(--boot-h,0px),120px)) 22px
+          calc(6px)}   /* 不再给限流浮卡预留：它已改成全屏遮罩 */
+#sessionView{flex:1;display:flex;flex-direction:column;min-height:0}
+.empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--faint)}
+.empty .big{font-size:44px;font-weight:700;letter-spacing:2px;color:var(--big)}
+.empty kbd{border:1px solid var(--line2);border-radius:6px;padding:2px 7px;font-size:12px;background:var(--panel2)}
+
+.topbar{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px;
+  /* 顶栏用网格排：行1=标题行(+折叠时上来的 KPI)+箭头，行2=状态行，行3=按钮行 */
+  display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:10px;align-items:center}
+.topbar>.trow{grid-column:1/span 2;grid-row:1;min-width:0}
+.topbar>.topbarchev{grid-column:3;grid-row:1;justify-self:end}
+.topbar>#status{grid-column:1/-1;grid-row:2}
+.topbar>.actions{grid-column:1/-1;grid-row:3}
+/* ── 任务条折叠（点标题行任意空白处、点标题或右侧箭头）：收起后只留一行 ──
+   展开 3 行(状态/按钮+KPI)≈123px，收起≈46px；收起时把「总步骤 / TOKEN」两张 KPI
+   挪到标题行右边（状态看左边的 pill），既省高度又不丢关键信息。
+   状态记 localStorage(cbp.topbarCollapsed)，跨刷新保留。 */
+header.topbar.collapsed{padding-top:9px;padding-bottom:9px}
+header.topbar.collapsed>#status{display:none}
+header.topbar.collapsed>.actions{display:contents}   /* 让 KPI 条变成顶栏的网格项 */
+header.topbar.collapsed .actions .grp{display:none}  /* 按钮行收起 */
+header.topbar.collapsed>.trow{grid-column:1}
+header.topbar.collapsed .kpis-inline{grid-column:2;grid-row:1;margin:0;justify-self:end}
+header.topbar.collapsed .kpis-inline .kpi:nth-child(1),
+header.topbar.collapsed .kpis-inline .kpi:nth-child(3),
+header.topbar.collapsed .kpis-inline .kpi:nth-child(4){display:none}
+/* 窄屏 + 收起态：右边这些（模型下拉 / 刷新 / KPI 两张）全部藏掉，
+   只留「标题 + 会话 ID + 状态 pill + 箭头」，保证永远是一行。 */
+@media(max-width:1100px){
+  header.topbar.collapsed .sessmodel,
+  header.topbar.collapsed #btnRefreshSess,
+  header.topbar.collapsed .kpis-inline{display:none}
+}
+/* 箭头朝向跟卡片一致：收起时转 -90° */
+header.topbar.collapsed .topbarchev svg{transform:rotate(-90deg)}
+header.topbar .topbarchev{flex:none;margin-left:2px}
+/* 标题可点（收起/展开），给个手型和 hover 提示 */
+#title[data-act]{cursor:pointer}
+#title[data-act]:hover{color:var(--accent)}
+.trow{display:flex;align-items:center;gap:12px;min-width:0}
+.trow h1{margin:0;font-size:18px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{flex:none;font-size:12px;border-radius:20px;padding:3px 11px;border:1px solid var(--line2);color:var(--muted)}
+.pill.run{color:#7ee787;border-color:#2ea04366;background:#3fb95014}
+.pill.warn{color:#e8b339;border-color:#9e6a0366;background:#d2992214}
+.pill.bad{color:#ffa198;border-color:#f8514966;background:#f8514914}
+.pill.done{color:#79b0ff;border-color:#58a6ff66;background:#58a6ff14}
+.sub{color:var(--muted);font-size:12px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.actions{display:flex;gap:14px;margin-top:12px;flex-wrap:wrap;align-items:center}
+.grp{display:flex;gap:7px;padding-right:14px;border-right:1px solid var(--line);align-items:center;flex-wrap:wrap;min-width:0}
+.grp:last-child{border-right:0;padding-right:0}
+.actions .btn{height:34px;padding-top:0;padding-bottom:0}
+.menu{position:relative;display:flex;align-items:center}
+.menuList{position:absolute;right:0;top:calc(100% + 6px);background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:6px;display:none;flex-direction:column;gap:4px;min-width:210px;box-shadow:0 14px 40px var(--menu-shadow);z-index:20}
+.menuList.open{display:flex}
+.menuList button{text-align:left;border:0;background:transparent;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px}
+.menuList button:hover{background:var(--menu-hover)}
+.menuList button.danger{color:var(--danger-text)}
+
+/* KPI 条（旧版独立一行用的，宽屏仍保留 auto-fit 定义供回退）：
+   auto-fit 让卡片数随可用宽度自适应，杜绝窄窗口网格溢出互相挤压 */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+@media(min-width:1281px){.kpis .kpi:last-child{grid-column:span 2}}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 14px}
+/* 标签原本用 --faint：对比度审计（改用 canvas 正确解析 color-mix 后）实测
+   4.0~4.34，低于正文 4.5；改用 --muted。 */
+.kpi span{display:block;font-size:11px;letter-spacing:1px;color:var(--muted);margin-bottom:5px}
+.kpi b{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+.meter{height:7px;background:var(--meter);border-radius:5px;overflow:hidden;margin-top:8px}
+.meter span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .5s}
+
+/* ── KPI 内联进「任务」这一行（KPI-INLINE）─────────────────────────────
+   原来 KPI 是顶栏下面独立一行网格：5 张卡 + 14px 上下间距 ≈ 105px，宽屏还把最后
+   一张卡拉成两列宽 —— 一屏里它比对话区还显眼。
+   现在它是 .actions 这一行里的最后一组：靠右（margin-left:auto）、只占按钮右侧的
+   剩余宽度，标签 10px / 数值 15px / 进度条 4px，整条高度跟按钮行一致；放不下时
+   整条换到按钮下方（.actions 本来就是 flex-wrap），信息不丢、也不挤扁按钮。 */
+.kpis.kpis-inline{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 0 auto;align-items:center;min-width:0}
+/* 单行 chip 形态：标签与数值同排、高度跟按钮一样（34px），**不撑高任务条**。
+   之前两行（标签一行 + 数值一行）会把 .actions 从 34px 顶到 58px，顶栏白长 24px。 */
+.kpis-inline .kpi{display:flex;align-items:center;gap:5px;height:34px;padding:0 10px;
+  border-radius:9px;min-width:0}
+/* 只给"标签"这条规则，别让 .kpi span 的 margin/字体套到进度条里的 span 上 */
+.kpis-inline .kpi>span{display:inline;font-size:10.5px;letter-spacing:.4px;margin:0;
+  white-space:nowrap;line-height:1}
+.kpis-inline .kpi b{font-size:15px;line-height:1;white-space:nowrap}
+/* TOKEN 那张：值 + 预算同排，进度条压成行内小条（条高 3px 不增加行高） */
+.kpis-inline .kpi:last-child{gap:4px}
+.kpis-inline .kpi .meter{margin:0 0 0 2px;height:3px;width:46px;flex:none;align-self:center}
+.kpis-inline .kpi .meter span{margin:0;font-size:0;letter-spacing:0}
+@media(max-width:1280px){
+  /* 收窄：仍然带标签，只压字号/间距，保证还跟按钮同一行（差 2px 就会整条换行） */
+  .kpis-inline .kpi{height:32px;padding:0 5px;gap:3px}
+  .kpis-inline .kpi>span{font-size:9.5px;letter-spacing:0}
+  .kpis-inline .kpi b{font-size:12.5px}
+  .kpis-inline .kpi .meter{width:26px}
+}
+@media(max-width:1050px){
+  /* 更窄时只留数值（标签变 tooltip）——宁可少一行文字，也不让顶栏长高 */
+  .kpis-inline{gap:4px}
+  .kpis-inline .kpi>span{display:none}
+  .kpis-inline .kpi{height:30px;padding:0 6px;border-radius:8px;gap:2px}
+  .kpis-inline .kpi b{font-size:12.5px}
+  .kpis-inline .kpi .meter{height:3px;width:24px}
+}
+
+/* 内容区：实时面板已上移为独立选项卡卡片，这里只剩时间线独占整宽 */
+.content{display:grid;grid-template-columns:1fr;gap:12px;align-items:stretch;flex:1 1 auto;min-height:0;overflow:hidden}
+.content>.card{display:flex;flex-direction:column;min-height:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
+.chead{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:11px 15px;border-bottom:1px solid var(--line);font-weight:600;font-size:13.5px}
+/* 提示区里是"计数 + 两个下拉框 + 导出按钮"，内联排会在窄处堆叠（实测：两个下拉框
+   竖着叠在标题右上方）。改成 flex 行，放不下时整体换行而不是竖着叠。 */
+.chead .hint{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;justify-content:flex-end;
+  flex-shrink:0;                    /* 不被压缩：实测它被压到 166px 导致两个下拉框竖着叠 */
+  margin-left:auto;font-weight:400;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
+.term{margin:0;padding:12px 15px;background:var(--term-bg);border-radius:0 0 11px 11px;color:var(--term-text);font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;min-height:64px;max-height:40vh;overflow:auto}
+
+/* 实时面板选项卡（执行状态/当前回答/发送内容/继续对话共用面板体） */
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{border:1px solid var(--line2);background:transparent;border-radius:20px;padding:4px 13px;font-size:12.5px;cursor:pointer;color:var(--muted)}
+.tab:hover{border-color:var(--accent);color:var(--text)}
+.tab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-fg,#fff);font-weight:600}
+.tab.new::after{content:'●';color:var(--green);font-size:9px;margin-left:5px;vertical-align:2px}
+/* 面板体需要稳定高度：卡片不再被拉伸,flex:1 失效,改由 min-height 支撑 */
+.livepane{min-height:190px;max-height:38vh;overflow:auto;font-size:13px;line-height:1.75}
+#chat.livepane{max-height:48vh}
+.chatwrap{display:flex;flex-direction:column;padding:0}
+.chatbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 15px;border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap}
+/* 模式切换行挪到面板标题行右侧（跟页签同一行）：去掉自己的边框/内边距，靠右排 */
+/* 模式切换组贴到标题行最右；它前面那个「面板 ⋯」不再抢自动外边距 */
+.chead > .hint:has(+ .chatbar){margin-left:0}
+.chead > .chatbar{margin-left:auto;padding:0;border:0;background:transparent;
+  flex:none;flex-wrap:nowrap;justify-content:flex-end;gap:6px}
+.chatbar .meta{color:var(--faint);font-size:12.5px}
+.pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);animation:pulse 1.3s infinite}
+.dot-off{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--dot-off)}
+/* 体检补：原来只有 .dot-off / .dot-bad，没有 .dot-on，而 app.js 把"运行中"的会话/子代理
+   小点设成 class="dot-on" ⇒ 运行中的圆点没有任何宽高/底色，根本看不见。 */
+.dot-on{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green)}
+
+/* 时间线（与右侧实时面板共用剩余高度，随窗口伸缩） */
+.steps{flex:1;min-height:0;overflow:auto}
+.step{padding:10px 15px;border-bottom:1px solid var(--step-line);border-left:3px solid transparent}
+.step:last-child{border-bottom:0}
+.step.ok{border-left-color:var(--green)}
+.step.error{border-left-color:var(--red)}
+.step.info{border-left-color:var(--blue)}
+.step .head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.step .head b{font-size:13px}
+.schip{font-size:10.5px;border-radius:20px;padding:1px 8px;border:1px solid var(--line2);color:var(--muted)}
+.step.error .schip{color:#ffa198;border-color:#f8514955}
+.step.ok .schip{color:#7ee787;border-color:#2ea04355}
+.step .why{color:var(--muted);font-size:12.5px;margin-top:4px;white-space:pre-wrap;word-break:break-word}
+details{margin-top:7px}
+details>summary{cursor:pointer;color:var(--accent2);font-size:12.5px;user-select:none}
+
+/* JSON 树 */
+.jsonview{font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;font-size:12.5px;line-height:1.65;background:var(--jv-bg);color:var(--jv-text);border:1px solid var(--jv-border);border-radius:9px;padding:10px 13px;overflow:auto;max-height:460px;white-space:normal}
+.jsonview .ind{padding-left:20px;border-left:1px dotted var(--jv-ind)}
+.jsonview .ky{color:var(--ky);font-weight:600}
+.jsonview .st{color:var(--st);white-space:pre-wrap;word-break:break-word}
+.jsonview .nm{color:var(--nm)}.jsonview .bl{color:var(--bl)}.jsonview .nl{color:var(--nl)}
+
+/* 对话区（作为实时面板的"继续对话"选项卡） */
+.chatlog{min-height:120px;overflow:auto;padding:14px 15px;display:flex;flex-direction:column;flex:1}
+.chatwrap>.composer{flex:none}
+/* 粘贴图片/截图附件：缩略图条 */
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;padding:8px 12px 0}
+.thumbs:empty{display:none}
+.thumb{position:relative;width:74px;height:74px;border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:var(--panel2)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .rm{position:absolute;top:2px;right:2px;width:18px;height:18px;border:0;border-radius:50%;background:var(--danger-bg);color:var(--danger-text);font-size:12px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.thumb .rm:hover{background:var(--red);color:#fff}
+/* 跟进消息队列：排队中的消息可编辑/删除 */
+.queuebox{display:flex;flex-direction:column;gap:6px;padding:8px 12px 0;border-top:1px solid var(--line)}
+.queuebox:empty{display:none}
+.qitem{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.qitem .qpos{flex:none;font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New","Microsoft YaHei Mono","Sarasa Mono SC",monospace;color:var(--accent2);font-weight:600}
+.qitem .qtext{flex:1;min-width:0;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qitem .qmode{flex:none;color:var(--faint);font-size:11px}
+.qitem button{flex:none;border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 6px;border-radius:5px}
+.qitem button:hover{color:var(--text);background:var(--menu-hover)}
+.qitem button.qdel:hover{color:var(--danger-text);background:var(--danger-bg)}
+.chatlog .meta{color:var(--faint);font-size:12.5px}
+.msg{max-width:88%;margin:8px 0;padding:2px 0;display:flex;gap:9px;font-size:13.5px;line-height:1.65}
+.msg.user{align-self:flex-end;flex-direction:row-reverse}
+.msg.assistant{align-self:flex-start}
+.msg-av{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:11.5px;font-weight:600;background:var(--btn-bg);color:var(--muted);border:1px solid var(--line2);margin-top:2px}
+.msg.user .msg-av{background:var(--msg-user-bg);color:var(--text);border-color:var(--msg-user-border)}
+.msg-main{min-width:0;max-width:100%;background:var(--panel2);border:1px solid var(--line2);border-radius:13px;padding:9px 13px}
+.msg.user .msg-main{background:var(--msg-user-bg);border-color:var(--msg-user-border)}
+.msg-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.msg-role{font-size:11.5px;font-weight:600;color:var(--muted)}
+.msg-time{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.msg-copy{margin-left:auto;border:0;background:transparent;color:var(--faint);font-size:11px;cursor:pointer;padding:1px 6px;border-radius:5px;opacity:0;transition:opacity .12s}
+.msg:hover .msg-copy{opacity:1}
+.msg-copy:hover{color:var(--text);background:var(--menu-hover)}

@@ -8,11 +8,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gantry.ui_src import ui_js
+from gantry.ui_src import ui_css, ui_js
 
 HTML = (ROOT / "webui" / "index.html").read_text(encoding="utf-8")
 JS = ui_js()
-CSS = (ROOT / "webui" / "style.css").read_text(encoding="utf-8")
+CSS = ui_css()
 
 
 class ToolLogInlineTests(unittest.TestCase):

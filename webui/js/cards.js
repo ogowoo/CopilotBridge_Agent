@@ -42,7 +42,7 @@ class ApiError extends Error{
   this.body=body;this.url=url;
   try{const j=JSON.parse(body);if(j&&j.detail)this.detail=String(j.detail)}catch(e){}}
  get text(){return this.detail||this.body||('HTTP '+this.status)}}
-/* 固定浮层分车道：把三个横幅/浮条的实际高度写进 CSS 变量，供 style.css 计算各自位置。
+/* 固定浮层分车道：把三个横幅/浮条的实际高度写进 CSS 变量，供 css/overlays.css 计算各自位置。
    元素是动态创建且高度随文案变化（窄屏换行），所以必须实测而不是写死。 */
 function cardOf(kind){
  if(kind==='subagents')return document.getElementById('subagentBar');

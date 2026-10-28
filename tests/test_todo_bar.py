@@ -11,7 +11,7 @@
 3. 界面只显示一个数字，看不到条目 → 做成可展开清单（点一下展开，状态符号 + 状态文字，
    展开状态记在 localStorage）。
 """
-from gantry.ui_src import fn_body, ui_js
+from gantry.ui_src import fn_body, ui_css, ui_js
 import re
 import sys
 import unittest
@@ -19,7 +19,7 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 APP = ui_js()
-CSS = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
+CSS = ui_css()
 I18N = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
 
 

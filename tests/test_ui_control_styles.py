@@ -16,7 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-CSS = (Path(__file__).resolve().parent.parent / "webui" / "style.css").read_text(encoding="utf-8")
+from gantry.ui_src import ui_css  # noqa: E402
+
+CSS = ui_css()          # 样式已拆成 webui/css/*.css，这里拿拼接后的全文
 
 
 class InputStylingTests(unittest.TestCase):
