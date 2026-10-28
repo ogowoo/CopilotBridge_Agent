@@ -2072,8 +2072,9 @@ function applyCodePrefs(scope){
 /* 复制整条消息 / 复制代码块 */
 function copyMsg(btn){let m=btn.closest('.msg');if(!m)return;
  try{navigator.clipboard.writeText(m.dataset.raw||'');btn.textContent=tr('已复制 ✓');setTimeout(()=>btn.textContent='复制',900)}catch(e){}}
-function copyCode(btn){let w=btn.closest('.md-codewrap');if(!w)return;let c=w.querySelector('code');
- try{navigator.clipboard.writeText(c?c.textContent:'');btn.textContent=tr('已复制 ✓');setTimeout(()=>btn.textContent=tr('复制'),900)}catch(e){}}
+function copyCode(btn){let w=btn.closest('.md-codewrap');if(!w)return;let text=w.dataset.raw;
+ if(text==null){let c=w.querySelector('code'),clean=c&&c.cloneNode(true);if(clean){clean.querySelectorAll('.fc-ln').forEach(n=>n.remove());text=clean.textContent||''}else text=''}
+ try{navigator.clipboard.writeText(text);btn.textContent=tr('已复制 ✓');setTimeout(()=>btn.textContent=tr('复制'),900)}catch(e){}}
 /* 复制任意文本（JSON 代码块等）：按钮文案短暂反馈 */
 function copyText(text,btn){
  try{navigator.clipboard.writeText(text||'');
