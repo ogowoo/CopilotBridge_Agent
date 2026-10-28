@@ -160,7 +160,7 @@ def exec_restart() -> str:
             pass
     try:
         log.warning("正在重启服务：%s %s（cwd=%s）", sys.executable, " ".join(argv), root)
-        os.execv(sys.executable, [sys.executable] + argv)
+        subprocess.Popen([sys.executable] + argv, cwd=str(root)); os._exit(0)
         return "exec"                       # 正常情况下 exec 不返回
     except Exception as exc:                # noqa: BLE001
         log.error("exec 重启失败，改为派生新进程：%s", exc)

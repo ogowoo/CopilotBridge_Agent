@@ -168,7 +168,7 @@ async def _new_copilot_page(index: int):
 
 def _max_windows_cfg() -> int:
     try:
-        return max(1, min(int(b.AGENT_CFG.get("copilot_windows", 1) or 1), 8))
+        return max(1, int(b.AGENT_CFG.get("copilot_windows", 1) or 1))
     except Exception:
         return 1
 

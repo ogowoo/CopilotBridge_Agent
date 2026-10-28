@@ -90,7 +90,7 @@ class WindowPool:
 
     async def set_max(self, n: int) -> dict[str, Any]:
         """调整上限：调大留到下次 acquire 时懒创建；调小则关闭多余的空闲窗口。"""
-        n = max(1, min(int(n or 1), 8))
+        n = max(1, int(n or 1))
         self._max = n
         closed = 0
         async with self._guard:

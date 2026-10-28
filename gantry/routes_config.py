@@ -113,7 +113,7 @@ CONFIG_SCHEMA: dict[str, dict] = {
                                 "label": "自动派发子代理（待办≥2 且互不重叠时）"},
     "agent.rate_limit_suspend": {"kind": "bool", "group": "exec",
                                  "label": "Copilot 限流时挂起（到点自动继续，可换提供商模型）"},
-    "agent.copilot_windows": {"kind": "int", "min": 1, "max": 4, "group": "exec",
+    "agent.copilot_windows": {"kind": "int", "min": 1, "group": "exec",
                               "label": "Copilot 自动化窗口数（并行任务数；1=串行）"},
     "agent.todo_nudge_every": {"kind": "int", "min": 0, "max": 200, "group": "exec",
                                "label": "每 N 步提醒模型更新待办（0=关闭）"},

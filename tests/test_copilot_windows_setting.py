@@ -14,7 +14,8 @@ class WindowsSettingTests(unittest.TestCase):
         spec = CONFIG_SCHEMA.get("agent.copilot_windows")
         self.assertIsNotNone(spec, "设置页需要这个键")
         self.assertEqual(spec["kind"], "int")
-        self.assertEqual((spec["min"], spec["max"]), (1, 4))
+        self.assertEqual(spec["min"], 1)
+        self.assertNotIn("max", spec)
         self.assertEqual(spec["group"], "exec")
 
     def test_post_config_applies_to_pool(self):
@@ -50,7 +51,7 @@ class WindowsSettingTests(unittest.TestCase):
             out = await b.WINDOWS.set_max(99)
             return out["max"]
 
-        self.assertLessEqual(asyncio.new_event_loop().run_until_complete(main()), 8)
+        self.assertEqual(asyncio.new_event_loop().run_until_complete(main()), 99)
         asyncio.new_event_loop().run_until_complete(b.WINDOWS.set_max(1))
 
 

@@ -2304,13 +2304,13 @@ html,body{overflow:hidden}
    - **没有背景**（clearRect 全透明），只有那一条渐变描边；
    - 高度 84px，可以叠在对话区上方；空闲时 opacity:0 且停止 rAF。 */
 #chat{position:relative}
-#chat > #teamCard{overflow-x:hidden;overflow-y:auto;background:var(--panel)}
+#chat > #teamCard{position:relative;overflow-x:hidden;overflow-y:auto;background:var(--panel);isolation:isolate}
 #chat > #teamCard.busy{padding-top:0}
-#chat > .teamscope{position:absolute;left:50%;transform:translateX(-50%);
-  width:30%;height:44px;bottom:var(--teamcard-h, 0px);
-  pointer-events:none;z-index:6;opacity:0;transition:opacity .25s ease;
+#chat > #teamCard > .teamscope{position:absolute;inset:0;width:100%;height:100%;
+  pointer-events:none;z-index:2;opacity:0;transition:opacity .25s ease;
   background:none;border:0;outline:0}
-#chat > #teamCard.busy ~ .teamscope{opacity:1}
+#chat > #teamCard.busy > .teamscope{opacity:.20}
+#chat > #teamCard > :not(.teamscope){position:relative;z-index:1}
 
 /* ROWS-TALLER: 四行展开高度（用户实测"太矮"）。级联底部有十几条一路压小的旧规则
    （min(11vh,132px) 等），这条放在最末尾统一抬起来；仍保留内部滚动，不撑破卡片。 */
@@ -2320,9 +2320,18 @@ html,body{overflow:hidden}
 #chat > #teamCard > #toolLog > #toolLogBody{max-height:min(38vh, 420px);overflow:auto}
 
 /* SEND-STOP + AT-MENU：运行中发送键变"强行停止"（红方块），聊天框 @ 唤起文件弹层 */
-.btn.sendRound.stop{background:var(--red, #d93025);color:#fff}
-.btn.sendRound.stop:hover{background:color-mix(in srgb, var(--red, #d93025) 88%, #000)}
+.btn.sendRound.stop{background:var(--panel2);color:var(--accent);border:1px solid color-mix(in srgb, var(--accent) 45%, var(--line));box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent)}
+.btn.sendRound.stop:hover{background:color-mix(in srgb, var(--accent) 10%, var(--panel2));border-color:var(--accent)}
+.btn.sendRound.stop #sendIcon{width:16px;height:16px;padding:4px;box-sizing:border-box;border-radius:3px;background:currentColor}
 .composer{position:relative}
+@keyframes composer-breathe{
+  0%,100%{border-color:color-mix(in srgb,var(--accent) 32%,var(--line));box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 0%,transparent)}
+  50%{border-color:color-mix(in srgb,var(--accent) 88%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent),0 0 18px color-mix(in srgb,var(--accent) 22%,transparent)}
+}
+.main > .composer.agent-busy{animation:composer-breathe 1.8s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){
+  .main > .composer.agent-busy{animation:none;border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 16%,transparent)}
+}
 .atmenu{position:absolute;left:12px;bottom:calc(100% + 6px);min-width:320px;max-width:min(560px,80vw);
   z-index:40;box-shadow:0 8px 30px rgba(0,0,0,.18)}
 .atmenu .atrow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;

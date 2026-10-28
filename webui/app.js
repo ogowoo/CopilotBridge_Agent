@@ -2803,12 +2803,12 @@ function inferCurrentTodo(todos){
 /* 待办 + 子代理并进实时流：放到「completed · steps · token」那条状态条**上面**，
    与它同一种行式样式（不再是独立卡片）。 */
 function mountTeamCard(){
- // 示波器浮层必须是 #chat 的直接子元素（绝对定位 + 鼠标穿透 + 不占布局）。
- // 之前插在 #teamCard 里，选择器不匹配，结果把它当普通块撑开了整块区域。
+ // 示波器作为 #teamCard 的背景层，覆盖 Todo/Subagents/Call Log/Stream Status。
+ // canvas 留在卡片内部，由绝对定位脱离文档流，高度自然跟随卡片实际高度。
  try{
   const cv=document.getElementById('teamScope');
-  const chat=document.getElementById('chat');
-  if(cv&&chat&&cv.parentElement!==chat)chat.appendChild(cv);
+  const card=document.getElementById('teamCard');
+  if(cv&&card&&cv.parentElement!==card)card.appendChild(cv);
  }catch(e){}
  // 结构已在 index.html 里定好：待办/子代理/调用记录/状态四行同属 #teamCard，
  // #teamCard 本身就在 #chat 内。这里只做一次兜底（旧缓存页面可能顺序不对）。
@@ -3073,6 +3073,8 @@ function stopScope(){
 
 /* ── 发送/停止按钮切换（仿 DSH：运行中变"强行停止"） ── */
 function updateSendButton(busy){
+ const composer=document.querySelector('.main > .composer');
+ if(composer)composer.classList.toggle('agent-busy', !!busy);
  const btn=document.getElementById('sendFollowup');
  if(!btn)return;
  btn.classList.toggle('stop', !!busy);
