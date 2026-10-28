@@ -223,7 +223,7 @@ webui/ 采用三文件结构：
 
 - webui/index.html：页面结构。
 - webui/style.css：样式。
-- webui/app.js：交互、API 和状态展示。
+- webui/js/*.js：交互、API 和状态展示（ES 模块；入口 `js/main.js`，跨模块共享状态在 `js/globals.js`）。
 
 WebUI 展示会话、步骤时间线、审批、工具结果、配置和回滚入口。前端状态必须以 API 与事件流为准。结构或逻辑修改后应使用断 API 演示模式或 Playwright 执行验证。
 

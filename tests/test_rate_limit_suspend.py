@@ -9,6 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from gantry.ui_src import ui_js
+
 import gantry.agent as A  # noqa: E402
 from gantry.tools import ToolRegistry  # noqa: E402
 
@@ -74,7 +76,7 @@ class SuspendWiringTests(unittest.TestCase):
 
     def test_frontend_offers_provider_swap(self):
         html = (ROOT / "webui" / "index.html").read_text(encoding="utf-8")
-        app = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
+        app = ui_js()
         self.assertIn('id="retrySwap"', html, "挂起遮罩要有换模型入口")
         # 换模型入口已从"下拉 + 确认按钮"改成**按钮列表**（用户要求在全屏遮罩上直接点），
         # 所以按钮是 JS 渲染的：断言动作与参数，而不是断言 HTML 里的 select。

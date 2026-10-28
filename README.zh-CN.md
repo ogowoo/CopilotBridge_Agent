@@ -558,7 +558,7 @@ ctx.register_panel({"id": "schedules", "title": "定时任务", "view": "table",
 | `/plan <任务>` | `/计划` | **计划模式（强制只读）**：探索阶段写操作会被 `SANDBOX_PLAN_MODE` 拒绝；模型用 `exit_plan_mode(plan)` 提交方案即**结束本轮**，等你确认后再执行 |
 | `/server.模板名 参数…` | — | **MCP prompt 模板**：自动按 MCP server 提供的模板生成命令，渲染结果载入输入框（未配置 MCP 时不出现） |
 
-- 命令注册在 `webui/app.js` 的 `SLASH_COMMANDS`，加新命令只需追加一条 `{id,label,aliases,desc,run}`
+- 命令注册在 `webui/js/panels.js` 的 `SLASH_COMMANDS`，加新命令只需追加一条 `{id,label,aliases,desc,run}`
 - 不带参数回车 = 补全等待输入；带参数回车 = 立即执行
 - 面板文案走 i18n（i18n 审计会主动展开面板检查）
 
@@ -843,8 +843,8 @@ python scripts/rollback.py --list            # 查看可回滚的任务与自升
 8. **安全响应头与 CSP**：所有响应带 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`（防点击劫持——本机场景下"诱导点删除/回滚"是现实威胁）与 CSP。CSP 为
    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`。
    **`script-src` 不含 `'unsafe-inline'`，这是硬约束**：
-   - 页面里**不允许**再写内联事件处理器（`onclick="..."`）：一律用 `data-act="名称"`（输入类用 `data-act-input`，键盘类用 `data-act-key`），并在 `webui/app.js` 的 `ACTIONS` 表里注册实现——分发器会按 `data-act` 调用。写错名字不会报错、只是"点了没反应"，所以有第 14 条不变量**双向核对** `data-act` ↔ `ACTIONS`（缺实现 / 有死条目都会失败）。
-   - 也**不允许**内联 `<script>`：首屏主题初始化已外置为 `webui/boot.js`；新增静态资源必须加进 `gantry/api.py` 里 `/ui/{asset}` 的白名单（目前是 `style.css` / `app.js` / `boot.js` / `i18n.js`）。第 15 条不变量会核对"页面引用 ⊂ 白名单"，漏加会立刻失败。
+   - 页面里**不允许**再写内联事件处理器（`onclick="..."`）：一律用 `data-act="名称"`（输入类用 `data-act-input`，键盘类用 `data-act-key`），并在 `webui/js/settings.js` 的 `ACTIONS` 表里注册实现——分发器会按 `data-act` 调用。写错名字不会报错、只是"点了没反应"，所以有第 14 条不变量**双向核对** `data-act` ↔ `ACTIONS`（缺实现 / 有死条目都会失败）。
+   - 也**不允许**内联 `<script>`：首屏主题初始化已外置为 `webui/boot.js`；新增静态资源必须加进 `gantry/routes_core.py` 里 `/ui/{asset}` 的白名单（目前是 `style.css` / `boot.js` / `i18n.js`，以及任意 `js/<名字>.js`）。第 15 条不变量会核对"页面引用 ⊂ 白名单"，漏加会立刻失败。
    - `style-src` 仍保留 `'unsafe-inline'`：页面大量使用 `style="..."` 属性与动态注入的 `<style>`，影响面小于脚本，暂不收紧。
 
 ## 界面多语言（简 / 繁 / EN）
@@ -927,7 +927,7 @@ gantry/              核心包
   providers.py      API 提供商接入层（OpenAI/DeepSeek/Kimi/Grok 等）
   session_store.py  SQLite 会话持久化、中断恢复、会话实测统计
   snapshots.py      改动前原像快照与任务级回滚（自我升级 failback）
-webui/            零依赖 Web 管理台（index.html 结构 + style.css + app.js）
+webui/            零依赖 Web 管理台（index.html 结构 + style.css + js/*.js ES 模块）
 AGENT.md          项目级 Agent 约定（工作区根目录存在时自动注入系统提示）
 skills/           目录式技能库（每个技能一个 SKILL.md，按需加载）
 scripts/          工具脚本（login.py 登录向导、calibrate.py 阈值校准、

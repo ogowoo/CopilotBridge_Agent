@@ -18,10 +18,11 @@ from gantry.ui_refs import ALLOWED_MISSING, check_ui_id_refs  # noqa: E402
 
 class CheckFunctionTests(unittest.TestCase):
     def _mk(self, html: str, js: str) -> Path:
+        """造一个最小 webui 目录：app.js 已退役，逻辑在 webui/js/*.js（这里放 globals.js）。"""
         root = Path(tempfile.mkdtemp(prefix="gantry_ui_"))
-        (root / "webui").mkdir()
+        (root / "webui" / "js").mkdir(parents=True)
         (root / "webui" / "index.html").write_text(html, encoding="utf-8")
-        (root / "webui" / "app.js").write_text(js, encoding="utf-8")
+        (root / "webui" / "js" / "globals.js").write_text(js, encoding="utf-8")
         return root
 
     def test_missing_id_detected(self):
@@ -46,7 +47,9 @@ class CheckFunctionTests(unittest.TestCase):
     def test_line_numbers_reported(self):
         root = self._mk('<div></div>', "\n\ndocument.getElementById('ghost');")
         r = check_ui_id_refs(root)
-        self.assertEqual(r["missing"][0]["lines"], [3])
+        # 报告形如 "webui/js/globals.js:3"（多文件后必须带文件名，否则定位不到）
+        self.assertTrue(r["missing"][0]["lines"][0].endswith("globals.js:3"),
+                        r["missing"][0]["lines"])
 
 
 class RealCodeTests(unittest.TestCase):

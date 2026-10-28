@@ -25,6 +25,16 @@ from typing import Callable
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 
+
+def webui_js_files() -> list[Path]:
+    """前端所有 JS：`webui/*.js`（经典脚本 boot/i18n）+ `webui/js/*.js`（ES 模块 + globals）。
+
+    app.js 退役后逻辑分散在两处，任何"扫前端 JS"的检查都必须用这个函数，
+    否则会静默只看一半文件（曾经就是这样漏掉了 js/ 下的模块）。
+    """
+    web = ROOT / "webui"
+    return sorted(web.glob("*.js")) + sorted((web / "js").glob("*.js"))
+
 _REGISTRY: dict[str, Callable[[], None]] = {}
 
 
@@ -405,8 +415,8 @@ def _ui_actions_wired() -> None:
     """事件委托迁移后的护栏。
 
     背景：为了收紧 CSP（去掉 script-src 'unsafe-inline'），页面里 49 处内联处理器
-    全部改成了 `data-act`，由 app.js 的 `ACTIONS` 表统一分发。风险是**名字写错就静默失效**
-    （按钮点了没反应，控制台也不报错）。这里做静态双向核对：
+    全部改成了 `data-act`，由 `ACTIONS` 表统一分发（app.js 退役后这张表在 js/settings.js）。
+    风险是**名字写错就静默失效**（按钮点了没反应，控制台也不报错）。这里做静态双向核对：
     - 页面/JS 里出现的每个 data-act 都要在 ACTIONS 里有实现；
     - ACTIONS 里每一项都要被引用（否则是死代码或拼错的名字）。
     """
@@ -414,7 +424,9 @@ def _ui_actions_wired() -> None:
     if not web.is_dir():
         raise InvariantError(f"找不到 webui 目录: {web}")
     html = (web / "index.html").read_text(encoding="utf-8")
-    js = (web / "app.js").read_text(encoding="utf-8")
+    # app.js 已按块拆成 ES 模块：所有 JS 一起算"前端代码"
+    js_files = sorted(web.glob("*.js")) + sorted((web / "js").glob("*.js"))
+    js = "\n".join(p.read_text(encoding="utf-8") for p in js_files)
     used = set(re.findall(r'data-act(?:-input|-key)?="([A-Za-z0-9_]+)"', html + js))
     # 动态生成的元素用 el.dataset.act='x'（不是 HTML 属性），同样算引用
     used |= set(re.findall(r"dataset\.act\s*=\s*['\"]([A-Za-z0-9_]+)['\"]", js))
@@ -422,7 +434,7 @@ def _ui_actions_wired() -> None:
         raise InvariantError("没有解析到任何 data-act（事件委托被回退了？）")
     parts = js.split("const ACTIONS={", 1)
     if len(parts) < 2:
-        raise InvariantError("app.js 里找不到 ACTIONS 表")
+        raise InvariantError("找不到 ACTIONS 表（js/settings.js 里应该有）")
     table = parts[1].split("\n};", 1)[0]
     defined = set(re.findall(r'^\s*([A-Za-z0-9_]+):', table, re.M))
     missing = sorted(used - defined)
@@ -446,6 +458,30 @@ def _ui_id_refs() -> None:
         raise InvariantError(
             "JS 引用了不存在的元素 id（补上元素，或说明理由后在 ui_refs.ALLOWED_MISSING 白名单）: "
             + str(r["missing"][:5]))
+
+
+@invariant("前端模块间共享状态只在 globals.js")
+def _ui_module_shared_state() -> None:
+    """ES 模块迁移后最阴的一类 bug：把原 app.js 的顶层 `let lastSteps` 搬进 steps.js，
+    它就变成**模块私有**，别的模块裸名访问直接 ReferenceError（严格模式），
+    而各处 try/catch 一吞，界面只表现为"会话列表空白"——单元测试全绿也发现不了
+    （实测：拆到最后一步时 drawSessions 抛错被 catch，侧栏整片空）。
+
+    规则：
+      · 可变状态（跨模块读写）→ webui/js/globals.js（经典脚本，挂 window + 全局词法）；
+      · 常量 → owner 模块 export，消费者 import；
+      · 函数 → export + js/main.js 绑 window（老调用点不改）；
+      · 同一个名字不许在两个模块里各有一份实现（会各改各的）。
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "cross_module_refs", ROOT / "scripts" / "cross_module_refs.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)          # type: ignore[union-attr]
+    r = mod.analyze(ROOT / "webui")
+    problems = r["dup"] + r["state"] + r["func"]
+    if problems:
+        raise InvariantError("跨模块共享不合规: " + " | ".join(problems[:4]))
 
 
 @invariant("页面引用的静态资源都在白名单内")
@@ -495,12 +531,12 @@ def _subagent_panel_filters_by_parent() -> None:
     真事：面板调用 `/v1/agent/subagents` 不带 parent，后端返回**全部**子代理，
     于是用户真实任务的"Subagents"里冒出 19 个与它无关的子代理（一次测试扇出留下的）。
     """
-    src = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
+    src = "\n".join(p.read_text(encoding="utf-8")
+                    for p in sorted((ROOT / "webui" / "js").glob("*.js")))
     for m in re.finditer(r"api\('([^']*?/v1/agent/subagents[^']*)'", src):
         if "parent=" not in m.group(1):
-            line = src[:m.start()].count("\n") + 1
             raise InvariantError(
-                f"webui/app.js:{line} 拉子代理没带 parent=（会串台显示别人的子代理）")
+                f"webui/js（拉子代理处）没带 parent=（会串台显示别人的子代理）: {m.group(1)}")
 
 
 @invariant("页面里所有静态文案都有英文键")
@@ -608,12 +644,12 @@ def _manual_bilingual_parity() -> None:
     切到另一语言就会缺章节/多了空节。两套模板都是 `const MANUAL_HTML*=` 里的模板串，
     直接数 `<h3>` 即可静态核对。
     """
-    src = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
+    src = (ROOT / "webui" / "js" / "control.js").read_text(encoding="utf-8")
     counts = {}
     for name in ("MANUAL_HTML", "MANUAL_HTML_EN"):
         m = re.search(rf"const {name}=`(.*?)`;", src, re.S)
         if not m:
-            raise InvariantError(f"webui/app.js 找不到 {name} 模板")
+            raise InvariantError(f"webui/js/control.js 找不到 {name} 模板")
         counts[name] = m.group(1).count("<h3>")
     if counts["MANUAL_HTML"] != counts["MANUAL_HTML_EN"]:
         raise InvariantError(f"手册中英章节数不一致: {counts}")
@@ -636,7 +672,7 @@ def _ui_text_calls_translated() -> None:
     cjk = re.compile(r"[\u4e00-\u9fff]")
     bad = []
     names = "|".join(_UI_TEXT_CALLS)
-    for f in sorted((ROOT / "webui").glob("*.js")):
+    for f in webui_js_files():
         text = f.read_text(encoding="utf-8")
         for m in re.finditer(rf"(?<![\w.$])({names})\(", text):
             depth, j = 1, m.end()
@@ -664,7 +700,7 @@ def _i18n_calls_not_literals() -> None:
     toast 里的 "tr(会话模型已切换为 )"。这类错误语法合法、单测也不覆盖，只有静态核对能拦住。
     """
     bad = []
-    for f in sorted((ROOT / "webui").glob("*.js")):
+    for f in webui_js_files():
         text = f.read_text(encoding="utf-8")
         for i, line in enumerate(text.splitlines(), 1):
             if re.search(r"""['"`]tr\(""", line):
@@ -672,7 +708,7 @@ def _i18n_calls_not_literals() -> None:
     if bad:
         raise InvariantError(f"这些位置把 tr(...) 写成了字符串字面量: {bad[:8]}")
     # 反向：文件里必须真的有 tr( 调用，否则说明 i18n 接线被整体回退了
-    total = sum(len(re.findall(r"\btr\(", (ROOT / "webui" / n).read_text(encoding="utf-8")))
-                for n in ("app.js", "i18n.js"))
+    total = sum(len(re.findall(r"\btr\(", f.read_text(encoding="utf-8")))
+                for f in webui_js_files())
     if total < 30:
         raise InvariantError(f"tr() 调用总数异常偏少（{total}），i18n 接线可能被回退")

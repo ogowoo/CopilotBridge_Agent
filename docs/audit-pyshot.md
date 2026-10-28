@@ -87,7 +87,7 @@
 |---|---|---|---|
 | 1 | **只读工具重复 → 回放缓存结果**，不再拦、不再判无进展 | `gantry/agent.py`（`_ro_results` + 两处判定） | 92 次无谓拦截 × 81 秒 ≈ **2 小时** |
 | 2 | **无进展检测只对写/副作用动作生效**；只读重复不进 `_seen` 计数 | `gantry/agent.py` | 同上；避免"最后 100 步在列目录"时把任务判失败 |
-| 3 | `service_unavailable` 标 `transient=True`，前端把连续多条**折叠成一行** | `gantry/agent.py` + `webui/app.js`（`collapseTransient`） | 105 条噪音 → 1 行 |
+| 3 | `service_unavailable` 标 `transient=True`，前端把连续多条**折叠成一行** | `gantry/agent.py` + `webui/js/steps.js`（`collapseTransient`） | 105 条噪音 → 1 行 |
 | 4 | `invalid_action` 提示补"只回一个 JSON + 最小示例 + 常用工具名" | `gantry/agent.py` | 37 次解析失败，提示越含糊越容易再犯 |
 | 5 | 提示词新增两条：**不反复重看**已看过的目录/文件、**及时收尾** | `gantry/prompt.py`（`AGENT_PROTOCOL`） | 直接针对 92 次重复与 11 小时长尾 |
 | 6 | **换会话时注入「已看过/已改过」清单**（`already_looked_at`：已读文件、已列目录、已改文件、待办进度、上次错误） | `gantry/agent.py`（`_work_ledger` + `_continuation_prompt`） | 4 次 rollover × 重新探索；92 次重复列目录 |

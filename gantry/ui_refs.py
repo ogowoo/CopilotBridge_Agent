@@ -28,30 +28,36 @@ _ID_REF_QS = re.compile(r"querySelector(?:All)?\((?:'|\")#([A-Za-z0-9_-]+)(?:'|\
 
 
 def check_ui_id_refs(root: Path) -> dict:
-    """扫描 webui/ 下 index.html 与 app.js，返回引用完整性结果。"""
+    """扫描 webui/ 下 index.html 与所有经典/模块 JS，返回引用完整性结果。
+
+    app.js 退役后逻辑分散在 `webui/*.js`（boot/i18n）与 `webui/js/*.js`（ES 模块 + globals），
+    所以这里按"所有 JS 汇总"来判定：任一处定义的 id 都算存在，任一处引用缺失都算缺漏。
+    """
     root = Path(root)
     html_path = root / "webui" / "index.html"
-    js_path = root / "webui" / "app.js"
-    if not html_path.is_file() or not js_path.is_file():
-        return {"skipped": True, "reason": f"缺少 {html_path} 或 {js_path}"}
+    if not html_path.is_file():
+        return {"skipped": True, "reason": f"缺少 {html_path}"}
+
+    js_files = sorted((root / "webui").glob("*.js")) + sorted((root / "webui" / "js").glob("*.js"))
+    if not js_files:
+        return {"skipped": True, "reason": "webui 下没有任何 JS"}
 
     html = html_path.read_text(encoding="utf-8")
-    js = js_path.read_text(encoding="utf-8")
-
     defined: set[str] = set()
     for m in _ID_DEF_HTML.finditer(html):
         defined.add(m.group(1) or m.group(2))
-    for m in _ID_DEF_JS_HTML.finditer(js):
-        defined.add(m.group(1) or m.group(2))
-    defined |= set(_ID_DEF_JS_ASSIGN.findall(js))
 
-    refs: dict[str, list[int]] = {}
-    for m in _ID_REF_GET.finditer(js):
-        line = js[:m.start()].count("\n") + 1
-        refs.setdefault(m.group(1), []).append(line)
-    for m in _ID_REF_QS.finditer(js):
-        line = js[:m.start()].count("\n") + 1
-        refs.setdefault(m.group(1), []).append(line)
+    refs: dict[str, list[str]] = {}
+    for path in js_files:
+        js = path.read_text(encoding="utf-8")
+        label = f"js/{path.name}" if path.parent.name == "js" else path.name
+        for m in _ID_DEF_JS_HTML.finditer(js):
+            defined.add(m.group(1) or m.group(2))
+        defined |= set(_ID_DEF_JS_ASSIGN.findall(js))
+        for regex in (_ID_REF_GET, _ID_REF_QS):
+            for m in regex.finditer(js):
+                line = js[:m.start()].count("\n") + 1
+                refs.setdefault(m.group(1), []).append(f"webui/{label}:{line}")
 
     missing = []
     for name in sorted(refs):
@@ -62,6 +68,7 @@ def check_ui_id_refs(root: Path) -> dict:
         "skipped": False,
         "defined": len(defined),
         "refs": len(refs),
+        "files": len(js_files),
         "missing": missing,
         "allowed_missing": sorted(ALLOWED_MISSING),
     }

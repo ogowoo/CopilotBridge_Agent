@@ -7,6 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from gantry.ui_src import ui_js
+
 
 class SelfUpgradePathTests(unittest.TestCase):
     def test_rules_include_actual_root(self):
@@ -25,7 +27,7 @@ class SelfUpgradePathTests(unittest.TestCase):
         self.assertTrue((expected / "gantry").is_dir(), "BASE 下应有 gantry/ 包")
 
     def test_template_warns_about_guessing(self):
-        js = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
+        js = ui_js()
         assert "self_search_text" in js, "模板要引导先定位"
         assert "不要猜" in js, "模板要明确不要猜路径"
 

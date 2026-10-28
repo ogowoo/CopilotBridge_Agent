@@ -18,6 +18,7 @@
 | 1024×600 | 0 | 493 == 493 | ✓ |
 | 1400×900 | 0 | 793 == 793 | ✓ |
 """
+from gantry.ui_src import ui_js
 import re
 import unittest
 from pathlib import Path
@@ -26,7 +27,7 @@ BASE = Path(__file__).resolve().parent.parent
 _RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
 HTML = (BASE / "webui" / "index.html").read_text(encoding="utf-8")
-APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
+APP = ui_js()
 
 
 class DshStructureTests(unittest.TestCase):

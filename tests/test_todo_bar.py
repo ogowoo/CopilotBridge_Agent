@@ -11,13 +11,14 @@
 3. 界面只显示一个数字，看不到条目 → 做成可展开清单（点一下展开，状态符号 + 状态文字，
    展开状态记在 localStorage）。
 """
+from gantry.ui_src import fn_body, ui_js
 import re
 import sys
 import unittest
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
+APP = ui_js()
 CSS = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
 I18N = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
 
@@ -25,13 +26,13 @@ I18N = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
 class TodoBarTests(unittest.TestCase):
     def test_counts_by_status_not_done_flag(self):
         """必须按 status==='completed' 计数（结构里没有 done 字段）。"""
-        seg = APP[APP.index("function renderGoalBar"):APP.index("async function applyRuntime")]
+        seg = fn_body("renderGoalBar")
         self.assertIn("status==='completed'", seg, "计数必须看 status")
         self.assertNotIn("todos.filter(x=>x&&x.done)", seg,
                          "旧写法按 x.done 计数，永远得 0（用户实测 bug）")
 
     def test_label_is_todo_not_plan(self):
-        seg = APP[APP.index("function renderGoalBar"):APP.index("async function applyRuntime")]
+        seg = fn_body("renderGoalBar")
         self.assertIn("tr('待办')", seg)
         self.assertNotIn("tr('计划')", seg, "标签不能叫「计划」——会让人以为是 /plan 模式")
 

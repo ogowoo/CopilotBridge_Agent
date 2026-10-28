@@ -18,6 +18,7 @@
 3. 带 `counts`;
 4. 导出前对三个数组做显式排序（不依赖接口返回顺序）。
 """
+from gantry.ui_src import ui_js
 import json
 import re
 import sys
@@ -25,7 +26,7 @@ import unittest
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
+APP = ui_js()
 
 
 class ExportOrderingTests(unittest.TestCase):

@@ -28,12 +28,13 @@
 | 进入子代理 | sub2 | **false** | **148** | 有（在视口内） |
 | 点返回 | parent1 | false | 109 | 无 |
 """
+from gantry.ui_src import ui_js
 import re
 import unittest
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
+APP = ui_js()
 _RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
 

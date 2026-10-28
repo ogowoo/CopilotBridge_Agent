@@ -24,9 +24,11 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
+from gantry.ui_src import ui_js
+
 from gantry.tools import ToolRegistry
 
-APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
+APP = ui_js()
 BRIDGE = (BASE / "gantry" / "bridge.py").read_text(encoding="utf-8")
 SUBAGENTS = (BASE / "gantry" / "subagents.py").read_text(encoding="utf-8")
 EXTRA = (BASE / "gantry" / "tools_extra.py").read_text(encoding="utf-8")

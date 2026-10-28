@@ -18,12 +18,13 @@
 - 标签标题闪烁「⚠ 需要授权…」,处理完（横幅消失）由 `clearInterruptPing()` 恢复；
 - 页面在后台时轻响一声（WebAudio，失败静默、不需要权限）。
 """
+from gantry.ui_src import ui_js
 import re
 import unittest
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
+APP = ui_js()
 I18N = (BASE / "webui" / "i18n.js").read_text(encoding="utf-8")
 _RAW = (BASE / "webui" / "style.css").read_text(encoding="utf-8")
 CSS = re.sub(r"/\*[\s\S]*?\*/", " ", _RAW)
@@ -62,8 +63,10 @@ class InterruptI18nTests(unittest.TestCase):
 
     def test_scope_aware_wording(self):
         """一次性授权与本会话授权不能共用"用后即焚"这种措辞。"""
-        i = APP.index("已授权并继续执行（本会话内不再逐次询问）")
-        seg = APP[max(0, i - 200):i + 200]
+        # app.js 退役后前端是"i18n.js + js/*.js"拼接：同一句话在词条表和 approvals.js 都有，
+        # 只认 approvals.js 里那处 toast（按 `_sess?tr(` 精确定位），否则会命中 i18n 词典。
+        i = APP.index("_sess?tr('已授权并继续执行")
+        seg = APP[max(0, i - 300):i + 300]
         self.assertIn("_sess", seg, "toast 要按 scope 分开措辞")
 
 

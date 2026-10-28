@@ -21,12 +21,15 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
+from gantry.ui_src import ui_js
+
+APP = ui_js()
 
 
 class ViewCacheSourceTests(unittest.TestCase):
     def test_cache_bounded(self):
-        self.assertIn("const viewCache=new Map()", APP)
+        # 声明已经搬进 webui/js/globals.js（跨模块共享状态），所以不锁 const/var 前缀
+        self.assertIn("viewCache=new Map()", APP)
         self.assertIn("const VIEW_CACHE_MAX=3", APP)
         self.assertIn("while(viewCache.size>VIEW_CACHE_MAX)", APP)
 

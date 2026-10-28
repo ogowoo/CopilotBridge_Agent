@@ -27,12 +27,13 @@
 | 新问题 | 正常 `display:flex` ✓ |
 | 后端 `/runtime` 的 `question` | 404 之后变成 `null` ✓
 """
+from gantry.ui_src import ui_js
 import re
 import unittest
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
+APP = ui_js()
 BRIDGE = (BASE / "gantry" / "bridge.py").read_text(encoding="utf-8")
 API = ((BASE / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 

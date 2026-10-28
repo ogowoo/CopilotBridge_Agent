@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-"""app.js 拆成 ES 模块（ESM 迁移）的回归测试。
+"""app.js → ES 模块（ESM 解耦）的**终态**回归测试。
 
-策略：增量迁移——拆出去的块进 `webui/js/<块>.js`（ES 模块），`js/main.js` 把老代码
-仍在调用的全局函数绑到 `window`，事件路径的调用点不用动。
-这里钉住第一步：示波器块（scope.js）+ 入口（main.js）+ 路由（/ui/js/*.js）。
+迁移完成后 `webui/app.js` 已删除，前端结构固定为：
+  · `webui/js/*.js`       ES 模块（业务逻辑），`js/main.js` 是入口，把函数绑到 window，
+                          让没改过的老调用点（data-act / 内联闭包）继续工作；
+  · `webui/js/globals.js` **经典脚本**：跨模块共享的可变状态（模块顶层 var 不是全局，
+                          别的模块裸名访问会 ReferenceError，实测把会话列表整片吞掉）；
+  · `webui/*.js`          boot.js（首屏主题）/ i18n.js（三语言）仍是经典脚本。
+本测试钉住这四条结构性约束，避免"又长回单体"或"状态飘回模块私有"。
 """
 import re
 import sys
@@ -11,59 +15,88 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
-APP = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
+from gantry.ui_src import ui_js  # noqa: E402
+
 MAIN = (ROOT / "webui" / "js" / "main.js").read_text(encoding="utf-8")
-SCOPE = (ROOT / "webui" / "js" / "scope.js").read_text(encoding="utf-8")
+GLOBALS = (ROOT / "webui" / "js" / "globals.js").read_text(encoding="utf-8")
 HTML = (ROOT / "webui" / "index.html").read_text(encoding="utf-8")
 ROUTES = (ROOT / "gantry" / "routes_core.py").read_text(encoding="utf-8")
 
 
-class ModuleFilesTests(unittest.TestCase):
-    def test_module_files_exist(self):
-        for f in ("state.js", "main.js", "scope.js"):
-            self.assertTrue((ROOT / "webui" / "js" / f).is_file(), f"缺少 {f}")
+class RetirementTests(unittest.TestCase):
+    def test_app_js_is_gone(self):
+        self.assertFalse((ROOT / "webui" / "app.js").exists(),
+                         "app.js 应已退役：逻辑都在 js/*.js 里了")
+        self.assertNotIn('src="app.js"', HTML, "index.html 不该再引用 app.js")
 
-    def test_scope_block_moved_out(self):
-        """示波器块必须整体搬走：app.js 不再定义它，scope.js 里有。"""
-        for sym in ("function scopeFrame", "function startScope", "function stopScope"):
-            self.assertNotIn(sym, APP, f"app.js 仍定义 {sym}")
-            self.assertIn(sym.replace("function ", "function "), SCOPE)
-        # 私有符号不许残留
-        for sym in ("_scopeRAF", "_scopeStyle", "_scopeColors", "_scopeCtx", "_scopeSeeds"):
-            self.assertNotIn(sym, APP, f"app.js 残留 {sym}")
+    def test_index_loads_globals_before_i18n_and_module(self):
+        order = [HTML.index('<script src="js/globals.js"></script>'),
+                 HTML.index('<script src="i18n.js"></script>'),
+                 HTML.index('<script type="module" src="js/main.js"></script>')]
+        self.assertEqual(order, sorted(order),
+                         "顺序必须是 globals.js → i18n.js → js/main.js（i18n 切语言会读 globals 里的状态）")
 
-    def test_scope_module_exports(self):
-        self.assertIn("export { startScope, stopScope, scopeFrame }", SCOPE)
+    def test_globals_is_classic_script(self):
+        """globals.js 必须是经典脚本：写成模块就没有全局词法绑定，模块裸名访问会炸。"""
+        self.assertNotIn("import ", GLOBALS.split("\n")[0])
+        self.assertNotIn("export ", GLOBALS)
+        for name in ("lastSteps", "lastMessages", "sessSig", "serviceStopped", "current"):
+            self.assertRegex(GLOBALS, rf"(?m)^var {name}\b", f"globals.js 应声明共享状态 {name}")
+            self.assertRegex(GLOBALS, rf"(?m)^var {name}\b")
 
-    def test_main_binds_globals(self):
-        """老代码（app.js 事件路径）靠 window 上的绑定继续工作。"""
-        for name in ("startScope", "stopScope", "scopeFrame"):
-            self.assertIn(f"window.{name}", MAIN, f"main.js 没把 {name} 绑到 window")
-        self.assertIn("from './scope.js'", MAIN)
-        self.assertIn("from './state.js'", MAIN)
+    def test_modules_do_not_redeclare_shared_state(self):
+        """共享状态不许在模块里再声明一份（模块私有 = 别的模块读到 ReferenceError）。"""
+        js = ui_js()
+        for name in ("lastSteps", "lastMessages", "sessSig", "serviceStopped"):
+            redecl = [ln for ln in js.splitlines()
+                      if ln.startswith(("let " + name, "var " + name, "const " + name))]
+            self.assertLessEqual(len(redecl), 1, f"{name} 被重复声明: {redecl}")
+
+    def test_main_binds_every_exported_function(self):
+        """每个模块导出的函数都要在 main.js 绑到 window（否则 data-act 静默失效）。
+
+        例外：被别的模块 `import { … }` 直接引用的（如 stepFilterInput）不需要 window 绑定。
+        """
+        exports = set()
+        for f in sorted((ROOT / "webui" / "js").glob("*.js")):
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if line.startswith("export {"):
+                    for part in line[len("export {"):].rstrip(" };").split(","):
+                        name = part.strip()
+                        if name and name[0].islower() and "=>" not in name:
+                            exports.add(name)
+        imported = set()
+        for f in sorted((ROOT / "webui" / "js").glob("*.js")):
+            for m in re.finditer(r"import \{([^}]*)\}", f.read_text(encoding="utf-8")):
+                imported |= {x.strip() for x in m.group(1).split(",") if x.strip()}
+        missing = sorted(n for n in exports if f"window.{n}" not in MAIN and n not in imported)
+        self.assertEqual(missing[:8], [], f"这些导出没绑到 window: {missing[:8]}")
 
 
-class RouteAndHtmlTests(unittest.TestCase):
-    def test_index_loads_modules_and_boot(self):
-        self.assertIn('<script src="boot.js"></script>', HTML,
-                      "boot.js 之前是死代码（写了没加载），现在必须加载")
-        self.assertIn('<script type="module" src="js/main.js"></script>', HTML)
-
+class RouteTests(unittest.TestCase):
     def test_module_route_allows_js_files(self):
         self.assertIn('re.fullmatch(r"js/[0-9A-Za-z._-]+\\.js"', ROUTES,
                       "/ui 资产路由要放行 js/*.js")
         self.assertIn("{asset:path}", ROUTES, "资产路由要支持子路径（js/main.js）")
 
     def test_module_route_still_blocks_traversal(self):
-        self.assertIn('raise HTTPException(404', ROUTES)
+        self.assertIn("raise HTTPException(404", ROUTES)
 
 
-class CallSitesTests(unittest.TestCase):
-    def test_app_js_still_calls_scope_functions(self):
-        """app.js 的调用点照旧（靠 window 绑定）。"""
-        self.assertIn("startScope()", APP)
-        self.assertIn("stopScope()", APP)
+class NoBareSharedStateTests(unittest.TestCase):
+    def test_cross_module_sharing_is_clean(self):
+        """跨模块裸名共享必须合规（状态在 globals.js，函数 export + window 绑定）。"""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "cross_module_refs", ROOT / "scripts" / "cross_module_refs.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)          # type: ignore[union-attr]
+        r = mod.analyze(ROOT / "webui")
+        self.assertEqual(r["dup"], [], "同名重复声明")
+        self.assertEqual(r["state"], [], "共享状态应放 globals.js")
+        self.assertEqual(r["func"], [], "函数应 export + 绑 window")
 
 
 if __name__ == "__main__":

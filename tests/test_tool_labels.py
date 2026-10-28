@@ -7,7 +7,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-JS = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
+from gantry.ui_src import ui_js
+
+JS = ui_js()
 I18N = (ROOT / "webui" / "i18n.js").read_text(encoding="utf-8")
 
 

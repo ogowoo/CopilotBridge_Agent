@@ -14,6 +14,56 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.22] - 2026-10-28
+
+### Changed
+
+- **app.js 拆完退役（ES Modules 迁移收尾）**：`webui/app.js`（原 5139 行单体）删除，
+  业务逻辑全部在 `webui/js/*.js`（30 个 ES 模块），`js/main.js` 是唯一入口。
+  `index.html` 现在只加载 `js/globals.js`（经典脚本，共享状态）+ `i18n.js` + 模块入口。
+- **新增 `webui/js/globals.js`（跨模块共享状态）**：ES 模块顶层的 `var/let` 是**模块私有**，
+  别的模块裸名访问会 ReferenceError（严格模式），而各处 `try/catch` 一吞，界面只表现为
+  "空白/不刷新"。经典脚本顶层的 `var` 既挂 window 又在全局词法环境 → 模块可裸名读写，
+  与拆分前语义一致。共收口 43 个状态 + 4 个被 `window.X` 误当全局用的私有变量。
+- **常量/函数改走真正的模块边界**：分享常量（THEMES/SLASH_COMMANDS/MANUAL_HTML/
+  SETTINGS_GROUPS/PHASE_LABEL/HL_LABEL…）改为 owner 模块 `export` + 消费方 `import`；
+  函数仍 `export` 并在 `js/main.js` 绑 `window`（老调用点一行不改）。
+- **`/ui/{asset}` 白名单**去掉 `app.js`（`js/<名字>.js` 正则已覆盖所有模块与 globals.js）。
+
+### Added
+
+- **跨模块共享检查进不变量（第 25 条）**：`scripts/cross_module_refs.py` 静态分析
+  ① 共享状态是否只在 globals.js、② 跨模块函数是否 export+window 绑定、
+  ③ 同名函数是否被两个模块各声明一份、④ `window.X` 是否指向模块私有变量；
+  发现问题既是独立脚本（退出码 1）也直接进 `invariants.py`。
+- 浏览器探针 `scripts/smoke_interact.py`：真的点开一个会话，断言时间线/工具记录/
+  状态栏有内容且无 console 错误（只查 window 绑定查不出"列表空白"这类问题）。
+
+### Fixed
+
+- **会话列表整片空白**（迁移中途的真实回归）：`drawSessions` 抛 `ReferenceError`
+  被 `refreshSessions` 的 `try/catch` 吞掉 —— `expandedSess/showSubagents/subagentCount`
+  等状态在模块里各有一份私有声明。收口到 globals.js 后恢复（实测 21 个会话正常渲染）。
+- **任务条点击空白处收起失效**（老 bug，迁移时暴露）：`header.topbar>.trow` 的 click
+  处理器被绑了两次（原 app.js 里就有两份），切两次等于没切。删掉重复绑定。
+- **视图缓存/权限档位两份状态**：`renderedSid/lastSessionObj/skipDetailOnce`（steps.js 私有，
+  followload.js 却写 `window.*`）与 `sandboxMode`（themeboot.js 私有，settings.js 走
+  `window.sandboxMode`）→ 收口到 globals.js，切回旧会话不再命中错缓存。
+- `gantry/ui_refs.py` 改为扫描**全部**前端 JS（原只看 app.js）；`invariants.py` 里
+  读 app.js 的四处（ACTIONS 表、手册中英对照、tr() 调用统计、子代理 parent 检查）
+  同步改为读模块目录。
+- 测试：`tests/test_esm_migration.py` 重写为**终态**回归（app.js 必须不存在、
+  globals 必须在 i18n 之前、共享状态不许在模块里再声明、导出必须绑 window）；
+  其余 30 个读 app.js 的测试改用 `gantry/ui_src.py` 的 `ui_js()/fn_body()`
+  （按原 app.js 顺序拼接，避免"按函数名切段"切空）。
+
+### 实测
+
+- 单测 1226（skipped=1）OK；不变量 25 条全绿；`ui_smoke.py` /
+  `ui_i18n_audit.py`（3 语言 449 条）/ `ui_layout_audit.py --stress`（7 视口）全部通过。
+- 浏览器真交互：点开会话 `task-mvs4un2x` → 39 步、4 条消息、调用记录 62 行、状态条
+  `completed · 步 39 · Token 19073`，无 console 错误（截图 `data/ui-audit/esm-final.png`）。
+
 ## [11.0.0-preview.21] - 2026-10-28
 
 ### Added

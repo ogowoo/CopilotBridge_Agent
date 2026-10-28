@@ -27,7 +27,9 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-APP = (BASE / "webui" / "app.js").read_text(encoding="utf-8")
+from gantry.ui_src import ui_js
+
+APP = ui_js()
 API = ((BASE / "gantry" / "api.py").read_text(encoding="utf-8") + "".join((BASE / "gantry" / n).read_text(encoding="utf-8") for n in ("routes_core.py", "routes_config.py", "routes_agents.py", "routes_sessions.py")))
 STORE = (BASE / "gantry" / "session_store.py").read_text(encoding="utf-8")
 

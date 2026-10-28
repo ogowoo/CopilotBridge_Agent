@@ -12,7 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-APP = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
+from gantry.ui_src import ui_js
+
+APP = ui_js()
 ROUTES = (ROOT / "gantry" / "routes_sessions.py").read_text(encoding="utf-8")
 
 

@@ -8,6 +8,7 @@
 4. exec 不可用时退回"派生新进程 + 退出自己"；
 5. 重启后页面能自动重连（前端轮询 /health）。
 """
+from gantry.ui_src import ui_js
 import os
 import sys
 import unittest
@@ -260,7 +261,7 @@ class UiWiringTests(unittest.TestCase):
         """重启/终止服务已从「More」搬到**设置页的危险区**（低频操作不占菜单）。"""
         base = Path(__file__).resolve().parent.parent
         html = (base / "webui" / "index.html").read_text(encoding="utf-8")
-        js = (base / "webui" / "app.js").read_text(encoding="utf-8")
+        js = ui_js()
         for act in ("restartService", "shutdownService"):
             # 静态 HTML 里可能没有（设置页的按钮是 JS 渲染的），所以两边都允许
             self.assertTrue(f'data-act="{act}"' in html or f'data-act="{act}"' in js,

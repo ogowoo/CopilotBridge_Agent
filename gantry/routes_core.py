@@ -301,7 +301,7 @@ async def chat(req: a.Request):
 
 @router.get("/ui", include_in_schema=False)
 async def web_ui():
-    # 目录形式提供服务：页面里 style.css/app.js 用相对路径引用，
+    # 目录形式提供服务：页面里 style.css / js/*.js 用相对路径引用，
     # 必须以 /ui/ 结尾的基地址解析，否则相对引用会落到站点根路径。
     return RedirectResponse("/ui/")
 
@@ -313,10 +313,10 @@ async def web_ui_index():
 
 @router.get("/ui/{asset:path}", include_in_schema=False)
 async def web_ui_asset(asset: str):
-    # 静态资产白名单，禁止路径穿越
-    if asset in ("style.css", "app.js", "boot.js", "i18n.js"):
+    # 静态资产白名单，禁止路径穿越（app.js 已退役，逻辑全在 js/*.js 里）
+    if asset in ("style.css", "boot.js", "i18n.js"):
         return FileResponse(b.BASE / "webui" / asset, headers={"Cache-Control": "no-cache, must-revalidate"})
-    # ES 模块（app.js 解耦）：只允许 js/<名字>.js，不许 ".."、不许子目录再嵌套
+    # ES 模块与共享状态 globals.js：只允许 js/<名字>.js，不许 ".."、不许子目录再嵌套
     if re.fullmatch(r"js/[0-9A-Za-z._-]+\.js", asset):
         return FileResponse(b.BASE / "webui" / asset, headers={"Cache-Control": "no-cache, must-revalidate"})
     raise HTTPException(404, "Not Found")

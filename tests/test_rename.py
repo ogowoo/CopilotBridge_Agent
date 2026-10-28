@@ -17,9 +17,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from gantry.ui_src import ui_js
+
 from gantry import brand  # noqa: E402
 
-APP = (ROOT / "webui" / "app.js").read_text(encoding="utf-8")
+APP = ui_js()
 CSS = (ROOT / "webui" / "style.css").read_text(encoding="utf-8")
 BOOT = (ROOT / "webui" / "boot.js").read_text(encoding="utf-8")
 HTML = (ROOT / "webui" / "index.html").read_text(encoding="utf-8")

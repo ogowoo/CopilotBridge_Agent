@@ -557,7 +557,7 @@ ctx.register_panel({"id": "schedules", "title": "定时任务", "view": "table",
 | `/plan <任務>` | `/計劃` | **計劃模式（強制唯讀）**：探索階段寫入操作會被 `SANDBOX_PLAN_MODE` 拒絕；模型用 `exit_plan_mode(plan)` 提交方案即**結束本輪**，等你確認後再執行 |
 | `/server.模板名 參數…` | — | **MCP prompt 模板**：自動按 MCP server 提供的模板產生命令，渲染結果載入輸入框（未設定 MCP 時不出現） |
 
-- 命令註冊在 `webui/app.js` 的 `SLASH_COMMANDS`，加新命令只需追加一條 `{id,label,aliases,desc,run}`
+- 命令註冊在 `webui/js/panels.js` 的 `SLASH_COMMANDS`，加新命令只需追加一條 `{id,label,aliases,desc,run}`
 - 不帶參數按 Enter = 補全等待輸入；帶參數按 Enter = 立即執行
 - 面板文案走 i18n（i18n 稽核會主動展開面板檢查）
 
@@ -842,8 +842,8 @@ python scripts/rollback.py --list            # 查看可回滾的任務與自升
 8. **安全回應標頭與 CSP**：所有回應帶有 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`（防點擊劫持——本機情境下「誘導點刪除／回滾」是現實威脅）與 CSP。CSP 為
    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`。
    **`script-src` 不含 `'unsafe-inline'`，這是硬性限制**：
-   - 頁面裡**不允許**再寫內聯事件處理器（`onclick="..."`）：一律用 `data-act="名稱"`（輸入類用 `data-act-input`，鍵盤類用 `data-act-key`），並在 `webui/app.js` 的 `ACTIONS` 表中註冊實作——分派器會依 `data-act` 呼叫。寫錯名稱不會報錯、只是「點了沒反應」，所以有第 14 條不變式**雙向核對** `data-act` ↔ `ACTIONS`（缺實作／有殘留條目都會失敗）。
-   - 也**不允許**內聯 `<script>`：首屏主題初始化已外置為 `webui/boot.js`；新增靜態資源必須加進 `gantry/api.py` 裡 `/ui/{asset}` 的白名單（目前是 `style.css` / `app.js` / `boot.js` / `i18n.js`）。第 15 條不變式會核對「頁面引用 ⊂ 白名單」，漏加會立刻失敗。
+   - 頁面裡**不允許**再寫內聯事件處理器（`onclick="..."`）：一律用 `data-act="名稱"`（輸入類用 `data-act-input`，鍵盤類用 `data-act-key`），並在 `webui/js/settings.js` 的 `ACTIONS` 表中註冊實作——分派器會依 `data-act` 呼叫。寫錯名稱不會報錯、只是「點了沒反應」，所以有第 14 條不變式**雙向核對** `data-act` ↔ `ACTIONS`（缺實作／有殘留條目都會失敗）。
+   - 也**不允許**內聯 `<script>`：首屏主題初始化已外置為 `webui/boot.js`；新增靜態資源必須加進 `gantry/routes_core.py` 裡 `/ui/{asset}` 的白名單（目前是 `style.css` / `boot.js` / `i18n.js`，以及任意 `js/<名字>.js`）。第 15 條不變式會核對「頁面引用 ⊂ 白名單」，漏加會立刻失敗。
    - `style-src` 仍保留 `'unsafe-inline'`：頁面大量使用 `style="..."` 屬性與動態注入的 `<style>`，影響面小於腳本，暫不收緊。
 
 ## 介面多語言（簡 / 繁 / EN）
@@ -926,7 +926,7 @@ gantry/              核心套件
   providers.py      API 供應商接入層（OpenAI/DeepSeek/Kimi/Grok 等）
   session_store.py  SQLite 工作階段持久化、中斷復原、工作階段實測統計
   snapshots.py      改動前原像快照與任務級回滾（自升級 failback）
-webui/            零依賴 Web 管理台（index.html 結構 + style.css + app.js）
+webui/            零依賴 Web 管理台（index.html 結構 + style.css + js/*.js ES 模組）
 AGENT.md          專案級 Agent 約定（工作區根目錄存在時自動注入系統提示）
 skills/           目錄式技能庫（每個技能一個 SKILL.md，按需載入）
 scripts/          工具腳本（login.py 登入精靈、calibrate.py 閾值校準、
