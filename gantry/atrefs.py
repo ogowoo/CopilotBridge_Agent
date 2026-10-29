@@ -24,6 +24,7 @@ _SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", ".idea", "data", "
 
 
 def _resolve(root: Path, rel: str) -> Path | None:
+    root = Path(root).resolve()
     rel = rel.strip().replace("\\", "/")
     if not rel or rel.startswith(("/", "~")) or ".." in rel.split("/") or ":" in rel:
         return None
@@ -37,7 +38,8 @@ def _resolve(root: Path, rel: str) -> Path | None:
 
 def expand_at_mentions(text: str, root: Path, max_files: int = MAX_FILES,
                        max_each: int = MAX_EACH, max_total: int = MAX_TOTAL):
-    """返回 (展开后的文本, 引用清单)。root 必须是已 resolve 的目录。"""
+    """返回 (展开后的文本, 引用清单)。root 会先 resolve，短路径也能正确比较。"""
+    root = Path(root).resolve()
     if not text or "@" not in text:
         return text, []
     # 拆出围栏，只在围栏外展开

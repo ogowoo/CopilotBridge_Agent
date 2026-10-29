@@ -29,14 +29,14 @@ from .tools import ToolError  # noqa: F401
 class SelfUpgradeMixin:
     # ── 自升级（修改服务自身代码）────────────────────────────────────
     def _self_rel(self, candidate: Path) -> str:
-        return candidate.relative_to(self.global_root).as_posix()
+        return candidate.resolve().relative_to(Path(self.global_root).resolve()).as_posix()
 
     def _self_path(self, value: str = ".") -> Path:
         if not self.allow_self_upgrade:
             raise ToolError("自升级已在 config.json 中禁用（allow_self_upgrade=false）")
         if not self.global_root:
             raise ToolError("未设置服务安装目录，无法自升级")
-        candidate = (self.global_root / value).resolve()
+        candidate = (Path(self.global_root).resolve() / value).resolve()
         try:
             rel = self._self_rel(candidate)
         except ValueError:
