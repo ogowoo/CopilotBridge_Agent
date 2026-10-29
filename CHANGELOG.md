@@ -14,6 +14,35 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.34] - 2026-10-29
+
+### Fixed
+
+- **「继续对话」输入框里打 `/` 没有菜单**（用户："我按了 / 没出来提示，不知道工具有没有生效"）。
+  斜杠菜单原本只挂在「新任务」框上：`#task` 有 `data-act-input/key` 且 `slash.js` 里
+  把 `#task` / `#slashMenu` 写死了，跟进框既没有这两个属性、也没有自己的菜单容器，
+  所以按 `/` 什么都不会出现（按 Enter 还会把 `/xxx` 当普通消息发出去）。
+  - `slash.js` 改成"成对目标"模型（`SLASH_PAIRS`：`task→#slashMenu`、
+    `followup→#slashMenuFollow`）；`slashUpdate/slashPick/slashKey` 通过 `_pair()` 取当前输入框与菜单，
+    `slashOpen()` 看所有菜单，`slashRun()`/Esc 关掉全部；
+  - `index.html` 给 `#followup` 加 `data-act-input="slashFollowInput"` /
+    `data-act-key="slashFollowKey"`，并新增 `#slashMenuFollow`（`.atmenu.slashmenu`，绝对定位在输入框上方）；
+  - `settings.js` 的 ACTIONS 增加两个入口，并让 `taskInput` 也把元素传下去（否则菜单分不清是谁弹的）；
+  - `composer.js` 的 Enter 处理**先问斜杠菜单**：菜单开着时 Enter 是"补全/执行命令"，
+    不再把 `/xxx` 发出去。
+
+### Added
+
+- `tests/test_slash_followup.py`（7 条）：跟进框属性与菜单容器、ACTIONS 注册、
+  `_pair()` 取代写死的 `#task`、`slashOpen`/`slashRun` 覆盖全部菜单、Enter 先问菜单再发送。
+- 浏览器冒烟 `scripts/smoke_slash.py`：跟进框打 `/` 弹出 9 条命令 → ↓ 换选中项 →
+  Enter 补全为 `/fanout ` 且菜单收起；新任务框的菜单未受影响。
+
+### 实测
+
+- 单测 **1277**（skipped=1）OK；不变量 25 条全绿；`cross_module_refs.py` OK；
+  截图 `data/ui-audit/slash-followup.png`。
+
 ## [11.0.0-preview.33] - 2026-10-29
 
 ### Fixed

@@ -368,8 +368,12 @@ const ACTIONS={
  exportTimeline:()=>exportTimeline(),
  refreshModels:()=>refreshModels(),
  runTask:()=>runTask(),
- taskKey:(el,e)=>{if(slashKey(e))return;if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(slashRun(el.value))return;runTask()}},
- taskInput:()=>slashUpdate(),
+ taskKey:(el,e)=>{if(slashKey(e,el))return;if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(slashRun(el.value))return;runTask()}},
+ taskInput:(el)=>slashUpdate(false,el),
+ // 「继续对话」输入框：/ 菜单与 ↑↓ 选择；Enter 在 composer.js 里先问 slashKey，
+ // 只有菜单没接管时才发送（所以这里无需处理 Enter）。
+ slashFollowInput:(el)=>slashUpdate(false,el),
+ slashFollowKey:(el,e)=>{slashKey(e,el)}, 
  closeDlg:()=>closeDlg(),
  closeManual:()=>closeManual(),
  closeLive:()=>closeLive(),

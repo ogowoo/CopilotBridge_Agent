@@ -6,13 +6,37 @@ function slashMatch(q){
  if(!s)return SLASH_COMMANDS.slice();
  return SLASH_COMMANDS.filter(c=>c.aliases.some(a=>a.toLowerCase().startsWith(s)));
 }
-function slashOpen(){
- const box=document.getElementById('slashMenu');
- return !!(box&&!box.hidden);
+/* 斜杠菜单可以挂在两个输入框上：新任务（#task）与继续对话（#followup）。
+   每个输入框配自己的菜单容器（都绝对定位在输入框上方），逻辑完全共用。
+   `_ctxInput` 记住"最近一次由谁打开的菜单"，供 pick/key 回填到正确的输入框。 */
+const SLASH_PAIRS=[
+ {input:'task', menu:'slashMenu'},
+ {input:'followup', menu:'slashMenuFollow'},
+];
+let _ctxInput=null;
+function _pair(inputEl){
+ const want=inputEl||_ctxInput||document.getElementById('task');
+ for(const p of SLASH_PAIRS){
+  const el=document.getElementById(p.input);
+  if(!el)continue;
+  if(el===want||p.input===want)return {input:el, menu:document.getElementById(p.menu)};
+ }
+ return {input:document.getElementById(SLASH_PAIRS[0].input),
+         menu:document.getElementById(SLASH_PAIRS[0].menu)};
 }
-function slashUpdate(force){
- const t=document.getElementById('task'),box=document.getElementById('slashMenu');
+function _hideMenus(){
+ for(const p of SLASH_PAIRS){
+  const b=document.getElementById(p.menu);
+  if(b){b.hidden=true;b.innerHTML=''}
+ }
+}
+function slashOpen(){
+ return SLASH_PAIRS.some(p=>{const b=document.getElementById(p.menu);return b&&!b.hidden});
+}
+function slashUpdate(force, inputEl){
+ const _tgt=_pair(inputEl), t=_tgt.input, box=_tgt.menu;
  if(!t||!box)return;
+ _ctxInput=t;
  const m=/^\/(\S*)$/.exec(t.value);
  if(!m&&!force){box.hidden=true;box.innerHTML='';return}
  const items=slashMatch(m?m[1]:'');
@@ -70,14 +94,17 @@ function post(u,body){
  return api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 }
 
-function slashPick(c){
- const t=document.getElementById('task');if(!t)return;
+function slashPick(c, inputEl){
+ const _tgt=_pair(inputEl), t=_tgt.input, box=_tgt.menu;
+ if(!t)return;
  t.value='/'+c.label+' ';t.focus();
- const box=document.getElementById('slashMenu');if(box)box.hidden=true;
+ if(box){box.hidden=true;box.innerHTML=''}
+ _hideMenus();
 }
-function slashKey(e){
- const box=document.getElementById('slashMenu');
- if(!box||box.hidden)return false;
+function slashKey(e, inputEl){
+ const _tgt=_pair(inputEl), t=_tgt.input, box=_tgt.menu;
+ if(!t||!box||box.hidden)return false;
+ _ctxInput=t;
  const rows=[...box.querySelectorAll('.slashrow')];
  const n=Math.max(rows.length,1);
  if(e.key==='ArrowDown'){slashIdx=(slashIdx+1)%n;slashUpdate(true);e.preventDefault();return true}
@@ -85,17 +112,17 @@ function slashKey(e){
  if(e.key==='Enter'){
   // 已是**完整命令**（/chat、/help、/research 问题…）→ 直接执行；
   // 只有还在输入前缀时才补全。否则 /help 会被当成补全、永远执行不了。
-  if(slashRun(document.getElementById('task').value)){e.preventDefault();return true}
-  const m1=/^\/(\S*)$/.exec(document.getElementById('task').value||'');
+  if(slashRun(t.value)){e.preventDefault();return true}
+  const m1=/^\/(\S*)$/.exec(t.value||'');
   const c1=slashMatch(m1?m1[1]:'')[slashIdx];
   if(c1){slashPick(c1);e.preventDefault();return true}
  }
  if(e.key==='Tab'){
-  const m=/^\/(\S*)$/.exec(document.getElementById('task').value||'');
+  const m=/^\/(\S*)$/.exec(t.value||'');
   const c=slashMatch(m?m[1]:'')[slashIdx];
   if(c){slashPick(c);e.preventDefault();return true}
  }
- if(e.key==='Escape'){box.hidden=true;box.innerHTML='';e.preventDefault();return true}
+ if(e.key==='Escape'){_hideMenus();e.preventDefault();return true}
  return false;
 }
 
@@ -146,7 +173,7 @@ function slashRun(text){
  if(!m)return false;
  const c=SLASH_COMMANDS.find(x=>x.aliases.some(a=>a.toLowerCase()===m[1].toLowerCase()));
  if(!c)return false;
- const box=document.getElementById('slashMenu');if(box){box.hidden=true;box.innerHTML=''}
+ _hideMenus();
  c.run((m[2]||'').trim());
  return true;
 }

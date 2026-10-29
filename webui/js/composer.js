@@ -382,7 +382,10 @@ async function jumpToMessage(sid,mid){
   }else toast(tr('这条消息不在最近加载的记录里（可能超出 500 条上限）'),'err');
  }catch(e){toast(tr('跳转失败: ')+(e.text||e),'err')}}
 
-document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();sendFollowup()}});
+document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='followup'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){
+ // 斜杠菜单开着时，Enter 是"选中/执行命令"，不该把 /xxx 当消息发出去
+ try{if(typeof window.slashKey==='function'&&window.slashKey(e,e.target))return}catch(err){}
+ e.preventDefault();sendFollowup()}});
 /* 强行插入指令（像 DSH 的 Ctrl+J）：运行中立即生效，Agent 下一回合优先执行；
    与"排队跟进"不同——后者要等当前这轮跑完才起新一轮。 */
 async function injectMessage(){
