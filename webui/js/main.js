@@ -315,6 +315,12 @@ try { mountTeamCard(); } catch (e) { console.warn('mountTeamCard 失败', e); }
 function bootInit(){
 try{applyTheme(themeChoice(),false);watchSystemTheme()}catch(e){}
   try{applyAnimPrefs()}catch(e){}     // 示波器/呼吸参数：首屏就把 CSS 变量铺好，别等打开设置页
+  // 底部 followup 输入框只在"已选会话"时出现。空状态是**默认可见**、不产生 style 变化，
+  // 观察器不会触发，所以必须在这里主动算一次；否则未选会话时会出现两个输入框
+  // （中间的新任务框 + 底部跟进框），用户实测confusing。
+  // 注意：这里必须用 import 进来的函数本体，**不能**靠 window.syncComposer——
+  // 绑定发生在 main.js 主体、所有 import 之后，模块顶层调用时它还不存在。
+  try{syncComposer()}catch(e){}
   try{loadMcpPrompts()}catch(e){}
   /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
   document.getElementById('sessModel').onchange=e=>setSessionModel(e.target.value);

@@ -14,6 +14,38 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.33] - 2026-10-29
+
+### Fixed
+
+- **未选会话时出现两个输入框**（用户截图："两个输入框会让人感到困惑"）：中间是「新任务」框、
+  底部还挂着「继续对话」框，看不出该用哪个。
+  根因是启动时 `syncComposer()` **没执行**：它在 `settings.js` 的**模块顶层**以
+  `try{syncComposer()}catch(e){}` 调用，而 `syncComposer` 只由 `main.js` 绑到 window，
+  绑定发生在所有 import 之后 → import 阶段 `ReferenceError`，被空 catch 吞掉；
+  空状态又是"默认可见"、不产生 `style` 变化，`MutationObserver` 也不触发，于是没人算。
+  - 启动同步挪到 `main.js` 的 `bootInit()`（直接用 import 的函数，不靠 window）；
+  - 删掉 `settings.js` 里那条必然抛错的裸调用（留注释说明为什么不能放这里）；
+  - 观察器从只看 `style` 扩到 `style` / `hidden` / `class`（class 切换时也不会漏）。
+
+### Added
+
+- **跨模块检查新增 E 类**（`scripts/cross_module_refs.py`，也并入不变量第 25 条）：
+  "模块顶层调用只靠 window 绑定的函数"——这类调用在 import 阶段必然 ReferenceError，
+  若外面裹了 try/catch 就是**静默不执行**。判定收窄到"语句开头 + 非箭头回调 + 本模块没声明/没 import"，
+  避免把 `addEventListener(...,()=>f())`、`setInterval(f,1500)` 误报。
+  同一类坑已经咬过两次（`mountTeamCard`、这次的 `syncComposer`）。
+- `tests/test_esm_migration.py` 增 6 条回归：真违规要抓到（`try{f()}catch(e){}`、裸语句），
+  回调/引用/函数体/已 import 都不许误报。
+- 浏览器冒烟 `scripts/smoke_composer.py`：按"**真正可见的 textarea 数量**"判定——
+  空状态 1 个、选中会话 1 个、点「＋ 新任务」回到空状态又 1 个。
+
+### 实测
+
+- 单测 1270（skipped=1）OK；不变量 25 条全绿；`cross_module_refs.py` OK；
+  浏览器三种状态可见输入框数均为 1、无 JS 异常；截图 `data/ui-audit/composer-empty.png` /
+  `composer-session.png`。
+
 ## [11.0.0-preview.32] - 2026-10-29
 
 ### Fixed

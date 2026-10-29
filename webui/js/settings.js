@@ -438,9 +438,8 @@ document.addEventListener('keydown',e=>{
  const el=e.target.closest?e.target.closest('[data-act-key]'):null;
  if(!el)return;const fn=ACTIONS[el.dataset.actKey];if(fn)fn(el,e)});
 
-/* 启动后同步一次输入框显隐：空状态默认就可见（没有 style 变更事件），
-   观察器不会触发，必须在这里主动算一次，否则空状态与常驻输入框会同时出现。 */
-try{syncComposer()}catch(e){}
+/* 输入框显隐的启动同步在 main.js 的 bootInit 里做——这里**不能**调：
+   本模块在 import 阶段执行，那时 window.syncComposer 还没绑上，会静默抛错。 */
 
 /* 版本信息：侧栏底部那颗淡淡的小标签。
    数据来自 GET /（后端 app 的 version），拿不到就保持隐藏——不喧哗。 */

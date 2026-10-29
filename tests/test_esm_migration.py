@@ -98,6 +98,54 @@ class NoBareSharedStateTests(unittest.TestCase):
         self.assertEqual(r["dup"], [], "同名重复声明")
         self.assertEqual(r["state"], [], "共享状态应放 globals.js")
         self.assertEqual(r["func"], [], "函数应 export + 绑 window")
+        self.assertEqual(r.get("toplevel", []), [],
+                         "模块顶层不许调用只靠 window 绑定的函数（import 阶段会 ReferenceError）")
+
+
+class TopLevelWindowCallTests(unittest.TestCase):
+    """模块顶层调用"只靠 window 绑定"的函数 → import 阶段必然 ReferenceError。
+
+    真实事故两次：`mountTeamCard()`、`try{syncComposer()}catch(e){}`（后者被空 catch 吞掉，
+    表现为未选会话时出现两个输入框）。
+    """
+
+    @staticmethod
+    def _helper():
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "cross_module_refs", ROOT / "scripts" / "cross_module_refs.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)          # type: ignore[union-attr]
+        return mod.toplevel_window_calls
+
+    def test_catches_boot_call(self):
+        fn = self._helper()
+        hits = fn("try{syncComposer()}catch(e){}", {"syncComposer"}, set())
+        self.assertTrue(hits, "启动时的裸调用必须被抓到")
+
+    def test_catches_plain_statement(self):
+        fn = self._helper()
+        self.assertTrue(fn("syncComposer();", {"syncComposer"}, set()))
+
+    def test_ignores_callback_and_reference(self):
+        fn = self._helper()
+        bound = {"syncComposer"}
+        for src in ("window.addEventListener('resize',()=>syncComposer());",
+                    "setInterval(syncComposer,1500);",
+                    "foo(syncComposer);"):
+            self.assertFalse(fn(src, bound, set()), f"不该误报: {src}")
+
+    def test_ignores_function_body(self):
+        fn = self._helper()
+        src = "function go(){\n syncComposer();\n}"
+        self.assertFalse(fn(src, {"syncComposer"}, set()), "函数体里调用是安全的（事件路径）")
+
+    def test_ignores_imported_and_local(self):
+        fn = self._helper()
+        src = "syncComposer();"
+        self.assertFalse(fn(src, {"syncComposer"}, {"syncComposer"}), "已 import 的不算")
+        self.assertFalse(fn("try{memBtn()}catch(e){}", {"memBtn"}, {"memBtn"}),
+                         "本模块自己声明/import 的不算")
 
 
 if __name__ == "__main__":

@@ -120,6 +120,40 @@ def decls(src: str) -> dict[str, tuple[str, str]]:
     return out
 
 
+def toplevel_window_calls(masked: str, bound: set[str], imported: set[str]) -> list[tuple[int, str]]:
+    """找出"模块顶层、**语句开头**就直接调用只靠 window 绑定的函数"。
+
+    ES 模块顶层语句在 import 阶段就执行，而 `window.X = X` 是 main.js 主体（所有 import
+    之后）才绑的 → 此时裸名 `X()` 抛 ReferenceError；若外面裹 try/catch 就是**静默不执行**
+    （真实事故：`try{syncComposer()}catch(e){}` → 空状态出现两个输入框；更早还有 mountTeamCard）。
+
+    判定很窄，只认这几种行首形式（宁可漏报，不要误报）：
+        X(...)                try{X(...)}…           try { X(...) }
+    明确**不算**的（它们之后才执行 / 只是引用）：
+        window.addEventListener(…, ()=>X())      setTimeout(X, 100)      foo(X)
+    顶层花括号里的调用（`if (...){ … }`）也漏报——那需要真解析，暂不做。
+    """
+    head = re.compile(r"^\s*(?:try\s*\{)?\s*")
+    out: list[tuple[int, str]] = []
+    depth = 0
+    for i, line in enumerate(masked.split("\n"), 1):
+        start_depth = depth
+        depth += line.count("{") - line.count("}")
+        if start_depth != 0:
+            continue
+        body = head.sub("", line)
+        for name in sorted(bound):
+            if name in imported:
+                continue                       # 本模块 import 了，直接调用没问题
+            if not re.match(re.escape(name) + r"\s*\(", body):
+                continue
+            if "=>" in line.split(name)[0]:
+                continue                       # 箭头回调里，延迟执行
+            out.append((i, name))
+            break
+    return out
+
+
 def analyze(webui: Path | None = None) -> dict[str, list[str]]:
     """返回 {"state": [...], "func": [...], "dup": [...]}；空 = 合规。"""
     global JS, WEBUI
@@ -206,6 +240,10 @@ def analyze(webui: Path | None = None) -> dict[str, list[str]]:
         for name in sorted(names):
             if name in gnames or len(name) < 4:
                 continue
+            # 函数/类用 window.X 调是**正常姿势**（主入口把函数绑到 window，事件路径就用它）；
+            # 这条规则只针对"状态变量被当成全局用 → 两份状态"。
+            if names[name][0] in ("function", "class"):
+                continue
             for other, src in refsrc.items():
                 if other in (owner, "globals.js", "main.js"):
                     continue        # main.js 就是"把函数绑到 window"的地方，不算误用
@@ -213,9 +251,19 @@ def analyze(webui: Path | None = None) -> dict[str, list[str]]:
                     windowref.append(f"window.{name}（声明在 {owner} 私有）被 {other} 当全局用 → 两份状态")
                     break
 
+    # E. 模块顶层调用"只靠 window 绑定"的函数（import 阶段还没绑上）
+    toplevel: list[str] = []
+    for owner, src in refsrc.items():
+        if owner in ("globals.js", "main.js"):
+            continue
+        own = set(declared.get(owner, {}))
+        for line, name in toplevel_window_calls(src, bound, imported.get(owner, set()) | own):
+            toplevel.append(f"{owner}:{line} 顶层调用 {name}()（只由 window 绑定，import 阶段还不存在）")
+
     return {
         "state": [f"{n}: " + "; ".join(w) for n, w in sorted(state_needed.items())],
         "func": func_problems,
+        "toplevel": toplevel,
         "dup": dupe_list,
         "windowref": windowref,
     }
@@ -243,6 +291,11 @@ def main() -> int:
         code = 1
         print("D. window.<名> 指向模块私有变量（两份状态，必须搬进 globals.js）：")
         for p in r["windowref"]:
+            print("  " + p)
+    if r.get("toplevel"):
+        code = 1
+        print("E. 模块顶层调用了「只靠 window 绑定」的函数（import 阶段 ReferenceError）：")
+        for p in r["toplevel"]:
             print("  " + p)
     if not code:
         print("OK：跨模块共享都合规（状态在 globals.js，函数已 export + window 绑定）")

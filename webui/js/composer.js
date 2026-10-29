@@ -36,7 +36,8 @@ try{ // 空状态的显隐有 6 处调用点，用观察器兜住，避免漏掉
  const _empty=document.getElementById('emptyState');
  if(_empty && typeof MutationObserver==='function')
   new MutationObserver(()=>{try{syncComposer()}catch(e){}})
-   .observe(_empty,{attributes:true,attributeFilter:['style']});
+   // 别只盯 style：有的路径用 class/hidden 切空状态，那时观察器不触发
+  .observe(_empty,{attributes:true,attributeFilter:['style','hidden','class']});
 }catch(e){}
 
 const LIVE_NAMES={chat:'实时流',timeline:'步骤时间线'};

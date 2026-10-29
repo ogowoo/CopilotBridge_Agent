@@ -479,7 +479,7 @@ def _ui_module_shared_state() -> None:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)          # type: ignore[union-attr]
     r = mod.analyze(ROOT / "webui")
-    problems = r["dup"] + r["state"] + r["func"]
+    problems = r["dup"] + r["state"] + r["func"] + r.get("toplevel", [])
     if problems:
         raise InvariantError("跨模块共享不合规: " + " | ".join(problems[:4]))
 
