@@ -47,7 +47,8 @@ class SelfUpgradeMixin:
                     raise ToolError(f"自升级禁止触碰: {rel}")
             elif rel == deny:
                 raise ToolError(f"自升级禁止触碰: {rel}")
-        if not any(rel == w.rstrip("/") or rel.startswith(w) for w in self.self_whitelist):
+        allowed = (*self.self_whitelist, "plugins/")
+        if not any(rel == w.rstrip("/") or rel.startswith(w) for w in allowed):
             raise ToolError(f"路径不在自升级白名单内: {rel}")
         return candidate
 

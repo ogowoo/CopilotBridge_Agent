@@ -209,7 +209,11 @@ async def _copilot_file(path: str, instruction: str) -> dict:
     instruction = str(instruction or "").strip()
     if not instruction:
         raise b.ToolError("instruction 不能为空")
-    target = b.AGENT_TOOLS._path(path)          # 复用工作区路径沙箱
+    target = b.AGENT_TOOLS._path(path)
+    try:
+        target.relative_to(b.AGENT_TOOLS.root)
+    except ValueError as exc:
+        raise b.ToolError("copilot_file 只能写入当前工作区") from exc
     filename = target.name
     model = b.DEFAULT_MODEL
     if b.current_session():

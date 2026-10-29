@@ -18,6 +18,9 @@ from typing import Any
 from .prompt_lang import LANGS, normalize, to_tw
 
 DESC_EN: dict[str, str] = {
+    'batch_analyze': 'Analyze files',
+    'command_capabilities': 'Probe commands',
+    'workspace_inspect': 'Inspect files',
     "list_directory": "List entries of a workspace directory",
     "find_files": "Find files by glob pattern",
     "read_text": ("Read UTF-8 text; reads the whole file by default (up to max_read_chars). "
@@ -81,6 +84,12 @@ DESC_EN: dict[str, str] = {
 
 # 参数提示：键为 "工具.参数"
 ARG_EN: dict[str, str] = {
+    'batch_analyze.paths': 'File paths',
+    'batch_analyze.max_bytes': 'Sample limit',
+    'command_capabilities.type': 'Schema type',
+    'command_capabilities.properties': 'Schema properties',
+    'workspace_inspect.path': 'Relative path',
+    'workspace_inspect.max_entries': 'Entry limit',
     "list_directory.path": "Relative path, defaults to .",
     "find_files.pattern": "e.g. **/*.log",
     "read_text.path": "Relative path",

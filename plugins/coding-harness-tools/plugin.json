@@ -1,0 +1,1 @@
+{"name":"coding-harness-tools","version":"1.0.0","description":"Coding harness tools","gantry":{"entry":"plugin.py","permissions":["tools"],"contributes":{"tools":["workspace_inspect","command_capabilities","batch_analyze"]}}}
