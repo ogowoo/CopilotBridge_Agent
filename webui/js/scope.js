@@ -2,6 +2,18 @@
 // 自包含：不依赖 app.js 的任何函数/变量；状态都是模块私有的。
 // 由 js/main.js 把 startScope/stopScope/scopeFrame 绑到 window，
 // 老代码（app.js 的事件路径）照旧调用。
+//
+// 可调参数（振幅/线宽/透明度/速度）住在 animprefs.js，由设置页写 localStorage。
+// 这里**缓存**一份：每帧读 localStorage 太贵；设置页改完会派发 'gantry-animprefs'
+// 事件，收到就把缓存丢掉，下一帧自动用新值。
+import { readAnimPrefs } from './animprefs.js';
+
+let _scopePrefs=null;
+function scopePrefs(){
+ if(!_scopePrefs)_scopePrefs=readAnimPrefs();
+ return _scopePrefs;
+}
+try{document.addEventListener('gantry-animprefs',()=>{_scopePrefs=null})}catch(e){}
 
 let _scopeRAF=null, _scopeStyle=null;
 let _scopeIntensity=0, _scopeTarget=0, _scopeTimer=0;
@@ -84,18 +96,20 @@ function scopeFrame(){
  _scopeIntensity += (_scopeTarget-_scopeIntensity)*0.65;
 
  const mid=h/2;
- // 振幅按半高的 95%（demo 是 85/225 ≈ 38%，这里取更满一点，峰值顶到带边）
- const amp=(h/2)*0.80, k=amp/115;
- const xz=Math.max(1, 900/w);              // 采样密度对齐 demo 的 900px 基准
+ // 振幅按半高的 80%（demo 是 85/225 ≈ 38%，这里取更满一点，峰值顶到带边）
+ // × scopeAmp 是设置里的「振幅」倍数；× scopeSpeed 让波形横向变快/变慢。
+ const _pf=scopePrefs();
+ const amp=(h/2)*0.80*_pf.scopeAmp, k=amp/115;
+ const xz=Math.max(1, 900/w)*_pf.scopeSpeed;   // 采样密度对齐 demo 的 900px 基准
  const grad=ctx.createLinearGradient(0,0,w,0);
  grad.addColorStop(0,   _rgba(accent,0));
- grad.addColorStop(0.15,_rgba(accent,1));
- grad.addColorStop(0.85,_rgba(accent,1));
+ grad.addColorStop(0.15,_rgba(accent,_pf.scopeOpacity));
+ grad.addColorStop(0.85,_rgba(accent,_pf.scopeOpacity));
  grad.addColorStop(1,   _rgba(accent,0));
 
  ctx.beginPath();
  ctx.strokeStyle=grad;
- ctx.lineWidth=1.8;
+ ctx.lineWidth=_pf.scopeLine;
  ctx.lineJoin='miter';
  ctx.miterLimit=10;
  ctx.shadowBlur=0;                          // 零光晕，刀锋质感
@@ -119,7 +133,7 @@ function scopeFrame(){
 }
 function startScope(){
  if(_scopeRAF)return;
- try{if(localStorage.getItem('gantry-teamscope-heartbeat')==='0')return;}catch(e){}
+ if(!scopePrefs().scopeOn)return;          // 设置页的「示波器」开关
  const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
  _scopeStyle=null;
  _scopeIntensity=0.5; _scopeTarget=0.9; _scopeTimer=12;

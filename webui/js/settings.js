@@ -3,6 +3,7 @@
 import { SETTINGS_GROUPS, SANDBOX_UI, ENUM_LABEL } from './themeboot.js';
 import { CODE_EXT } from './codeux.js';
 import { stepFilterInput } from './steps.js';
+import { readAnimPrefs, applyAnimPrefs, setAnimPref, animPrefLabel, ANIM_RANGES } from './animprefs.js';
 function renderSandbox(){
  const mode=SANDBOX_UI[sandboxMode]?sandboxMode:'workspace-write';
  const meta=SANDBOX_UI[mode];
@@ -55,6 +56,30 @@ function closeSettings(){
  const mask=document.getElementById('settingsMask');
  if(mask)mask.classList.remove('open');
 }
+/* 一行滑杆：标签 + range + 实时数值。data-anim 是参数名（animprefs.js 的键），
+   改动即时生效并落库（不用等「保存」——调动画时看不到变化等于没有）。 */
+function _animRow(key, label, hint, prefs){
+ const rng=ANIM_RANGES[key]||[0,1];
+ const step=rng[1]-rng[0]>20?1:(rng[1]-rng[0]>4?0.1:0.05);
+ const cur=prefs&&prefs[key]!==undefined?prefs[key]:rng[0];
+ return `<label class="setrow animrow" title="${esc(tr(hint))}"><span>${esc(tr(label))}</span>
+   <input type="range" id="set_${key}" data-anim="${key}" min="${rng[0]}" max="${rng[1]}"
+     step="${step}" value="${cur}" aria-label="${esc(tr(label))}">
+   <b class="animval" id="val_${key}">${esc(animPrefLabel(key,prefs))}</b></label>`;
+}
+
+/* 动画参数即时生效：设置页里的滑杆/开关一动就写 localStorage + 应用（并刷新右侧数值）。 */
+function _onAnimInput(el){
+ const key=el&&el.dataset?el.dataset.anim:'';
+ if(!key)return;
+ const v=el.type==='checkbox'?(el.checked?'1':'0'):el.value;
+ const prefs=setAnimPref(key,v);
+ const out=document.getElementById('val_'+key);
+ if(out)out.textContent=animPrefLabel(key,prefs);
+}
+document.addEventListener('input',ev=>{if(ev.target&&ev.target.dataset&&ev.target.dataset.anim)_onAnimInput(ev.target)});
+document.addEventListener('change',ev=>{if(ev.target&&ev.target.dataset&&ev.target.dataset.anim)_onAnimInput(ev.target)});
+
 function _cfgInput(key,spec,val){
  const id='set_'+key.replace(/\./g,'_');
  if(spec.kind==='bool'){
@@ -92,6 +117,7 @@ async function renderSettings(){
   (groups[g]=groups[g]||[]).push([k,spec]);
  });
  const has=(gid)=>gid==='ui'||gid==='entries'||gid==='danger'||(groups[gid]||[]).length;
+ const _AP=readAnimPrefs();                  // 动画参数（模板里铺滑杆的当前值）
  const visible=SETTINGS_GROUPS.filter(([gid])=>has(gid));
  if(!visible.some(([gid])=>gid===window.settingsTab))window.settingsTab=visible[0][0];
 
@@ -114,9 +140,20 @@ async function renderSettings(){
    <label class="setrow"><span>${esc(tr('语言'))}</span>
      <select id="setLang" data-ui="lang">${[['zh','中文'],['en','English'],['tw','繁體中文']]
        .map(([v,t])=>`<option value="${v}" data-i18n-skip="1" ${currentLang()===v?'selected':''}>${esc(t)}</option>`).join('')}</select></label>
-   <label class="setrow"><input type="checkbox" id="setTeamScopeHeartbeat" data-ui="scope"
+   <h4>${esc(tr('动画'))}</h4>
+   <label class="setrow"><input type="checkbox" id="setTeamScopeHeartbeat" data-ui="scope" data-anim="scopeOn"
      ${localStorage.getItem('gantry-teamscope-heartbeat')==='0'?'':'checked'}>
-     <span>${esc(tr('任务进行时的心跳动画（卡片上沿的示波器）'))}</span></label>`;
+     <span>${esc(tr('任务进行时的心跳动画（卡片上沿的示波器）'))}</span></label>
+   ${_animRow('scopeAmp', '示波器振幅', '波形上下摆动的幅度（100% 是原设计）', _AP)}
+   ${_animRow('scopeLine', '示波器线宽', '线的粗细（px）', _AP)}
+   ${_animRow('scopeOpacity', '示波器透明度', '线的不透明度，调低更含蓄', _AP)}
+   ${_animRow('scopeSpeed', '示波器速度', '波形横向流动的快慢', _AP)}
+   <h4>${esc(tr('输入框呼吸'))}</h4>
+   <label class="setrow"><input type="checkbox" id="setBreatheOn" data-anim="breatheOn"
+     ${_AP.breatheOn?'checked':''}>
+     <span>${esc(tr('任务运行时输入框边框呼吸'))}</span></label>
+   ${_animRow('breatheDur', '呼吸时长', '一个呼吸周期的秒数', _AP)}
+   ${_animRow('breatheStrength', '呼吸强度', '边框强调色与光晕的强度（100% 是原设计）', _AP)}`;
 
  const entriesHtml=`<h4>${esc(tr('入口'))}</h4>
    <div class="setbtns">
@@ -185,7 +222,15 @@ async function saveSettings(){
  if(themeSel&&themeSel.value!==themeChoice()){try{localStorage.setItem('gantry-theme',themeSel.value)}catch(e){};applyTheme(themeSel.value,false);applyLangButton()}
  if(langSel&&langSel.value!==currentLang()){setLang(langSel.value)}
  const teamScopeHeartbeat=document.getElementById('setTeamScopeHeartbeat');
- if(teamScopeHeartbeat){try{localStorage.setItem('gantry-teamscope-heartbeat',teamScopeHeartbeat.checked?'1':'0')}catch(e){}}
+ if(teamScopeHeartbeat){setAnimPref('scopeOn',teamScopeHeartbeat.checked?'1':'0')}
+ const breatheOnEl=document.getElementById('setBreatheOn');
+ if(breatheOnEl){setAnimPref('breatheOn',breatheOnEl.checked?'1':'0')}
+ // 滑杆：值可能还是模板初始值（用户没拖），也要落库，否则刷新后回到默认
+ ['scopeAmp','scopeLine','scopeOpacity','scopeSpeed','breatheDur','breatheStrength'].forEach(k=>{
+  const el=document.getElementById('set_'+k);
+  if(el)setAnimPref(k,el.value);
+ });
+ applyAnimPrefs();
  // 只提交**改动过**的字段：整表提交时，空的文本/枚举控件会被后端校验拒掉
  // （实测 ``default_model: ""`` 让整批保存 400），也会把没动过的键来回写文件。
  const raw=collectSettings();

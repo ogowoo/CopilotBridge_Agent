@@ -14,6 +14,46 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.26] - 2026-10-29
+
+### Added
+
+- **设置 → 外观 → 动画：示波器与输入框呼吸都能调了**（用户："把 teamscope 能调的参数弄出来放设置里，
+  还有输入框边框呼吸的参数"）。这正是 task-mvs4un2x 想做但半途而废的功能——那次只往
+  `settings.js` 塞了 4 行「读元素」的代码，元素从没加进界面，ui_refs 不变量当场报红。
+
+  | 分组 | 控件 | 默认值 = 调参前的原始观感 |
+  | --- | --- | --- |
+  | 示波器 | 开关（沿用老的 `gantry-teamscope-heartbeat`） | 开 |
+  | | 振幅 40%–160% | 100%（半高的 80%） |
+  | | 线宽 0.6–4 px | 1.8 px |
+  | | 透明度 15%–100% | 100% |
+  | | 速度 0.3–2.5× | 1.0×（波形横向流动） |
+  | 输入框呼吸 | 开关 | 开 |
+  | | 时长 0.6–4.0 s | 1.8 s |
+  | | 强度 0–100% | 100%（边框混 88% 强调色 + 18px 光晕） |
+
+- 新模块 `webui/js/animprefs.js`：参数读写/区间钳制（手改 localStorage 写坏成 `abc` 也不会让动画
+  变 NaN 静默消失）、把呼吸参数写成 `<html>` 上的 CSS 变量、改完派发 `gantry-animprefs` 事件让
+  示波器丢缓存。**拖动即时生效**（不用等「保存」），保存按钮也会落库；刷新后保持。
+- 首屏启动就 `applyAnimPrefs()`，CSS 变量缺失时关键帧自带 fallback（默认值 = 旧观感），
+  所以「不打开设置页」时视觉与以前完全一致。
+
+### Changed
+
+- `css/composer.css` 的 `composer-breathe` 关键帧参数化：`--breathe-dur / -hi / -ring / -ring-a /
+  -glow / -glow-a`，并新增 `:root[data-breathe="off"]` 关掉动画；`prefers-reduced-motion` 兜底保留。
+- 使用手册「界面」一节（中英）补一条说明。
+
+### 实测
+
+- 浏览器探针实测（不是只看代码）：振幅 0.4→1.6 时示波器墨迹跨度 4px→14px、线宽 1.8→4 时
+  厚度 3→5px、透明度 1→0.25 时峰值 alpha 255→64；拖滑杆后 localStorage 与 `--breathe-dur/
+  --breathe-hi/--breathe-glow` 同步变化；关呼吸后 `data-breathe="off"`。
+- 英文/繁中模式下设置页这 6 行**零中文残留**；截图 `data/ui-audit/anim-settings.png`。
+- 单测 **1261**（skipped=1）OK（新增 `tests/test_anim_settings.py` 15 条）；不变量 25 条全绿；
+  `ui_layout_audit --stress`（7 视口）/ `ui_contrast_audit` / `ui_i18n_audit`（三语言 446 条）通过。
+
 ## [11.0.0-preview.25] - 2026-10-29
 
 ### Fixed

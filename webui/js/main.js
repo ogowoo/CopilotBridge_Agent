@@ -32,6 +32,11 @@ import { mountTimelineIntoTab, syncComposer, liveTab, expandLive, closeLive, sho
 import { themeChoice, resolveTheme, applyTheme, toggleTheme, watchSystemTheme, toggleRail, memInjectCss, memBtn, openMemory, loadMemory, bootBanner, showBoot, shutdownService, restartService, showRestarting, waitServiceBack, showStopped, pollBoot } from './themeboot.js';
 import { renderSandbox, loadSandbox, pickSandbox, openSettings, closeSettings, renderSettings, setSettingsTab, collectSettings, saveSettings } from './settings.js';
 import { applyTitleVersion, loadVersion } from './version.js';
+import { applyAnimPrefs, readAnimPrefs, setAnimPref, animPrefLabel } from './animprefs.js';
+window.applyAnimPrefs = applyAnimPrefs;
+window.readAnimPrefs = readAnimPrefs;
+window.setAnimPref = setAnimPref;
+window.animPrefLabel = animPrefLabel;
 window.applyTitleVersion = applyTitleVersion;
 window.loadVersion = loadVersion;
 window.dlgPrompt = dlgPrompt;
@@ -309,6 +314,7 @@ try { mountTeamCard(); } catch (e) { console.warn('mountTeamCard 失败', e); }
 // ── 启动（原 app.js 末尾的启动 IIFE；模块 deferred 完才跑，window 绑定已就位）──
 function bootInit(){
 try{applyTheme(themeChoice(),false);watchSystemTheme()}catch(e){}
+  try{applyAnimPrefs()}catch(e){}     // 示波器/呼吸参数：首屏就把 CSS 变量铺好，别等打开设置页
   try{loadMcpPrompts()}catch(e){}
   /* ── 启动：API 不可达时进入演示模式（仅用于界面预览） ── */
   document.getElementById('sessModel').onchange=e=>setSessionModel(e.target.value);

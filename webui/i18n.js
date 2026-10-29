@@ -937,6 +937,21 @@ Object.assign(I18N_EN, {
   "没有匹配的文件": "No matching files",
   "选择文件": "Pick a file",
   "任务进行时的心跳动画（卡片上沿的示波器）": "Heartbeat animation while a task runs (the oscilloscope above the card)",
+  "动画": "Animation",
+  "示波器振幅": "Oscilloscope amplitude",
+  "波形上下摆动的幅度（100% 是原设计）": "How far the wave swings up and down (100% is the original design)",
+  "示波器线宽": "Oscilloscope line width",
+  "线的粗细（px）": "Line thickness in px",
+  "示波器透明度": "Oscilloscope opacity",
+  "线的不透明度，调低更含蓄": "Line opacity — lower is subtler",
+  "示波器速度": "Oscilloscope speed",
+  "波形横向流动的快慢": "How fast the wave travels horizontally",
+  "输入框呼吸": "Composer breathing",
+  "任务运行时输入框边框呼吸": "Breathe the composer border while a task runs",
+  "呼吸时长": "Breathing period",
+  "一个呼吸周期的秒数": "Seconds per breathing cycle",
+  "呼吸强度": "Breathing strength",
+  "边框强调色与光晕的强度（100% 是原设计）": "Strength of the accent border and glow (100% is the original design)",
 });
 
 /* 动态渲染出来的**属性**在 DOM 层翻译（title / placeholder / aria-label）。

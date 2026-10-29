@@ -400,6 +400,7 @@ Agent 还有一套<b>长期记忆</b>：把以往任务里验证过的零散事�
 <li><b>◐</b> 主题轮换：深色/浅色/Nord 蓝/护眼米/Dracula 紫/柔粉/薄荷，刷新保持。</li>
 <li>侧栏左缘的细长拉手收起/展开侧栏；实时面板（执行状态/当前回答/发送内容/继续对话）是选项卡，<b>⤢ 放大</b>看全文。</li>
 <li>步骤时间线每条带执行时间；「查看结果」展开结构化 JSON。</li>
+<li><b>动画可调</b>：设置 → 外观 → 动画，能调卡片上沿示波器的<b>振幅 / 线宽 / 透明度 / 速度</b>，以及任务运行时输入框边框呼吸的<b>开关 / 时长 / 强度</b>；拖动即时生效并记住，系统开了「减少动态效果」时两者自动停。</li>
 </ul>
 <h3>服务自升级（默认关闭）</h3>
 <ol>
@@ -613,6 +614,7 @@ approach is reusable, it creates one with <code>skill_create</code> (defaults to
 <li>The thin handle on the rail's left edge collapses/expands the sidebar; the live panel (run state / window.current answer /
 sent content / follow-up) is tabbed — <b>⤢ Expand</b> shows the full text.</li>
 <li>Each step in the timeline shows its duration; "View result" expands the structured JSON.</li>
+<li><b>Tunable animation</b>: Settings → Appearance → Animation adjusts the oscilloscope on the card's top edge (<b>amplitude / line width / opacity / speed</b>) and the composer border breathing while a task runs (<b>on / period / strength</b>). Changes apply live and are remembered; both stop when the OS asks for reduced motion.</li>
 </ul>
 <h3>Service self-upgrade (off by default)</h3>
 <ol>

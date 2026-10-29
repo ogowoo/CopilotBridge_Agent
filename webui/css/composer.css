@@ -374,11 +374,15 @@ section.card.collapsed .cardchev svg{transform:rotate(-90deg)}
 .btn.sendRound.stop:hover{background:color-mix(in srgb, var(--accent) 10%, var(--panel2));border-color:var(--accent)}
 .btn.sendRound.stop #sendIcon{width:16px;height:16px;padding:4px;box-sizing:border-box;border-radius:3px;background:currentColor}
 .composer{position:relative}
+/* 输入框边框呼吸：时长/强度走 CSS 变量（设置页「动画」里可调，animprefs.js 写到 :root）。
+   变量的默认值 = 调参前的原始观感，所以不打开设置页时视觉与以前完全一致。 */
 @keyframes composer-breathe{
   0%,100%{border-color:color-mix(in srgb,var(--accent) 32%,var(--line));box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 0%,transparent)}
-  50%{border-color:color-mix(in srgb,var(--accent) 88%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent),0 0 18px color-mix(in srgb,var(--accent) 22%,transparent)}
+  50%{border-color:color-mix(in srgb,var(--accent) var(--breathe-hi,88%),var(--line));box-shadow:0 0 0 var(--breathe-ring,3px) color-mix(in srgb,var(--accent) var(--breathe-ring-a,18%),transparent),0 0 var(--breathe-glow,18px) color-mix(in srgb,var(--accent) var(--breathe-glow-a,22%),transparent)}
 }
-.main > .composer.agent-busy{animation:composer-breathe 1.8s ease-in-out infinite}
+.main > .composer.agent-busy{animation:composer-breathe var(--breathe-dur,1.8s) ease-in-out infinite}
+/* 设置里关掉呼吸：不删动画定义，只让这一条不跑（也照顾 prefers-reduced-motion） */
+:root[data-breathe="off"] .main > .composer.agent-busy{animation:none}
 @media (prefers-reduced-motion:reduce){
   .main > .composer.agent-busy{animation:none;border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 16%,transparent)}
 }

@@ -221,3 +221,16 @@
 .subagentrow.subagentback{border-bottom:1px dashed var(--line2);margin-bottom:4px;
   padding-bottom:6px;color:var(--accent);cursor:pointer}
 .subagentrow.subagentback:hover{background:var(--hover,rgba(0,0,0,.04))}
+
+/* ANIM-SLIDERS: 「动画」分组里的滑杆行——标签占左、滑杆占中、数值占右。
+   全局规则把 text/number/select 固定在 220px，range 不在其中（原生宽度很小），
+   这里单独给它撑满剩余空间。 */
+.setrow.animrow{cursor:default}
+.setrow input[type="range"]{
+  flex:1 1 auto;min-width:90px;width:auto;max-width:none;height:22px;padding:0;
+  border:0;background:none;accent-color:var(--accent);cursor:pointer}
+.setrow input[type="range"]:focus{outline:2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset:2px;border-radius:6px}
+.setrow .animval{flex:none;width:54px;text-align:right;font-size:12px;color:var(--faint);
+  font-variant-numeric:tabular-nums;font-weight:600}
+.setrow .animunit{margin-left:-6px;font-size:11.5px;color:var(--faint)}
