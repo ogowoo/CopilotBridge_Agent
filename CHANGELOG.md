@@ -14,6 +14,53 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.35] - 2026-10-29
+
+### Added
+
+- **系统托盘 + 后台运行**（用户："做一个系统托盘图标吧，还是一个启动器 start.py，
+  但可以不跑 login.py 就启动托盘，通过托盘菜单启动自动化浏览器；start.py 之后能关掉终端，
+  日志也要留档"）。
+  - `python start.py` 现在**默认派生后台进程**（同目录 `pythonw.exe` +
+    `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`），终端随即可以关掉；前台仍是
+    `--foreground`。子进程带 `GANTRY_TRAY_CHILD=1`，所以「重启服务」之后依然是托盘模式。
+  - `gantry/tray.py`：**纯 ctypes**（user32/shell32）实现托盘——消息窗 + `Shell_NotifyIconW` +
+    `TrackPopupMenu`，不引入 pystray/Pillow 之类依赖。菜单每次弹出重建（状态是活的）。
+  - 菜单（**三语言**：简体 / 繁體 / English，用户："菜单要多语言，不要那么宽"）：
+    打开控制台 · 启动自动化浏览器 · 打开日志 · 打开数据目录 · 重启服务 · 语言 ▸ ·
+    退出托盘 · 停止服务并退出。状态/版本/端口移到**图标 tooltip**，菜单首行只留版本号，
+    标签去掉括号注解（宽度问题就是那次反馈）。
+  - 托盘**不依赖** `scripts/login.py`：菜单里的「启动自动化浏览器」直接调
+    `POST /v1/agent/browser`（按需拉起，登录态沿用 `EdgeProfile`）。
+  - 语言来源：`config.json` 的 `ui.language` > `GANTRY_LANG` > Windows 界面语言，默认中文；
+    菜单里切换会写回 `config.json`，下次启动保持。
+- `gantry/logcfg.py`：日志落盘 `data/logs/gantry.log`（5 MB × 7 滚动，`GANTRY_LOG_DIR` /
+  `GANTRY_LOG_LEVEL` 可改）。后台模式没有终端，uvicorn 启动/访问日志与托盘动作
+  （"托盘图标已添加""托盘：启动自动化浏览器"）都进这个文件。
+- `assets/gantry.ico`（8 个尺寸）+ `scripts/make_tray_icon.py`；`--print-menu` /
+  `--tray-selftest` / `--lang` 三个开关（后两个便于排障与自动化验证）。
+- `tests/test_tray.py`（19 条）：菜单动作都有实现、**标签必须短**、三语言词条齐全、
+  语言切换写回 config.json、`--print-menu` 可用、派生命令用 pythonw + `--tray-child`、
+  uvicorn 不在模块顶层 import、日志落盘且 handler 不重复。
+
+### Changed
+
+- `start.py`：`uvicorn` 改成函数内 import（`--help` / `--print-menu` / `--tray-selftest`
+  不再被它拖住）；日志统一由 `logcfg` 配置（`log_config=None`，否则每条日志打两遍）；
+  单实例：启动前先探 `/health`，已在运行就只打印地址。
+- `config.example.json` 增加 `ui.language`；`AGENT.md` 与三语 README 的快速开始补一句
+  "默认后台运行"；新增 `docs/TRAY.md`。
+
+### 实测
+
+- `python start.py` → 4.6s 返回，服务在 **pythonw3.13**（无控制台）里跑，
+  `GET /health` 200；日志里有「日志已就绪（控制台=False）」「托盘图标已添加（pid=…）」
+  「Uvicorn running on …」；再执行一次只提示"服务已在运行"，不重复派生。
+- 托盘图标注册用 `Shell_NotifyIconGetRect` 验证（返回 40×40 矩形），不靠肉眼看折叠区。
+- `POST /v1/restart` 后进程仍是 pythonw、托盘自动重建（pid 变化，日志有新的一条"托盘图标已添加"）。
+- 「启动自动化浏览器」实测：调用返回 `browser_state=ready, copilot_ready=true`。
+- 单测 **1296**（skipped=1）OK；不变量 25 条全绿。
+
 ## [11.0.0-preview.34] - 2026-10-29
 
 ### Fixed

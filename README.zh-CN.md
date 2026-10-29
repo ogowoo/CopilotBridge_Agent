@@ -74,7 +74,7 @@ copy config.example.json config.json
 python scripts/login.py
 
 # 4. 启动服务（默认 http://127.0.0.1:8765）
-python start.py
+python start.py        # 默认后台运行（相当于 pythonw）：终端可关，托盘图标常驻
 ```
 
 启动后打开 `http://127.0.0.1:8765/ui` 使用管理台，或访问 `/docs` 查看 API 文档。

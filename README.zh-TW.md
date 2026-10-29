@@ -74,7 +74,7 @@ copy config.example.json config.json
 python scripts/login.py
 
 # 4. 啟動服務（預設 http://127.0.0.1:8765）
-python start.py
+python start.py        # 預設背景執行（相當於 pythonw）：可關終端，托盤圖示常駐
 ```
 
 啟動後開啟 `http://127.0.0.1:8765/ui` 使用管理台，或造訪 `/docs` 查看 API 文件。

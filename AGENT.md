@@ -45,6 +45,9 @@ python scripts/calibrate.py            # conv_stats 阈值校准分析
 python scripts/outlook_selftest.py     # Outlook 分段自检(COM/线程模式对照)
 python scripts/rollback.py --list      # 查看可回滚的任务与自升级记录
 python start.py                        # 启动服务(默认 127.0.0.1:8765)
+                                       #   默认**派生后台进程**(相当于 pythonw): 终端可关,
+                                       #   托盘图标常驻, 日志写 data/logs/gantry.log
+python start.py --foreground           # 前台跑(日志同时打终端, Ctrl+C 结束)
 ```
 
 ## 硬性约定(违反会破坏系统)

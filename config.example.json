@@ -14,6 +14,9 @@
   "api_token": "${GANTRY_TOKEN}",
   "csrf_protect": true,
   "csrf_allowed_origins": [],
+  "ui": {
+    "language": "zh"
+  },
   "server": {
     "host": "127.0.0.1",
     "port": 8765
