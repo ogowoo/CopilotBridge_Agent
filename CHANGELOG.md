@@ -33,52 +33,63 @@
 - 本次一并追平远端 6 个提交（`daf8b49`…`9804a5d`：UI 根路由、tool plugin 加载器与内置插件、
   Windows 短路径 root 的 `relative_to` 修复、两个新 skill、`webui/js/composer.js` 追加）。
   拉取后本地跑通：单测 **1265**（skipped=1）OK、不变量 25 条全绿、JS 语法全通过。
-- 远端 `preview.28`–`preview.31` 的 CHANGELOG 小节是**空占位**（bump 了但没写内容），
-  这里没替它们回填（避免与对方后续提交冲突）——需要的话可以按 commit 消息补。
+- 远端 `preview.28`–`preview.31` 当时只 bump 了版本号、CHANGELOG 是**空占位**；
+  现已按这几个提交的实际 diff 补齐（28 的根路由/下载重试/斜杠命令、29 的纯版本推进、
+  30 的插件机制与短路径修复、31 的发布 skill）。
 
 ## [11.0.0-preview.31] - 2026-10-29
 
 ### Added
-- 
 
-### Changed
-- 
-
-### Fixed
--
+- 新 skill `skills/self-upgrade-github-release/SKILL.md`：自升级完成后按**实际改动**总结提交信息，
+  再走 `bump_version.py` → commit → tag → push GitHub 的完整流程（前置条件：`self_validate`
+  与 `self_unittest` 都 passed=true，并先看 `git status --short` / `git diff`）。
 
 ## [11.0.0-preview.30] - 2026-10-29
 
 ### Added
-- 
 
-### Changed
-- 
+- **工具插件机制**：`gantry/tool_plugin_loader.py` —— 扫描 `gantry/tool_plugins/` 下的模块，
+  调它的 `register(registry)` 注册工具；支持 `config.json` 的 `tool_plugins.disabled` 禁用列表、
+  重名检测与失败隔离（一个插件坏了不影响其它）。
+- 4 个内置插件工具：`batch_analyze`（批量读取/分析多个文件）、`command_capabilities`
+  （探测环境里命令的能力：类型/属性/路径）、`workspace_inspect`（查看工作区结构与大小）、以及
+  `tool_plugins/init.py`（包声明）。
+- `plugins/coding-harness-tools/`：外部插件示例（`plugin.json` + `plugin.py`），
+  配 `skills/gantry-tool-plugin/SKILL.md` 说明怎么写插件。
+- 新工具的中英文描述与参数提示（`tool_i18n.py`）。
 
 ### Fixed
--
+
+- **Windows 短路径 root**（如 `ADMINI~1`）：`atrefs._resolve()` 与 `tools_self._self_rel()`
+  用短路径 root 对已 resolve 成长路径的 candidate 做 `relative_to`，直接 `ValueError`，
+  表现是 **@ 引用与自升级搜索全空**。两处改成先 `resolve()` 再比较。
+- `copilot_file` 只允许写**当前工作区**（显式 `relative_to` 校验，越界报"只能写入当前工作区"）。
+- 自升级白名单补 `plugins/`（`tools.py` 与 `tools_self.py` 双处），否则插件目录始终改不了。
+- `bridge.py` 多余空行。
 
 ## [11.0.0-preview.29] - 2026-10-29
 
-### Added
-- 
-
 ### Changed
-- 
 
-### Fixed
--
+- 仅版本号推进（该提交只改了 `CHANGELOG` / `README` / `version.py` / `pyproject.toml`，无功能改动）。
+- 同一版本窗口内还落了 Windows 短路径 root 的修复（`8392931`），随 preview.30 一起发布，
+  详见下一节。
 
 ## [11.0.0-preview.28] - 2026-10-29
 
 ### Added
-- 
+
+- `copilot_file` 取下载结果时**重试等待**：模型刚生成完就去点下载，目录里往往还是空的；
+  现在 30 秒内每 0.5 秒轮询一次，拿到就返回（原来的行为是一次没找到就直接放弃）。
+- 「继续对话」输入框也支持**斜杠命令**：以 `/` 开头且 `slashRun` 认领的命令不再当普通消息发出去。
 
 ### Changed
-- 
 
-### Fixed
--
+- **`GET /` 改为 302 → `/ui/`**：访问 `http://127.0.0.1:8765/` 直接进控制台
+  （原来返回 `{name, version, docs, models, agent}` 元信息）。
+- `AGENT.md` 补三条执行约定：保持实现简单（不为单次用途加抽象）、改动可追溯
+  （只改与目标直接相关的部分，无关问题只报告）、以可检查的成功条件驱动执行。
 
 ## [11.0.0-preview.27] - 2026-10-29
 
