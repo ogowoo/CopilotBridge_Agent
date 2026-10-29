@@ -112,6 +112,11 @@ async function sendFollowup(){
  if(!window.current){toast(tr('请先选择 Session'),'err');return}
  let box=document.getElementById('followup'),content=box.value.trim();
  if(!content&&!IMG_STORES.follow.length){toast(tr('消息不能为空'),'err');return}
+ // 继续对话 Composer 复用新任务输入框的斜杠命令处理；命令已执行时不再作为普通消息发送。
+ if(content.startsWith('/')&&typeof window.slashRun==='function'){
+  const handled=await window.slashRun(content,{source:'followup',input:box});
+  if(handled!==false)return;
+ }
  let atts=IMG_STORES.follow.map(a=>a.dataUrl);
  // 发送按钮是圆形图标按钮：不能再用 textContent 换文案（会把图标冲掉），
  // 用 disabled + aria-busy 表示发送中（图标/标题保持不变，屏幕阅读器也读得到）

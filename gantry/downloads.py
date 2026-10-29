@@ -229,7 +229,13 @@ async def _copilot_file(path: str, instruction: str) -> dict:
     await b.agent_chat_once(prompt, model, False)
 
     # 找下载入口：优先文件名匹配，其次取最新的一个
-    candidates = await _download_candidates()
+    candidates = []
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        candidates = await _download_candidates()
+        if candidates:
+            break
+        await asyncio.sleep(0.5)
     if not candidates:
         dump = await _answer_area_html()
         try:
