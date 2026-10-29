@@ -124,9 +124,10 @@ async def stream_provider(p, model: str, messages: list):
 
 @router.get("/")
 async def root():
-    return RedirectResponse('/ui/')
-    return {"name": _APP_NAME, "version": _APP_VERSION, "docs": "/docs",
-            "models": "/v1/models", "agent": "/v1/agent/completions"}
+    # 根地址直接进控制台（访问 http://127.0.0.1:8765/ 就是界面）。
+    # 版本/名称不再由这里返回：**/health** 带 name+version（前端轮询它、顺手取版本）。
+    # 原来这里 return 之后的 dict 是不可达的死代码，已删——留着会让人以为根路径还是 API。
+    return RedirectResponse('/ui/', status_code=302)
 
 
 @router.get("/health")
@@ -138,6 +139,10 @@ async def health():
     # 起始状态与"页面是否可用"分开表达：没有 Copilot 时服务仍是 ok（提供商可用），
     # 只是 copilot_ready=false，WebUI 据此显示提示与「重试浏览器」。
     return {
+        # 版本信息放这里：`GET /` 已改成 302 → /ui/（首页即控制台），前端拿版本的
+        # 唯一稳定入口就是本接口；侧栏底部的版本号/页签标题都靠它。
+        "name": _APP_NAME,
+        "version": _APP_VERSION,
         "event_source": b.event_source(),   # P2-10 第三期：当前读取路径（columns/projection）
         "status": "ok",
         "copilot_ready": bool(a.BOOT.get("copilot_ready")),

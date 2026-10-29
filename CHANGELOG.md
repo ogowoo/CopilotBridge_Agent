@@ -14,6 +14,28 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.32] - 2026-10-29
+
+### Fixed
+
+- **拉取远端之后侧栏版本号与页签标题消失**（远端 `daf8b49 feat: update ui route` 把
+  `GET /` 改成 302 → `/ui/`，而前端 `loadVersion()` 仍把根路径当 JSON 用：
+  `fetch('/')` 跟随后拿到 HTML → `r.json()` 抛错 → 被 catch 吞掉 → 版本号静默不显示）。
+  - `/health` 现在带 `name` + `version`（界面本来就每 8 秒轮询它，等于零额外请求）；
+  - 前端新增 `fetchMeta()`：先 `/health`，再兜底 `/`（老部署根路径仍是 JSON），
+    并按 `content-type` 跳过被重定向成 HTML 的响应；
+  - `root()` 里 `return RedirectResponse(...)` 之后那段**不可达**的 JSON dict 已删
+    （留着会让人误以为根路径还是 API）；显式 `status_code=302`。
+  - 探针 `scripts/smoke_version.py`：页签 `Gantry - v11.0.0-preview.32`、侧栏 chip 可见。
+
+### 说明
+
+- 本次一并追平远端 6 个提交（`daf8b49`…`9804a5d`：UI 根路由、tool plugin 加载器与内置插件、
+  Windows 短路径 root 的 `relative_to` 修复、两个新 skill、`webui/js/composer.js` 追加）。
+  拉取后本地跑通：单测 **1265**（skipped=1）OK、不变量 25 条全绿、JS 语法全通过。
+- 远端 `preview.28`–`preview.31` 的 CHANGELOG 小节是**空占位**（bump 了但没写内容），
+  这里没替它们回填（避免与对方后续提交冲突）——需要的话可以按 commit 消息补。
+
 ## [11.0.0-preview.31] - 2026-10-29
 
 ### Added

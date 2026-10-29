@@ -52,9 +52,16 @@ class RailFooterTests(unittest.TestCase):
         self.assertIn("color:var(--faint)", ver)
         self.assertNotIn("border-radius:999px", ver, "不是胶囊")
 
-    def test_fetches_version_from_root(self):
+    def test_fetches_version_from_health(self):
+        """`GET /` 已 302 到 /ui/，版本必须从 /health 拿（`/` 只作老部署兜底）。
+
+        真事（2026-10-29 拉取远端改动后）：`/` 改成跳 /ui/ 后，前端还按 JSON 解析
+        根路径 → 解析失败被 catch 吞掉 → 侧栏版本号与页签标题静默消失。
+        """
         self.assertIn("async function loadVersion(", JS)
-        self.assertIn("fetch('/',{cache:'no-store'})", JS)
+        self.assertIn("async function fetchMeta(", JS)
+        self.assertIn("['/health','/']", JS, "先 /health，再兜底 /")
+        self.assertIn("includes('json')", JS, "跳转后拿到 HTML 时要跳过，别拿它当 JSON")
         self.assertIn("loadVersion();", JS)
 
     def test_narrow_fallback_gear(self):
