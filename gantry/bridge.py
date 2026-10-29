@@ -619,7 +619,6 @@ TOOLS_EXTRA = register_extra_tools(
     subagent_fork_fn=lambda *a, **k: fork_subagent(*a, **k),
     subagent_list_fn=lambda *a, **k: list_subagents(*a, **k))
 
-
 def declared_deliverables(sid: str) -> list[dict]:
     """本次任务通过 `present` 登记过的交付物。
 

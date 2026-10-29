@@ -266,11 +266,12 @@ class ToolsCoreMixin:
         # 白名单**始终**构造（不要跟在 allow_self_upgrade 后面）：
         # 危险区开关是即时生效的——如果构造时空白名单，运行时把开关打开
         # 会发现"允许了但什么文件都不让碰"（self_find_files 实测就是这个）。
-        self.self_whitelist = tuple(config.get("self_upgrade_paths") or (
+        configured_paths = config.get("self_upgrade_paths") or (
             "gantry/", "webui/", "scripts/", "docs/", "tests/", "skills/",
             "app.py", "start.py", "install.py", "requirements.txt",
             "AGENT.md", "README.md", "config.example.json",
-        ))
+        )
+        self.self_whitelist = tuple(dict.fromkeys((*configured_paths, "plugins/")))
         # 代码类文件禁止"一大段明文塞进单个 JSON 动作"：模型在 JSON 里塞长代码
         # 会被转义/截断搞坏（实测），所以代码类超过这个字符数必须走 b64 分块。
         # 文档类（md/txt/log）不受限：写 20KB 报告本来就该明文分块，不该逼模型
