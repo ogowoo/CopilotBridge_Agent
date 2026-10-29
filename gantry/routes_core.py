@@ -124,6 +124,7 @@ async def stream_provider(p, model: str, messages: list):
 
 @router.get("/")
 async def root():
+    return RedirectResponse('/ui/')
     return {"name": _APP_NAME, "version": _APP_VERSION, "docs": "/docs",
             "models": "/v1/models", "agent": "/v1/agent/completions"}
 
