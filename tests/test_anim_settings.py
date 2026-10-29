@@ -61,6 +61,39 @@ class ControlTests(unittest.TestCase):
             self.assertIn(f'"{key}":', I18N, f"i18n.js 缺英文词条: {key}")
 
 
+class SaveToastTests(unittest.TestCase):
+    """「保存」的提示要说实话。
+
+    用户实测：只调了 TeamScope 参数 → 点保存 → 提示"没有改动"，但设置其实已经生效
+    （拖动即时生效并落库）。根因是 `collectSettings()` 只收 `[data-cfg]`（服务端 config），
+    动画控件是 `data-anim`，于是 values 为空、走进"没有改动"的早退分支。
+    主题/语言同样是本地项，一起修。
+    """
+
+    def test_local_changes_counted(self):
+        self.assertIn("_localSnapshot()", SETTINGS, "打开设置时要给本地设置拍快照")
+        self.assertIn("_localChanges()", SETTINGS, "保存时要算本地改动")
+        # 早退分支必须先看本地改动
+        seg = SETTINGS[SETTINGS.index("const serverN="):SETTINGS.index("const ACTIONS=")]
+        self.assertIn("if(localChanges.length)", seg)
+        self.assertIn("本地设置已保存", seg)
+        self.assertLess(seg.index("if(localChanges.length)"), seg.index("toast(tr('没有改动')"),
+                        "先判断本地改动，不能一上来就说没有改动")
+
+    def test_server_and_local_message(self):
+        self.assertIn("服务端 {n} 项 · 本地 {m} 项", SETTINGS)
+        self.assertIn("设置已保存（服务端 {n} 项 · 本地 {m} 项）", I18N)
+        self.assertIn("本地设置已保存（{n} 项）", I18N)
+
+    def test_snapshot_refreshed_after_save(self):
+        # 两种收尾（只本地 / 服务端+本地）都要刷新快照，否则第二次保存又会误报"有改动"
+        self.assertGreaterEqual(SETTINGS.count("_localSnap=_localSnapshot();"), 2)
+
+    def test_theme_and_lang_counted(self):
+        for key in ("now.theme", "now.lang"):
+            self.assertIn(key, SETTINGS, f"本地改动漏了 {key}")
+
+
 class PrefsModuleTests(unittest.TestCase):
     def test_defaults_and_ranges(self):
         for k in RANGE_KEYS + SWITCH_KEYS:

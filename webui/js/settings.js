@@ -49,6 +49,7 @@ async function pickSandbox(mode){
 async function openSettings(){
  const mask=document.getElementById('settingsMask');
  if(!mask)return;
+ _localSnap=_localSnapshot();      // 本次打开时的本地设置，保存时用来判断"改了什么"
  mask.classList.add('open');
  await renderSettings();
 }
@@ -216,6 +217,30 @@ function collectSettings(){
  return out;
 }
 
+/* 本地设置（不走 /v1/config）：主题、语言、动画参数。
+   保存按钮必须把它们也算进"有没有改动"，否则只调了它们时会误报"没有改动"
+   ——用户实测就撞到了：TeamScope 参数明明生效了，提示却说没改动。 */
+let _localSnap=null;
+function _localSnapshot(){
+ const anim=readAnimPrefs();
+ let theme=''; try{theme=localStorage.getItem('gantry-theme')||''}catch(e){}
+ let lang='zh'; try{lang=currentLang()}catch(e){}
+ return {theme, lang, anim};
+}
+/* 与快照比，列出改动了哪些本地项（名字给人看，用于提示里的"本地 N 项"） */
+function _localChanges(){
+ const now=_localSnapshot();
+ const old=_localSnap||now;
+ const out=[];
+ if(String(now.theme||'')!==String(old.theme||''))out.push('theme');
+ if(String(now.lang||'')!==String(old.lang||''))out.push('lang');
+ Object.keys(ANIM_RANGES).concat(['scopeOn','breatheOn']).forEach(k=>{
+  const a=old.anim?old.anim[k]:undefined, b=now.anim?now.anim[k]:undefined;
+  if(String(a)!==String(b))out.push('anim:'+k);
+ });
+ return out;
+}
+
 async function saveSettings(){
  const themeSel=document.getElementById('setTheme');
  const langSel=document.getElementById('setLang');
@@ -241,13 +266,28 @@ async function saveSettings(){
   const now=String(raw[k]);
   if(now!==before)values[k]=raw[k];
  });
- if(!Object.keys(values).length){toast(tr('没有改动'),'ok');return}
+ const serverN=Object.keys(values).length;
+ const localChanges=_localChanges();       // 主题/语言/动画：都已经即时生效并落库了
+ if(!serverN){
+  // 只有本地改动：说清楚"存了什么"，不要再说"没有改动"（那是假话，用户已实测到）
+  if(localChanges.length){
+   _localSnap=_localSnapshot();
+   toast(tr('本地设置已保存（{n} 项）',{n:localChanges.length}),'ok');
+  }else{
+   toast(tr('没有改动'),'ok');
+  }
+  return;
+ }
  try{
   const r=await api('/v1/config',{method:'POST',
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({values,persist:true})});
   window.settingsValues=Object.assign({},window.settingsValues,r.applied||{});
-  toast(tr('设置已保存（{n} 项）',{n:Object.keys(r.applied||{}).length}),'ok');
+  const appliedN=Object.keys(r.applied||{}).length;
+  _localSnap=_localSnapshot();
+  toast(localChanges.length
+    ? tr('设置已保存（服务端 {n} 项 · 本地 {m} 项）',{n:appliedN,m:localChanges.length})
+    : tr('设置已保存（{n} 项）',{n:appliedN}),'ok');
  }catch(e){ toast(tr('保存失败: ')+((e&&(e.text||e.detail||e.message))||String(e)),'err') }
 }
 

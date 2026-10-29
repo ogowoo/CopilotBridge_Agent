@@ -790,6 +790,8 @@ Object.assign(I18N_EN, {
  "重启/终止都会中断正在跑的任务；状态已落库，重启后可恢复。": "Restarting or stopping interrupts running tasks; state is persisted and can be resumed.",
  "改完点保存；外观类即时生效": "Click Save when done; appearance applies immediately",
  "设置已保存（{n} 项）": "Settings saved ({n})",
+ "本地设置已保存（{n} 项）": "Local settings saved ({n})",
+ "设置已保存（服务端 {n} 项 · 本地 {m} 项）": "Saved ({n} server · {m} local)",
  "保存失败: ": "Save failed: ",
  "浏览器启动方式": "Browser startup",
  "无头模式（不显示浏览器窗口）": "Headless (no browser window)",
