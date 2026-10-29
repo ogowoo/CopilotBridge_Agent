@@ -19,12 +19,12 @@ sys.path.insert(0, str(ROOT))
 
 START_SRC = (ROOT / "start.py").read_text(encoding="utf-8")
 TRAY_SRC = (ROOT / "gantry" / "tray.py").read_text(encoding="utf-8")
-ICON = ROOT / "assets" / "gantry.ico"
+ICON = ROOT / "webui" / "favicon.ico"   # 浏览器 favicon 与托盘同一份
 
 
 class IconTests(unittest.TestCase):
     def test_icon_exists_and_is_ico(self):
-        self.assertTrue(ICON.is_file(), "assets/gantry.ico 不存在（托盘会退回系统默认图标）")
+        self.assertTrue(ICON.is_file(), "webui/favicon.ico 不存在（favicon 与托盘图标都会退回默认）")
         head = ICON.read_bytes()[:4]
         self.assertEqual(head, b"\x00\x00\x01\x00", "不是合法的 .ico 文件头")
 
@@ -33,6 +33,14 @@ class IconTests(unittest.TestCase):
         data = ICON.read_bytes()
         count = int.from_bytes(data[4:6], "little")
         self.assertGreaterEqual(count, 4, f"图标只有 {count} 个尺寸")
+
+
+    def test_index_references_the_same_icon(self):
+        """页面 favicon 必须就是托盘用的那个文件（一份图标，两处展示）。"""
+        html = (ROOT / "webui" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('rel="icon"', html)
+        self.assertIn('href="favicon.ico"', html, "favicon 应指向 webui/favicon.ico")
+        self.assertNotIn("data:image/svg+xml", html, "别再用内联 SVG（与托盘的 G 不一致）")
 
 
 class MenuTests(unittest.TestCase):

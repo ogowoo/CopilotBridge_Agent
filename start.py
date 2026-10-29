@@ -119,7 +119,7 @@ def start_tray(port: int, lang: str | None = None):
     log = logging.getLogger("gantry.start")
     try:
         tray = Tray(port=port, root=BASE, menu_spec=default_menu,
-                    icon_path=BASE / "assets" / "gantry.ico", lang=lang)
+                    icon_path=BASE / "webui" / "favicon.ico", lang=lang)
         tray.start()
         if tray.wait_ready(5.0):
             log.info("托盘已就绪（右键图标有菜单）")

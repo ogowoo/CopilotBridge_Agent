@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""托盘图标改用**字母 G**（用户："图片用 G 字吧"），并输出一张预览图便于核对。
+"""应用图标（favicon + 托盘）用**字母 G**，并输出一张预览图便于核对。
 
 设计：圆角方底（品牌绿 #0b7a5a）+ 白色粗体 G，与界面上那个「G」品牌块一致。
 小尺寸（16/20/24）单独按像素网格画，避免缩放出锯齿——直接缩小大图会让 G 的开口糊掉。
@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 BASE = Path(__file__).resolve().parent.parent
-OUT = BASE / "assets" / "gantry.ico"
+OUT = BASE / "webui" / "favicon.ico"   # 浏览器 favicon 与托盘图标**同一份**
 PREVIEW = BASE / "data" / "ui-audit" / "tray-icon.png"
 
 BG = (11, 122, 90, 255)       # #0b7a5a（与页面 .nc-head 的品牌块同色）

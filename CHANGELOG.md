@@ -14,6 +14,27 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.37] - 2026-10-29
+
+### Changed
+
+- **浏览器标签页的 favicon 也换成 G**（用户："浏览器里的 favicon 呢"）。原来 index.html 里是
+  一段**内联 SVG**（桥形线条），跟托盘那个 G 图标不一致，而且内联 data URI 没法被托盘复用。
+  - 图标**单源**到 `webui/favicon.ico`（8 个尺寸）：`index.html` 用
+    `<link rel="icon" href="favicon.ico">`，托盘 `start.py` 也从同一文件读；
+    `assets/gantry.ico` 删除（原来那份副本会和 favicon 漂移）。
+  - `/ui/{asset}` 白名单补 `favicon.ico`（不变量"页面引用 ⊂ 白名单"会核对）。
+  - `scripts/make_tray_icon.py` 输出改到 `webui/favicon.ico`，预览图仍在
+    `data/ui-audit/tray-icon.png`。
+
+### 实测
+
+- `GET /ui/favicon.ico` → 200、`image/x-icon`、20 002 字节；
+  浏览器里 `link[rel=icon]` 的绝对地址是 `http://127.0.0.1:8765/ui/favicon.ico`。
+- 探针 `scripts/smoke_favicon.py` 断言"页面 favicon 与托盘同一份"；
+  单测 **1297**（skipped=1）OK；不变量 25 条全绿。
+- 注意：浏览器会缓存 favicon，第一次可能需要 Ctrl+F5 才会看到新的 G。
+
 ## [11.0.0-preview.36] - 2026-10-29
 
 ### Changed

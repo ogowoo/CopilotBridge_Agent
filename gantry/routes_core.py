@@ -320,7 +320,8 @@ async def web_ui_index():
 @router.get("/ui/{asset:path}", include_in_schema=False)
 async def web_ui_asset(asset: str):
     # 静态资产白名单，禁止路径穿越（app.js 已退役，逻辑全在 js/*.js 里）
-    if asset in ("boot.js", "i18n.js"):      # style.css 已按块拆到 css/*.css
+    # favicon 与托盘的 G 图标是同一个文件（webui/favicon.ico）
+    if asset in ("boot.js", "i18n.js", "favicon.ico"):      # style.css 已按块拆到 css/*.css
         return FileResponse(b.BASE / "webui" / asset, headers={"Cache-Control": "no-cache, must-revalidate"})
     # ES 模块 / 共享状态 / 拆分后的样式：只允许 <目录>/<名字>.(js|css)，不许 ".."、
     # 不许子目录再嵌套（main.js 与 css/tokens.css 这类一层路径）
