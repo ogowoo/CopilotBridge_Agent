@@ -52,6 +52,6 @@ python start.py --tray-selftest # 建一下图标再退出，验证 Win32 托盘
 - 后台派生用同目录的 `pythonw.exe` + `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`，
   子进程带 `GANTRY_TRAY_CHILD=1`（重启时环境变量会继承，所以重启后仍是托盘模式）。
 - 单实例：启动前先探 `/health`，已经在跑就只打印地址，不重复派生。
-- 图标是 `assets/gantry.ico`（8 个尺寸，`scripts/make_tray_icon.py` 生成）。
+- 图标是 `assets/gantry.ico`（8 个尺寸，`scripts/make_tray_icon.py` 生成）——**品牌绿圆角底 + 白色粗体 G**，与界面上那个「G」品牌块一致；脚本会顺手渲染一张预览图 `data/ui-audit/tray-icon.png`（含 16px 放大 6 倍）。
   Win11 默认把新图标收进折叠区：`Shell_NotifyIconGetRect` 能证明它注册成功；
   想让它常驻可见，去「设置 → 个性化 → 任务栏 → 其他系统托盘图标」里打开。

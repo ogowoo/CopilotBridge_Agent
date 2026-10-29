@@ -14,6 +14,24 @@
 ### Fixed
 - 
 
+## [11.0.0-preview.36] - 2026-10-29
+
+### Changed
+
+- **托盘图标改成字母 G**（用户："图片用 G 字吧"）：品牌绿圆角底 + 白色粗体 G，与界面空状态
+  那个「G」品牌块一致；原来那版是"桥拱"线条。
+  - `scripts/make_tray_icon.py` 改用 Segoe UI Bold（缺失时退 Arial Bold / PIL 默认字体），
+    并按实际包围盒居中（不同字体 G 的左右留白不同，用 anchor 会偏）。
+  - 16/20/24 小尺寸字号给到 0.92 倍（大尺寸 0.78），避免小图标里 G 又小又细；缩放后仍是 8 个尺寸。
+  - 脚本顺带渲染预览图 `data/ui-audit/tray-icon.png`（各尺寸 1:1 + 16px 放大 6 倍），
+    换图标时肉眼可核对，不用等它出现在托盘里。
+
+### 实测
+
+- `assets/gantry.ico` 重新生成（20 002 字节 / 8 个尺寸），预览图确认 16px 下仍可辨认。
+- 重启后 `python start.py --tray-selftest` 通过（Shell_NotifyIconGetRect 返回图标矩形）。
+- 单测 1296（skipped=1）OK；不变量 25 条全绿。
+
 ## [11.0.0-preview.35] - 2026-10-29
 
 ### Added
