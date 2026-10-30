@@ -292,6 +292,8 @@ class Tray:
         self._ready = threading.Event()
         self._error: BaseException | None = None
         self._thread: threading.Thread | None = None
+        self._status_thread: threading.Thread | None = None
+        self._status_stop = threading.Event()
         self._quitting = False
 
     # ── 生命周期 ──
@@ -312,6 +314,7 @@ class Tray:
 
     def stop(self, timeout: float = 3.0) -> None:
         self._quitting = True
+        self._status_stop.set()
         if self._thread_id:
             try:
                 self._user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
@@ -326,6 +329,9 @@ class Tray:
             self._create_window()
             self._add_icon()
             self._ready.set()
+            self._status_stop.clear()
+            self._status_thread = threading.Thread(target=self._refresh_status_loop, daemon=True)
+            self._status_thread.start()
             self._pump()
         except BaseException as exc:                    # noqa: BLE001 - 交给 wait_ready 抛
             self._error = exc
@@ -510,6 +516,13 @@ class Tray:
         return self.text["tip"].format(title=self.title,
                                        ver=("v" + ver) if ver else "",
                                        state=state, port=self.port)
+
+    def _refresh_status_loop(self) -> None:
+        while not self._status_stop.wait(8.0):
+            nid = self._nid()
+            nid.uFlags = NIF_TIP
+            nid.szTip = self._tooltip()[:127]
+            self._shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(nid))
 
     def icon_rect(self) -> tuple[int, int, int, int] | None:
         """通知区里这个图标的矩形；没加上/查不到返回 None。
